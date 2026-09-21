@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-09-21T23:36:16.743Z",
+  "generatedAt": "2026-09-21T23:55:34.672Z",
   "collections": [
     {
       "name": "users",
@@ -1015,6 +1015,379 @@
         "CREATE INDEX idx_convites_empresa ON empresa_convites (empresa_id)",
         "CREATE INDEX idx_convites_email ON empresa_convites (email)",
         "CREATE UNIQUE INDEX idx_convites_token ON empresa_convites (token)"
+      ]
+    },
+    {
+      "name": "veiculos",
+      "type": "base",
+      "apiRules": {
+        "list": "@request.auth.id != ''",
+        "view": "@request.auth.id != ''",
+        "create": "@request.auth.id != ''",
+        "update": "@request.auth.id != ''",
+        "delete": "@request.auth.id != ''"
+      },
+      "fields": [
+        {
+          "name": "empresa_id",
+          "type": "relation",
+          "required": true,
+          "system": false,
+          "collectionRef": "empresas"
+        },
+        {
+          "name": "codigo_interno",
+          "type": "text",
+          "required": true,
+          "system": false
+        },
+        {
+          "name": "placa",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "tipo",
+          "type": "select",
+          "required": true,
+          "system": false,
+          "selectValues": [
+            "caminhao",
+            "escavadeira",
+            "carregadeira",
+            "perfuratriz",
+            "trator",
+            "outro"
+          ]
+        },
+        {
+          "name": "marca",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "modelo",
+          "type": "text",
+          "required": true,
+          "system": false
+        },
+        {
+          "name": "ano",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "tipo_medidor",
+          "type": "select",
+          "required": true,
+          "system": false,
+          "selectValues": ["km", "horas"]
+        },
+        {
+          "name": "medidor_atual",
+          "type": "number",
+          "required": true,
+          "system": false
+        },
+        {
+          "name": "combustivel_padrao",
+          "type": "select",
+          "required": false,
+          "system": false,
+          "selectValues": ["Diesel S10", "Diesel S500", "Gasolina", "Etanol", "Arla 32", "Eletrico"]
+        },
+        {
+          "name": "status",
+          "type": "select",
+          "required": true,
+          "system": false,
+          "selectValues": ["ativo", "manutencao", "inativo"]
+        },
+        {
+          "name": "observacoes",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "created",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate"]
+        },
+        {
+          "name": "updated",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate", "onUpdate"]
+        }
+      ],
+      "indexes": [
+        "CREATE INDEX idx_veiculos_empresa ON veiculos (empresa_id)",
+        "CREATE INDEX idx_veiculos_codigo ON veiculos (codigo_interno)",
+        "CREATE INDEX idx_veiculos_status ON veiculos (status)",
+        "CREATE INDEX idx_veiculos_tipo ON veiculos (tipo)"
+      ]
+    },
+    {
+      "name": "abastecimentos",
+      "type": "base",
+      "apiRules": {
+        "list": "@request.auth.id != ''",
+        "view": "@request.auth.id != ''",
+        "create": "@request.auth.id != ''",
+        "update": "@request.auth.id != ''",
+        "delete": "@request.auth.id != ''"
+      },
+      "fields": [
+        {
+          "name": "empresa_id",
+          "type": "relation",
+          "required": true,
+          "system": false,
+          "collectionRef": "empresas"
+        },
+        {
+          "name": "veiculo_id",
+          "type": "relation",
+          "required": true,
+          "system": false,
+          "collectionRef": "veiculos"
+        },
+        {
+          "name": "data",
+          "type": "date",
+          "required": true,
+          "system": false
+        },
+        {
+          "name": "combustivel",
+          "type": "select",
+          "required": true,
+          "system": false,
+          "selectValues": ["Diesel S10", "Diesel S500", "Gasolina", "Etanol", "Arla 32"]
+        },
+        {
+          "name": "litros",
+          "type": "number",
+          "required": true,
+          "system": false
+        },
+        {
+          "name": "preco_litro",
+          "type": "number",
+          "required": true,
+          "system": false
+        },
+        {
+          "name": "valor_total",
+          "type": "number",
+          "required": true,
+          "system": false
+        },
+        {
+          "name": "medidor",
+          "type": "number",
+          "required": true,
+          "system": false
+        },
+        {
+          "name": "medidor_anterior",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "distancia_percorrida",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "consumo_medio",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "custo_por_unidade",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "fornecedor_id",
+          "type": "relation",
+          "required": false,
+          "system": false,
+          "collectionRef": "fornecedores"
+        },
+        {
+          "name": "conta_pagar_id",
+          "type": "relation",
+          "required": false,
+          "system": false,
+          "collectionRef": "contas_pagar"
+        },
+        {
+          "name": "motorista_operador",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "observacoes",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "created",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate"]
+        },
+        {
+          "name": "updated",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate", "onUpdate"]
+        }
+      ],
+      "indexes": [
+        "CREATE INDEX idx_abast_empresa ON abastecimentos (empresa_id)",
+        "CREATE INDEX idx_abast_veiculo ON abastecimentos (veiculo_id)",
+        "CREATE INDEX idx_abast_data ON abastecimentos (data)"
+      ]
+    },
+    {
+      "name": "manutencoes",
+      "type": "base",
+      "apiRules": {
+        "list": "@request.auth.id != ''",
+        "view": "@request.auth.id != ''",
+        "create": "@request.auth.id != ''",
+        "update": "@request.auth.id != ''",
+        "delete": "@request.auth.id != ''"
+      },
+      "fields": [
+        {
+          "name": "empresa_id",
+          "type": "relation",
+          "required": true,
+          "system": false,
+          "collectionRef": "empresas"
+        },
+        {
+          "name": "veiculo_id",
+          "type": "relation",
+          "required": true,
+          "system": false,
+          "collectionRef": "veiculos"
+        },
+        {
+          "name": "tipo",
+          "type": "select",
+          "required": true,
+          "system": false,
+          "selectValues": ["preventiva", "corretiva"]
+        },
+        {
+          "name": "descricao",
+          "type": "text",
+          "required": true,
+          "system": false
+        },
+        {
+          "name": "fornecedor_id",
+          "type": "relation",
+          "required": false,
+          "system": false,
+          "collectionRef": "fornecedores"
+        },
+        {
+          "name": "oficina_nome",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "data",
+          "type": "date",
+          "required": true,
+          "system": false
+        },
+        {
+          "name": "medidor_no_momento",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "custo",
+          "type": "number",
+          "required": true,
+          "system": false
+        },
+        {
+          "name": "proxima_revisao_data",
+          "type": "date",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "proxima_revisao_medidor",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "conta_pagar_id",
+          "type": "relation",
+          "required": false,
+          "system": false,
+          "collectionRef": "contas_pagar"
+        },
+        {
+          "name": "status",
+          "type": "select",
+          "required": true,
+          "system": false,
+          "selectValues": ["agendada", "em_andamento", "concluida", "cancelada"]
+        },
+        {
+          "name": "observacoes",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "created",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate"]
+        },
+        {
+          "name": "updated",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate", "onUpdate"]
+        }
+      ],
+      "indexes": [
+        "CREATE INDEX idx_manut_empresa ON manutencoes (empresa_id)",
+        "CREATE INDEX idx_manut_veiculo ON manutencoes (veiculo_id)",
+        "CREATE INDEX idx_manut_data ON manutencoes (data)",
+        "CREATE INDEX idx_manut_status ON manutencoes (status)"
       ]
     }
   ]

@@ -34,6 +34,9 @@ import {
   KeyRound,
   Shield,
   Building,
+  Fuel,
+  Wrench,
+  Construction,
 } from 'lucide-react'
 
 export default function Layout() {
@@ -62,6 +65,14 @@ export default function Layout() {
         { label: 'Contas a Receber', path: '/financeiro/receber', icon: ArrowUpRight },
         { label: 'Conciliação', path: '/financeiro/conciliacao', icon: Landmark },
         { label: 'DRE Gerencial', path: '/financeiro/dre', icon: LineChart },
+      ],
+    },
+    {
+      group: 'Frotas & Pedreira',
+      items: [
+        { label: 'Veículos & Máquinas', path: '/frotas/veiculos', icon: Construction },
+        { label: 'Abastecimentos', path: '/frotas/abastecimentos', icon: Fuel },
+        { label: 'Manutenções', path: '/frotas/manutencoes', icon: Wrench },
       ],
     },
     {

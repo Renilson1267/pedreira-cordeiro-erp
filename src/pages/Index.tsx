@@ -20,6 +20,11 @@ import {
   FileCheck2,
   Clock,
   ArrowRight,
+  Truck,
+  Wrench,
+  Fuel,
+  Construction,
+  ShieldAlert,
 } from 'lucide-react'
 import {
   ResponsiveContainer,
@@ -49,10 +54,22 @@ export default function Dashboard() {
   const [atrasoReceber, setAtrasoReceber] = useState({ count: 0, total: 0 })
   const [chartData, setChartData] = useState<any[]>([])
 
+  // Frotas state
+  const [frotaResumo, setFrotaResumo] = useState({
+    totalAtivos: 0,
+    totalManutencao: 0,
+    custoFrotaMes: 0,
+    totalLitrosMes: 0,
+  })
+  const [alertasRevisao, setAlertasRevisao] = useState<any[]>([])
+
   // Realtime subscriptions
   useRealtime('movimentos_financeiros', () => loadDashboardData())
   useRealtime('contas_pagar', () => loadDashboardData())
   useRealtime('contas_receber', () => loadDashboardData())
+  useRealtime('veiculos', () => loadDashboardData())
+  useRealtime('abastecimentos', () => loadDashboardData())
+  useRealtime('manutencoes', () => loadDashboardData())
 
   const loadDashboardData = async () => {
     if (!currentEmpresa) return
@@ -197,6 +214,73 @@ export default function Dashboard() {
         })
       }
       setChartData(monthsData)
+
+      // 8. Frotas da Pedreira Resumo & Alertas
+      try {
+        const [veicList, abastList, manutList] = await Promise.all([
+          pb.collection('veiculos').getFullList({
+            filter: `empresa_id = '${currentEmpresa.id}'`,
+          }),
+          pb.collection('abastecimentos').getFullList({
+            filter: `empresa_id = '${currentEmpresa.id}' && data >= '${startOfMonth}' && data <= '${endOfMonth}'`,
+          }),
+          pb.collection('manutencoes').getFullList({
+            filter: `empresa_id = '${currentEmpresa.id}' && data >= '${startOfMonth}' && data <= '${endOfMonth}'`,
+          }),
+        ])
+
+        const totalAtivos = veicList.filter((v) => v.status === 'ativo').length
+        const totalManutencao = veicList.filter((v) => v.status === 'manutencao').length
+        const custoCombustivel = abastList.reduce((acc, a) => acc + (a.valor_total || 0), 0)
+        const custoManutencao = manutList.reduce((acc, m) => acc + (m.custo || 0), 0)
+        const totalLitros = abastList.reduce((acc, a) => acc + (a.litros || 0), 0)
+
+        setFrotaResumo({
+          totalAtivos,
+          totalManutencao,
+          custoFrotaMes: custoCombustivel + custoManutencao,
+          totalLitrosMes: totalLitros,
+        })
+
+        // Buscar manutenções com próxima revisão próxima ou vencida
+        const allManutencoes = await pb.collection('manutencoes').getFullList({
+          filter: `empresa_id = '${currentEmpresa.id}'`,
+          expand: 'veiculo_id',
+          sort: '-created',
+        })
+
+        const alertas: any[] = []
+        allManutencoes.forEach((m) => {
+          if (!m.proxima_revisao_data && !m.proxima_revisao_medidor) return
+          const v = veicList.find((ve) => ve.id === m.veiculo_id)
+          if (!v) return
+
+          if (m.proxima_revisao_data) {
+            const pDate = m.proxima_revisao_data.slice(0, 10)
+            const diffDays = Math.ceil(
+              (new Date(pDate).getTime() - new Date(todayISO).getTime()) / (1000 * 3600 * 24),
+            )
+            if (diffDays <= 0) {
+              alertas.push({
+                codigo: v.codigo_interno,
+                modelo: v.modelo,
+                mensagem: `Revisão vencida (${pDate})`,
+                severidade: 'urgente',
+              })
+            } else if (diffDays <= 15) {
+              alertas.push({
+                codigo: v.codigo_interno,
+                modelo: v.modelo,
+                mensagem: `Revisão em ${diffDays} dias`,
+                severidade: 'alerta',
+              })
+            }
+          }
+        })
+        setAlertasRevisao(alertas.slice(0, 3))
+      } catch (fErr) {
+        console.error('Error loading frota dashboard cards:', fErr)
+      }
     } catch (err) {
       console.error('Error loading dashboard:', err)
     } finally {
@@ -253,13 +337,145 @@ export default function Dashboard() {
             <Button
               onClick={() => navigate('/financeiro/conciliacao')}
               variant="outline"
+              className="border-[#ECEAE4] hover:bg-teal-50 hover:text-teal-800 text-gray-700 rounded-xl text-xs h-9"
+            >
+              <FileCheck2 className="w-3.5 h-3.5 mr-1.5 text-teal-600" />
+              Nova Conciliação
+            </Button>
+            <Button
+              onClick={() => navigate('/frotas/abastecimentos')}
+              variant="outline"
               className="border-[#ECEAE4] hover:bg-amber-50 hover:text-amber-800 text-gray-700 rounded-xl text-xs h-9"
             >
-              <FileCheck2 className="w-3.5 h-3.5 mr-1.5 text-amber-600" />
-              Nova Conciliação
+              <Fuel className="w-3.5 h-3.5 mr-1.5 text-amber-600" />
+              Abastecer Máquina
             </Button>
           </div>
         )}
+      </div>
+
+      {/* Seção Frotas da Pedreira - Resumo Operacional */}
+      <div className="space-y-2">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Construction className="w-4 h-4 text-teal-700" />
+            <h2 className="text-xs font-bold uppercase tracking-wider text-gray-600">
+              Operação de Pedreira & Gestão de Frotas
+            </h2>
+          </div>
+          <button
+            onClick={() => navigate('/frotas/veiculos')}
+            className="text-xs font-semibold text-teal-700 hover:text-teal-800 flex items-center gap-1"
+          >
+            <span>Ver frota completa</span>
+            <ArrowRight className="w-3.5 h-3.5" />
+          </button>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          {/* Card 1: Veículos Ativos */}
+          <Card
+            onClick={() => navigate('/frotas/veiculos?status=ativo')}
+            className="rounded-2xl border-[#ECEAE4] bg-white shadow-xs p-4 cursor-pointer hover:border-teal-300 transition-colors"
+          >
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-semibold text-gray-500 uppercase">Frota Operando</span>
+              <div className="w-8 h-8 rounded-lg bg-emerald-50 text-emerald-700 flex items-center justify-center">
+                <Truck className="w-4 h-4" />
+              </div>
+            </div>
+            <div className="text-2xl font-bold text-gray-900 mt-2 font-mono">
+              {frotaResumo.totalAtivos}{' '}
+              <span className="text-xs font-normal text-gray-400">máquinas / caminhões</span>
+            </div>
+            <p className="text-[11px] text-emerald-600 mt-1 flex items-center">
+              ● Liberados para lavra e transporte
+            </p>
+          </Card>
+
+          {/* Card 2: Em Manutenção */}
+          <Card
+            onClick={() => navigate('/frotas/manutencoes')}
+            className="rounded-2xl border-[#ECEAE4] bg-white shadow-xs p-4 cursor-pointer hover:border-amber-300 transition-colors"
+          >
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-semibold text-gray-500 uppercase">Em Manutenção</span>
+              <div className="w-8 h-8 rounded-lg bg-amber-50 text-amber-700 flex items-center justify-center">
+                <Wrench className="w-4 h-4" />
+              </div>
+            </div>
+            <div className="text-2xl font-bold text-amber-900 mt-2 font-mono">
+              {frotaResumo.totalManutencao}{' '}
+              <span className="text-xs font-normal text-gray-400">unidades paradas</span>
+            </div>
+            <p className="text-[11px] text-amber-700 mt-1">
+              Oficina mecânica ou revisão preventiva
+            </p>
+          </Card>
+
+          {/* Card 3: Custo da Frota no Mês */}
+          <Card
+            onClick={() => navigate('/frotas/abastecimentos')}
+            className="rounded-2xl border-[#ECEAE4] bg-white shadow-xs p-4 cursor-pointer hover:border-red-300 transition-colors"
+          >
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-semibold text-gray-500 uppercase">
+                Custo da Frota no Mês
+              </span>
+              <div className="w-8 h-8 rounded-lg bg-red-50 text-red-600 flex items-center justify-center">
+                <Fuel className="w-4 h-4" />
+              </div>
+            </div>
+            <div className="text-2xl font-bold text-red-600 mt-2 font-mono tabular-nums">
+              {formatCurrency(frotaResumo.custoFrotaMes)}
+            </div>
+            <p className="text-[11px] text-gray-400 mt-1">Combustível + Manutenções do período</p>
+          </Card>
+
+          {/* Card 4: Alertas de Revisão */}
+          <Card
+            onClick={() => navigate('/frotas/manutencoes')}
+            className="rounded-2xl border-[#ECEAE4] bg-white shadow-xs p-4 cursor-pointer hover:border-amber-300 transition-colors flex flex-col justify-between"
+          >
+            <div>
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-semibold text-gray-500 uppercase">
+                  Revisões Programadas
+                </span>
+                <div className="w-8 h-8 rounded-lg bg-amber-50 text-amber-700 flex items-center justify-center">
+                  <ShieldAlert className="w-4 h-4" />
+                </div>
+              </div>
+
+              {alertasRevisao.length === 0 ? (
+                <div className="mt-2 text-xs text-gray-400">
+                  Nenhuma revisão crítica vencida neste momento.
+                </div>
+              ) : (
+                <div className="mt-2 space-y-1">
+                  {alertasRevisao.map((alerta, i) => (
+                    <div key={i} className="text-[11px] flex items-center justify-between">
+                      <span className="font-mono font-bold text-gray-800">{alerta.codigo}</span>
+                      <span
+                        className={
+                          alerta.severidade === 'urgente'
+                            ? 'text-red-600 font-semibold text-[10px]'
+                            : 'text-amber-800 text-[10px]'
+                        }
+                      >
+                        {alerta.mensagem}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <p className="text-[10px] text-gray-400 mt-2 pt-1 border-t border-[#ECEAE4]">
+              Monitoramento preventivo por horímetro/km
+            </p>
+          </Card>
+        </div>
       </div>
 
       {/* 4 KPIs Row */}

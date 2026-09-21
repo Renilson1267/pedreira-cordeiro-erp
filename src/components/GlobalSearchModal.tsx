@@ -5,7 +5,15 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { Input } from '@/components/ui/input'
 import { formatCurrency, formatDate } from '@/lib/formatters'
 import pb from '@/lib/pocketbase/client'
-import { Search, Users, Truck, ArrowUpRight, ArrowDownLeft, FileText } from 'lucide-react'
+import {
+  Search,
+  Users,
+  Truck,
+  ArrowUpRight,
+  ArrowDownLeft,
+  FileText,
+  Construction,
+} from 'lucide-react'
 
 interface GlobalSearchModalProps {
   open: boolean
@@ -20,6 +28,7 @@ export const GlobalSearchModal: React.FC<GlobalSearchModalProps> = ({ open, onOp
   const [fornecedores, setFornecedores] = useState<any[]>([])
   const [contasPagar, setContasPagar] = useState<any[]>([])
   const [contasReceber, setContasReceber] = useState<any[]>([])
+  const [veiculos, setVeiculos] = useState<any[]>([])
   const [loading, setLoading] = useState(false)
 
   useEffect(() => {
@@ -29,6 +38,7 @@ export const GlobalSearchModal: React.FC<GlobalSearchModalProps> = ({ open, onOp
       setFornecedores([])
       setContasPagar([])
       setContasReceber([])
+      setVeiculos([])
       return
     }
   }, [open])
@@ -39,6 +49,7 @@ export const GlobalSearchModal: React.FC<GlobalSearchModalProps> = ({ open, onOp
       setFornecedores([])
       setContasPagar([])
       setContasReceber([])
+      setVeiculos([])
       return
     }
 
@@ -46,7 +57,7 @@ export const GlobalSearchModal: React.FC<GlobalSearchModalProps> = ({ open, onOp
       setLoading(true)
       try {
         const q = query.trim()
-        const [c, f, cp, cr] = await Promise.all([
+        const [c, f, cp, cr, v] = await Promise.all([
           pb.collection('clientes').getList(1, 5, {
             filter: `empresa_id = '${currentEmpresa.id}' && (nome ~ '${q}' || cnpj_cpf ~ '${q}')`,
           }),
@@ -59,12 +70,16 @@ export const GlobalSearchModal: React.FC<GlobalSearchModalProps> = ({ open, onOp
           pb.collection('contas_receber').getList(1, 5, {
             filter: `empresa_id = '${currentEmpresa.id}' && descricao ~ '${q}'`,
           }),
+          pb.collection('veiculos').getList(1, 5, {
+            filter: `empresa_id = '${currentEmpresa.id}' && (codigo_interno ~ '${q}' || modelo ~ '${q}' || placa ~ '${q}')`,
+          }),
         ])
 
         setClientes(c.items)
         setFornecedores(f.items)
         setContasPagar(cp.items)
         setContasReceber(cr.items)
+        setVeiculos(v.items)
       } catch (err) {
         console.error('Search error:', err)
       } finally {
@@ -84,7 +99,8 @@ export const GlobalSearchModal: React.FC<GlobalSearchModalProps> = ({ open, onOp
     clientes.length > 0 ||
     fornecedores.length > 0 ||
     contasPagar.length > 0 ||
-    contasReceber.length > 0
+    contasReceber.length > 0 ||
+    veiculos.length > 0
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -229,6 +245,40 @@ export const GlobalSearchModal: React.FC<GlobalSearchModalProps> = ({ open, onOp
                       </div>
                       <div className="text-[10px] text-gray-400 uppercase">{cr.status}</div>
                     </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {veiculos.length > 0 && (
+            <div>
+              <div className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2 flex items-center gap-1.5">
+                <Construction className="w-3.5 h-3.5 text-amber-600" />
+                Veículos & Máquinas (Frota Pedreira)
+              </div>
+              <div className="space-y-1">
+                {veiculos.map((v) => (
+                  <div
+                    key={v.id}
+                    onClick={() => handleSelect(`/frotas/veiculos`)}
+                    className="p-2.5 rounded-lg hover:bg-[#FAF9F7] cursor-pointer flex justify-between items-center transition-colors border border-transparent hover:border-[#ECEAE4]"
+                  >
+                    <div>
+                      <div className="text-sm font-medium text-gray-800 flex items-center gap-2">
+                        <span className="font-mono text-teal-800 font-bold">
+                          {v.codigo_interno}
+                        </span>
+                        <span>•</span>
+                        <span>{v.modelo}</span>
+                      </div>
+                      <div className="text-xs text-gray-400">
+                        {v.tipo} • {v.medidor_atual} {v.tipo_medidor === 'km' ? 'km' : 'horas'}
+                      </div>
+                    </div>
+                    <span className="text-xs text-amber-800 bg-amber-50 px-2 py-0.5 rounded-md font-medium">
+                      Ver frota
+                    </span>
                   </div>
                 ))}
               </div>

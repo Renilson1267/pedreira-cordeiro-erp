@@ -9,6 +9,9 @@ import type {
   Fornecedor,
   Cliente,
   PlanoConta,
+  Veiculo,
+  Abastecimento,
+  Manutencao,
 } from '@/types/erp'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -28,6 +31,10 @@ import {
   Calendar,
   Layers,
   ArrowRight,
+  Truck,
+  Fuel,
+  Wrench,
+  Construction,
 } from 'lucide-react'
 import {
   ResponsiveContainer,
@@ -55,13 +62,16 @@ export default function Relatorios() {
   const [fornecedores, setFornecedores] = useState<Fornecedor[]>([])
   const [clientes, setClientes] = useState<Cliente[]>([])
   const [planoContas, setPlanoContas] = useState<PlanoConta[]>([])
+  const [veiculos, setVeiculos] = useState<Veiculo[]>([])
+  const [abastecimentos, setAbastecimentos] = useState<Abastecimento[]>([])
+  const [manutencoes, setManutencoes] = useState<Manutencao[]>([])
   const [loading, setLoading] = useState(false)
 
   const loadData = async () => {
     if (!currentEmpresa) return
     try {
       setLoading(true)
-      const [m, cp, cr, f, c, pc] = await Promise.all([
+      const [m, cp, cr, f, c, pc, v, ab, mn] = await Promise.all([
         pb.collection('movimentos_financeiros').getFullList<MovimentoFinanceiro>({
           filter: `empresa_id = '${currentEmpresa.id}'`,
           expand: 'categoria_id',
@@ -84,6 +94,20 @@ export default function Relatorios() {
         pb.collection('plano_contas').getFullList<PlanoConta>({
           filter: `empresa_id = '${currentEmpresa.id}'`,
         }),
+        pb.collection('veiculos').getFullList<Veiculo>({
+          filter: `empresa_id = '${currentEmpresa.id}'`,
+          sort: 'codigo_interno',
+        }),
+        pb.collection('abastecimentos').getFullList<Abastecimento>({
+          filter: `empresa_id = '${currentEmpresa.id}'`,
+          expand: 'veiculo_id',
+          sort: '-data',
+        }),
+        pb.collection('manutencoes').getFullList<Manutencao>({
+          filter: `empresa_id = '${currentEmpresa.id}'`,
+          expand: 'veiculo_id',
+          sort: '-data',
+        }),
       ])
 
       setMovimentos(m)
@@ -92,6 +116,9 @@ export default function Relatorios() {
       setFornecedores(f)
       setClientes(c)
       setPlanoContas(pc)
+      setVeiculos(v)
+      setAbastecimentos(ab)
+      setManutencoes(mn)
     } catch (err) {
       console.error('Error fetching reports data:', err)
     } finally {
@@ -141,6 +168,14 @@ export default function Relatorios() {
       description: 'Livro caixa integral com filtros, conciliações, data a data para auditoria.',
       icon: BookOpen,
       color: 'bg-blue-50 text-blue-700',
+    },
+    {
+      id: 'relatorio_frotas',
+      title: 'Relatório Operacional de Frotas',
+      description:
+        'Custo por equipamento na pedreira, combustível vs manutenção, consumo médio e horas/km.',
+      icon: Construction,
+      color: 'bg-orange-50 text-orange-700',
     },
   ]
 
@@ -198,6 +233,50 @@ export default function Relatorios() {
     })
     return Object.values(map).sort((a, b) => b.total - a.total)
   }, [filteredMovimentos])
+
+  // Aggregation for relatorio_frotas
+  const frotasPorVeiculo = useMemo(() => {
+    if (!selectedMes) return []
+    const [year, month] = selectedMes.split('-')
+
+    // Filtrar abastecimentos e manutenções do mês
+    const abMes = abastecimentos.filter((a) => {
+      const d = new Date(a.data)
+      return d.getFullYear() === Number(year) && d.getMonth() + 1 === Number(month)
+    })
+    const manMes = manutencoes.filter((m) => {
+      const d = new Date(m.data)
+      return d.getFullYear() === Number(year) && d.getMonth() + 1 === Number(month)
+    })
+
+    return veiculos
+      .map((v) => {
+        const vAb = abMes.filter((a) => a.veiculo_id === v.id)
+        const vMan = manMes.filter((m) => m.veiculo_id === v.id)
+
+        const litrosTotal = vAb.reduce((acc, a) => acc + (a.litros || 0), 0)
+        const custoCombustivel = vAb.reduce((acc, a) => acc + (a.valor_total || 0), 0)
+        const custoManutencao = vMan.reduce((acc, m) => acc + (m.custo || 0), 0)
+        const custoTotal = custoCombustivel + custoManutencao
+
+        // Consumo médio ponderado dos registros com consumo
+        const abComConsumo = vAb.filter((a) => a.consumo_medio && a.consumo_medio > 0)
+        const mediaConsumo =
+          abComConsumo.length > 0
+            ? abComConsumo.reduce((acc, a) => acc + (a.consumo_medio || 0), 0) / abComConsumo.length
+            : 0
+
+        return {
+          veiculo: v,
+          litrosTotal,
+          custoCombustivel,
+          custoManutencao,
+          custoTotal,
+          mediaConsumo,
+        }
+      })
+      .sort((a, b) => b.custoTotal - a.custoTotal)
+  }, [veiculos, abastecimentos, manutencoes, selectedMes])
 
   const exportCSV = (filename: string, headers: string[], rows: (string | number)[][]) => {
     let content = headers.join(';') + '\r\n'
@@ -319,6 +398,34 @@ export default function Relatorios() {
                           cat.nome,
                           cat.tipo,
                           cat.total.toFixed(2),
+                        ]),
+                      )
+                    } else if (activeReport === 'relatorio_frotas') {
+                      exportCSV(
+                        `Frotas_Pedreira_${selectedMes}`,
+                        [
+                          'Código',
+                          'Modelo',
+                          'Tipo',
+                          'Medidor Atual',
+                          'Litros Abastecidos',
+                          'Custo Combustível (R$)',
+                          'Custo Manutenção (R$)',
+                          'Custo Total (R$)',
+                          'Consumo Médio',
+                        ],
+                        frotasPorVeiculo.map((item) => [
+                          item.veiculo.codigo_interno,
+                          item.veiculo.modelo,
+                          item.veiculo.tipo,
+                          `${item.veiculo.medidor_atual} ${item.veiculo.tipo_medidor}`,
+                          item.litrosTotal.toFixed(1),
+                          item.custoCombustivel.toFixed(2),
+                          item.custoManutencao.toFixed(2),
+                          item.custoTotal.toFixed(2),
+                          item.mediaConsumo > 0
+                            ? `${item.mediaConsumo.toFixed(2)} ${item.veiculo.tipo_medidor === 'km' ? 'km/l' : 'l/h'}`
+                            : '—',
                         ]),
                       )
                     } else {
@@ -546,6 +653,91 @@ export default function Relatorios() {
                     ))}
                   </tbody>
                 </table>
+              </div>
+            )}
+
+            {/* 6. Relatório Operacional de Frotas */}
+            {activeReport === 'relatorio_frotas' && (
+              <div className="space-y-6">
+                {/* Gráfico Comparativo Combustível vs Manutenção */}
+                <div className="h-64 w-full">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart
+                      data={frotasPorVeiculo.map((item) => ({
+                        nome: item.veiculo.codigo_interno,
+                        Combustível: item.custoCombustivel,
+                        Manutenção: item.custoManutencao,
+                      }))}
+                      margin={{ top: 10, right: 10, left: 0, bottom: 0 }}
+                    >
+                      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#ECEAE4" />
+                      <XAxis dataKey="nome" />
+                      <YAxis tickFormatter={(val) => `R$${(val / 1000).toFixed(0)}k`} />
+                      <Tooltip formatter={(val: any) => formatCurrency(Number(val))} />
+                      <Legend />
+                      <Bar dataKey="Combustível" fill="#0F766E" radius={[4, 4, 0, 0]} />
+                      <Bar dataKey="Manutenção" fill="#F59E0B" radius={[4, 4, 0, 0]} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+
+                <div className="border border-[#ECEAE4] rounded-2xl overflow-hidden">
+                  <table className="w-full text-left text-xs">
+                    <thead className="bg-[#FAF9F7] border-b border-[#ECEAE4] text-gray-500 uppercase font-semibold">
+                      <tr>
+                        <th className="py-2.5 px-4">Equipamento</th>
+                        <th className="py-2.5 px-4 text-right">Litros</th>
+                        <th className="py-2.5 px-4 text-right">Combustível</th>
+                        <th className="py-2.5 px-4 text-right">Manutenção</th>
+                        <th className="py-2.5 px-4 text-right">Custo Total</th>
+                        <th className="py-2.5 px-4 text-right">Consumo Médio</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-[#ECEAE4]">
+                      {frotasPorVeiculo.map((item) => {
+                        const isKm = item.veiculo.tipo_medidor === 'km'
+                        return (
+                          <tr key={item.veiculo.id} className="hover:bg-gray-50/50">
+                            <td className="py-2.5 px-4">
+                              <div className="font-semibold text-gray-900 flex items-center gap-1.5">
+                                <span className="font-mono text-teal-800">
+                                  {item.veiculo.codigo_interno}
+                                </span>
+                                <span>•</span>
+                                <span className="text-gray-700">{item.veiculo.modelo}</span>
+                              </div>
+                              <div className="text-[10px] text-gray-400 font-mono">
+                                {Number(item.veiculo.medidor_atual).toLocaleString('pt-BR')}{' '}
+                                {isKm ? 'km' : 'horas'}
+                              </div>
+                            </td>
+                            <td className="py-2.5 px-4 text-right font-mono text-gray-700">
+                              {item.litrosTotal > 0 ? `${item.litrosTotal.toFixed(1)} L` : '—'}
+                            </td>
+                            <td className="py-2.5 px-4 text-right font-mono text-teal-800 tabular-nums">
+                              {formatCurrency(item.custoCombustivel)}
+                            </td>
+                            <td className="py-2.5 px-4 text-right font-mono text-amber-700 tabular-nums">
+                              {formatCurrency(item.custoManutencao)}
+                            </td>
+                            <td className="py-2.5 px-4 text-right font-mono font-bold text-red-600 tabular-nums">
+                              {formatCurrency(item.custoTotal)}
+                            </td>
+                            <td className="py-2.5 px-4 text-right font-mono">
+                              {item.mediaConsumo > 0 ? (
+                                <span className="px-1.5 py-0.5 rounded bg-gray-100 text-gray-800 font-semibold">
+                                  {item.mediaConsumo.toFixed(2)} {isKm ? 'km/l' : 'l/h'}
+                                </span>
+                              ) : (
+                                <span className="text-gray-400">—</span>
+                              )}
+                            </td>
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                  </table>
+                </div>
               </div>
             )}
           </div>

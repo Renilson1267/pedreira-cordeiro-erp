@@ -189,3 +189,84 @@ export interface EmpresaConvite {
   created: string
   updated: string
 }
+
+export type TipoVeiculo =
+  | 'caminhao'
+  | 'escavadeira'
+  | 'carregadeira'
+  | 'perfuratriz'
+  | 'trator'
+  | 'outro'
+
+export type TipoMedidor = 'km' | 'horas'
+export type StatusVeiculo = 'ativo' | 'manutencao' | 'inativo'
+
+export interface Veiculo {
+  id: string
+  empresa_id: string
+  codigo_interno: string
+  placa?: string
+  tipo: TipoVeiculo
+  marca?: string
+  modelo: string
+  ano?: number
+  tipo_medidor: TipoMedidor
+  medidor_atual: number
+  combustivel_padrao?: string
+  status: StatusVeiculo
+  observacoes?: string
+  created: string
+  updated: string
+}
+
+export interface Abastecimento {
+  id: string
+  empresa_id: string
+  veiculo_id: string
+  data: string
+  combustivel: 'Diesel S10' | 'Diesel S500' | 'Gasolina' | 'Etanol' | 'Arla 32'
+  litros: number
+  preco_litro: number
+  valor_total: number
+  medidor: number
+  medidor_anterior?: number
+  distancia_percorrida?: number
+  consumo_medio?: number
+  custo_por_unidade?: number
+  fornecedor_id?: string
+  conta_pagar_id?: string
+  motorista_operador?: string
+  observacoes?: string
+  created: string
+  updated: string
+  expand?: {
+    veiculo_id?: Veiculo
+    fornecedor_id?: Fornecedor
+    conta_pagar_id?: ContaPagar
+  }
+}
+
+export interface Manutencao {
+  id: string
+  empresa_id: string
+  veiculo_id: string
+  tipo: 'preventiva' | 'corretiva'
+  descricao: string
+  fornecedor_id?: string
+  oficina_nome?: string
+  data: string
+  medidor_no_momento?: number
+  custo: number
+  proxima_revisao_data?: string
+  proxima_revisao_medidor?: number
+  conta_pagar_id?: string
+  status: 'agendada' | 'em_andamento' | 'concluida' | 'cancelada'
+  observacoes?: string
+  created: string
+  updated: string
+  expand?: {
+    veiculo_id?: Veiculo
+    fornecedor_id?: Fornecedor
+    conta_pagar_id?: ContaPagar
+  }
+}
