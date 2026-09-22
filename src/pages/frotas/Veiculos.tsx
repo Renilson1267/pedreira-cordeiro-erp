@@ -2,8 +2,9 @@ import React, { useState, useEffect, useMemo } from 'react'
 import { useCompany } from '@/contexts/CompanyContext'
 import pb from '@/lib/pocketbase/client'
 import { useRealtime } from '@/hooks/use-realtime'
+import { formatCurrency } from '@/lib/formatters'
 import type { Veiculo, TipoVeiculo, TipoMedidor, StatusVeiculo } from '@/types/erp'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -31,16 +32,34 @@ import {
   AlertCircle,
   Construction,
   Filter,
+  DollarSign,
+  Building2,
 } from 'lucide-react'
 
-const TIPO_LABELS: Record<TipoVeiculo, { label: string; icon: string }> = {
-  caminhao: { label: 'Caminhão Basculante', icon: '🚛' },
+export const TIPO_LABELS: Record<TipoVeiculo, { label: string; icon: string }> = {
+  caminhao: { label: 'Caminhão Basculante / Caçamba', icon: '🚛' },
   escavadeira: { label: 'Escavadeira Hidráulica', icon: '🚜' },
   carregadeira: { label: 'Pá Carregadeira', icon: '🚜' },
   perfuratriz: { label: 'Perfuratriz Hidráulica', icon: '⚙️' },
   trator: { label: 'Trator / Motoniveladora', icon: '🚜' },
+  betoneira: { label: 'Caminhão Betoneira', icon: '🚚' },
+  pipa: { label: 'Caminhão Pipa', icon: '🚛' },
+  bomba: { label: 'Bomba de Concreto', icon: '🚜' },
+  central_concreto: { label: 'Central de Concreto (Usina)', icon: '🏭' },
+  britador: { label: 'Britador / Lokotrack', icon: '⚙️' },
+  peneira: { label: 'Peneira Classificadora', icon: '🏗️' },
+  moto: { label: 'Motocicleta', icon: '🏍️' },
+  carro_passeio: { label: 'Carro de Passeio / Pickup 4x4', icon: '🛻' },
   outro: { label: 'Outro Equipamento', icon: '🏗️' },
 }
+
+export const SETORES_PEDREIRA = [
+  'Central Britagem',
+  'Entrega de Brita',
+  'Central de Concreto',
+  'Central Britagem Lokotrack',
+  'Engenharia / Supervisão',
+]
 
 export default function Veiculos() {
   const { currentEmpresa, canEdit } = useCompany()
@@ -49,6 +68,7 @@ export default function Veiculos() {
   const [loading, setLoading] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
   const [tipoFilter, setTipoFilter] = useState<string>('todos')
+  const [setorFilter, setSetorFilter] = useState<string>('todos')
   const [statusFilter, setStatusFilter] = useState<string>('todos')
 
   // Drawer Form
@@ -61,8 +81,11 @@ export default function Veiculos() {
   const [marca, setMarca] = useState('')
   const [modelo, setModelo] = useState('')
   const [ano, setAno] = useState<number>(new Date().getFullYear())
-  const [tipoMedidor, setTipoMedidor] = useState<TipoMedidor>('km')
-  const [medidorAtual, setMedidorAtual] = useState<number>(0)
+  const [setor, setSetor] = useState('Central Britagem')
+  const [valorEstimado, setValorEstimado] = useState<number>(0)
+  const [tipoMedidor, setTipoMedidor] = useState<TipoMedidor>('ambos')
+  const [kmAtual, setKmAtual] = useState<number>(0)
+  const [horimetroAtual, setHorimetroAtual] = useState<number>(0)
   const [combustivelPadrao, setCombustivelPadrao] = useState('Diesel S10')
   const [status, setStatus] = useState<StatusVeiculo>('ativo')
   const [observacoes, setObservacoes] = useState('')
@@ -98,8 +121,11 @@ export default function Veiculos() {
     setMarca('')
     setModelo('')
     setAno(new Date().getFullYear())
-    setTipoMedidor('km')
-    setMedidorAtual(0)
+    setSetor('Central Britagem')
+    setValorEstimado(0)
+    setTipoMedidor('ambos')
+    setKmAtual(0)
+    setHorimetroAtual(0)
     setCombustivelPadrao('Diesel S10')
     setStatus('ativo')
     setObservacoes('')
@@ -114,8 +140,11 @@ export default function Veiculos() {
     setMarca(v.marca || '')
     setModelo(v.modelo)
     setAno(v.ano || new Date().getFullYear())
-    setTipoMedidor(v.tipo_medidor)
-    setMedidorAtual(v.medidor_atual)
+    setSetor(v.setor || 'Central Britagem')
+    setValorEstimado(v.valor_estimado || 0)
+    setTipoMedidor(v.tipo_medidor || 'ambos')
+    setKmAtual(v.km_atual || 0)
+    setHorimetroAtual(v.horimetro_atual || 0)
     setCombustivelPadrao(v.combustivel_padrao || 'Diesel S10')
     setStatus(v.status)
     setObservacoes(v.observacoes || '')
@@ -139,8 +168,12 @@ export default function Veiculos() {
         marca: marca.trim() || null,
         modelo: modelo.trim(),
         ano: Number(ano) || null,
+        setor,
+        valor_estimado: Number(valorEstimado) || 0,
         tipo_medidor: tipoMedidor,
-        medidor_atual: Number(medidorAtual) || 0,
+        km_atual: Number(kmAtual) || 0,
+        horimetro_atual: Number(horimetroAtual) || 0,
+        medidor_atual: Number(kmAtual) > 0 ? Number(kmAtual) : Number(horimetroAtual) || 0,
         combustivel_padrao: combustivelPadrao,
         status,
         observacoes: observacoes.trim() || null,
@@ -168,10 +201,10 @@ export default function Veiculos() {
   }
 
   const handleDelete = async (id: string, codigo: string) => {
-    if (!confirm(`Deseja realmente remover o veículo/máquina ${codigo}?`)) return
+    if (!confirm(`Deseja realmente remover o equipamento ${codigo}?`)) return
     try {
       await pb.collection('veiculos').delete(id)
-      toast({ title: 'Veículo excluído com sucesso.' })
+      toast({ title: 'Equipamento excluído com sucesso.' })
       await loadVeiculos()
     } catch (err: any) {
       toast({
@@ -186,6 +219,7 @@ export default function Veiculos() {
   const filteredVeiculos = useMemo(() => {
     return veiculos.filter((v) => {
       if (tipoFilter !== 'todos' && v.tipo !== tipoFilter) return false
+      if (setorFilter !== 'todos' && v.setor !== setorFilter) return false
       if (statusFilter !== 'todos' && v.status !== statusFilter) return false
       if (searchQuery.trim()) {
         const q = searchQuery.toLowerCase()
@@ -193,18 +227,19 @@ export default function Veiculos() {
           v.codigo_interno.toLowerCase().includes(q) ||
           v.modelo.toLowerCase().includes(q) ||
           (v.marca && v.marca.toLowerCase().includes(q)) ||
-          (v.placa && v.placa.toLowerCase().includes(q))
+          (v.placa && v.placa.toLowerCase().includes(q)) ||
+          (v.setor && v.setor.toLowerCase().includes(q))
         )
       }
       return true
     })
-  }, [veiculos, tipoFilter, statusFilter, searchQuery])
+  }, [veiculos, tipoFilter, setorFilter, statusFilter, searchQuery])
 
   // KPIs
+  const totalEquipamentos = veiculos.length
   const totalAtivos = veiculos.filter((v) => v.status === 'ativo').length
   const totalManutencao = veiculos.filter((v) => v.status === 'manutencao').length
-  const totalCaminhoes = veiculos.filter((v) => v.tipo === 'caminhao').length
-  const totalMaquinas = veiculos.filter((v) => v.tipo !== 'caminhao').length
+  const valorTotalFrota = veiculos.reduce((acc, v) => acc + (v.valor_estimado || 0), 0)
 
   return (
     <div className="space-y-6">
@@ -213,15 +248,15 @@ export default function Veiculos() {
         <div>
           <div className="flex items-center gap-2">
             <h1 className="text-2xl font-bold tracking-tight text-gray-900">
-              Veículos & Equipamentos de Pedreira
+              Frota & Maquinário Real da Pedreira
             </h1>
             <Badge className="bg-amber-100 text-amber-900 border-amber-300">
-              Operação de Lavra
+              GC do Amaral Sertânia - ME
             </Badge>
           </div>
           <p className="text-xs text-gray-500 mt-1">
-            Gestão de frota pesada: caminhões traçados, escavadeiras, pás carregadeiras e
-            perfuratrizes
+            Controle duplo independente por Km (odômetro) e Horas (horímetro) em todas as áreas
+            operacionais
           </p>
         </div>
 
@@ -231,7 +266,7 @@ export default function Veiculos() {
             className="bg-teal-700 hover:bg-teal-800 text-white rounded-xl shadow-xs"
           >
             <Plus className="w-4 h-4 mr-1.5" />
-            Novo Veículo / Máquina
+            Novo Equipamento
           </Button>
         )}
       </div>
@@ -240,13 +275,24 @@ export default function Veiculos() {
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
         <Card className="rounded-2xl border-[#ECEAE4] bg-white shadow-xs p-4">
           <div className="flex items-center justify-between">
+            <span className="text-xs font-semibold text-gray-500 uppercase">Frota Total</span>
+            <div className="w-7 h-7 rounded-lg bg-teal-50 text-teal-700 flex items-center justify-center">
+              <Construction className="w-4 h-4" />
+            </div>
+          </div>
+          <div className="text-2xl font-bold text-gray-900 mt-2 font-mono">{totalEquipamentos}</div>
+          <p className="text-[11px] text-teal-700 mt-0.5">Veículos & Máquinas reais</p>
+        </Card>
+
+        <Card className="rounded-2xl border-[#ECEAE4] bg-white shadow-xs p-4">
+          <div className="flex items-center justify-between">
             <span className="text-xs font-semibold text-gray-500 uppercase">Em Operação</span>
             <div className="w-7 h-7 rounded-lg bg-emerald-50 text-emerald-700 flex items-center justify-center">
               <CheckCircle2 className="w-4 h-4" />
             </div>
           </div>
-          <div className="text-2xl font-bold text-gray-900 mt-2">{totalAtivos}</div>
-          <p className="text-[11px] text-emerald-600 mt-0.5">Veículos e máquinas ativos</p>
+          <div className="text-2xl font-bold text-gray-900 mt-2 font-mono">{totalAtivos}</div>
+          <p className="text-[11px] text-emerald-600 mt-0.5">Equipamentos ativos</p>
         </Card>
 
         <Card className="rounded-2xl border-[#ECEAE4] bg-white shadow-xs p-4">
@@ -256,30 +302,23 @@ export default function Veiculos() {
               <Wrench className="w-4 h-4" />
             </div>
           </div>
-          <div className="text-2xl font-bold text-amber-900 mt-2">{totalManutencao}</div>
-          <p className="text-[11px] text-amber-700 mt-0.5">Parados na oficina</p>
+          <div className="text-2xl font-bold text-amber-900 mt-2 font-mono">{totalManutencao}</div>
+          <p className="text-[11px] text-amber-700 mt-0.5">Parados em oficina</p>
         </Card>
 
         <Card className="rounded-2xl border-[#ECEAE4] bg-white shadow-xs p-4">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold text-gray-500 uppercase">Caminhões</span>
+            <span className="text-xs font-semibold text-gray-500 uppercase">
+              Patrimônio Avaliado
+            </span>
             <div className="w-7 h-7 rounded-lg bg-blue-50 text-blue-700 flex items-center justify-center">
-              <Truck className="w-4 h-4" />
+              <DollarSign className="w-4 h-4" />
             </div>
           </div>
-          <div className="text-2xl font-bold text-gray-900 mt-2">{totalCaminhoes}</div>
-          <p className="text-[11px] text-gray-400 mt-0.5">Basculantes / Rodoviários</p>
-        </Card>
-
-        <Card className="rounded-2xl border-[#ECEAE4] bg-white shadow-xs p-4">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold text-gray-500 uppercase">Máquinas de Linha</span>
-            <div className="w-7 h-7 rounded-lg bg-purple-50 text-purple-700 flex items-center justify-center">
-              <Construction className="w-4 h-4" />
-            </div>
+          <div className="text-xl font-bold text-blue-900 mt-2 font-mono tabular-nums truncate">
+            {formatCurrency(valorTotalFrota)}
           </div>
-          <div className="text-2xl font-bold text-gray-900 mt-2">{totalMaquinas}</div>
-          <p className="text-[11px] text-gray-400 mt-0.5">Escavadeiras, Carregadeiras...</p>
+          <p className="text-[11px] text-gray-400 mt-0.5">Valor da frota cadastrada</p>
         </Card>
       </div>
 
@@ -287,23 +326,43 @@ export default function Veiculos() {
       <Card className="rounded-2xl border-[#ECEAE4] bg-white shadow-xs p-4">
         <div className="flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-3">
           <div className="flex flex-wrap items-center gap-2">
+            <Select value={setorFilter} onValueChange={setSetorFilter}>
+              <SelectTrigger className="w-[200px] bg-[#FAF9F7] border-[#ECEAE4] text-xs h-9">
+                <SelectValue placeholder="Setor / Área" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="todos">Todos os Setores (Áreas)</SelectItem>
+                {SETORES_PEDREIRA.map((s) => (
+                  <SelectItem key={s} value={s}>
+                    {s}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+
             <Select value={tipoFilter} onValueChange={setTipoFilter}>
               <SelectTrigger className="w-[180px] bg-[#FAF9F7] border-[#ECEAE4] text-xs h-9">
                 <SelectValue placeholder="Tipo de Máquina" />
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="todos">Todos os Tipos</SelectItem>
-                <SelectItem value="caminhao">Caminhões</SelectItem>
-                <SelectItem value="escavadeira">Escavadeiras</SelectItem>
+                <SelectItem value="escavadeira">Escavadeiras Hidráulicas</SelectItem>
                 <SelectItem value="carregadeira">Pás Carregadeiras</SelectItem>
-                <SelectItem value="perfuratriz">Perfuratrizes</SelectItem>
-                <SelectItem value="trator">Tratores / Motoniveladoras</SelectItem>
+                <SelectItem value="caminhao">Caminhões / Caçambas</SelectItem>
+                <SelectItem value="betoneira">Caminhões Betoneira</SelectItem>
+                <SelectItem value="pipa">Caminhões Pipa</SelectItem>
+                <SelectItem value="bomba">Bombas de Concreto</SelectItem>
+                <SelectItem value="britador">Lokotrack / Britadores</SelectItem>
+                <SelectItem value="peneira">Peneiras Classificadoras</SelectItem>
+                <SelectItem value="central_concreto">Centrais de Concreto</SelectItem>
+                <SelectItem value="carro_passeio">Carros / Pickups</SelectItem>
+                <SelectItem value="moto">Motos</SelectItem>
                 <SelectItem value="outro">Outros</SelectItem>
               </SelectContent>
             </Select>
 
             <Select value={statusFilter} onValueChange={setStatusFilter}>
-              <SelectTrigger className="w-[150px] bg-[#FAF9F7] border-[#ECEAE4] text-xs h-9">
+              <SelectTrigger className="w-[140px] bg-[#FAF9F7] border-[#ECEAE4] text-xs h-9">
                 <SelectValue placeholder="Status" />
               </SelectTrigger>
               <SelectContent>
@@ -314,12 +373,16 @@ export default function Veiculos() {
               </SelectContent>
             </Select>
 
-            {(tipoFilter !== 'todos' || statusFilter !== 'todos' || searchQuery) && (
+            {(tipoFilter !== 'todos' ||
+              setorFilter !== 'todos' ||
+              statusFilter !== 'todos' ||
+              searchQuery) && (
               <Button
                 variant="ghost"
                 size="sm"
                 onClick={() => {
                   setTipoFilter('todos')
+                  setSetorFilter('todos')
                   setStatusFilter('todos')
                   setSearchQuery('')
                 }}
@@ -333,7 +396,7 @@ export default function Veiculos() {
           <div className="relative w-full lg:w-72">
             <Search className="w-4 h-4 absolute left-3 top-2.5 text-gray-400" />
             <Input
-              placeholder="Buscar código, modelo, placa..."
+              placeholder="Buscar código, modelo, placa, área..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className="pl-9 bg-[#FAF9F7] border-[#ECEAE4] text-xs h-9 rounded-xl"
@@ -350,11 +413,12 @@ export default function Veiculos() {
               <tr className="bg-[#FAF9F7] border-b border-[#ECEAE4] text-gray-500 uppercase font-semibold">
                 <th className="py-3 px-4">Cód. Interno</th>
                 <th className="py-3 px-4">Equipamento / Modelo</th>
+                <th className="py-3 px-4">Área / Setor</th>
                 <th className="py-3 px-4">Tipo</th>
-                <th className="py-3 px-4">Placa / Chassi</th>
-                <th className="py-3 px-4">Ano</th>
-                <th className="py-3 px-4 text-right">Horímetro / Km Atual</th>
-                <th className="py-3 px-4 text-center">Combustível</th>
+                <th className="py-3 px-4">Placa</th>
+                <th className="py-3 px-4 text-right">Km (Odômetro)</th>
+                <th className="py-3 px-4 text-right">Horímetro (Horas)</th>
+                <th className="py-3 px-4 text-right">Valor Avaliado</th>
                 <th className="py-3 px-4 text-center">Status</th>
                 <th className="py-3 px-4 text-right">Ações</th>
               </tr>
@@ -362,13 +426,15 @@ export default function Veiculos() {
             <tbody className="divide-y divide-[#ECEAE4]">
               {filteredVeiculos.length === 0 ? (
                 <tr>
-                  <td colSpan={9} className="py-12 text-center text-gray-400">
+                  <td colSpan={10} className="py-12 text-center text-gray-400">
                     Nenhum veículo ou equipamento encontrado para os filtros aplicados.
                   </td>
                 </tr>
               ) : (
                 filteredVeiculos.map((v) => {
-                  const isKm = v.tipo_medidor === 'km'
+                  const hasKm = (v.km_atual || 0) > 0
+                  const hasHoras = (v.horimetro_atual || 0) > 0
+
                   return (
                     <tr key={v.id} className="hover:bg-teal-50/20 transition-colors">
                       <td className="py-3.5 px-4 font-mono font-bold text-teal-800">
@@ -376,34 +442,49 @@ export default function Veiculos() {
                       </td>
                       <td className="py-3.5 px-4">
                         <div className="font-semibold text-gray-900">{v.modelo}</div>
-                        {v.marca && <div className="text-[11px] text-gray-400">{v.marca}</div>}
+                        <div className="text-[11px] text-gray-400 flex items-center gap-1">
+                          {v.marca && <span>{v.marca}</span>}
+                          {v.ano && <span>• Ano {v.ano}</span>}
+                        </div>
                       </td>
                       <td className="py-3.5 px-4">
-                        <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-gray-100 text-gray-700 text-[11px]">
+                        <span className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-medium bg-slate-100 text-slate-800">
+                          {v.setor || 'Geral'}
+                        </span>
+                      </td>
+                      <td className="py-3.5 px-4">
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-gray-100 text-gray-700 text-[11px]">
                           <span>{TIPO_LABELS[v.tipo]?.icon || '🚛'}</span>
-                          <span>{TIPO_LABELS[v.tipo]?.label || v.tipo}</span>
+                          <span className="truncate max-w-[120px]">
+                            {TIPO_LABELS[v.tipo]?.label.split('/')[0] || v.tipo}
+                          </span>
                         </span>
                       </td>
                       <td className="py-3.5 px-4 font-mono uppercase text-gray-600">
                         {v.placa || '—'}
                       </td>
-                      <td className="py-3.5 px-4 text-gray-500 font-mono">{v.ano || '—'}</td>
                       <td className="py-3.5 px-4 text-right">
-                        <div className="font-mono font-bold text-gray-900 tabular-nums">
-                          {Number(v.medidor_atual).toLocaleString('pt-BR')}{' '}
-                          <span className="text-[10px] text-gray-500 font-normal">
-                            {isKm ? 'km' : 'horas'}
-                          </span>
-                        </div>
-                        <div className="text-[10px] text-gray-400 flex items-center justify-end gap-1">
-                          {isKm ? <Gauge className="w-3 h-3" /> : <Clock className="w-3 h-3" />}
-                          <span>{isKm ? 'Odômetro' : 'Horímetro'}</span>
-                        </div>
+                        {hasKm ? (
+                          <div className="font-mono font-bold text-gray-900 tabular-nums">
+                            {Number(v.km_atual).toLocaleString('pt-BR')}{' '}
+                            <span className="text-[10px] text-gray-500 font-normal">km</span>
+                          </div>
+                        ) : (
+                          <span className="text-gray-400 font-mono text-[11px]">—</span>
+                        )}
                       </td>
-                      <td className="py-3.5 px-4 text-center">
-                        <Badge variant="outline" className="text-[10px]">
-                          {v.combustivel_padrao || 'Diesel'}
-                        </Badge>
+                      <td className="py-3.5 px-4 text-right">
+                        {hasHoras ? (
+                          <div className="font-mono font-bold text-amber-800 tabular-nums">
+                            {Number(v.horimetro_atual).toLocaleString('pt-BR')}{' '}
+                            <span className="text-[10px] text-amber-600 font-normal">h</span>
+                          </div>
+                        ) : (
+                          <span className="text-gray-400 font-mono text-[11px]">—</span>
+                        )}
+                      </td>
+                      <td className="py-3.5 px-4 text-right font-mono font-medium text-gray-800 tabular-nums">
+                        {v.valor_estimado ? formatCurrency(v.valor_estimado) : '—'}
                       </td>
                       <td className="py-3.5 px-4 text-center">
                         <span
@@ -430,7 +511,7 @@ export default function Veiculos() {
                               variant="ghost"
                               onClick={() => handleEdit(v)}
                               className="h-7 w-7 p-0 text-gray-400 hover:text-gray-800"
-                              title="Editar Veículo"
+                              title="Editar Equipamento"
                             >
                               <Edit2 className="w-3.5 h-3.5" />
                             </Button>
@@ -459,10 +540,10 @@ export default function Veiculos() {
 
       {/* Drawer Create / Edit */}
       <Sheet open={isDrawerOpen} onOpenChange={setIsDrawerOpen}>
-        <SheetContent className="sm:max-w-[520px] w-full bg-white border-l border-[#ECEAE4] p-6 overflow-y-auto">
+        <SheetContent className="sm:max-w-[560px] w-full bg-white border-l border-[#ECEAE4] p-6 overflow-y-auto">
           <SheetHeader>
             <SheetTitle className="text-lg font-bold text-gray-900">
-              {editingId ? 'Editar Veículo / Máquina' : 'Novo Veículo ou Equipamento'}
+              {editingId ? 'Editar Equipamento / Veículo' : 'Novo Equipamento da Frota'}
             </SheetTitle>
           </SheetHeader>
 
@@ -474,7 +555,7 @@ export default function Veiculos() {
                   required
                   value={codigoInterno}
                   onChange={(e) => setCodigoInterno(e.target.value)}
-                  placeholder="Ex: CAM-01, ESC-02"
+                  placeholder="Ex: CBR-ESC-01, ENT-CAC-01"
                   className="mt-1 font-mono uppercase"
                 />
               </div>
@@ -483,7 +564,7 @@ export default function Veiculos() {
                 <Input
                   value={placa}
                   onChange={(e) => setPlaca(e.target.value)}
-                  placeholder="Ex: BRA2E19 ou ESC-01"
+                  placeholder="Ex: OEZ-4I27 ou PC24/CE"
                   className="mt-1 font-mono uppercase"
                 />
               </div>
@@ -491,41 +572,44 @@ export default function Veiculos() {
 
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <Label className="text-xs font-semibold text-gray-700">Tipo de Equipamento *</Label>
-                <Select
-                  value={tipo}
-                  onValueChange={(v: TipoVeiculo) => {
-                    setTipo(v)
-                    // Se for máquina de lavra, padrão costuma ser horas (horímetro)
-                    if (['escavadeira', 'carregadeira', 'perfuratriz', 'trator'].includes(v)) {
-                      setTipoMedidor('horas')
-                    } else if (v === 'caminhao') {
-                      setTipoMedidor('km')
-                    }
-                  }}
-                >
+                <Label className="text-xs font-semibold text-gray-700">Área / Setor *</Label>
+                <Select value={setor} onValueChange={setSetor}>
                   <SelectTrigger className="mt-1">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="caminhao">Caminhão Basculante</SelectItem>
-                    <SelectItem value="escavadeira">Escavadeira Hidráulica</SelectItem>
-                    <SelectItem value="carregadeira">Pá Carregadeira</SelectItem>
-                    <SelectItem value="perfuratriz">Perfuratriz Hidráulica</SelectItem>
-                    <SelectItem value="trator">Trator / Motoniveladora</SelectItem>
-                    <SelectItem value="outro">Outro Equipamento</SelectItem>
+                    {SETORES_PEDREIRA.map((s) => (
+                      <SelectItem key={s} value={s}>
+                        {s}
+                      </SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
               </div>
 
               <div>
-                <Label className="text-xs font-semibold text-gray-700">Marca / Fabricante</Label>
-                <Input
-                  value={marca}
-                  onChange={(e) => setMarca(e.target.value)}
-                  placeholder="Ex: Caterpillar, Volvo, Komatsu"
-                  className="mt-1"
-                />
+                <Label className="text-xs font-semibold text-gray-700">Tipo de Equipamento *</Label>
+                <Select value={tipo} onValueChange={(v: TipoVeiculo) => setTipo(v)}>
+                  <SelectTrigger className="mt-1">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="caminhao">Caminhão Basculante / Caçamba</SelectItem>
+                    <SelectItem value="escavadeira">Escavadeira Hidráulica</SelectItem>
+                    <SelectItem value="carregadeira">Pá Carregadeira</SelectItem>
+                    <SelectItem value="betoneira">Caminhão Betoneira</SelectItem>
+                    <SelectItem value="pipa">Caminhão Pipa</SelectItem>
+                    <SelectItem value="bomba">Bomba de Concreto</SelectItem>
+                    <SelectItem value="britador">Lokotrack / Britador</SelectItem>
+                    <SelectItem value="peneira">Peneira Classificadora</SelectItem>
+                    <SelectItem value="central_concreto">Central de Concreto (Usina)</SelectItem>
+                    <SelectItem value="carro_passeio">Carro / Pickup 4x4</SelectItem>
+                    <SelectItem value="moto">Motocicleta</SelectItem>
+                    <SelectItem value="perfuratriz">Perfuratriz</SelectItem>
+                    <SelectItem value="trator">Trator / Motoniveladora</SelectItem>
+                    <SelectItem value="outro">Outro</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
             </div>
 
@@ -536,12 +620,24 @@ export default function Veiculos() {
                   required
                   value={modelo}
                   onChange={(e) => setModelo(e.target.value)}
-                  placeholder="Ex: FMX 500 8x4 / CAT 336D"
+                  placeholder="Ex: Escavadeira CAT 336 / Volvo VM 290"
                   className="mt-1"
                 />
               </div>
               <div>
-                <Label className="text-xs font-semibold text-gray-700">Ano</Label>
+                <Label className="text-xs font-semibold text-gray-700">Marca</Label>
+                <Input
+                  value={marca}
+                  onChange={(e) => setMarca(e.target.value)}
+                  placeholder="Ex: CAT, Volvo"
+                  className="mt-1"
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <Label className="text-xs font-semibold text-gray-700">Ano de Fabricação</Label>
                 <Input
                   type="number"
                   value={ano || ''}
@@ -550,38 +646,70 @@ export default function Veiculos() {
                   className="mt-1 font-mono"
                 />
               </div>
-            </div>
-
-            <div className="grid grid-cols-2 gap-3 p-3 bg-amber-50/60 rounded-xl border border-amber-200">
-              <div>
-                <Label className="text-xs font-semibold text-gray-800">Tipo de Medidor *</Label>
-                <Select value={tipoMedidor} onValueChange={(v: TipoMedidor) => setTipoMedidor(v)}>
-                  <SelectTrigger className="mt-1 bg-white">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="km">Quilometragem (Km - Odômetro)</SelectItem>
-                    <SelectItem value="horas">Horas Trabalhadas (Horímetro)</SelectItem>
-                  </SelectContent>
-                </Select>
-                <span className="text-[10px] text-gray-500 mt-1 block">
-                  Caminhões usam Km; escavadeiras e britagem usam Horímetro.
-                </span>
-              </div>
 
               <div>
-                <Label className="text-xs font-semibold text-gray-800">Medidor Atual *</Label>
+                <Label className="text-xs font-semibold text-gray-700">Valor Avaliado (R$)</Label>
                 <Input
                   type="number"
-                  required
-                  value={medidorAtual}
-                  onChange={(e) => setMedidorAtual(parseFloat(e.target.value) || 0)}
-                  placeholder="0"
-                  className="mt-1 bg-white font-mono font-bold"
+                  step="0.01"
+                  value={valorEstimado || ''}
+                  onChange={(e) => setValorEstimado(parseFloat(e.target.value) || 0)}
+                  placeholder="0,00"
+                  className="mt-1 font-mono"
                 />
-                <span className="text-[10px] text-gray-500 mt-1 block">
-                  Valor atual ({tipoMedidor === 'km' ? 'km' : 'horas'}).
+              </div>
+            </div>
+
+            {/* SEÇÃO DUPLA: CONTROLE POR KM E HORÍMETRO */}
+            <div className="p-3.5 bg-amber-50/70 rounded-xl border border-amber-200 space-y-3">
+              <div className="flex items-center justify-between">
+                <span className="font-bold text-amber-950 flex items-center gap-1.5 text-xs">
+                  <Gauge className="w-4 h-4 text-amber-700" />
+                  <span>Controle Duplo: Odômetro (Km) & Horímetro (Horas)</span>
                 </span>
+                <Badge variant="outline" className="bg-white text-[10px] text-amber-900">
+                  Independentes
+                </Badge>
+              </div>
+              <p className="text-[11px] text-amber-800">
+                Preencha um ou ambos os medidores. Caminhões e máquinas podem registrar Km e/ou
+                horas de operação simultaneamente.
+              </p>
+
+              <div className="grid grid-cols-2 gap-3 pt-1">
+                <div className="p-2.5 bg-white rounded-lg border border-amber-200/80">
+                  <Label className="text-[11px] font-semibold text-gray-800 flex items-center gap-1">
+                    <Gauge className="w-3.5 h-3.5 text-teal-700" />
+                    <span>Odômetro Atual (Km)</span>
+                  </Label>
+                  <Input
+                    type="number"
+                    value={kmAtual || ''}
+                    onChange={(e) => setKmAtual(parseFloat(e.target.value) || 0)}
+                    placeholder="0"
+                    className="mt-1 font-mono font-bold text-gray-900 h-8"
+                  />
+                  <span className="text-[10px] text-gray-400 mt-0.5 block">
+                    Distância percorrida em rodovias ou lavra
+                  </span>
+                </div>
+
+                <div className="p-2.5 bg-white rounded-lg border border-amber-200/80">
+                  <Label className="text-[11px] font-semibold text-gray-800 flex items-center gap-1">
+                    <Clock className="w-3.5 h-3.5 text-amber-700" />
+                    <span>Horímetro Atual (Horas)</span>
+                  </Label>
+                  <Input
+                    type="number"
+                    value={horimetroAtual || ''}
+                    onChange={(e) => setHorimetroAtual(parseFloat(e.target.value) || 0)}
+                    placeholder="0"
+                    className="mt-1 font-mono font-bold text-amber-900 h-8"
+                  />
+                  <span className="text-[10px] text-gray-400 mt-0.5 block">
+                    Horas de motor/britagem em funcionamento
+                  </span>
+                </div>
               </div>
             </div>
 
@@ -597,7 +725,7 @@ export default function Veiculos() {
                     <SelectItem value="Diesel S500">Diesel S500</SelectItem>
                     <SelectItem value="Gasolina">Gasolina Comum</SelectItem>
                     <SelectItem value="Etanol">Etanol</SelectItem>
-                    <SelectItem value="Arla 32">Arla 32 (Aditivo)</SelectItem>
+                    <SelectItem value="Arla 32">Arla 32</SelectItem>
                     <SelectItem value="Eletrico">Elétrico</SelectItem>
                   </SelectContent>
                 </Select>
@@ -620,13 +748,13 @@ export default function Veiculos() {
 
             <div>
               <Label className="text-xs font-semibold text-gray-700">
-                Observações / Especificações de Pedreira
+                Observações / Especificações
               </Label>
               <Textarea
                 rows={3}
                 value={observacoes}
                 onChange={(e) => setObservacoes(e.target.value)}
-                placeholder="Ex: Caçamba de rocha Hardox 450, capacidade 20m³, pneus OTR reforçados..."
+                placeholder="Ex: Capacidade 20m³, marroeiro Lokotrack, local de operação..."
                 className="mt-1 text-xs"
               />
             </div>
@@ -640,7 +768,7 @@ export default function Veiculos() {
                 disabled={isSubmitting}
                 className="bg-teal-700 hover:bg-teal-800 text-white"
               >
-                {isSubmitting ? 'Salvando...' : 'Salvar Veículo / Máquina'}
+                {isSubmitting ? 'Salvando...' : 'Salvar Equipamento'}
               </Button>
             </SheetFooter>
           </form>

@@ -358,6 +358,8 @@ export default function Produtos() {
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
+                    <SelectItem value="m³">m³ (Metro cúbico)</SelectItem>
+                    <SelectItem value="ton">ton (Tonelada)</SelectItem>
                     <SelectItem value="un">un (Unidade)</SelectItem>
                     <SelectItem value="serv">serv (Serviço)</SelectItem>
                     <SelectItem value="kg">kg (Quilograma)</SelectItem>

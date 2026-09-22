@@ -54,7 +54,11 @@ export default function Abastecimentos() {
   >('Diesel S10')
   const [litros, setLitros] = useState<number>(0)
   const [precoLitro, setPrecoLitro] = useState<number>(5.89)
-  const [medidor, setMedidor] = useState<number>(0)
+
+  // Controle Duplo: Km e Horímetro independentes
+  const [kmOdometro, setKmOdometro] = useState<number>(0)
+  const [horimetro, setHorimetro] = useState<number>(0)
+
   const [fornecedorId, setFornecedorId] = useState<string>('')
   const [motoristaOperador, setMotoristaOperador] = useState('')
   const [observacoes, setObservacoes] = useState('')
@@ -107,53 +111,70 @@ export default function Abastecimentos() {
     return veiculos.find((v) => v.id === veiculoId)
   }, [veiculos, veiculoId])
 
-  // Ultimo abastecimento do veiculo para calcular medidor anterior
+  // Ultimo abastecimento do veiculo
   const ultimoAbastecimentoVeiculo = useMemo(() => {
     if (!veiculoId) return null
     return abastecimentos.find((a) => a.veiculo_id === veiculoId)
   }, [abastecimentos, veiculoId])
 
-  const medidorAnterior = useMemo(() => {
-    if (ultimoAbastecimentoVeiculo) {
-      return ultimoAbastecimentoVeiculo.medidor
+  // Anterior Km
+  const kmAnterior = useMemo(() => {
+    if (ultimoAbastecimentoVeiculo?.km_odometro) {
+      return ultimoAbastecimentoVeiculo.km_odometro
     }
-    if (currentVeiculo) {
-      return currentVeiculo.medidor_atual
+    if (currentVeiculo?.km_atual) {
+      return currentVeiculo.km_atual
     }
     return 0
   }, [ultimoAbastecimentoVeiculo, currentVeiculo])
 
-  // Computed totals & consumo
+  // Anterior Horimetro
+  const horimetroAnterior = useMemo(() => {
+    if (ultimoAbastecimentoVeiculo?.horimetro) {
+      return ultimoAbastecimentoVeiculo.horimetro
+    }
+    if (currentVeiculo?.horimetro_atual) {
+      return currentVeiculo.horimetro_atual
+    }
+    return 0
+  }, [ultimoAbastecimentoVeiculo, currentVeiculo])
+
+  // Computed totals
   const valorTotal = useMemo(() => {
     return Number((litros * precoLitro).toFixed(2))
   }, [litros, precoLitro])
 
-  const distanciaOuHoras = useMemo(() => {
-    if (medidor && medidor > medidorAnterior) {
-      return Number((medidor - medidorAnterior).toFixed(1))
+  // Diferença Km
+  const deltaKm = useMemo(() => {
+    if (kmOdometro && kmAnterior && kmOdometro > kmAnterior) {
+      return Number((kmOdometro - kmAnterior).toFixed(1))
     }
     return 0
-  }, [medidor, medidorAnterior])
+  }, [kmOdometro, kmAnterior])
 
-  const consumoMedio = useMemo(() => {
-    if (litros > 0 && distanciaOuHoras > 0) {
-      if (currentVeiculo?.tipo_medidor === 'km') {
-        // km / l
-        return Number((distanciaOuHoras / litros).toFixed(2))
-      } else {
-        // Horas: litros por hora (l/h)
-        return Number((litros / distanciaOuHoras).toFixed(2))
-      }
+  // Diferença Horas
+  const deltaHoras = useMemo(() => {
+    if (horimetro && horimetroAnterior && horimetro > horimetroAnterior) {
+      return Number((horimetro - horimetroAnterior).toFixed(1))
     }
     return 0
-  }, [litros, distanciaOuHoras, currentVeiculo])
+  }, [horimetro, horimetroAnterior])
 
-  const custoPorUnidade = useMemo(() => {
-    if (distanciaOuHoras > 0 && valorTotal > 0) {
-      return Number((valorTotal / distanciaOuHoras).toFixed(2))
+  // Consumo Km/l
+  const consumoKmL = useMemo(() => {
+    if (litros > 0 && deltaKm > 0) {
+      return Number((deltaKm / litros).toFixed(2))
     }
     return 0
-  }, [distanciaOuHoras, valorTotal])
+  }, [deltaKm, litros])
+
+  // Consumo l/h
+  const consumoLH = useMemo(() => {
+    if (litros > 0 && deltaHoras > 0) {
+      return Number((litros / deltaHoras).toFixed(2))
+    }
+    return 0
+  }, [deltaHoras, litros])
 
   const openCreateModal = () => {
     const firstVeic = veiculos[0]
@@ -162,8 +183,9 @@ export default function Abastecimentos() {
     setCombustivel((firstVeic?.combustivel_padrao as any) || 'Diesel S10')
     setLitros(100)
     setPrecoLitro(5.89)
-    setMedidor(firstVeic ? firstVeic.medidor_atual + 50 : 0)
-    // Se existir fornecedor de diesel sugerir
+    setKmOdometro(firstVeic ? (firstVeic.km_atual || 0) + 50 : 0)
+    setHorimetro(firstVeic ? (firstVeic.horimetro_atual || 0) + 8 : 0)
+
     const posto = fornecedores.find(
       (f) => f.nome.toLowerCase().includes('posto') || f.nome.toLowerCase().includes('combustivel'),
     )
@@ -181,7 +203,8 @@ export default function Abastecimentos() {
       if (v.combustivel_padrao) {
         setCombustivel(v.combustivel_padrao as any)
       }
-      setMedidor(v.medidor_atual + (v.tipo_medidor === 'km' ? 100 : 10))
+      setKmOdometro(v.km_atual ? v.km_atual + 50 : 0)
+      setHorimetro(v.horimetro_atual ? v.horimetro_atual + 8 : 0)
     }
   }
 
@@ -218,7 +241,7 @@ export default function Abastecimentos() {
           vencimento: new Date(dataAbast).toISOString(),
           parcelas: 1,
           status: 'Aberta',
-          observacoes: `Gerado automaticamente pelo Módulo de Frotas. Motorista: ${motoristaOperador || 'Não informado'}`,
+          observacoes: `Gerado pelo Módulo de Frotas. Km: ${kmOdometro || '—'}, Horímetro: ${horimetro || '—'}. Operador: ${motoristaOperador || 'Não informado'}`,
         }
 
         const cp = await pb.collection('contas_pagar').create(payloadConta)
@@ -226,6 +249,7 @@ export default function Abastecimentos() {
       }
 
       // 2. Registrar Abastecimento
+      const medidorPrincipal = kmOdometro > 0 ? kmOdometro : horimetro || 0
       const payloadAbast = {
         empresa_id: currentEmpresa!.id,
         veiculo_id: veiculoId,
@@ -234,11 +258,20 @@ export default function Abastecimentos() {
         litros: Number(litros),
         preco_litro: Number(precoLitro),
         valor_total: valorTotal,
-        medidor: Number(medidor),
-        medidor_anterior: medidorAnterior || null,
-        distancia_percorrida: distanciaOuHoras || null,
-        consumo_medio: consumoMedio || null,
-        custo_por_unidade: custoPorUnidade || null,
+        medidor: medidorPrincipal,
+        km_odometro: Number(kmOdometro) || null,
+        horimetro: Number(horimetro) || null,
+        medidor_anterior: kmAnterior || horimetroAnterior || null,
+        distancia_percorrida: deltaKm || deltaHoras || null,
+        consumo_medio: consumoKmL || consumoLH || null,
+        consumo_km_l: consumoKmL || null,
+        consumo_l_h: consumoLH || null,
+        custo_por_unidade:
+          deltaKm > 0
+            ? Number((valorTotal / deltaKm).toFixed(2))
+            : deltaHoras > 0
+              ? Number((valorTotal / deltaHoras).toFixed(2))
+              : null,
         fornecedor_id: fornecedorId || null,
         conta_pagar_id: contaPagarId,
         motorista_operador: motoristaOperador.trim() || null,
@@ -247,11 +280,16 @@ export default function Abastecimentos() {
 
       await pb.collection('abastecimentos').create(payloadAbast)
 
-      // 3. Atualizar o medidor atual do veículo se for maior
-      if (medidor > v.medidor_atual) {
-        await pb.collection('veiculos').update(v.id, {
-          medidor_atual: Number(medidor),
-        })
+      // 3. Atualizar o km_atual e horimetro_atual do veículo
+      const veiculoUpdates: Partial<Veiculo> = {}
+      if (kmOdometro > (v.km_atual || 0)) {
+        veiculoUpdates.km_atual = Number(kmOdometro)
+      }
+      if (horimetro > (v.horimetro_atual || 0)) {
+        veiculoUpdates.horimetro_atual = Number(horimetro)
+      }
+      if (Object.keys(veiculoUpdates).length > 0) {
+        await pb.collection('veiculos').update(v.id, veiculoUpdates)
       }
 
       toast({
@@ -321,11 +359,11 @@ export default function Abastecimentos() {
               Controle de Abastecimentos & Combustível
             </h1>
             <Badge className="bg-teal-100 text-teal-900 border-teal-300">
-              Diesel & Lubrificantes
+              Controle Duplo Km & Horas
             </Badge>
           </div>
           <p className="text-xs text-gray-500 mt-1">
-            Apuração de consumo (km/l e l/h), custos por quilômetro/hora e integração financeira
+            Apuração de consumo (km/l e l/h) para caçambas, betoneiras, escavadeiras e britadores
           </p>
         </div>
 
@@ -392,7 +430,7 @@ export default function Abastecimentos() {
         <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
           <div className="flex flex-wrap items-center gap-2">
             <Select value={selectedVeiculoFilter} onValueChange={setSelectedVeiculoFilter}>
-              <SelectTrigger className="w-[240px] bg-[#FAF9F7] border-[#ECEAE4] text-xs h-9">
+              <SelectTrigger className="w-[260px] bg-[#FAF9F7] border-[#ECEAE4] text-xs h-9">
                 <SelectValue placeholder="Filtrar por Máquina/Veículo" />
               </SelectTrigger>
               <SelectContent>
@@ -441,9 +479,9 @@ export default function Abastecimentos() {
                 <th className="py-3 px-4 text-right">Litros</th>
                 <th className="py-3 px-4 text-right">Preço/L</th>
                 <th className="py-3 px-4 text-right">Valor Total</th>
-                <th className="py-3 px-4 text-right">Odômetro/Horímetro</th>
+                <th className="py-3 px-4 text-right">Odômetro (Km)</th>
+                <th className="py-3 px-4 text-right">Horímetro (h)</th>
                 <th className="py-3 px-4 text-right">Consumo Médio</th>
-                <th className="py-3 px-4 text-right">Custo / Un.</th>
                 <th className="py-3 px-4">Motorista/Operador</th>
                 <th className="py-3 px-4 text-center">Financeiro</th>
                 <th className="py-3 px-4 text-right">Ações</th>
@@ -459,8 +497,9 @@ export default function Abastecimentos() {
               ) : (
                 filteredAbastecimentos.map((a) => {
                   const veic = a.expand?.veiculo_id
-                  const isKm = veic?.tipo_medidor === 'km'
                   const temConta = !!a.conta_pagar_id
+                  const hasKm = (a.km_odometro || 0) > 0
+                  const hasHoras = (a.horimetro || 0) > 0
 
                   return (
                     <tr key={a.id} className="hover:bg-teal-50/20 transition-colors">
@@ -494,28 +533,43 @@ export default function Abastecimentos() {
                         {formatCurrency(a.valor_total)}
                       </td>
                       <td className="py-3 px-4 text-right font-mono">
-                        <span className="font-semibold text-gray-900">
-                          {Number(a.medidor).toLocaleString('pt-BR')}
-                        </span>{' '}
-                        <span className="text-[10px] text-gray-400">{isKm ? 'km' : 'h'}</span>
+                        {hasKm ? (
+                          <span className="font-semibold text-gray-900">
+                            {Number(a.km_odometro).toLocaleString('pt-BR')}{' '}
+                            <span className="text-[10px] text-gray-400">km</span>
+                          </span>
+                        ) : (
+                          <span className="text-gray-400">—</span>
+                        )}
                       </td>
-                      <td className="py-3 px-4 text-right">
-                        {a.consumo_medio ? (
-                          <span className="font-mono font-semibold text-teal-800 bg-teal-50 px-1.5 py-0.5 rounded">
-                            {a.consumo_medio.toFixed(2)} {isKm ? 'km/l' : 'l/h'}
+                      <td className="py-3 px-4 text-right font-mono">
+                        {hasHoras ? (
+                          <span className="font-semibold text-amber-800">
+                            {Number(a.horimetro).toLocaleString('pt-BR')}{' '}
+                            <span className="text-[10px] text-amber-600">h</span>
                           </span>
                         ) : (
                           <span className="text-gray-400">—</span>
                         )}
                       </td>
                       <td className="py-3 px-4 text-right">
-                        {a.custo_por_unidade ? (
-                          <span className="font-mono text-gray-700 font-medium">
-                            {formatCurrency(a.custo_por_unidade)}/{isKm ? 'km' : 'h'}
-                          </span>
-                        ) : (
-                          <span className="text-gray-400">—</span>
-                        )}
+                        <div className="flex flex-col items-end gap-0.5">
+                          {a.consumo_km_l ? (
+                            <span className="font-mono text-[11px] font-semibold text-teal-800 bg-teal-50 px-1.5 py-0.2 rounded">
+                              {a.consumo_km_l.toFixed(2)} km/l
+                            </span>
+                          ) : null}
+                          {a.consumo_l_h ? (
+                            <span className="font-mono text-[11px] font-semibold text-amber-900 bg-amber-50 px-1.5 py-0.2 rounded">
+                              {a.consumo_l_h.toFixed(2)} l/h
+                            </span>
+                          ) : null}
+                          {!a.consumo_km_l && !a.consumo_l_h && (
+                            <span className="text-gray-400">
+                              {a.consumo_medio ? `${a.consumo_medio.toFixed(2)} med.` : '—'}
+                            </span>
+                          )}
+                        </div>
                       </td>
                       <td className="py-3 px-4 text-gray-600">{a.motorista_operador || '—'}</td>
                       <td className="py-3 px-4 text-center">
@@ -551,10 +605,10 @@ export default function Abastecimentos() {
 
       {/* Drawer Create Form */}
       <Sheet open={isDrawerOpen} onOpenChange={setIsDrawerOpen}>
-        <SheetContent className="sm:max-w-[540px] w-full bg-white border-l border-[#ECEAE4] p-6 overflow-y-auto">
+        <SheetContent className="sm:max-w-[560px] w-full bg-white border-l border-[#ECEAE4] p-6 overflow-y-auto">
           <SheetHeader>
             <SheetTitle className="text-lg font-bold text-gray-900">
-              Registrar Abastecimento
+              Registrar Abastecimento de Frota
             </SheetTitle>
           </SheetHeader>
 
@@ -570,8 +624,7 @@ export default function Abastecimentos() {
                 <SelectContent>
                   {veiculos.map((v) => (
                     <SelectItem key={v.id} value={v.id}>
-                      {v.codigo_interno} • {v.modelo} (
-                      {v.tipo_medidor === 'km' ? 'Km' : 'Horímetro'})
+                      {v.codigo_interno} • {v.modelo} ({v.setor || 'Geral'})
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -642,57 +695,64 @@ export default function Abastecimentos() {
               </div>
             </div>
 
-            {/* Medidor e Cálculo Automático */}
-            <div className="p-3 bg-amber-50/70 rounded-xl border border-amber-200 space-y-2">
-              <div className="flex items-center justify-between text-xs font-semibold text-amber-950">
-                <span className="flex items-center gap-1.5">
-                  {currentVeiculo?.tipo_medidor === 'km' ? (
-                    <Gauge className="w-4 h-4 text-amber-700" />
-                  ) : (
-                    <Clock className="w-4 h-4 text-amber-700" />
-                  )}
-                  {currentVeiculo?.tipo_medidor === 'km'
-                    ? 'Odômetro no Momento (Km) *'
-                    : 'Horímetro no Momento (Horas) *'}
-                </span>
-                <span className="text-[11px] text-amber-800 font-normal">
-                  Anterior: <strong>{Number(medidorAnterior).toLocaleString('pt-BR')}</strong>
-                </span>
+            {/* CONTROLE DUPLO: KM E HORÍMETRO */}
+            <div className="p-3.5 bg-amber-50/70 rounded-xl border border-amber-200 space-y-3">
+              <div className="flex items-center justify-between text-xs font-bold text-amber-950">
+                <span>Leitura dos Medidores no Momento (Km & Horímetro)</span>
+                <span className="text-[10px] text-amber-800 font-normal">Preencha um ou ambos</span>
               </div>
 
-              <Input
-                type="number"
-                step="0.1"
-                required
-                value={medidor || ''}
-                onChange={(e) => setMedidor(parseFloat(e.target.value) || 0)}
-                placeholder="Ex: 84320"
-                className="bg-white font-mono font-bold text-gray-900"
-              />
-
-              {distanciaOuHoras > 0 && (
-                <div className="grid grid-cols-3 gap-2 pt-2 border-t border-amber-200/60 text-[11px]">
-                  <div>
-                    <span className="text-gray-500 block">Diferença:</span>
-                    <strong className="text-gray-900 font-mono">
-                      +{distanciaOuHoras} {currentVeiculo?.tipo_medidor === 'km' ? 'km' : 'h'}
-                    </strong>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="p-2.5 bg-white rounded-lg border border-amber-200">
+                  <div className="flex items-center justify-between">
+                    <Label className="text-[11px] font-semibold text-gray-800 flex items-center gap-1">
+                      <Gauge className="w-3.5 h-3.5 text-teal-700" />
+                      <span>Odômetro (Km)</span>
+                    </Label>
+                    <span className="text-[10px] text-gray-400">
+                      Ant: {Number(kmAnterior).toLocaleString('pt-BR')}
+                    </span>
                   </div>
-                  <div>
-                    <span className="text-gray-500 block">Consumo Médio:</span>
-                    <strong className="text-teal-800 font-mono">
-                      {consumoMedio} {currentVeiculo?.tipo_medidor === 'km' ? 'km/l' : 'l/h'}
-                    </strong>
-                  </div>
-                  <div>
-                    <span className="text-gray-500 block">Custo Unitário:</span>
-                    <strong className="text-red-700 font-mono">
-                      {formatCurrency(custoPorUnidade)}/
-                      {currentVeiculo?.tipo_medidor === 'km' ? 'km' : 'h'}
-                    </strong>
-                  </div>
+                  <Input
+                    type="number"
+                    step="1"
+                    value={kmOdometro || ''}
+                    onChange={(e) => setKmOdometro(parseFloat(e.target.value) || 0)}
+                    placeholder="0"
+                    className="mt-1 font-mono font-bold text-gray-900"
+                  />
+                  {deltaKm > 0 && (
+                    <div className="text-[10px] text-teal-700 mt-1 font-mono">
+                      +{deltaKm} km • {consumoKmL} km/l
+                    </div>
+                  )}
                 </div>
-              )}
+
+                <div className="p-2.5 bg-white rounded-lg border border-amber-200">
+                  <div className="flex items-center justify-between">
+                    <Label className="text-[11px] font-semibold text-gray-800 flex items-center gap-1">
+                      <Clock className="w-3.5 h-3.5 text-amber-700" />
+                      <span>Horímetro (Horas)</span>
+                    </Label>
+                    <span className="text-[10px] text-gray-400">
+                      Ant: {Number(horimetroAnterior).toLocaleString('pt-BR')}
+                    </span>
+                  </div>
+                  <Input
+                    type="number"
+                    step="0.1"
+                    value={horimetro || ''}
+                    onChange={(e) => setHorimetro(parseFloat(e.target.value) || 0)}
+                    placeholder="0"
+                    className="mt-1 font-mono font-bold text-amber-900"
+                  />
+                  {deltaHoras > 0 && (
+                    <div className="text-[10px] text-amber-800 mt-1 font-mono">
+                      +{deltaHoras} h • {consumoLH} l/h
+                    </div>
+                  )}
+                </div>
+              </div>
             </div>
 
             <div className="grid grid-cols-2 gap-3">
@@ -717,7 +777,7 @@ export default function Abastecimentos() {
                 <Input
                   value={motoristaOperador}
                   onChange={(e) => setMotoristaOperador(e.target.value)}
-                  placeholder="Ex: Sebastião (Tião)"
+                  placeholder="Ex: Sebastião Antunes"
                   className="mt-1"
                 />
               </div>

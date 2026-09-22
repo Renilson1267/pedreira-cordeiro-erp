@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-09-22T00:26:12.226Z",
+  "generatedAt": "2026-09-22T01:01:59.524Z",
   "collections": [
     {
       "name": "users",
@@ -391,7 +391,7 @@
           "type": "select",
           "required": true,
           "system": false,
-          "selectValues": ["un", "kg", "cx", "l", "m²", "serv"]
+          "selectValues": ["un", "kg", "cx", "l", "m²", "serv", "m³", "ton"]
         },
         {
           "name": "preco_custo",
@@ -1079,6 +1079,14 @@
             "carregadeira",
             "perfuratriz",
             "trator",
+            "betoneira",
+            "pipa",
+            "bomba",
+            "central_concreto",
+            "britador",
+            "peneira",
+            "moto",
+            "carro_passeio",
             "outro"
           ]
         },
@@ -1103,14 +1111,14 @@
         {
           "name": "tipo_medidor",
           "type": "select",
-          "required": true,
+          "required": false,
           "system": false,
-          "selectValues": ["km", "horas"]
+          "selectValues": ["km", "horas", "ambos"]
         },
         {
           "name": "medidor_atual",
           "type": "number",
-          "required": true,
+          "required": false,
           "system": false
         },
         {
@@ -1146,6 +1154,36 @@
           "required": false,
           "system": false,
           "autodateTriggers": ["onCreate", "onUpdate"]
+        },
+        {
+          "name": "setor",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "km_atual",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "horimetro_atual",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "valor_estimado",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "tag_patrimonio",
+          "type": "text",
+          "required": false,
+          "system": false
         }
       ],
       "indexes": [
@@ -1214,7 +1252,7 @@
         {
           "name": "medidor",
           "type": "number",
-          "required": true,
+          "required": false,
           "system": false
         },
         {
@@ -1280,6 +1318,30 @@
           "required": false,
           "system": false,
           "autodateTriggers": ["onCreate", "onUpdate"]
+        },
+        {
+          "name": "km_odometro",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "horimetro",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "consumo_km_l",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "consumo_l_h",
+          "type": "number",
+          "required": false,
+          "system": false
         }
       ],
       "indexes": [
@@ -1402,6 +1464,30 @@
           "required": false,
           "system": false,
           "autodateTriggers": ["onCreate", "onUpdate"]
+        },
+        {
+          "name": "km_no_momento",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "horimetro_no_momento",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "proxima_revisao_km",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "proxima_revisao_horimetro",
+          "type": "number",
+          "required": false,
+          "system": false
         }
       ],
       "indexes": [
@@ -1566,6 +1652,120 @@
         "CREATE INDEX idx_creditos_empresa ON creditos_clientes (empresa_id)",
         "CREATE INDEX idx_creditos_cliente ON creditos_clientes (cliente_id)",
         "CREATE INDEX idx_creditos_status ON creditos_clientes (status)"
+      ]
+    },
+    {
+      "name": "funcionarios",
+      "type": "base",
+      "apiRules": {
+        "list": "@request.auth.id != ''",
+        "view": "@request.auth.id != ''",
+        "create": "@request.auth.id != ''",
+        "update": "@request.auth.id != ''",
+        "delete": "@request.auth.id != ''"
+      },
+      "fields": [
+        {
+          "name": "empresa_id",
+          "type": "relation",
+          "required": true,
+          "system": false,
+          "collectionRef": "empresas"
+        },
+        {
+          "name": "nome",
+          "type": "text",
+          "required": true,
+          "system": false
+        },
+        {
+          "name": "cpf",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "cargo",
+          "type": "text",
+          "required": true,
+          "system": false
+        },
+        {
+          "name": "setor",
+          "type": "select",
+          "required": true,
+          "system": false,
+          "selectValues": ["Britagem", "Concreto", "Lokotrack", "Frota", "Administrativo", "Outro"]
+        },
+        {
+          "name": "data_admissao",
+          "type": "date",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "salario",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "telefone",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "email",
+          "type": "email",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "status",
+          "type": "select",
+          "required": true,
+          "system": false,
+          "selectValues": ["ativo", "ferias", "afastado", "demitido"]
+        },
+        {
+          "name": "chave_pix",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "banco_conta",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "observacoes",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "created",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate"]
+        },
+        {
+          "name": "updated",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate", "onUpdate"]
+        }
+      ],
+      "indexes": [
+        "CREATE INDEX idx_func_empresa ON funcionarios (empresa_id)",
+        "CREATE INDEX idx_func_status ON funcionarios (status)",
+        "CREATE INDEX idx_func_setor ON funcionarios (setor)",
+        "CREATE INDEX idx_func_nome ON funcionarios (nome)"
       ]
     }
   ]

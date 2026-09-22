@@ -33,6 +33,7 @@ import NotFound from '@/pages/NotFound'
 import Veiculos from '@/pages/frotas/Veiculos'
 import Abastecimentos from '@/pages/frotas/Abastecimentos'
 import Manutencoes from '@/pages/frotas/Manutencoes'
+import Funcionarios from '@/pages/rh/Funcionarios'
 
 export default function App() {
   return (
@@ -67,6 +68,9 @@ export default function App() {
               <Route path="/frotas/veiculos" element={<Veiculos />} />
               <Route path="/frotas/abastecimentos" element={<Abastecimentos />} />
               <Route path="/frotas/manutencoes" element={<Manutencoes />} />
+
+              {/* Recursos Humanos (RH) */}
+              <Route path="/rh/funcionarios" element={<Funcionarios />} />
 
               {/* Cadastros */}
               <Route path="/cadastros/clientes" element={<Clientes />} />

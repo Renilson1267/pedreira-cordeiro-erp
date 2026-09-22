@@ -69,7 +69,7 @@ export interface Produto {
   codigo: string
   nome: string
   categoria: 'Gestão' | 'Operacional' | 'Vendas' | 'Serviços' | 'Mercadorias' | 'Outros'
-  unidade: 'un' | 'kg' | 'cx' | 'l' | 'm²' | 'serv'
+  unidade: 'un' | 'kg' | 'cx' | 'l' | 'm²' | 'serv' | 'm³' | 'ton'
   preco_custo: number
   preco_venda: number
   estoque: number
@@ -236,9 +236,17 @@ export type TipoVeiculo =
   | 'carregadeira'
   | 'perfuratriz'
   | 'trator'
+  | 'betoneira'
+  | 'pipa'
+  | 'bomba'
+  | 'central_concreto'
+  | 'britador'
+  | 'peneira'
+  | 'moto'
+  | 'carro_passeio'
   | 'outro'
 
-export type TipoMedidor = 'km' | 'horas'
+export type TipoMedidor = 'km' | 'horas' | 'ambos'
 export type StatusVeiculo = 'ativo' | 'manutencao' | 'inativo'
 
 export interface Veiculo {
@@ -250,10 +258,15 @@ export interface Veiculo {
   marca?: string
   modelo: string
   ano?: number
-  tipo_medidor: TipoMedidor
-  medidor_atual: number
+  tipo_medidor?: TipoMedidor
+  medidor_atual?: number
+  km_atual?: number
+  horimetro_atual?: number
   combustivel_padrao?: string
   status: StatusVeiculo
+  setor?: string
+  valor_estimado?: number
+  tag_patrimonio?: string
   observacoes?: string
   created: string
   updated: string
@@ -268,10 +281,14 @@ export interface Abastecimento {
   litros: number
   preco_litro: number
   valor_total: number
-  medidor: number
+  medidor?: number
+  km_odometro?: number
+  horimetro?: number
   medidor_anterior?: number
   distancia_percorrida?: number
   consumo_medio?: number
+  consumo_km_l?: number
+  consumo_l_h?: number
   custo_por_unidade?: number
   fornecedor_id?: string
   conta_pagar_id?: string
@@ -296,9 +313,13 @@ export interface Manutencao {
   oficina_nome?: string
   data: string
   medidor_no_momento?: number
+  km_no_momento?: number
+  horimetro_no_momento?: number
   custo: number
   proxima_revisao_data?: string
   proxima_revisao_medidor?: number
+  proxima_revisao_km?: number
+  proxima_revisao_horimetro?: number
   conta_pagar_id?: string
   status: 'agendada' | 'em_andamento' | 'concluida' | 'cancelada'
   observacoes?: string
@@ -309,4 +330,33 @@ export interface Manutencao {
     fornecedor_id?: Fornecedor
     conta_pagar_id?: ContaPagar
   }
+}
+
+export type SetorFuncionario =
+  | 'Britagem'
+  | 'Concreto'
+  | 'Lokotrack'
+  | 'Frota'
+  | 'Administrativo'
+  | 'Outro'
+
+export type StatusFuncionario = 'ativo' | 'ferias' | 'afastado' | 'demitido'
+
+export interface Funcionario {
+  id: string
+  empresa_id: string
+  nome: string
+  cpf?: string
+  cargo: string
+  setor: SetorFuncionario
+  data_admissao?: string
+  salario?: number
+  telefone?: string
+  email?: string
+  status: StatusFuncionario
+  chave_pix?: string
+  banco_conta?: string
+  observacoes?: string
+  created: string
+  updated: string
 }

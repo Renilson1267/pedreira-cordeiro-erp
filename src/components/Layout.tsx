@@ -77,6 +77,10 @@ export default function Layout() {
       ],
     },
     {
+      group: 'Recursos Humanos',
+      items: [{ label: 'Funcionários & Folha', path: '/rh/funcionarios', icon: Users }],
+    },
+    {
       group: 'Cadastros',
       items: [
         { label: 'Clientes', path: '/cadastros/clientes', icon: Users },
