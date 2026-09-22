@@ -75,6 +75,7 @@ export default function Layout() {
         { label: 'Veículos & Máquinas', path: '/frotas/veiculos', icon: Construction },
         { label: 'Abastecimentos', path: '/frotas/abastecimentos', icon: Fuel },
         { label: 'Manutenções', path: '/frotas/manutencoes', icon: Wrench },
+        { label: 'Entregas', path: '/frotas/entregas', icon: Truck },
       ],
     },
     {

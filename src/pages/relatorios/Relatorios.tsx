@@ -13,6 +13,7 @@ import type {
   Veiculo,
   Abastecimento,
   Manutencao,
+  Entrega,
 } from '@/types/erp'
 import { SETORES_FROTA, normalizarSetorFrota, veiculoCorrespondeAoSetor } from '@/lib/frota'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -79,6 +80,7 @@ export default function Relatorios() {
   const [veiculos, setVeiculos] = useState<Veiculo[]>([])
   const [abastecimentos, setAbastecimentos] = useState<Abastecimento[]>([])
   const [manutencoes, setManutencoes] = useState<Manutencao[]>([])
+  const [entregas, setEntregas] = useState<Entrega[]>([])
   const [loading, setLoading] = useState(false)
 
   // Filtros específicos por relatório
@@ -97,7 +99,7 @@ export default function Relatorios() {
     if (!currentEmpresa) return
     try {
       setLoading(true)
-      const [m, cp, cr, f, c, pc, cc, v, ab, mn] = await Promise.all([
+      const [m, cp, cr, f, c, pc, cc, v, ab, mn, ent] = await Promise.all([
         pb.collection('movimentos_financeiros').getFullList<MovimentoFinanceiro>({
           filter: `empresa_id = '${currentEmpresa.id}'`,
           expand: 'categoria_id,centro_custo_id',
@@ -138,6 +140,11 @@ export default function Relatorios() {
           expand: 'veiculo_id',
           sort: '-data',
         }),
+        pb.collection('entregas').getFullList<Entrega>({
+          filter: `empresa_id = '${currentEmpresa.id}'`,
+          expand: 'veiculo_id',
+          sort: '-data',
+        }),
       ])
 
       setMovimentos(m)
@@ -150,6 +157,7 @@ export default function Relatorios() {
       setVeiculos(v)
       setAbastecimentos(ab)
       setManutencoes(mn)
+      setEntregas(ent)
     } catch (err) {
       console.error('Error fetching reports data:', err)
     } finally {
@@ -486,13 +494,17 @@ export default function Relatorios() {
     if (!selectedMes) return []
     const [year, month] = selectedMes.split('-')
 
-    // Filtrar abastecimentos e manutenções do mês
+    // Filtrar abastecimentos, manutenções e entregas do mês
     const abMes = abastecimentos.filter((a) => {
       const d = new Date(a.data)
       return d.getFullYear() === Number(year) && d.getMonth() + 1 === Number(month)
     })
     const manMes = manutencoes.filter((m) => {
       const d = new Date(m.data)
+      return d.getFullYear() === Number(year) && d.getMonth() + 1 === Number(month)
+    })
+    const entMes = entregas.filter((e) => {
+      const d = new Date(e.data)
       return d.getFullYear() === Number(year) && d.getMonth() + 1 === Number(month)
     })
 
@@ -517,10 +529,13 @@ export default function Relatorios() {
       .map((v) => {
         const vAb = abMes.filter((a) => a.veiculo_id === v.id)
         const vMan = manMes.filter((m) => m.veiculo_id === v.id)
+        const vEnt = entMes.filter((e) => e.veiculo_id === v.id)
 
         const litrosTotal = vAb.reduce((acc, a) => acc + (a.litros || 0), 0)
         const custoCombustivel = vAb.reduce((acc, a) => acc + (a.valor_total || 0), 0)
         const custoManutencao = vMan.reduce((acc, m) => acc + (m.custo || 0), 0)
+        const custoEntregas = vEnt.reduce((acc, e) => acc + (e.custo_estimado || 0), 0)
+        const kmEntregas = vEnt.reduce((acc, e) => acc + (e.km_rodado || 0), 0)
         const custoTotal = custoCombustivel + custoManutencao
 
         // Consumo médio ponderado dos registros com consumo
@@ -535,10 +550,13 @@ export default function Relatorios() {
           litrosTotal,
           custoCombustivel,
           custoManutencao,
+          custoEntregas,
+          kmEntregas,
           custoTotal,
           mediaConsumo,
           qtdAbastecimentos: vAb.length,
           qtdManutencoes: vMan.length,
+          qtdEntregas: vEnt.length,
         }
       })
       .sort((a, b) => b.custoTotal - a.custoTotal)
@@ -546,24 +564,35 @@ export default function Relatorios() {
     veiculos,
     abastecimentos,
     manutencoes,
+    entregas,
     selectedMes,
     frotasVeiculoFilter,
     frotasSetorFilter,
     frotasCentroCustoFilter,
-    centrosCusto,
   ])
 
   // Totais consolidados de Frotas
   const totaisFrotas = useMemo(() => {
     return frotasPorVeiculo.reduce(
-      (acc, item) => ({
-        litros: acc.litros + item.litrosTotal,
-        combustivel: acc.combustivel + item.custoCombustivel,
-        manutencao: acc.manutencao + item.custoManutencao,
-        total: acc.total + item.custoTotal,
-        qtdVeiculos: acc.qtdVeiculos + 1,
-      }),
-      { litros: 0, combustivel: 0, manutencao: 0, total: 0, qtdVeiculos: 0 },
+      (acc, item) => {
+        acc.litros += item.litrosTotal
+        acc.combustivel += item.custoCombustivel
+        acc.manutencao += item.custoManutencao
+        acc.entregas += item.custoEntregas
+        acc.kmEntregas += item.kmEntregas
+        acc.total += item.custoTotal
+        acc.qtdVeiculos += 1
+        return acc
+      },
+      {
+        litros: 0,
+        combustivel: 0,
+        manutencao: 0,
+        entregas: 0,
+        kmEntregas: 0,
+        total: 0,
+        qtdVeiculos: 0,
+      },
     )
   }, [frotasPorVeiculo])
 
@@ -735,6 +764,8 @@ export default function Relatorios() {
                           'Litros Abastecidos',
                           'Custo Combustível (R$)',
                           'Custo Manutenção (R$)',
+                          'Custo Entregas (R$)',
+                          'Km em Entregas',
                           'Custo Total (R$)',
                           'Consumo Médio',
                         ],
@@ -747,6 +778,8 @@ export default function Relatorios() {
                           item.litrosTotal.toFixed(1),
                           item.custoCombustivel.toFixed(2),
                           item.custoManutencao.toFixed(2),
+                          item.custoEntregas.toFixed(2),
+                          item.kmEntregas.toFixed(1),
                           item.custoTotal.toFixed(2),
                           item.mediaConsumo > 0
                             ? `${item.mediaConsumo.toFixed(2)} ${item.veiculo.tipo_medidor === 'km' ? 'km/l' : 'l/h'}`
@@ -1356,7 +1389,7 @@ export default function Relatorios() {
                 </div>
 
                 {/* Cards com Totais Consolidados de Frota */}
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
                   <div className="p-3 bg-white rounded-xl border border-[#ECEAE4] shadow-xs">
                     <span className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider">
                       Volume Combustível
@@ -1388,6 +1421,18 @@ export default function Relatorios() {
                     </div>
                   </div>
 
+                  <div className="p-3 bg-blue-50/50 rounded-xl border border-blue-200 shadow-xs">
+                    <span className="text-[10px] font-semibold text-blue-800 uppercase tracking-wider">
+                      Custo em Entregas
+                    </span>
+                    <div className="text-lg font-bold text-blue-800 font-mono tabular-nums mt-0.5">
+                      {formatCurrency(totaisFrotas.entregas)}
+                    </div>
+                    <span className="text-[10px] text-blue-600 block">
+                      {totaisFrotas.kmEntregas.toFixed(0)} km em viagens
+                    </span>
+                  </div>
+
                   <div className="p-3 bg-red-50/50 rounded-xl border border-red-200 shadow-xs">
                     <span className="text-[10px] font-semibold text-red-700 uppercase tracking-wider">
                       Custo Total Frota
@@ -1397,7 +1442,6 @@ export default function Relatorios() {
                     </div>
                   </div>
                 </div>
-
                 {/* Gráfico Comparativo Combustível vs Manutenção (apenas se houver itens) */}
                 {frotasPorVeiculo.length > 0 && (
                   <div className="h-64 w-full">
@@ -1431,10 +1475,11 @@ export default function Relatorios() {
                         <th className="py-2.5 px-4 text-right">Litros</th>
                         <th className="py-2.5 px-4 text-right">Combustível</th>
                         <th className="py-2.5 px-4 text-right">Manutenção</th>
+                        <th className="py-2.5 px-4 text-right">Entregas</th>
                         <th className="py-2.5 px-4 text-right">Custo Total</th>
                         <th className="py-2.5 px-4 text-right">Consumo Médio</th>
                       </tr>
-                    </thead>
+                    </thead>{' '}
                     <tbody className="divide-y divide-[#ECEAE4]">
                       {frotasPorVeiculo.length === 0 ? (
                         <tr>
@@ -1478,9 +1523,21 @@ export default function Relatorios() {
                               <td className="py-2.5 px-4 text-right font-mono text-amber-700 tabular-nums">
                                 {formatCurrency(item.custoManutencao)}
                               </td>
+                              <td className="py-2.5 px-4 text-right font-mono text-blue-700 tabular-nums">
+                                {item.custoEntregas > 0 ? (
+                                  <div>
+                                    <span>{formatCurrency(item.custoEntregas)}</span>
+                                    <span className="block text-[9px] text-blue-500">
+                                      {item.qtdEntregas} viag. ({item.kmEntregas.toFixed(0)}km)
+                                    </span>
+                                  </div>
+                                ) : (
+                                  '—'
+                                )}
+                              </td>
                               <td className="py-2.5 px-4 text-right font-mono font-bold text-red-600 tabular-nums">
                                 {formatCurrency(item.custoTotal)}
-                              </td>
+                              </td>{' '}
                               <td className="py-2.5 px-4 text-right font-mono">
                                 {item.mediaConsumo > 0 ? (
                                   <span className="px-1.5 py-0.5 rounded bg-gray-100 text-gray-800 font-semibold">
@@ -1510,9 +1567,12 @@ export default function Relatorios() {
                           <td className="py-2.5 px-4 text-right font-mono text-amber-700 tabular-nums">
                             {formatCurrency(totaisFrotas.manutencao)}
                           </td>
+                          <td className="py-2.5 px-4 text-right font-mono text-blue-700 tabular-nums">
+                            {formatCurrency(totaisFrotas.entregas)}
+                          </td>
                           <td className="py-2.5 px-4 text-right font-mono text-red-600 tabular-nums">
                             {formatCurrency(totaisFrotas.total)}
-                          </td>
+                          </td>{' '}
                           <td className="py-2.5 px-4 text-right font-mono text-gray-400">—</td>
                         </tr>
                       </tfoot>

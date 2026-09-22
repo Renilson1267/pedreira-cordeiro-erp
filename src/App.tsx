@@ -33,6 +33,7 @@ import NotFound from '@/pages/NotFound'
 import Veiculos from '@/pages/frotas/Veiculos'
 import Abastecimentos from '@/pages/frotas/Abastecimentos'
 import Manutencoes from '@/pages/frotas/Manutencoes'
+import Entregas from '@/pages/frotas/Entregas'
 import Funcionarios from '@/pages/rh/Funcionarios'
 import HorasExtras from '@/pages/rh/HorasExtras'
 
@@ -69,6 +70,7 @@ export default function App() {
               <Route path="/frotas/veiculos" element={<Veiculos />} />
               <Route path="/frotas/abastecimentos" element={<Abastecimentos />} />
               <Route path="/frotas/manutencoes" element={<Manutencoes />} />
+              <Route path="/frotas/entregas" element={<Entregas />} />
 
               {/* Recursos Humanos (RH) */}
               <Route path="/rh/funcionarios" element={<Funcionarios />} />

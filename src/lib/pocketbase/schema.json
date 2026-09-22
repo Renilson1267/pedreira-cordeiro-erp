@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-09-22T14:29:26.896Z",
+  "generatedAt": "2026-09-22T14:51:35.144Z",
   "collections": [
     {
       "name": "users",
@@ -1918,6 +1918,173 @@
         "CREATE INDEX idx_folha_he_mes ON folha_horas_extras (mes_referencia)",
         "CREATE INDEX idx_folha_he_status ON folha_horas_extras (status)"
       ]
+    },
+    {
+      "name": "entregas",
+      "type": "base",
+      "apiRules": {
+        "list": "@request.auth.id != ''",
+        "view": "@request.auth.id != ''",
+        "create": "@request.auth.id != ''",
+        "update": "@request.auth.id != ''",
+        "delete": "@request.auth.id != ''"
+      },
+      "fields": [
+        {
+          "name": "empresa_id",
+          "type": "relation",
+          "required": true,
+          "system": false,
+          "collectionRef": "empresas"
+        },
+        {
+          "name": "veiculo_id",
+          "type": "relation",
+          "required": true,
+          "system": false,
+          "collectionRef": "veiculos"
+        },
+        {
+          "name": "data",
+          "type": "date",
+          "required": true,
+          "system": false
+        },
+        {
+          "name": "origem",
+          "type": "text",
+          "required": true,
+          "system": false
+        },
+        {
+          "name": "destino",
+          "type": "text",
+          "required": true,
+          "system": false
+        },
+        {
+          "name": "km_rodado",
+          "type": "number",
+          "required": true,
+          "system": false
+        },
+        {
+          "name": "km_inicial",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "km_final",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "motorista",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "funcionario_id",
+          "type": "relation",
+          "required": false,
+          "system": false,
+          "collectionRef": "funcionarios"
+        },
+        {
+          "name": "produto_nome",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "produto_id",
+          "type": "relation",
+          "required": false,
+          "system": false,
+          "collectionRef": "produtos"
+        },
+        {
+          "name": "quantidade",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "unidade_medida",
+          "type": "select",
+          "required": false,
+          "system": false,
+          "selectValues": ["m³", "ton", "viagem"]
+        },
+        {
+          "name": "consumo_estimado_km_l",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "preco_combustivel_litro",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "litros_estimados",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "custo_estimado",
+          "type": "number",
+          "required": true,
+          "system": false
+        },
+        {
+          "name": "custo_por_km",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "status",
+          "type": "select",
+          "required": true,
+          "system": false,
+          "selectValues": ["concluida", "em_transito", "cancelada"]
+        },
+        {
+          "name": "conta_pagar_id",
+          "type": "relation",
+          "required": false,
+          "system": false,
+          "collectionRef": "contas_pagar"
+        },
+        {
+          "name": "observacoes",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "created",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate"]
+        },
+        {
+          "name": "updated",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate", "onUpdate"]
+        }
+      ],
+      "indexes": []
     }
   ]
 }

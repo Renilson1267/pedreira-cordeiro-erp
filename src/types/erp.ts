@@ -392,3 +392,41 @@ export interface FolhaHorasExtras {
     funcionario_id?: Funcionario
   }
 }
+
+export type StatusEntrega = 'concluida' | 'em_transito' | 'cancelada'
+export type UnidadeMedidaCarga = 'm³' | 'ton' | 'viagem'
+
+export interface Entrega {
+  id: string
+  empresa_id: string
+  veiculo_id: string
+  data: string
+  origem: string
+  destino: string
+  km_rodado: number
+  km_inicial?: number
+  km_final?: number
+  motorista?: string
+  funcionario_id?: string
+  produto_id?: string
+  produto_nome?: string
+  quantidade?: number
+  unidade_medida?: UnidadeMedidaCarga
+  consumo_estimado_km_l?: number
+  preco_combustivel_litro?: number
+  litros_estimados?: number
+  custo_estimado: number
+  custo_por_km?: number
+  status: StatusEntrega
+  conta_pagar_id?: string
+  observacoes?: string
+  created: string
+  updated: string
+  expand?: {
+    empresa_id?: Empresa
+    veiculo_id?: Veiculo
+    funcionario_id?: Funcionario
+    produto_id?: Produto
+    conta_pagar_id?: ContaPagar
+  }
+}
