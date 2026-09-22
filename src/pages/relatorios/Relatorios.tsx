@@ -275,11 +275,16 @@ export default function Relatorios() {
         map[fornecedorId] = { id: fornecedorId, nome, aberto: 0, pago: 0, total: 0, qtd: 0 }
       }
       map[fornecedorId].qtd += 1
-      if (cp.status === 'Paga') {
-        map[fornecedorId].pago += cp.valor || 0
-      } else {
-        map[fornecedorId].aberto += cp.valor || 0
-      }
+      const valorPago =
+        cp.status === 'Paga'
+          ? cp.valor_pago && cp.valor_pago > 0
+            ? cp.valor_pago
+            : cp.valor || 0
+          : cp.valor_pago || 0
+      const saldoAberto = cp.status === 'Paga' ? 0 : Math.max(0, (cp.valor || 0) - valorPago)
+
+      map[fornecedorId].pago += valorPago
+      map[fornecedorId].aberto += saldoAberto
       map[fornecedorId].total += cp.valor || 0
     })
     return Object.values(map).sort((a, b) => b.total - a.total)
@@ -338,11 +343,17 @@ export default function Relatorios() {
         map[clienteId] = { id: clienteId, nome, aberto: 0, recebido: 0, total: 0, qtd: 0 }
       }
       map[clienteId].qtd += 1
-      if (cr.status === 'Recebida') {
-        map[clienteId].recebido += cr.valor || 0
-      } else {
-        map[clienteId].aberto += cr.valor || 0
-      }
+      const valorRecebido =
+        cr.status === 'Recebida'
+          ? cr.valor_recebido && cr.valor_recebido > 0
+            ? cr.valor_recebido
+            : cr.valor || 0
+          : cr.valor_recebido || 0
+      const saldoAberto =
+        cr.status === 'Recebida' ? 0 : Math.max(0, (cr.valor || 0) - valorRecebido)
+
+      map[clienteId].recebido += valorRecebido
+      map[clienteId].aberto += saldoAberto
       map[clienteId].total += cr.valor || 0
     })
     return Object.values(map).sort((a, b) => b.total - a.total)

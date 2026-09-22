@@ -124,6 +124,8 @@ export interface CreditoCliente {
   }
 }
 
+export type StatusContaPagar = 'Aberta' | 'Paga' | 'Vencida' | 'Parcial'
+
 export interface ContaPagar {
   id: string
   empresa_id: string
@@ -132,9 +134,10 @@ export interface ContaPagar {
   categoria_id?: string
   centro_custo_id?: string
   valor: number
+  valor_pago?: number
   vencimento: string
   parcelas?: number
-  status: 'Aberta' | 'Paga' | 'Vencida'
+  status: StatusContaPagar
   data_pagamento?: string
   forma_pagamento?: 'Dinheiro' | 'Pix' | 'Cartão' | 'Boleto' | 'Transferência'
   observacoes?: string
@@ -147,7 +150,12 @@ export interface ContaPagar {
   }
 }
 
-export type StatusContaReceber = 'Aberta' | 'Recebida' | 'Vencida' | 'Recebimento Antecipado'
+export type StatusContaReceber =
+  | 'Aberta'
+  | 'Recebida'
+  | 'Vencida'
+  | 'Recebimento Antecipado'
+  | 'Parcial'
 
 export interface ContaReceber {
   id: string
@@ -157,6 +165,7 @@ export interface ContaReceber {
   categoria_id?: string
   centro_custo_id?: string
   valor: number
+  valor_recebido?: number
   vencimento: string
   parcelas?: number
   status: StatusContaReceber

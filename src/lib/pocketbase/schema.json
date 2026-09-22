@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-09-22T23:07:25.367Z",
+  "generatedAt": "2026-09-22T23:21:43.009Z",
   "collections": [
     {
       "name": "users",
@@ -582,7 +582,7 @@
           "type": "select",
           "required": true,
           "system": false,
-          "selectValues": ["Aberta", "Paga", "Vencida"]
+          "selectValues": ["Aberta", "Paga", "Vencida", "Parcial"]
         },
         {
           "name": "data_pagamento",
@@ -623,6 +623,12 @@
           "required": false,
           "system": false,
           "collectionRef": "centros_custos"
+        },
+        {
+          "name": "valor_pago",
+          "type": "number",
+          "required": false,
+          "system": false
         }
       ],
       "indexes": [
@@ -693,7 +699,7 @@
           "type": "select",
           "required": true,
           "system": false,
-          "selectValues": ["Aberta", "Recebida", "Vencida", "Recebimento Antecipado"]
+          "selectValues": ["Aberta", "Recebida", "Vencida", "Recebimento Antecipado", "Parcial"]
         },
         {
           "name": "data_recebimento",
@@ -734,6 +740,12 @@
           "required": false,
           "system": false,
           "collectionRef": "centros_custos"
+        },
+        {
+          "name": "valor_recebido",
+          "type": "number",
+          "required": false,
+          "system": false
         }
       ],
       "indexes": [

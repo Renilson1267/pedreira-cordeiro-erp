@@ -124,32 +124,41 @@ export default function Dashboard() {
       setResultadoMes(receitasMes - despesasMes)
       setMovimentosRecentes(allMovimentos.slice(0, 6))
 
-      // 3. Contas a Pagar do Mês
+      // 3. Contas a Pagar do Mês (considerando saldo em aberto)
       const cpMesList = await pb.collection('contas_pagar').getFullList({
         filter: `empresa_id = '${currentEmpresa.id}' && vencimento >= '${startOfMonth}' && vencimento <= '${endOfMonth}'`,
       })
       const totalPagarMes = cpMesList
-        .filter((cp) => cp.status === 'Aberta' || cp.status === 'Vencida')
-        .reduce((sum, cp) => sum + (cp.valor || 0), 0)
+        .filter((cp) => cp.status !== 'Paga')
+        .reduce((sum, cp) => {
+          const jaPago = cp.valor_pago || 0
+          return sum + Math.max(0, (cp.valor || 0) - jaPago)
+        }, 0)
       setPagarMes(totalPagarMes)
 
-      // 4. Contas a Receber do Mês
+      // 4. Contas a Receber do Mês (considerando saldo em aberto)
       const crMesList = await pb.collection('contas_receber').getFullList({
         filter: `empresa_id = '${currentEmpresa.id}' && vencimento >= '${startOfMonth}' && vencimento <= '${endOfMonth}'`,
       })
       const totalReceberMes = crMesList
-        .filter((cr) => cr.status === 'Aberta' || cr.status === 'Vencida')
-        .reduce((sum, cr) => sum + (cr.valor || 0), 0)
+        .filter((cr) => cr.status !== 'Recebida' && cr.status !== 'Recebimento Antecipado')
+        .reduce((sum, cr) => {
+          const jaRecebido = cr.valor_recebido || 0
+          return sum + Math.max(0, (cr.valor || 0) - jaRecebido)
+        }, 0)
       setReceberMes(totalReceberMes)
 
-      // 5. Aging Overdue Summary
+      // 5. Aging Overdue Summary (saldo restante das vencidas)
       const allCpAbertas = await pb.collection('contas_pagar').getFullList({
         filter: `empresa_id = '${currentEmpresa.id}' && status != 'Paga'`,
       })
       const atrasoPagarItems = allCpAbertas.filter((c) => c.vencimento.slice(0, 10) < todayISO)
       setAtrasoPagar({
         count: atrasoPagarItems.length,
-        total: atrasoPagarItems.reduce((acc, c) => acc + (c.valor || 0), 0),
+        total: atrasoPagarItems.reduce((acc, c) => {
+          const jaPago = c.valor_pago || 0
+          return acc + Math.max(0, (c.valor || 0) - jaPago)
+        }, 0),
       })
 
       const allCrAbertas = await pb.collection('contas_receber').getFullList({
@@ -158,7 +167,10 @@ export default function Dashboard() {
       const atrasoReceberItems = allCrAbertas.filter((c) => c.vencimento.slice(0, 10) < todayISO)
       setAtrasoReceber({
         count: atrasoReceberItems.length,
-        total: atrasoReceberItems.reduce((acc, c) => acc + (c.valor || 0), 0),
+        total: atrasoReceberItems.reduce((acc, c) => {
+          const jaRecebido = c.valor_recebido || 0
+          return acc + Math.max(0, (c.valor || 0) - jaRecebido)
+        }, 0),
       })
 
       // 6. Próximos 5 Vencimentos (unindo pagar e receber)

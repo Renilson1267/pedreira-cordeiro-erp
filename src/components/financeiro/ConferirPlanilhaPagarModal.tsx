@@ -772,15 +772,20 @@ export function ConferirPlanilhaPagarModal({
             }
 
             // Comparar Valor Pago (se houver coluna de valor pago na planilha)
-            if (rawValorPago > 0 && matchingConta.status === 'Paga') {
-              // Se a conta não tem valor_pago explícito, o valor total é o pago
-              const diffPago = Math.abs(rawValorPago - (matchingConta.valor || 0))
+            if (rawValorPago > 0) {
+              const valorPagoSys =
+                matchingConta.valor_pago !== undefined && matchingConta.valor_pago !== null
+                  ? matchingConta.valor_pago
+                  : matchingConta.status === 'Paga'
+                    ? matchingConta.valor || 0
+                    : 0
+              const diffPago = Math.abs(rawValorPago - valorPagoSys)
               if (diffPago > toleranciaCentavos) {
                 divergencias.push({
                   campo: 'valor_pago',
                   label: 'Valor Pago',
                   planilha: formatCurrency(rawValorPago),
-                  sistema: formatCurrency(matchingConta.valor),
+                  sistema: formatCurrency(valorPagoSys),
                 })
               }
             }
@@ -977,6 +982,10 @@ export function ConferirPlanilhaPagarModal({
         }
 
         const isPaga = item.statusPlanilha === 'Paga'
+        const valorPagoItem = item.valorPagoPlanilha || (isPaga ? item.valorPlanilha : 0)
+        const isParcial = !isPaga && valorPagoItem > 0 && valorPagoItem < item.valorPlanilha - 0.009
+        const statusItem = isPaga ? 'Paga' : isParcial ? 'Parcial' : 'Aberta'
+
         const novaConta = await pb.collection('contas_pagar').create<ContaPagar>({
           empresa_id: empresaId,
           fornecedor_id: fornecedorId || null,
@@ -984,23 +993,25 @@ export function ConferirPlanilhaPagarModal({
           categoria_id: categorias[0]?.id || null,
           centro_custo_id: null,
           valor: item.valorPlanilha,
+          valor_pago: valorPagoItem,
           vencimento: item.vencimentoPlanilha,
           parcelas: 1,
-          status: isPaga ? 'Paga' : 'Aberta',
-          data_pagamento: isPaga ? item.dataPagamentoPlanilha : null,
-          forma_pagamento: isPaga ? (item.formaPagamentoPlanilha as any) || 'Pix' : null,
+          status: statusItem,
+          data_pagamento: isPaga || isParcial ? item.dataPagamentoPlanilha : null,
+          forma_pagamento:
+            isPaga || isParcial ? (item.formaPagamentoPlanilha as any) || 'Pix' : null,
           observacoes: `Lançado via Conferência de Planilha [Aba: ${item.aba}]${
             item.documentoTexto ? ` | Doc: ${item.documentoTexto}` : ''
           }`,
         })
 
-        if (isPaga && item.dataPagamentoPlanilha) {
+        if ((isPaga || isParcial) && valorPagoItem > 0 && item.dataPagamentoPlanilha) {
           try {
             await pb.collection('movimentos_financeiros').create({
               empresa_id: empresaId,
               tipo: 'Saida',
-              descricao: `Pagamento: ${novaConta.descricao}${nomeForn ? ` [${nomeForn}]` : ''}`,
-              valor: item.valorPlanilha,
+              descricao: `Pagamento${isParcial ? ' parcial' : ''}: ${novaConta.descricao}${nomeForn ? ` [${nomeForn}]` : ''}`,
+              valor: valorPagoItem,
               data: item.dataPagamentoPlanilha,
               origem: 'ContaPagar',
               referencia_id: novaConta.id,

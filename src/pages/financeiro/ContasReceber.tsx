@@ -4,7 +4,14 @@ import { useCompany } from '@/contexts/CompanyContext'
 import pb from '@/lib/pocketbase/client'
 import { useRealtime } from '@/hooks/use-realtime'
 import { formatCurrency, formatDate, toInputDate } from '@/lib/formatters'
-import type { ContaReceber, Cliente, PlanoConta, CentroCusto, CreditoCliente } from '@/types/erp'
+import type {
+  ContaReceber,
+  Cliente,
+  PlanoConta,
+  CentroCusto,
+  CreditoCliente,
+  StatusContaReceber,
+} from '@/types/erp'
 import { ImportadorRecebimentosModal } from '@/components/financeiro/ImportadorRecebimentosModal'
 import {
   SeletorParcelas,
@@ -61,7 +68,7 @@ export default function ContasReceber() {
 
   // Filters
   const [statusFilter, setStatusFilter] = useState<
-    'Todas' | 'Aberta' | 'Recebida' | 'Vencida' | 'Recebimento Antecipado'
+    'Todas' | 'Aberta' | 'Parcial' | 'Recebida' | 'Vencida' | 'Recebimento Antecipado'
   >('Todas')
   const [centroCustoFilter, setCentroCustoFilter] = useState<string>('todos')
   const [searchQuery, setSearchQuery] = useState('')
@@ -370,10 +377,24 @@ export default function ContasReceber() {
     return creditosDisponiveisCliente.reduce((sum, c) => sum + (c.saldo_restante || 0), 0)
   }, [creditosDisponiveisCliente])
 
+  const getValorRecebidoEfetivo = (c: ContaReceber) => {
+    if (c.status === 'Recebida') {
+      return c.valor_recebido && c.valor_recebido > 0 ? c.valor_recebido : c.valor
+    }
+    return c.valor_recebido || 0
+  }
+
+  const getSaldoRestante = (c: ContaReceber) => {
+    if (c.status === 'Recebida') return 0
+    const jaRecebido = getValorRecebidoEfetivo(c)
+    return Math.max(0, (c.valor || 0) - jaRecebido)
+  }
+
   const handleOpenSettle = (conta: ContaReceber) => {
     setSettlingConta(conta)
     setDataRecebimento(toInputDate(new Date().toISOString()))
-    setValorRecebido(conta.valor)
+    const saldo = getSaldoRestante(conta)
+    setValorRecebido(saldo > 0 ? saldo : conta.valor)
     setFormaRecebimento('Pix')
     setUsarCreditoCliente(false)
     setValorCreditoUsado(0)
@@ -382,6 +403,12 @@ export default function ContasReceber() {
 
   const handleConfirmSettle = async () => {
     if (!settlingConta) return
+    const valorBaixa = Number(valorRecebido)
+    if (valorBaixa <= 0) {
+      toast({ title: 'Informe um valor válido a receber', variant: 'destructive' })
+      return
+    }
+
     try {
       setIsSubmitting(true)
       const recDateISO = new Date(dataRecebimento).toISOString()
@@ -407,22 +434,27 @@ export default function ContasReceber() {
         }
       }
 
+      const totalAcumuladoAntes = getValorRecebidoEfetivo(settlingConta)
+      const novoTotalRecebido = totalAcumuladoAntes + valorBaixa
+      const valorTituloTotal = Number(settlingConta.valor || 0)
+      const estaQuitado = novoTotalRecebido >= valorTituloTotal - 0.009
+      const novoStatus = estaQuitado ? 'Recebida' : 'Parcial'
+
+      const obsBaixa = ` [Baixa ${novoStatus === 'Recebida' ? 'total' : 'parcial'} de ${formatCurrency(valorBaixa)} em ${formatDate(recDateISO)}${usarCreditoCliente ? ` (Crédito: ${formatCurrency(valorCreditoUsado)})` : ''}]`
+
       await pb.collection('contas_receber').update(settlingConta.id, {
-        status: 'Recebida',
+        status: novoStatus,
+        valor_recebido: novoTotalRecebido,
         data_recebimento: recDateISO,
         forma_recebimento: formaFinal,
-        observacoes:
-          (settlingConta.observacoes || '') +
-          (usarCreditoCliente
-            ? ` [Liquidado com R$ ${valorCreditoUsado.toFixed(2)} de crédito]`
-            : ''),
+        observacoes: (settlingConta.observacoes || '') + obsBaixa,
       })
 
       await pb.collection('movimentos_financeiros').create({
         empresa_id: currentEmpresa!.id,
         tipo: 'Entrada',
-        descricao: `Recebimento: ${settlingConta.descricao}${usarCreditoCliente ? ' (Compensado via Crédito)' : ''}${settlingConta.expand?.centro_custo_id ? ` [${settlingConta.expand.centro_custo_id.codigo}]` : ''}`,
-        valor: Number(valorRecebido),
+        descricao: `Recebimento${novoStatus === 'Parcial' ? ' parcial' : ''}: ${settlingConta.descricao}${usarCreditoCliente ? ' (Compensado via Crédito)' : ''}${settlingConta.expand?.centro_custo_id ? ` [${settlingConta.expand.centro_custo_id.codigo}]` : ''}`,
+        valor: valorBaixa,
         data: recDateISO,
         categoria_id: settlingConta.categoria_id || null,
         centro_custo_id: settlingConta.centro_custo_id || null,
@@ -431,7 +463,14 @@ export default function ContasReceber() {
         conciliado: false,
       })
 
-      toast({ title: 'Recebimento registrado com sucesso!' })
+      toast({
+        title: estaQuitado
+          ? 'Título quitado integralmente!'
+          : 'Recebimento parcial registrado com sucesso!',
+        description: estaQuitado
+          ? `Valor recebido: ${formatCurrency(valorBaixa)}`
+          : `Recebido: ${formatCurrency(valorBaixa)}. Saldo restante: ${formatCurrency(Math.max(0, valorTituloTotal - novoTotalRecebido))}`,
+      })
       setSettleModalOpen(false)
       setSearchParams({})
       await loadData()
@@ -450,33 +489,40 @@ export default function ContasReceber() {
   const currentMonth = new Date().getMonth()
   const currentYear = new Date().getFullYear()
 
+  // Saldo total em aberto (não vencido)
   const totalAberto = useMemo(() => {
     return contas
-      .filter((c) => c.status === 'Aberta' && c.vencimento.slice(0, 10) >= nowISO)
-      .reduce((sum, c) => sum + (c.valor || 0), 0)
+      .filter(
+        (c) =>
+          (c.status === 'Aberta' || c.status === 'Parcial') && c.vencimento.slice(0, 10) >= nowISO,
+      )
+      .reduce((sum, c) => sum + getSaldoRestante(c), 0)
   }, [contas, nowISO])
 
+  // Saldo total vencido
   const totalVencido = useMemo(() => {
     return contas
       .filter(
         (c) =>
-          c.status === 'Vencida' || (c.status === 'Aberta' && c.vencimento.slice(0, 10) < nowISO),
+          c.status === 'Vencida' ||
+          ((c.status === 'Aberta' || c.status === 'Parcial') && c.vencimento.slice(0, 10) < nowISO),
       )
-      .reduce((sum, c) => sum + (c.valor || 0), 0)
+      .reduce((sum, c) => sum + getSaldoRestante(c), 0)
   }, [contas, nowISO])
 
+  // Total efetivamente recebido de todos os títulos
   const totalRecebido = useMemo(() => {
-    return contas.filter((c) => c.status === 'Recebida').reduce((sum, c) => sum + (c.valor || 0), 0)
+    return contas.reduce((sum, c) => sum + getValorRecebidoEfetivo(c), 0)
   }, [contas])
 
   const totalRecebidoMes = useMemo(() => {
     return contas
       .filter((c) => {
-        if (c.status !== 'Recebida' || !c.data_recebimento) return false
+        if (!c.data_recebimento) return false
         const d = new Date(c.data_recebimento)
         return d.getMonth() === currentMonth && d.getFullYear() === currentYear
       })
-      .reduce((sum, c) => sum + (c.valor || 0), 0)
+      .reduce((sum, c) => sum + getValorRecebidoEfetivo(c), 0)
   }, [contas, currentMonth, currentYear])
 
   const totalAntecipado = useMemo(() => {
@@ -485,13 +531,25 @@ export default function ContasReceber() {
       .reduce((sum, c) => sum + (c.valor || 0), 0)
   }, [contas])
 
+  const getContaStatusReal = (c: ContaReceber): StatusContaReceber => {
+    if (c.status === 'Recebida' || c.status === 'Recebimento Antecipado') return c.status
+    const isOverdue = c.vencimento.slice(0, 10) < nowISO
+    if (isOverdue) return 'Vencida'
+    return c.status
+  }
+
   const filteredContas = useMemo(() => {
     return contas.filter((c) => {
-      const isOverdue = c.status === 'Aberta' && c.vencimento.slice(0, 10) < nowISO
-      const currentRealStatus = isOverdue ? 'Vencida' : c.status
+      const currentRealStatus = getContaStatusReal(c)
 
-      if (statusFilter !== 'Todas' && currentRealStatus !== statusFilter) {
-        return false
+      if (statusFilter !== 'Todas') {
+        if (statusFilter === 'Aberta') {
+          if (c.status !== 'Aberta' || currentRealStatus === 'Vencida') return false
+        } else if (statusFilter === 'Parcial') {
+          if (c.status !== 'Parcial') return false
+        } else if ((currentRealStatus as string) !== (statusFilter as string)) {
+          return false
+        }
       }
       if (centroCustoFilter !== 'todos' && c.centro_custo_id !== centroCustoFilter) {
         return false
@@ -597,25 +655,34 @@ export default function ContasReceber() {
       <Card className="rounded-2xl border-[#ECEAE4] bg-white shadow-xs p-4">
         <div className="flex flex-col md:flex-row items-center justify-between gap-3">
           <div className="flex flex-wrap items-center gap-1.5 w-full md:w-auto">
-            {(['Todas', 'Aberta', 'Recebida', 'Vencida', 'Recebimento Antecipado'] as const).map(
-              (st) => (
-                <button
-                  key={st}
-                  onClick={() => setStatusFilter(st)}
-                  className={`px-3 py-1.5 rounded-xl text-xs font-medium transition-all whitespace-nowrap ${
-                    statusFilter === st
-                      ? 'bg-teal-700 text-white shadow-xs'
-                      : 'bg-[#FAF9F7] text-gray-600 hover:bg-gray-200/70'
-                  }`}
-                >
-                  {st === 'Todas'
-                    ? 'Todos os Status'
+            {(
+              [
+                'Todas',
+                'Aberta',
+                'Parcial',
+                'Recebida',
+                'Vencida',
+                'Recebimento Antecipado',
+              ] as const
+            ).map((st) => (
+              <button
+                key={st}
+                onClick={() => setStatusFilter(st as any)}
+                className={`px-3 py-1.5 rounded-xl text-xs font-medium transition-all whitespace-nowrap ${
+                  statusFilter === st
+                    ? 'bg-teal-700 text-white shadow-xs'
+                    : 'bg-[#FAF9F7] text-gray-600 hover:bg-gray-200/70'
+                }`}
+              >
+                {st === 'Todas'
+                  ? 'Todos os Status'
+                  : st === 'Parcial'
+                    ? 'Parciais'
                     : st === 'Recebimento Antecipado'
                       ? 'Antecipados'
                       : st}
-                </button>
-              ),
-            )}
+              </button>
+            ))}
           </div>
 
           <div className="flex items-center gap-2 w-full md:w-auto">
@@ -657,7 +724,9 @@ export default function ContasReceber() {
                 <th className="py-3 px-4">Cliente</th>
                 <th className="py-3 px-4">Centro Custo</th>
                 <th className="py-3 px-4">Categoria</th>
-                <th className="py-3 px-4 text-right">Valor</th>
+                <th className="py-3 px-4 text-right">Valor Total</th>
+                <th className="py-3 px-4 text-right">Recebido</th>
+                <th className="py-3 px-4 text-right">Saldo Restante</th>
                 <th className="py-3 px-4 text-center">Status</th>
                 <th className="py-3 px-4 text-right">Ações</th>
               </tr>
@@ -665,14 +734,15 @@ export default function ContasReceber() {
             <tbody className="divide-y divide-[#ECEAE4]">
               {filteredContas.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="py-12 text-center text-gray-400">
+                  <td colSpan={10} className="py-12 text-center text-gray-400">
                     Nenhuma conta a receber encontrada para os filtros atuais.
                   </td>
                 </tr>
               ) : (
                 filteredContas.map((c) => {
-                  const isOverdue = c.status !== 'Recebida' && c.vencimento.slice(0, 10) < nowISO
-                  const displayStatus = isOverdue ? 'Vencida' : c.status
+                  const displayStatus = getContaStatusReal(c)
+                  const jaRecebido = getValorRecebidoEfetivo(c)
+                  const saldoRestante = getSaldoRestante(c)
 
                   return (
                     <tr
@@ -703,8 +773,24 @@ export default function ContasReceber() {
                       <td className="py-3.5 px-4 text-gray-500">
                         {c.expand?.categoria_id?.nome || '—'}
                       </td>
-                      <td className="py-3.5 px-4 text-right font-bold text-gray-900 tabular-nums">
+                      <td className="py-3.5 px-4 text-right font-medium text-gray-800 tabular-nums">
                         {formatCurrency(c.valor)}
+                      </td>
+                      <td className="py-3.5 px-4 text-right font-mono font-semibold text-emerald-700 tabular-nums">
+                        {jaRecebido > 0 ? formatCurrency(jaRecebido) : '—'}
+                      </td>
+                      <td className="py-3.5 px-4 text-right font-mono font-bold tabular-nums">
+                        {saldoRestante > 0 ? (
+                          <span
+                            className={
+                              displayStatus === 'Vencida' ? 'text-red-600' : 'text-amber-700'
+                            }
+                          >
+                            {formatCurrency(saldoRestante)}
+                          </span>
+                        ) : (
+                          <span className="text-gray-400 font-normal">Quitado</span>
+                        )}
                       </td>
                       <td className="py-3.5 px-4 text-center">
                         <Badge
@@ -712,11 +798,13 @@ export default function ContasReceber() {
                           className={
                             displayStatus === 'Recebida'
                               ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                              : displayStatus === 'Vencida'
-                                ? 'bg-red-50 text-red-700 border-red-200'
-                                : displayStatus === 'Recebimento Antecipado'
-                                  ? 'bg-teal-50 text-teal-800 border-teal-300 font-semibold'
-                                  : 'bg-blue-50 text-blue-700 border-blue-200'
+                              : displayStatus === 'Parcial'
+                                ? 'bg-amber-50 text-amber-800 border-amber-300 font-semibold'
+                                : displayStatus === 'Vencida'
+                                  ? 'bg-red-50 text-red-700 border-red-200'
+                                  : displayStatus === 'Recebimento Antecipado'
+                                    ? 'bg-teal-50 text-teal-800 border-teal-300 font-semibold'
+                                    : 'bg-blue-50 text-blue-700 border-blue-200'
                           }
                         >
                           {displayStatus}
@@ -732,7 +820,7 @@ export default function ContasReceber() {
                               className="h-7 text-xs border-emerald-200 text-emerald-700 hover:bg-emerald-50"
                             >
                               <CheckCircle className="w-3.5 h-3.5 mr-1" />
-                              Receber
+                              {c.status === 'Parcial' ? 'Amortizar' : 'Receber'}
                             </Button>
                           )}
                           {canEdit && (
@@ -939,16 +1027,43 @@ export default function ContasReceber() {
           </DialogHeader>
 
           <div className="space-y-4 py-2 text-xs">
-            <div className="p-3 bg-[#FAF9F7] rounded-xl border border-[#ECEAE4]">
-              <div className="font-semibold text-gray-800 text-sm">{settlingConta?.descricao}</div>
-              <div className="text-gray-500 mt-1">
-                Cliente: {settlingConta?.expand?.cliente_id?.nome || 'Não informado'}
+            {settlingConta && (
+              <div className="p-3.5 bg-[#FAF9F7] rounded-xl border border-[#ECEAE4] space-y-1.5">
+                <div className="font-semibold text-gray-900 text-sm">{settlingConta.descricao}</div>
+                <div className="text-gray-500">
+                  Cliente:{' '}
+                  <span className="font-medium text-gray-800">
+                    {settlingConta.expand?.cliente_id?.nome || 'Não informado'}
+                  </span>
+                </div>
+                <div className="grid grid-cols-3 gap-2 pt-2 border-t border-[#ECEAE4] text-center">
+                  <div>
+                    <span className="text-[10px] text-gray-400 uppercase font-semibold block">
+                      Valor Total
+                    </span>
+                    <strong className="text-gray-900 font-mono text-xs">
+                      {formatCurrency(settlingConta.valor)}
+                    </strong>
+                  </div>
+                  <div>
+                    <span className="text-[10px] text-emerald-600 uppercase font-semibold block">
+                      Já Recebido
+                    </span>
+                    <strong className="text-emerald-700 font-mono text-xs">
+                      {formatCurrency(getValorRecebidoEfetivo(settlingConta))}
+                    </strong>
+                  </div>
+                  <div>
+                    <span className="text-[10px] text-amber-700 uppercase font-semibold block">
+                      Saldo em Aberto
+                    </span>
+                    <strong className="text-amber-800 font-mono text-xs">
+                      {formatCurrency(getSaldoRestante(settlingConta))}
+                    </strong>
+                  </div>
+                </div>
               </div>
-              <div className="text-gray-500">
-                Valor a Receber:{' '}
-                <strong className="text-gray-900">{formatCurrency(settlingConta?.valor)}</strong>
-              </div>
-            </div>
+            )}
 
             <div>
               <Label className="text-xs font-semibold text-gray-700">Data de Recebimento *</Label>
@@ -962,15 +1077,51 @@ export default function ContasReceber() {
             </div>
 
             <div>
-              <Label className="text-xs font-semibold text-gray-700">Valor Recebido (R$) *</Label>
+              <div className="flex items-center justify-between">
+                <Label className="text-xs font-semibold text-gray-700">
+                  Valor Desta Baixa (R$) *
+                </Label>
+                {settlingConta && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const saldo = getSaldoRestante(settlingConta)
+                      setValorRecebido(saldo)
+                    }}
+                    className="text-[11px] text-teal-700 hover:text-teal-900 font-semibold underline cursor-pointer"
+                  >
+                    Quitar Saldo Total (
+                    {settlingConta ? formatCurrency(getSaldoRestante(settlingConta)) : ''})
+                  </button>
+                )}
+              </div>
               <Input
                 type="number"
                 step="0.01"
+                min="0.01"
                 required
                 value={valorRecebido || ''}
                 onChange={(e) => setValorRecebido(parseFloat(e.target.value) || 0)}
-                className="mt-1 font-mono"
+                className="mt-1 font-mono text-base font-bold text-gray-900"
               />
+              {settlingConta && (
+                <div className="mt-1.5 flex items-center justify-between text-[11px]">
+                  {Number(valorRecebido) < getSaldoRestante(settlingConta) ? (
+                    <span className="text-amber-700 font-medium">
+                      ⚠️ Baixa parcial: restará um saldo em aberto de{' '}
+                      <strong>
+                        {formatCurrency(
+                          Math.max(0, getSaldoRestante(settlingConta) - Number(valorRecebido)),
+                        )}
+                      </strong>
+                    </span>
+                  ) : (
+                    <span className="text-emerald-700 font-medium">
+                      ✓ Quitação integral do saldo restante
+                    </span>
+                  )}
+                </div>
+              )}
             </div>
 
             {/* Opção: Usar Crédito do Cliente */}
@@ -984,11 +1135,10 @@ export default function ContasReceber() {
                       const chk = e.target.checked
                       setUsarCreditoCliente(chk)
                       if (chk) {
-                        const valorAbater = Math.min(
-                          settlingConta?.valor || 0,
-                          totalCreditoDisponivelCliente,
-                        )
+                        const saldo = settlingConta ? getSaldoRestante(settlingConta) : 0
+                        const valorAbater = Math.min(saldo, totalCreditoDisponivelCliente)
                         setValorCreditoUsado(valorAbater)
+                        setValorRecebido(valorAbater)
                         setFormaRecebimento('Crédito do Cliente' as any)
                       } else {
                         setValorCreditoUsado(0)
@@ -1012,9 +1162,16 @@ export default function ContasReceber() {
                       <Input
                         type="number"
                         step="0.01"
-                        max={Math.min(settlingConta?.valor || 0, totalCreditoDisponivelCliente)}
+                        max={Math.min(
+                          settlingConta ? getSaldoRestante(settlingConta) : 0,
+                          totalCreditoDisponivelCliente,
+                        )}
                         value={valorCreditoUsado}
-                        onChange={(e) => setValorCreditoUsado(parseFloat(e.target.value) || 0)}
+                        onChange={(e) => {
+                          const val = parseFloat(e.target.value) || 0
+                          setValorCreditoUsado(val)
+                          setValorRecebido(val)
+                        }}
                         className="mt-1 font-mono font-bold text-emerald-900 h-8"
                       />
                     </div>
@@ -1069,12 +1226,30 @@ export default function ContasReceber() {
 
           {detailItem && (
             <div className="py-6 space-y-4 text-xs">
-              <div className="p-4 bg-teal-50/50 rounded-2xl border border-teal-100">
-                <span className="text-[11px] text-teal-700 font-semibold uppercase">
-                  Valor do Título
-                </span>
-                <div className="text-2xl font-bold text-teal-900 mt-0.5 tabular-nums">
-                  {formatCurrency(detailItem.valor)}
+              <div className="grid grid-cols-3 gap-3 p-4 bg-teal-50/50 rounded-2xl border border-teal-100 text-center">
+                <div>
+                  <span className="text-[10px] text-teal-700 font-semibold uppercase block">
+                    Valor Total
+                  </span>
+                  <div className="text-lg font-bold text-teal-950 mt-0.5 tabular-nums">
+                    {formatCurrency(detailItem.valor)}
+                  </div>
+                </div>
+                <div>
+                  <span className="text-[10px] text-emerald-700 font-semibold uppercase block">
+                    Recebido
+                  </span>
+                  <div className="text-lg font-bold text-emerald-800 mt-0.5 tabular-nums">
+                    {formatCurrency(getValorRecebidoEfetivo(detailItem))}
+                  </div>
+                </div>
+                <div>
+                  <span className="text-[10px] text-amber-800 font-semibold uppercase block">
+                    Saldo Restante
+                  </span>
+                  <div className="text-lg font-bold text-amber-900 mt-0.5 tabular-nums">
+                    {formatCurrency(getSaldoRestante(detailItem))}
+                  </div>
                 </div>
               </div>
 
@@ -1107,7 +1282,7 @@ export default function ContasReceber() {
                 </div>
                 {detailItem.data_recebimento && (
                   <div className="flex justify-between py-1">
-                    <span className="text-gray-500">Data de Recebimento:</span>
+                    <span className="text-gray-500">Último Recebimento:</span>
                     <span className="font-mono text-emerald-700">
                       {formatDate(detailItem.data_recebimento)}
                     </span>
@@ -1123,8 +1298,10 @@ export default function ContasReceber() {
 
               {detailItem.observacoes && (
                 <div className="p-3 bg-[#FAF9F7] rounded-xl border border-[#ECEAE4] mt-4">
-                  <span className="font-semibold text-gray-700 block mb-1">Observações:</span>
-                  <p className="text-gray-600">{detailItem.observacoes}</p>
+                  <span className="font-semibold text-gray-700 block mb-1">
+                    Observações e Histórico:
+                  </span>
+                  <p className="text-gray-600 whitespace-pre-wrap">{detailItem.observacoes}</p>
                 </div>
               )}
 
@@ -1138,7 +1315,9 @@ export default function ContasReceber() {
                     }}
                     className="w-full bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl"
                   >
-                    Receber Título Agora
+                    {detailItem.status === 'Parcial'
+                      ? 'Registrar Nova Baixa / Quitar'
+                      : 'Receber Título Agora'}
                   </Button>
                 </div>
               )}

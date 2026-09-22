@@ -4,7 +4,7 @@ import { useCompany } from '@/contexts/CompanyContext'
 import pb from '@/lib/pocketbase/client'
 import { useRealtime } from '@/hooks/use-realtime'
 import { formatCurrency, formatDate, toInputDate } from '@/lib/formatters'
-import type { ContaPagar, Fornecedor, PlanoConta, CentroCusto } from '@/types/erp'
+import type { ContaPagar, Fornecedor, PlanoConta, CentroCusto, StatusContaPagar } from '@/types/erp'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -59,7 +59,9 @@ export default function ContasPagar() {
   const [loading, setLoading] = useState(true)
 
   // Filters
-  const [statusFilter, setStatusFilter] = useState<'Todas' | 'Aberta' | 'Paga' | 'Vencida'>('Todas')
+  const [statusFilter, setStatusFilter] = useState<
+    'Todas' | 'Aberta' | 'Parcial' | 'Paga' | 'Vencida'
+  >('Todas')
   const [centroCustoFilter, setCentroCustoFilter] = useState<string>('todos')
   const [searchQuery, setSearchQuery] = useState('')
 
@@ -384,33 +386,63 @@ export default function ContasPagar() {
     }
   }
 
+  const getValorPagoEfetivo = (c: ContaPagar) => {
+    if (c.status === 'Paga') {
+      return c.valor_pago && c.valor_pago > 0 ? c.valor_pago : c.valor
+    }
+    return c.valor_pago || 0
+  }
+
+  const getSaldoRestante = (c: ContaPagar) => {
+    if (c.status === 'Paga') return 0
+    const jaPago = getValorPagoEfetivo(c)
+    return Math.max(0, (c.valor || 0) - jaPago)
+  }
+
   const handleOpenSettle = (conta: ContaPagar) => {
     setSettlingConta(conta)
     setDataPagamento(toInputDate(new Date().toISOString()))
-    setValorPago(conta.valor)
+    const saldo = getSaldoRestante(conta)
+    setValorPago(saldo > 0 ? saldo : conta.valor)
     setFormaPagamento('Pix')
     setSettleModalOpen(true)
   }
 
   const handleConfirmSettle = async () => {
     if (!settlingConta) return
+    const valorBaixa = Number(valorPago)
+    if (valorBaixa <= 0) {
+      toast({ title: 'Informe um valor válido a pagar', variant: 'destructive' })
+      return
+    }
+
     try {
       setIsSubmitting(true)
       const payDateISO = new Date(dataPagamento).toISOString()
 
-      // 1. Update status to Paga
+      const totalAcumuladoAntes = getValorPagoEfetivo(settlingConta)
+      const novoTotalPago = totalAcumuladoAntes + valorBaixa
+      const valorTituloTotal = Number(settlingConta.valor || 0)
+      const estaQuitado = novoTotalPago >= valorTituloTotal - 0.009
+      const novoStatus = estaQuitado ? 'Paga' : 'Parcial'
+
+      const obsBaixa = ` [Baixa ${novoStatus === 'Paga' ? 'total' : 'parcial'} de ${formatCurrency(valorBaixa)} em ${formatDate(payDateISO)}]`
+
+      // 1. Update status to Paga or Parcial and save valor_pago
       await pb.collection('contas_pagar').update(settlingConta.id, {
-        status: 'Paga',
+        status: novoStatus,
+        valor_pago: novoTotalPago,
         data_pagamento: payDateISO,
         forma_pagamento: formaPagamento,
+        observacoes: (settlingConta.observacoes || '') + obsBaixa,
       })
 
-      // 2. Create financial movement
+      // 2. Create financial movement with the exact partial payment amount
       await pb.collection('movimentos_financeiros').create({
         empresa_id: currentEmpresa!.id,
         tipo: 'Saida',
-        descricao: `Pagamento: ${settlingConta.descricao}${settlingConta.expand?.centro_custo_id ? ` [${settlingConta.expand.centro_custo_id.codigo}]` : ''}`,
-        valor: Number(valorPago),
+        descricao: `Pagamento${novoStatus === 'Parcial' ? ' parcial' : ''}: ${settlingConta.descricao}${settlingConta.expand?.centro_custo_id ? ` [${settlingConta.expand.centro_custo_id.codigo}]` : ''}`,
+        valor: valorBaixa,
         data: payDateISO,
         categoria_id: settlingConta.categoria_id || null,
         centro_custo_id: settlingConta.centro_custo_id || null,
@@ -419,7 +451,14 @@ export default function ContasPagar() {
         conciliado: false,
       })
 
-      toast({ title: 'Baixa efetuada com sucesso!' })
+      toast({
+        title: estaQuitado
+          ? 'Título quitado integralmente!'
+          : 'Pagamento parcial registrado com sucesso!',
+        description: estaQuitado
+          ? `Valor pago: ${formatCurrency(valorBaixa)}`
+          : `Pago: ${formatCurrency(valorBaixa)}. Saldo a pagar: ${formatCurrency(Math.max(0, valorTituloTotal - novoTotalPago))}`,
+      })
       setSettleModalOpen(false)
       setSearchParams({})
       await loadData()
@@ -435,37 +474,58 @@ export default function ContasPagar() {
   const currentMonth = new Date().getMonth()
   const currentYear = new Date().getFullYear()
 
+  // Saldo total em aberto (não vencido)
   const totalAberto = useMemo(() => {
     return contas
-      .filter((c) => c.status === 'Aberta' && c.vencimento.slice(0, 10) >= nowISO)
-      .reduce((sum, c) => sum + (c.valor || 0), 0)
+      .filter(
+        (c) =>
+          (c.status === 'Aberta' || c.status === 'Parcial') && c.vencimento.slice(0, 10) >= nowISO,
+      )
+      .reduce((sum, c) => sum + getSaldoRestante(c), 0)
   }, [contas, nowISO])
 
+  // Saldo total vencido
   const totalVencido = useMemo(() => {
     return contas
-      .filter((c) => c.status !== 'Paga' && c.vencimento.slice(0, 10) < nowISO)
-      .reduce((sum, c) => sum + (c.valor || 0), 0)
+      .filter(
+        (c) =>
+          c.status === 'Vencida' ||
+          ((c.status === 'Aberta' || c.status === 'Parcial') && c.vencimento.slice(0, 10) < nowISO),
+      )
+      .reduce((sum, c) => sum + getSaldoRestante(c), 0)
   }, [contas, nowISO])
 
+  // Total pago no mês (somando valores pagos das contas com pagamento neste mês)
   const totalPagoMes = useMemo(() => {
     return contas
       .filter((c) => {
-        if (c.status !== 'Paga' || !c.data_pagamento) return false
+        if (!c.data_pagamento) return false
         const d = new Date(c.data_pagamento)
         return d.getMonth() === currentMonth && d.getFullYear() === currentYear
       })
-      .reduce((sum, c) => sum + (c.valor || 0), 0)
+      .reduce((sum, c) => sum + getValorPagoEfetivo(c), 0)
   }, [contas, currentMonth, currentYear])
+
+  const getContaStatusReal = (c: ContaPagar): StatusContaPagar => {
+    if (c.status === 'Paga') return 'Paga'
+    const isOverdue = c.vencimento.slice(0, 10) < nowISO
+    if (isOverdue) return 'Vencida'
+    return c.status
+  }
 
   // Filtered List
   const filteredContas = useMemo(() => {
     return contas.filter((c) => {
-      // Dynamic vencida check
-      const isOverdue = c.status !== 'Paga' && c.vencimento.slice(0, 10) < nowISO
-      const currentRealStatus = isOverdue ? 'Vencida' : c.status
+      const currentRealStatus = getContaStatusReal(c)
 
-      if (statusFilter !== 'Todas' && currentRealStatus !== statusFilter) {
-        return false
+      if (statusFilter !== 'Todas') {
+        if (statusFilter === 'Aberta') {
+          if (c.status !== 'Aberta' || currentRealStatus === 'Vencida') return false
+        } else if (statusFilter === 'Parcial') {
+          if (c.status !== 'Parcial') return false
+        } else if ((currentRealStatus as string) !== (statusFilter as string)) {
+          return false
+        }
       }
       if (centroCustoFilter !== 'todos' && c.centro_custo_id !== centroCustoFilter) {
         return false
@@ -575,17 +635,17 @@ export default function ContasPagar() {
         <div className="flex flex-col md:flex-row items-center justify-between gap-3">
           {/* Status chips */}
           <div className="flex flex-wrap items-center gap-1.5 w-full md:w-auto">
-            {(['Todas', 'Aberta', 'Paga', 'Vencida'] as const).map((st) => (
+            {(['Todas', 'Aberta', 'Parcial', 'Paga', 'Vencida'] as const).map((st) => (
               <button
                 key={st}
-                onClick={() => setStatusFilter(st)}
+                onClick={() => setStatusFilter(st as any)}
                 className={`px-3 py-1.5 rounded-xl text-xs font-medium transition-all ${
                   statusFilter === st
                     ? 'bg-teal-700 text-white shadow-xs'
                     : 'bg-[#FAF9F7] text-gray-600 hover:bg-gray-200/70'
                 }`}
               >
-                {st === 'Todas' ? 'Todos os Status' : st}
+                {st === 'Todas' ? 'Todos os Status' : st === 'Parcial' ? 'Parciais' : st}
               </button>
             ))}
           </div>
@@ -631,7 +691,9 @@ export default function ContasPagar() {
                 <th className="py-3 px-4">Fornecedor</th>
                 <th className="py-3 px-4">Centro Custo</th>
                 <th className="py-3 px-4">Categoria</th>
-                <th className="py-3 px-4 text-right">Valor</th>
+                <th className="py-3 px-4 text-right">Valor Total</th>
+                <th className="py-3 px-4 text-right">Pago</th>
+                <th className="py-3 px-4 text-right">Saldo Restante</th>
                 <th className="py-3 px-4 text-center">Status</th>
                 <th className="py-3 px-4 text-right">Ações</th>
               </tr>
@@ -639,14 +701,15 @@ export default function ContasPagar() {
             <tbody className="divide-y divide-[#ECEAE4]">
               {filteredContas.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="py-12 text-center text-gray-400">
+                  <td colSpan={10} className="py-12 text-center text-gray-400">
                     Nenhuma conta a pagar encontrada para os filtros atuais.
                   </td>
                 </tr>
               ) : (
                 filteredContas.map((c) => {
-                  const isOverdue = c.status !== 'Paga' && c.vencimento.slice(0, 10) < nowISO
-                  const displayStatus = isOverdue ? 'Vencida' : c.status
+                  const displayStatus = getContaStatusReal(c)
+                  const jaPago = getValorPagoEfetivo(c)
+                  const saldoRestante = getSaldoRestante(c)
 
                   return (
                     <tr
@@ -677,8 +740,24 @@ export default function ContasPagar() {
                       <td className="py-3.5 px-4 text-gray-500">
                         {c.expand?.categoria_id?.nome || '—'}
                       </td>
-                      <td className="py-3.5 px-4 text-right font-bold text-gray-900 tabular-nums">
+                      <td className="py-3.5 px-4 text-right font-medium text-gray-800 tabular-nums">
                         {formatCurrency(c.valor)}
+                      </td>
+                      <td className="py-3.5 px-4 text-right font-mono font-semibold text-emerald-700 tabular-nums">
+                        {jaPago > 0 ? formatCurrency(jaPago) : '—'}
+                      </td>
+                      <td className="py-3.5 px-4 text-right font-mono font-bold tabular-nums">
+                        {saldoRestante > 0 ? (
+                          <span
+                            className={
+                              displayStatus === 'Vencida' ? 'text-red-600' : 'text-amber-700'
+                            }
+                          >
+                            {formatCurrency(saldoRestante)}
+                          </span>
+                        ) : (
+                          <span className="text-gray-400 font-normal">Quitado</span>
+                        )}
                       </td>
                       <td className="py-3.5 px-4 text-center">
                         <Badge
@@ -686,9 +765,11 @@ export default function ContasPagar() {
                           className={
                             displayStatus === 'Paga'
                               ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                              : displayStatus === 'Vencida'
-                                ? 'bg-red-50 text-red-700 border-red-200'
-                                : 'bg-blue-50 text-blue-700 border-blue-200'
+                              : displayStatus === 'Parcial'
+                                ? 'bg-amber-50 text-amber-800 border-amber-300 font-semibold'
+                                : displayStatus === 'Vencida'
+                                  ? 'bg-red-50 text-red-700 border-red-200'
+                                  : 'bg-blue-50 text-blue-700 border-blue-200'
                           }
                         >
                           {displayStatus}
@@ -704,7 +785,7 @@ export default function ContasPagar() {
                               className="h-7 text-xs border-emerald-200 text-emerald-700 hover:bg-emerald-50"
                             >
                               <CheckCircle className="w-3.5 h-3.5 mr-1" />
-                              Baixar
+                              {c.status === 'Parcial' ? 'Amortizar' : 'Baixar'}
                             </Button>
                           )}
                           {canEdit && (
@@ -921,16 +1002,45 @@ export default function ContasPagar() {
           </DialogHeader>
 
           <div className="space-y-4 py-2 text-xs">
-            <div className="p-3 bg-[#FAF9F7] rounded-xl border border-[#ECEAE4]">
-              <div className="font-semibold text-gray-800 text-sm">{settlingConta?.descricao}</div>
-              <div className="text-gray-500 mt-1">
-                Fornecedor: {settlingConta?.expand?.fornecedor_id?.nome || 'Não informado'}
+            {settlingConta && (
+              <div className="p-3.5 bg-[#FAF9F7] rounded-xl border border-[#ECEAE4] space-y-1.5">
+                <div className="font-semibold text-gray-900 text-sm">{settlingConta.descricao}</div>
+                <div className="text-gray-500">
+                  Fornecedor:{' '}
+                  <span className="font-medium text-gray-800">
+                    {settlingConta.expand?.fornecedor_id?.nome ||
+                      settlingConta.descricao ||
+                      'Não informado'}
+                  </span>
+                </div>
+                <div className="grid grid-cols-3 gap-2 pt-2 border-t border-[#ECEAE4] text-center">
+                  <div>
+                    <span className="text-[10px] text-gray-400 uppercase font-semibold block">
+                      Valor Total
+                    </span>
+                    <strong className="text-gray-900 font-mono text-xs">
+                      {formatCurrency(settlingConta.valor)}
+                    </strong>
+                  </div>
+                  <div>
+                    <span className="text-[10px] text-emerald-600 uppercase font-semibold block">
+                      Já Pago
+                    </span>
+                    <strong className="text-emerald-700 font-mono text-xs">
+                      {formatCurrency(getValorPagoEfetivo(settlingConta))}
+                    </strong>
+                  </div>
+                  <div>
+                    <span className="text-[10px] text-amber-700 uppercase font-semibold block">
+                      Saldo a Pagar
+                    </span>
+                    <strong className="text-amber-800 font-mono text-xs">
+                      {formatCurrency(getSaldoRestante(settlingConta))}
+                    </strong>
+                  </div>
+                </div>
               </div>
-              <div className="text-gray-500">
-                Valor Original:{' '}
-                <strong className="text-gray-900">{formatCurrency(settlingConta?.valor)}</strong>
-              </div>
-            </div>
+            )}
 
             <div>
               <Label className="text-xs font-semibold text-gray-700">Data de Pagamento *</Label>
@@ -944,15 +1054,51 @@ export default function ContasPagar() {
             </div>
 
             <div>
-              <Label className="text-xs font-semibold text-gray-700">Valor Pago (R$) *</Label>
+              <div className="flex items-center justify-between">
+                <Label className="text-xs font-semibold text-gray-700">
+                  Valor Desta Baixa (R$) *
+                </Label>
+                {settlingConta && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const saldo = getSaldoRestante(settlingConta)
+                      setValorPago(saldo)
+                    }}
+                    className="text-[11px] text-teal-700 hover:text-teal-900 font-semibold underline cursor-pointer"
+                  >
+                    Quitar Saldo Total (
+                    {settlingConta ? formatCurrency(getSaldoRestante(settlingConta)) : ''})
+                  </button>
+                )}
+              </div>
               <Input
                 type="number"
                 step="0.01"
+                min="0.01"
                 required
                 value={valorPago || ''}
                 onChange={(e) => setValorPago(parseFloat(e.target.value) || 0)}
-                className="mt-1 font-mono"
+                className="mt-1 font-mono text-base font-bold text-gray-900"
               />
+              {settlingConta && (
+                <div className="mt-1.5 flex items-center justify-between text-[11px]">
+                  {Number(valorPago) < getSaldoRestante(settlingConta) ? (
+                    <span className="text-amber-700 font-medium">
+                      ⚠️ Pagamento parcial: restará um saldo a pagar de{' '}
+                      <strong>
+                        {formatCurrency(
+                          Math.max(0, getSaldoRestante(settlingConta) - Number(valorPago)),
+                        )}
+                      </strong>
+                    </span>
+                  ) : (
+                    <span className="text-emerald-700 font-medium">
+                      ✓ Quitação integral do saldo restante
+                    </span>
+                  )}
+                </div>
+              )}
             </div>
 
             <div>
@@ -998,12 +1144,30 @@ export default function ContasPagar() {
 
           {detailItem && (
             <div className="py-6 space-y-4 text-xs">
-              <div className="p-4 bg-teal-50/50 rounded-2xl border border-teal-100">
-                <span className="text-[11px] text-teal-700 font-semibold uppercase">
-                  Valor do Título
-                </span>
-                <div className="text-2xl font-bold text-teal-900 mt-0.5 tabular-nums">
-                  {formatCurrency(detailItem.valor)}
+              <div className="grid grid-cols-3 gap-3 p-4 bg-teal-50/50 rounded-2xl border border-teal-100 text-center">
+                <div>
+                  <span className="text-[10px] text-teal-700 font-semibold uppercase block">
+                    Valor Total
+                  </span>
+                  <div className="text-lg font-bold text-teal-950 mt-0.5 tabular-nums">
+                    {formatCurrency(detailItem.valor)}
+                  </div>
+                </div>
+                <div>
+                  <span className="text-[10px] text-emerald-700 font-semibold uppercase block">
+                    Pago
+                  </span>
+                  <div className="text-lg font-bold text-emerald-800 mt-0.5 tabular-nums">
+                    {formatCurrency(getValorPagoEfetivo(detailItem))}
+                  </div>
+                </div>
+                <div>
+                  <span className="text-[10px] text-amber-800 font-semibold uppercase block">
+                    Saldo a Pagar
+                  </span>
+                  <div className="text-lg font-bold text-amber-900 mt-0.5 tabular-nums">
+                    {formatCurrency(getSaldoRestante(detailItem))}
+                  </div>
                 </div>
               </div>
 
@@ -1038,7 +1202,7 @@ export default function ContasPagar() {
                 </div>
                 {detailItem.data_pagamento && (
                   <div className="flex justify-between py-1">
-                    <span className="text-gray-500">Data de Pagamento:</span>
+                    <span className="text-gray-500">Último Pagamento:</span>
                     <span className="font-mono text-emerald-700">
                       {formatDate(detailItem.data_pagamento)}
                     </span>
@@ -1054,8 +1218,10 @@ export default function ContasPagar() {
 
               {detailItem.observacoes && (
                 <div className="p-3 bg-[#FAF9F7] rounded-xl border border-[#ECEAE4] mt-4">
-                  <span className="font-semibold text-gray-700 block mb-1">Observações:</span>
-                  <p className="text-gray-600">{detailItem.observacoes}</p>
+                  <span className="font-semibold text-gray-700 block mb-1">
+                    Observações e Histórico:
+                  </span>
+                  <p className="text-gray-600 whitespace-pre-wrap">{detailItem.observacoes}</p>
                 </div>
               )}
 
@@ -1069,7 +1235,9 @@ export default function ContasPagar() {
                     }}
                     className="w-full bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl"
                   >
-                    Baixar Título Agora
+                    {detailItem.status === 'Parcial'
+                      ? 'Registrar Nova Baixa / Quitar'
+                      : 'Baixar Título Agora'}
                   </Button>
                 </div>
               )}

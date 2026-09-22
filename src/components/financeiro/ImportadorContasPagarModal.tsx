@@ -1199,15 +1199,22 @@ export function ImportadorContasPagarModal({
               continue
             }
 
-            // 5. Determinar Situação (Paga ou Aberta)
+            // 5. Determinar Situação (Paga, Parcial ou Aberta)
             let isPaga = false
+            let isParcial = false
+
             if (classificacaoPadrao === 'Paga') {
               isPaga = true
             } else if (classificacaoPadrao === 'Aberta') {
               isPaga = false
             } else {
               if (
-                rawValorPago > 0 ||
+                rawStatus.includes('parcial') ||
+                (rawValorPago > 0 && valorFinal > 0 && rawValorPago < valorFinal - 0.009)
+              ) {
+                isParcial = true
+              } else if (
+                (rawValorPago > 0 && rawValorPago >= valorFinal - 0.009) ||
                 rawDataPag ||
                 rawStatus.includes('pag') ||
                 rawStatus.includes('liquid') ||
@@ -1226,9 +1233,18 @@ export function ImportadorContasPagarModal({
               }
             }
 
-            const dataPagamentoISO = isPaga
-              ? parseDataPagar(rawDataPag || rawVenc, sheetCfg.ano, sheetCfg.mes)
-              : null
+            const valorEfetivoPago = isPaga
+              ? rawValorPago > 0
+                ? rawValorPago
+                : valorFinal
+              : isParcial
+                ? rawValorPago
+                : 0
+
+            const dataPagamentoISO =
+              isPaga || (isParcial && rawValorPago > 0)
+                ? parseDataPagar(rawDataPag || rawVenc, sheetCfg.ano, sheetCfg.mes)
+                : null
 
             // 6. Forma de Pagamento
             let finalForma: 'Dinheiro' | 'Pix' | 'Cartão' | 'Boleto' | 'Transferência' = 'Pix'
@@ -1270,6 +1286,8 @@ export function ImportadorContasPagarModal({
             }
 
             // 9. Gravar Conta a Pagar
+            const statusFinalGravado = isPaga ? 'Paga' : isParcial ? 'Parcial' : 'Aberta'
+
             const createdConta = await pb.collection('contas_pagar').create<ContaPagar>({
               empresa_id: empresaId,
               fornecedor_id: fornecedorId || null,
@@ -1277,22 +1295,23 @@ export function ImportadorContasPagarModal({
               categoria_id: finalCategoriaId,
               centro_custo_id: finalCentroCustoId,
               valor: valorFinal,
+              valor_pago: valorEfetivoPago,
               vencimento: dataVencimentoISO,
               parcelas: 1,
-              status: isPaga ? 'Paga' : 'Aberta',
-              data_pagamento: isPaga ? dataPagamentoISO : null,
-              forma_pagamento: isPaga ? finalForma : null,
-              observacoes: `Importado de planilha [Aba: ${sheetCfg.name}]${rawDoc ? ` | Doc: ${rawDoc}` : ''}`,
+              status: statusFinalGravado,
+              data_pagamento: dataPagamentoISO,
+              forma_pagamento: isPaga || isParcial ? finalForma : null,
+              observacoes: `Importado de planilha [Aba: ${sheetCfg.name}]${rawDoc ? ` | Doc: ${rawDoc}` : ''}${isParcial ? ` | Pagamento parcial importado: ${valorEfetivoPago}` : ''}`,
             })
 
-            // 10. Se baixada/paga, gerar movimento financeiro de saída
-            if (isPaga && dataPagamentoISO) {
+            // 10. Se houve pagamento (total ou parcial), gerar movimento financeiro pelo valor efetivo
+            if ((isPaga || isParcial) && valorEfetivoPago > 0 && dataPagamentoISO) {
               try {
                 await pb.collection('movimentos_financeiros').create({
                   empresa_id: empresaId,
                   tipo: 'Saida',
-                  descricao: `Pagamento: ${createdConta.descricao}${rawForn ? ` [${rawForn}]` : ''}`,
-                  valor: valorFinal,
+                  descricao: `Pagamento${isParcial ? ' parcial' : ''}: ${createdConta.descricao}${rawForn ? ` [${rawForn}]` : ''}`,
+                  valor: valorEfetivoPago,
                   data: dataPagamentoISO,
                   categoria_id: finalCategoriaId,
                   centro_custo_id: finalCentroCustoId,
@@ -1310,6 +1329,8 @@ export function ImportadorContasPagarModal({
             sheetImportados += 1
             if (isPaga) {
               resultSummary.pagasBaixadas += 1
+            } else if (isParcial) {
+              resultSummary.emAberto += 1
             } else {
               resultSummary.emAberto += 1
             }
