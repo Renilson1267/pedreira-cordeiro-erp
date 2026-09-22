@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-09-22T13:35:53.612Z",
+  "generatedAt": "2026-09-22T13:44:44.481Z",
   "collections": [
     {
       "name": "users",
@@ -430,6 +430,12 @@
           "required": false,
           "system": false,
           "autodateTriggers": ["onCreate", "onUpdate"]
+        },
+        {
+          "name": "densidade",
+          "type": "number",
+          "required": false,
+          "system": false
         }
       ],
       "indexes": [

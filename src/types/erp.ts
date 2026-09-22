@@ -74,6 +74,7 @@ export interface Produto {
   preco_venda: number
   estoque: number
   estoque_minimo: number
+  densidade?: number
   created: string
   updated: string
 }
