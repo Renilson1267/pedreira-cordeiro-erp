@@ -351,6 +351,48 @@ export function ConferirPlanilhaPagarModal({
     setSheetsConfig((prev) => prev.map((s) => ({ ...s, selected })))
   }
 
+  const updateSheetHeaderRow = (sheetName: string, headerRowIndex: number) => {
+    if (!workbook) return
+    const ws = workbook.Sheets[sheetName]
+    if (!ws) return
+    const matrix: any[][] = XLSX.utils.sheet_to_json(ws, {
+      header: 1,
+      defval: '',
+      blankrows: false,
+    })
+    const safeRow = Math.max(1, Math.min(headerRowIndex, matrix.length || 1))
+    const rawHeaders = matrix[safeRow - 1] || []
+    const headers = rawHeaders.map((c, idx) => {
+      const val = String(c || '').trim()
+      return val || `Coluna_${idx + 1}`
+    })
+
+    setSheetsConfig((prev) =>
+      prev.map((s) => {
+        if (s.name !== sheetName) return s
+        return {
+          ...s,
+          headerRowIndex: safeRow,
+          headers,
+          totalRows: Math.max(0, matrix.length - safeRow),
+        }
+      }),
+    )
+
+    if (activeSheetPreview === sheetName) {
+      setSheetHeaders(headers)
+      const dataRows = matrix.slice(safeRow)
+      const preview = dataRows.slice(0, 5).map((row) => {
+        const obj: Record<string, any> = {}
+        headers.forEach((h, colIdx) => {
+          obj[h] = row[colIdx] ?? ''
+        })
+        return obj
+      })
+      setPreviewRows(preview)
+    }
+  }
+
   const updateSheetCompetencia = (sheetName: string, mes: number, ano: number) => {
     setSheetsConfig((prev) => prev.map((s) => (s.name === sheetName ? { ...s, mes, ano } : s)))
   }
@@ -438,36 +480,100 @@ export function ConferirPlanilhaPagarModal({
         })
 
         const headerIdx = sheetCfg.headerRowIndex || 1
-        const headers =
-          matrix[headerIdx - 1]?.map((c, i) => String(c || '').trim() || `Coluna_${i + 1}`) || []
+        const rawHeaders = matrix[headerIdx - 1] || []
+        const currentSheetHeaders = rawHeaders.map(
+          (c, i) => String(c || '').trim() || `Coluna_${i + 1}`,
+        )
         const dataRows = matrix.slice(headerIdx)
+
+        // Resolução dinâmica de colunas para esta aba específica
+        const findColInSheet = (pattern: RegExp) =>
+          currentSheetHeaders.find((h) => pattern.test(h)) || ''
+
+        const vencCol =
+          mapping.vencimento && currentSheetHeaders.includes(mapping.vencimento)
+            ? mapping.vencimento
+            : findColInSheet(/venc|data_venc|dt_venc|data|dia/i) || currentSheetHeaders[0] || ''
+
+        const fornCol =
+          mapping.fornecedor && currentSheetHeaders.includes(mapping.fornecedor)
+            ? mapping.fornecedor
+            : findColInSheet(/forn|favorec|credor|benefici[aá]rio|empresa/i) || ''
+
+        const descCol =
+          mapping.descricao && currentSheetHeaders.includes(mapping.descricao)
+            ? mapping.descricao
+            : findColInSheet(/hist|desc|serv|prod|refer[eê]ncia|item|discrim/i) || ''
+
+        const valCol =
+          mapping.valor && currentSheetHeaders.includes(mapping.valor)
+            ? mapping.valor
+            : findColInSheet(/val|total|bruto|a pagar/i) || ''
+
+        const valPagoCol =
+          mapping.valorPago && currentSheetHeaders.includes(mapping.valorPago)
+            ? mapping.valorPago
+            : findColInSheet(/pago|pg|liquid|valor_pago/i) || ''
+
+        const dataPagCol =
+          mapping.dataPagamento && currentSheetHeaders.includes(mapping.dataPagamento)
+            ? mapping.dataPagamento
+            : findColInSheet(/dt_pag|data_pag|baixa|liquid/i) || ''
+
+        const formaCol =
+          mapping.formaPagamento && currentSheetHeaders.includes(mapping.formaPagamento)
+            ? mapping.formaPagamento
+            : findColInSheet(/forma|meio|tipo_pag/i) || ''
+
+        const statusCol =
+          mapping.status && currentSheetHeaders.includes(mapping.status)
+            ? mapping.status
+            : findColInSheet(/status|situa[cç][aã]o|cond/i) || ''
+
+        const centroCol =
+          mapping.centroCusto && currentSheetHeaders.includes(mapping.centroCusto)
+            ? mapping.centroCusto
+            : findColInSheet(/centro|cc|custo|frente|setor/i) || ''
+
+        const catCol =
+          mapping.categoria && currentSheetHeaders.includes(mapping.categoria)
+            ? mapping.categoria
+            : findColInSheet(/categ|plano|conta/i) || ''
+
+        const docCol =
+          mapping.documento && currentSheetHeaders.includes(mapping.documento)
+            ? mapping.documento
+            : findColInSheet(/doc|nf|nota|duplicata|fatura/i) || ''
+
+        const cnpjCol =
+          mapping.cnpj && currentSheetHeaders.includes(mapping.cnpj)
+            ? mapping.cnpj
+            : findColInSheet(/cnpj|cpf|insc/i) || ''
 
         const getVal = (row: any[], headerName: string): any => {
           if (!headerName) return ''
-          const colIdx = headers.indexOf(headerName)
+          const colIdx = currentSheetHeaders.indexOf(headerName)
           if (colIdx === -1) return ''
           return row[colIdx] ?? ''
         }
 
         for (let r = 0; r < dataRows.length; r++) {
           const row = dataRows[r]
-          const rawVenc = getVal(row, mapping.vencimento)
-          let rawForn = String(getVal(row, mapping.fornecedor) || '').trim()
-          const rawDesc = String(getVal(row, mapping.descricao) || '').trim()
+          const rawVenc = getVal(row, vencCol)
+          let rawForn = String(getVal(row, fornCol) || '').trim()
+          const rawDesc = String(getVal(row, descCol) || '').trim()
           if (!rawForn && rawDesc) {
             rawForn = rawDesc
           }
-          const rawValor = parseValorPagar(getVal(row, mapping.valor))
-          const rawValorPago = mapping.valorPago
-            ? parseValorPagar(getVal(row, mapping.valorPago))
-            : 0
-          const rawDataPag = getVal(row, mapping.dataPagamento)
-          const rawForma = String(getVal(row, mapping.formaPagamento) || '').trim()
-          const rawStatus = String(getVal(row, mapping.status) || '').toLowerCase()
-          const rawCentro = String(getVal(row, mapping.centroCusto) || '').trim()
-          const rawCat = String(getVal(row, mapping.categoria) || '').trim()
-          const rawDoc = String(getVal(row, mapping.documento) || '').trim()
-          const rawCnpj = String(getVal(row, mapping.cnpj) || '').trim()
+          const rawValor = parseValorPagar(getVal(row, valCol))
+          const rawValorPago = valPagoCol ? parseValorPagar(getVal(row, valPagoCol)) : 0
+          const rawDataPag = getVal(row, dataPagCol)
+          const rawForma = String(getVal(row, formaCol) || '').trim()
+          const rawStatus = String(getVal(row, statusCol) || '').toLowerCase()
+          const rawCentro = String(getVal(row, centroCol) || '').trim()
+          const rawCat = String(getVal(row, catCol) || '').trim()
+          const rawDoc = String(getVal(row, docCol) || '').trim()
+          const rawCnpj = String(getVal(row, cnpjCol) || '').trim()
 
           // Pular linhas vazias
           if (rawValor <= 0 && rawValorPago <= 0 && !rawDesc && !rawForn) {
@@ -1369,13 +1475,37 @@ export function ConferirPlanilhaPagarModal({
                           {cfg.name}
                         </span>
                         <span className="text-[10px] text-gray-500">
-                          {cfg.totalRows} linhas • Cabeçalho L{cfg.headerRowIndex}
-                          {cfg.sufixo && ` (2ª Folha ${cfg.sufixo})`}
+                          {cfg.totalRows} linhas de dados
+                          {cfg.sufixo && ` • (2ª Folha ${cfg.sufixo})`}
                         </span>
                       </div>
                     </div>
 
-                    <div className="flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
+                    <div
+                      className="flex flex-wrap items-center gap-1.5"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <div className="flex items-center gap-1">
+                        <Label className="text-[10px] text-gray-500 whitespace-nowrap">
+                          Linha Cab.:
+                        </Label>
+                        <Input
+                          type="number"
+                          min={1}
+                          max={100}
+                          value={cfg.headerRowIndex}
+                          onChange={(e) => {
+                            const val = parseInt(e.target.value, 10)
+                            if (!isNaN(val) && val >= 1) {
+                              updateSheetHeaderRow(cfg.name, val)
+                            }
+                          }}
+                          disabled={!cfg.selected}
+                          className="h-7 w-16 text-[11px] bg-white font-mono text-center"
+                          title="Linha da planilha onde estão os títulos das colunas"
+                        />
+                      </div>
+
                       <Select
                         value={String(cfg.mes)}
                         onValueChange={(val) =>

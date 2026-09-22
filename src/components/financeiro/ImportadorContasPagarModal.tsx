@@ -75,6 +75,16 @@ export interface SheetCompetencia {
   totalRows: number
 }
 
+export interface SheetImportResult {
+  aba: string
+  linhasLidas: number
+  importados: number
+  duplicados: number
+  errosCount: number
+  vaziaOuSemCabecalho?: boolean
+  motivoVazia?: string
+}
+
 export interface ContasPagarImportSummary {
   totalLidos: number
   importados: number
@@ -83,6 +93,7 @@ export interface ContasPagarImportSummary {
   emAberto: number
   fornecedoresCriados: string[]
   erros: { linha: number; aba: string; motivo: string }[]
+  detalhesPorAba: SheetImportResult[]
 }
 
 const MESES_MAP: Record<string, number> = {
@@ -212,61 +223,115 @@ export function inferirCompetenciaAba(sheetName: string): {
 export function detectarLinhaCabecalho(matrix: any[][]): number {
   if (!matrix || matrix.length === 0) return 1
 
-  for (let r = 0; r < Math.min(matrix.length, 12); r++) {
+  // Buscar até a linha 25 (cabeçalho pode ter títulos, logos ou sumários acima)
+  const maxScan = Math.min(matrix.length, 25)
+
+  let bestRow = -1
+  let bestScore = 0
+
+  for (let r = 0; r < maxScan; r++) {
     const row = matrix[r] || []
-    const texts = row.map((cell) =>
-      String(cell || '')
-        .normalize('NFD')
-        .replace(/[\u0300-\u036f]/g, '')
-        .toUpperCase()
-        .trim(),
-    )
+    if (!Array.isArray(row) || row.length === 0) continue
+
+    const texts = row
+      .map((cell) =>
+        String(cell ?? '')
+          .normalize('NFD')
+          .replace(/[\u0300-\u036f]/g, '')
+          .toUpperCase()
+          .trim(),
+      )
+      .filter((t) => t.length > 0)
+
+    if (texts.length < 2) continue
 
     const hasVenc = texts.some(
       (t) =>
+        t === 'VENC' ||
+        t === 'VENCIMENTO' ||
+        t === 'DATA' ||
+        t === 'DT' ||
+        t === 'DIA' ||
         t.includes('VENC') ||
         t.includes('DATA') ||
         t.includes('EMISS') ||
-        t.includes('DIA') ||
-        t.includes('DT'),
+        t.includes('DT_') ||
+        t.includes('DT.'),
     )
     const hasForn = texts.some(
       (t) =>
+        t === 'FORNECEDOR' ||
+        t === 'FAVORECIDO' ||
+        t === 'CREDOR' ||
         t.includes('FORN') ||
         t.includes('FAVOREC') ||
         t.includes('CREDOR') ||
-        t.includes('NOME') ||
+        t.includes('BENEFICI') ||
         t.includes('EMPRESA') ||
-        t.includes('BENEFICI'),
+        t.includes('NOME'),
     )
     const hasVal = texts.some(
       (t) =>
+        t === 'VALOR' ||
+        t === 'VALOR PAGO' ||
+        t === 'TOTAL' ||
         t.includes('VAL') ||
         t.includes('PAGO') ||
         t.includes('TOTAL') ||
         t.includes('BRUTO') ||
-        t.includes('LIQUIDO'),
+        t.includes('LIQUID'),
     )
     const hasDesc = texts.some(
       (t) =>
+        t === 'DESCRICAO' ||
+        t === 'HISTORICO' ||
         t.includes('HIST') ||
         t.includes('DESC') ||
         t.includes('REF') ||
         t.includes('CONTA') ||
         t.includes('DISCRIM') ||
         t.includes('ITEM') ||
-        t.includes('SERVIC'),
+        t.includes('SERVIC') ||
+        t.includes('PRODUTO'),
+    )
+    const hasDoc = texts.some((t) => t.includes('DOC') || t.includes('NF') || t.includes('NOTA'))
+    const hasStatus = texts.some(
+      (t) => t.includes('STATUS') || t.includes('SITUAC') || t.includes('PAGO'),
     )
 
+    let score = 0
+    if (hasVenc) score += 3
+    if (hasVal) score += 3
+    if (hasForn) score += 2
+    if (hasDesc) score += 2
+    if (hasDoc) score += 1
+    if (hasStatus) score += 1
+
+    // Excluir linhas que parecem ser títulos de relatório ou subtotais
+    const rowJoin = texts.join(' ')
     if (
-      (hasVenc && hasVal) ||
-      (hasForn && hasVal) ||
-      (hasDesc && hasVal) ||
-      (hasVenc && hasDesc) ||
-      (hasForn && hasDesc)
+      rowJoin.includes('RELATORIO') ||
+      rowJoin.includes('CONSOLIDADO') ||
+      rowJoin.startsWith('TOTAL')
     ) {
-      return r + 1 // 1-based
+      score -= 3
     }
+
+    if (score >= 4 && score > bestScore) {
+      bestScore = score
+      bestRow = r + 1
+    }
+  }
+
+  if (bestRow > 0) {
+    return bestRow
+  }
+
+  // Fallback: primeira linha com pelo menos 2 células de texto não vazias
+  for (let r = 0; r < Math.min(matrix.length, 5); r++) {
+    const row = matrix[r] || []
+    const filled = row.filter((c) => String(c ?? '').trim().length > 0)
+    if (filled.length >= 2) return r + 1
   }
 
   return 1
@@ -274,13 +339,34 @@ export function detectarLinhaCabecalho(matrix: any[][]): number {
 
 export function parseValorPagar(val: any): number {
   if (typeof val === 'number') return isNaN(val) ? 0 : Math.abs(val)
-  if (!val) return 0
-  let str = String(val).replace(/R\$/g, '').trim()
+  if (val === null || val === undefined || val === '') return 0
+
+  let str = String(val)
+    .replace(/R\$/gi, '')
+    .replace(/\s+/g, '')
+    .replace(/[^\d.,+-]/g, '')
+    .trim()
+
+  if (!str) return 0
+
+  // Se tiver ambos vírgula e ponto:
+  // ex: "1.250,50" -> vírgula é decimal
+  // ex: "1,250.50" -> ponto é decimal
   if (str.includes(',') && str.includes('.')) {
-    str = str.replace(/\./g, '').replace(',', '.')
+    const lastComma = str.lastIndexOf(',')
+    const lastDot = str.lastIndexOf('.')
+    if (lastComma > lastDot) {
+      // 1.250,50 -> remove todos os pontos, troca vírgula por ponto
+      str = str.replace(/\./g, '').replace(',', '.')
+    } else {
+      // 1,250.50 -> remove todas as vírgulas
+      str = str.replace(/,/g, '')
+    }
   } else if (str.includes(',')) {
+    // Apenas vírgula: "1250,50" -> "1250.50"
     str = str.replace(',', '.')
   }
+
   const num = parseFloat(str)
   return isNaN(num) ? 0 : Math.abs(num)
 }
@@ -405,6 +491,17 @@ export function parseDataPagar(val: any, anoFallback?: number, mesFallback?: num
     let y = parseInt(brMatch[3], 10)
     if (y < 100) y += 2000
     if (m >= 1 && m <= 12) {
+      return toUtcNoon(y, m, d)
+    }
+  }
+
+  // 5b. Formato sem separador DDMMYYYY (8 dígitos) ex: "01102026"
+  const digits8Match = str.match(/^(\d{2})(\d{2})(\d{4})$/)
+  if (digits8Match) {
+    const d = parseInt(digits8Match[1], 10)
+    const m = parseInt(digits8Match[2], 10)
+    const y = parseInt(digits8Match[3], 10)
+    if (m >= 1 && m <= 12 && d >= 1 && d <= 31 && y >= 2020 && y <= 2035) {
       return toUtcNoon(y, m, d)
     }
   }
@@ -600,6 +697,49 @@ export function ImportadorContasPagarModal({
     }
   }
 
+  // Atualiza a linha de cabeçalho de uma aba específica e recalcula colunas/linhas
+  const updateSheetHeaderRow = (sheetName: string, headerRowIndex: number) => {
+    if (!workbook) return
+    const ws = workbook.Sheets[sheetName]
+    if (!ws) return
+    const matrix: any[][] = XLSX.utils.sheet_to_json(ws, {
+      header: 1,
+      defval: '',
+      blankrows: false,
+    })
+    const safeRow = Math.max(1, Math.min(headerRowIndex, matrix.length || 1))
+    const rawHeaders = matrix[safeRow - 1] || []
+    const headers = rawHeaders.map((c, idx) => {
+      const val = String(c || '').trim()
+      return val || `Coluna_${idx + 1}`
+    })
+
+    setSheetsConfig((prev) =>
+      prev.map((s) => {
+        if (s.name !== sheetName) return s
+        return {
+          ...s,
+          headerRowIndex: safeRow,
+          headers,
+          totalRows: Math.max(0, matrix.length - safeRow),
+        }
+      }),
+    )
+
+    if (activeSheetPreview === sheetName) {
+      setSheetHeaders(headers)
+      const dataRows = matrix.slice(safeRow)
+      const preview = dataRows.slice(0, 5).map((row) => {
+        const obj: Record<string, any> = {}
+        headers.forEach((h, colIdx) => {
+          obj[h] = row[colIdx] ?? ''
+        })
+        return obj
+      })
+      setPreviewRows(preview)
+    }
+  }
+
   // Carrega cabeçalhos e primeiras linhas de uma aba específica
   const carregarPreviaAba = (wb: XLSX.WorkBook, config: SheetCompetencia) => {
     const ws = wb.Sheets[config.name]
@@ -718,6 +858,7 @@ export function ImportadorContasPagarModal({
       emAberto: 0,
       fornecedoresCriados: [],
       erros: [],
+      detalhesPorAba: [],
     }
 
     try {
@@ -765,7 +906,18 @@ export function ImportadorContasPagarModal({
       for (const sheetCfg of sheetsToImport) {
         setProgressMsg(`Processando aba: ${sheetCfg.name}...`)
         const ws = workbook.Sheets[sheetCfg.name]
-        if (!ws) continue
+        if (!ws) {
+          resultSummary.detalhesPorAba.push({
+            aba: sheetCfg.name,
+            linhasLidas: 0,
+            importados: 0,
+            duplicados: 0,
+            errosCount: 0,
+            vaziaOuSemCabecalho: true,
+            motivoVazia: 'Aba não encontrada no arquivo XLSX',
+          })
+          continue
+        }
 
         const matrix: any[][] = XLSX.utils.sheet_to_json(ws, {
           header: 1,
@@ -773,46 +925,129 @@ export function ImportadorContasPagarModal({
           blankrows: false,
         })
 
+        if (!matrix || matrix.length === 0) {
+          resultSummary.detalhesPorAba.push({
+            aba: sheetCfg.name,
+            linhasLidas: 0,
+            importados: 0,
+            duplicados: 0,
+            errosCount: 0,
+            vaziaOuSemCabecalho: true,
+            motivoVazia: 'Aba sem dados ou linhas em branco',
+          })
+          continue
+        }
+
         const headerIdx = sheetCfg.headerRowIndex || 1
-        const headers =
-          matrix[headerIdx - 1]?.map((c, i) => String(c || '').trim() || `Coluna_${i + 1}`) || []
+        const rawHeaders = matrix[headerIdx - 1] || []
+        const currentSheetHeaders = rawHeaders.map(
+          (c, i) => String(c || '').trim() || `Coluna_${i + 1}`,
+        )
         const dataRows = matrix.slice(headerIdx)
+
+        // Resolução dinâmica de colunas para esta aba específica (caso os nomes variem um pouco)
+        const findColInSheet = (pattern: RegExp) =>
+          currentSheetHeaders.find((h) => pattern.test(h)) || ''
+
+        const vencCol =
+          mapping.vencimento && currentSheetHeaders.includes(mapping.vencimento)
+            ? mapping.vencimento
+            : findColInSheet(/venc|data_venc|dt_venc|data|dia/i) || currentSheetHeaders[0] || ''
+
+        const fornCol =
+          mapping.fornecedor && currentSheetHeaders.includes(mapping.fornecedor)
+            ? mapping.fornecedor
+            : findColInSheet(/forn|favorec|credor|benefici[aá]rio|empresa/i) || ''
+
+        const descCol =
+          mapping.descricao && currentSheetHeaders.includes(mapping.descricao)
+            ? mapping.descricao
+            : findColInSheet(/hist|desc|serv|prod|refer[eê]ncia|item|discrim/i) || ''
+
+        const valCol =
+          mapping.valor && currentSheetHeaders.includes(mapping.valor)
+            ? mapping.valor
+            : findColInSheet(/val|total|bruto|a pagar/i) || ''
+
+        const valPagoCol =
+          mapping.valorPago && currentSheetHeaders.includes(mapping.valorPago)
+            ? mapping.valorPago
+            : findColInSheet(/pago|pg|liquid|valor_pago/i) || ''
+
+        const dataPagCol =
+          mapping.dataPagamento && currentSheetHeaders.includes(mapping.dataPagamento)
+            ? mapping.dataPagamento
+            : findColInSheet(/dt_pag|data_pag|baixa|liquid/i) || ''
+
+        const formaCol =
+          mapping.formaPagamento && currentSheetHeaders.includes(mapping.formaPagamento)
+            ? mapping.formaPagamento
+            : findColInSheet(/forma|meio|tipo_pag/i) || ''
+
+        const statusCol =
+          mapping.status && currentSheetHeaders.includes(mapping.status)
+            ? mapping.status
+            : findColInSheet(/status|situa[cç][aã]o|cond/i) || ''
+
+        const centroCol =
+          mapping.centroCusto && currentSheetHeaders.includes(mapping.centroCusto)
+            ? mapping.centroCusto
+            : findColInSheet(/centro|cc|custo|frente|setor/i) || ''
+
+        const catCol =
+          mapping.categoria && currentSheetHeaders.includes(mapping.categoria)
+            ? mapping.categoria
+            : findColInSheet(/categ|plano|conta/i) || ''
+
+        const docCol =
+          mapping.documento && currentSheetHeaders.includes(mapping.documento)
+            ? mapping.documento
+            : findColInSheet(/doc|nf|nota|duplicata|fatura/i) || ''
+
+        const cnpjCol =
+          mapping.cnpj && currentSheetHeaders.includes(mapping.cnpj)
+            ? mapping.cnpj
+            : findColInSheet(/cnpj|cpf|insc/i) || ''
 
         const getVal = (row: any[], headerName: string): any => {
           if (!headerName) return ''
-          const colIdx = headers.indexOf(headerName)
+          const colIdx = currentSheetHeaders.indexOf(headerName)
           if (colIdx === -1) return ''
           return row[colIdx] ?? ''
         }
 
+        let sheetLidos = 0
+        let sheetImportados = 0
+        let sheetDuplicados = 0
+        let sheetErrosCount = 0
+
         for (let r = 0; r < dataRows.length; r++) {
           const row = dataRows[r]
+          const numLinha = r + headerIdx + 1
+
+          // Checar se a linha inteira está vazia
+          const temConteudo = row.some((c) => String(c ?? '').trim().length > 0)
+          if (!temConteudo) continue
+
+          sheetLidos += 1
           resultSummary.totalLidos += 1
 
           try {
-            const rawVenc = getVal(row, mapping.vencimento)
-            let rawForn = String(getVal(row, mapping.fornecedor) || '').trim()
-            const rawDesc = String(getVal(row, mapping.descricao) || '').trim()
-            // Regra: se o campo Fornecedor vier vazio (ou não mapeado), usar o conteúdo da coluna Descrição
+            const rawVenc = getVal(row, vencCol)
+            let rawForn = String(getVal(row, fornCol) || '').trim()
+            const rawDesc = String(getVal(row, descCol) || '').trim()
             if (!rawForn && rawDesc) {
               rawForn = rawDesc
             }
-            const rawValor = parseValorPagar(getVal(row, mapping.valor))
-            const rawValorPago = mapping.valorPago
-              ? parseValorPagar(getVal(row, mapping.valorPago))
-              : 0
-            const rawDataPag = getVal(row, mapping.dataPagamento)
-            const rawForma = String(getVal(row, mapping.formaPagamento) || '').trim()
-            const rawStatus = String(getVal(row, mapping.status) || '').toLowerCase()
-            const rawCentro = String(getVal(row, mapping.centroCusto) || '').trim()
-            const rawCat = String(getVal(row, mapping.categoria) || '').trim()
-            const rawDoc = String(getVal(row, mapping.documento) || '').trim()
-            const rawCnpj = String(getVal(row, mapping.cnpj) || '').trim()
-
-            // Linha vazia ou totalizador sem valor e sem descrição válida
-            if (rawValor <= 0 && rawValorPago <= 0 && !rawDesc && !rawForn) {
-              continue
-            }
+            const rawValor = parseValorPagar(getVal(row, valCol))
+            const rawValorPago = valPagoCol ? parseValorPagar(getVal(row, valPagoCol)) : 0
+            const rawDataPag = getVal(row, dataPagCol)
+            const rawForma = String(getVal(row, formaCol) || '').trim()
+            const rawStatus = String(getVal(row, statusCol) || '').toLowerCase()
+            const rawCentro = String(getVal(row, centroCol) || '').trim()
+            const rawCat = String(getVal(row, catCol) || '').trim()
+            const rawDoc = String(getVal(row, docCol) || '').trim()
+            const rawCnpj = String(getVal(row, cnpjCol) || '').trim()
 
             // Ignorar linhas de cabeçalho repetidas ou rótulos de totais
             const lowerDesc = rawDesc.toLowerCase()
@@ -826,6 +1061,15 @@ export function ImportadorContasPagarModal({
 
             const valorFinal = rawValor > 0 ? rawValor : rawValorPago
             if (valorFinal <= 0) {
+              // Se há descrição ou favorecido mas o valor foi 0, registrar motivo
+              if (rawDesc || rawForn) {
+                resultSummary.erros.push({
+                  aba: sheetCfg.name,
+                  linha: numLinha,
+                  motivo: `Valor não reconhecido ou zerado (${String(getVal(row, valCol)) || 'vazio'})`,
+                })
+                sheetErrosCount += 1
+              }
               continue
             }
 
@@ -840,7 +1084,6 @@ export function ImportadorContasPagarModal({
               if (fornecedoresCache.has(keyForn)) {
                 fornecedorId = fornecedoresCache.get(keyForn)!.id
               } else if (criarFornecedoresNaoEncontrados) {
-                // Cadastrar novo fornecedor
                 try {
                   let cnpjConsultaInfo: any = null
                   if (cnpjLimpo.length === 14 && buscarCnpjBrasilApi) {
@@ -887,7 +1130,6 @@ export function ImportadorContasPagarModal({
             const descFinal = rawDesc || `Despesa ${rawForn || sheetCfg.name}${docInfo}`
 
             // 4. Verificação de Duplicidade
-            // Deduplicação: fornecedor_id + YYYY-MM-DD + valor + desc (prefixo normalizado)
             const dateOnly = dataVencimentoISO.slice(0, 10)
             const descNorm = descFinal
               .toLowerCase()
@@ -898,6 +1140,7 @@ export function ImportadorContasPagarModal({
 
             if (detectarDuplicados && existingKeys.has(dedupeKey)) {
               resultSummary.duplicadosPulados += 1
+              sheetDuplicados += 1
               continue
             }
 
@@ -908,7 +1151,6 @@ export function ImportadorContasPagarModal({
             } else if (classificacaoPadrao === 'Aberta') {
               isPaga = false
             } else {
-              // Auto-detectar
               if (
                 rawValorPago > 0 ||
                 rawDataPag ||
@@ -925,8 +1167,6 @@ export function ImportadorContasPagarModal({
               ) {
                 isPaga = false
               } else {
-                // Se a data de vencimento for bem passada e não houver status aberto, a pedreira frequentemente lista despesas realizadas
-                // Mas sendo cauteloso: se há valor pago ou data pag, marca como paga; senão se rawValorPago == rawValor, paga.
                 isPaga = rawValorPago >= valorFinal && rawValorPago > 0
               }
             }
@@ -1012,19 +1252,34 @@ export function ImportadorContasPagarModal({
 
             existingKeys.add(dedupeKey)
             resultSummary.importados += 1
+            sheetImportados += 1
             if (isPaga) {
               resultSummary.pagasBaixadas += 1
             } else {
               resultSummary.emAberto += 1
             }
           } catch (rowErr: any) {
+            sheetErrosCount += 1
             resultSummary.erros.push({
               aba: sheetCfg.name,
-              linha: r + headerIdx + 1,
+              linha: numLinha,
               motivo: rowErr.message || 'Falha ao processar linha',
             })
           }
         }
+
+        const isVazia = sheetLidos === 0
+        resultSummary.detalhesPorAba.push({
+          aba: sheetCfg.name,
+          linhasLidas: sheetLidos,
+          importados: sheetImportados,
+          duplicados: sheetDuplicados,
+          errosCount: sheetErrosCount,
+          vaziaOuSemCabecalho: isVazia,
+          motivoVazia: isVazia
+            ? `Nenhuma linha útil lida após a linha ${headerIdx}. Verifique se a linha do cabeçalho está correta.`
+            : undefined,
+        })
       }
 
       setSummary(resultSummary)
@@ -1188,13 +1443,37 @@ export function ImportadorContasPagarModal({
                           {cfg.name}
                         </span>
                         <span className="text-[10px] text-gray-500">
-                          {cfg.totalRows} linhas • Cabeçalho na linha {cfg.headerRowIndex}
-                          {cfg.sufixo && ` (2ª Folha ${cfg.sufixo})`}
+                          {cfg.totalRows} linha(s) de dados
+                          {cfg.sufixo && ` • (2ª Folha ${cfg.sufixo})`}
                         </span>
                       </div>
                     </div>
 
-                    <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
+                    <div
+                      className="flex flex-wrap items-center gap-2"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <div className="flex items-center gap-1">
+                        <Label className="text-[10px] text-gray-500 whitespace-nowrap">
+                          Linha Cab.:
+                        </Label>
+                        <Input
+                          type="number"
+                          min={1}
+                          max={100}
+                          value={cfg.headerRowIndex}
+                          onChange={(e) => {
+                            const val = parseInt(e.target.value, 10)
+                            if (!isNaN(val) && val >= 1) {
+                              updateSheetHeaderRow(cfg.name, val)
+                            }
+                          }}
+                          disabled={!cfg.selected}
+                          className="h-7 w-16 text-xs bg-white font-mono text-center"
+                          title="Linha da planilha onde estão os títulos das colunas"
+                        />
+                      </div>
+
                       <div className="flex items-center gap-1">
                         <Label className="text-[10px] text-gray-500">Mês:</Label>
                         <Select
@@ -1801,6 +2080,66 @@ export function ImportadorContasPagarModal({
                 </div>
               </div>
 
+              {/* Detalhamento por Aba (Visibilidade Total) */}
+              {summary.detalhesPorAba && summary.detalhesPorAba.length > 0 && (
+                <div className="p-3 bg-white rounded-xl border border-[#ECEAE4] space-y-2">
+                  <span className="font-semibold text-gray-800 block text-xs">
+                    Detalhamento por Aba Processada:
+                  </span>
+                  <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
+                    {summary.detalhesPorAba.map((item, idx) => (
+                      <div
+                        key={idx}
+                        className={`p-2 rounded-lg border text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-1.5 ${
+                          item.vaziaOuSemCabecalho
+                            ? 'bg-amber-50/80 border-amber-200 text-amber-950'
+                            : item.errosCount > 0
+                              ? 'bg-red-50/50 border-red-200 text-gray-800'
+                              : 'bg-[#FAF9F7] border-[#ECEAE4] text-gray-800'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2">
+                          <span className="font-bold text-gray-900">{item.aba}</span>
+                          {item.vaziaOuSemCabecalho ? (
+                            <Badge
+                              variant="outline"
+                              className="text-[10px] bg-amber-100 text-amber-900 border-amber-300"
+                            >
+                              0 linhas lidas
+                            </Badge>
+                          ) : (
+                            <span className="text-[11px] text-gray-500">
+                              {item.linhasLidas} lidas • {item.importados} importadas •{' '}
+                              {item.duplicados} duplicadas
+                            </span>
+                          )}
+                        </div>
+
+                        {item.vaziaOuSemCabecalho ? (
+                          <span className="text-[11px] font-medium text-amber-800">
+                            {item.motivoVazia || 'Aba sem dados detectados'}
+                          </span>
+                        ) : item.errosCount > 0 ? (
+                          <Badge
+                            variant="outline"
+                            className="text-[10px] bg-red-100 text-red-800 border-red-300"
+                          >
+                            {item.errosCount} divergência(s)
+                          </Badge>
+                        ) : (
+                          <Badge
+                            variant="outline"
+                            className="text-[10px] bg-emerald-50 text-emerald-700 border-emerald-300"
+                          >
+                            100% OK
+                          </Badge>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               {summary.fornecedoresCriados.length > 0 && (
                 <div className="p-3 bg-[#FAF9F7] rounded-xl border border-[#ECEAE4]">
                   <span className="font-semibold text-gray-800 block mb-1">
@@ -1826,7 +2165,7 @@ export function ImportadorContasPagarModal({
                     <AlertTriangle className="w-3.5 h-3.5 text-red-600" />
                     Linhas com Divergências ({summary.erros.length}):
                   </span>
-                  <div className="space-y-1 max-h-28 overflow-y-auto text-[11px] text-red-800">
+                  <div className="space-y-1 max-h-36 overflow-y-auto text-[11px] text-red-800">
                     {summary.erros.map((err, i) => (
                       <div key={i}>
                         [{err.aba}] Linha {err.linha}: {err.motivo}
