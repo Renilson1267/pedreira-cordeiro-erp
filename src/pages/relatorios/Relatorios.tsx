@@ -14,6 +14,7 @@ import type {
   Abastecimento,
   Manutencao,
 } from '@/types/erp'
+import { SETORES_FROTA, normalizarSetorFrota, veiculoCorrespondeAoSetor } from '@/lib/frota'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -81,8 +82,9 @@ export default function Relatorios() {
   const [loading, setLoading] = useState(false)
 
   // Filtros específicos por relatório
-  // 1. Frotas: Equipamento e Centro de Custo
+  // 1. Frotas: Equipamento, Setor e Centro de Custo
   const [frotasVeiculoFilter, setFrotasVeiculoFilter] = useState<string>('todos')
+  const [frotasSetorFilter, setFrotasSetorFilter] = useState<string>('todos')
   const [frotasCentroCustoFilter, setFrotasCentroCustoFilter] = useState<string>('todos')
 
   // 2. Contas a Pagar: Fornecedor
@@ -431,6 +433,7 @@ export default function Relatorios() {
       if (
         vSetor.includes('entrega') ||
         vSetor.includes('transporte') ||
+        normalizarSetorFrota(v.setor) === 'Entrega' ||
         v.tipo === 'caminhao' ||
         v.tipo === 'pipa'
       ) {
@@ -493,9 +496,12 @@ export default function Relatorios() {
       return d.getFullYear() === Number(year) && d.getMonth() + 1 === Number(month)
     })
 
-    // Aplicar filtros de Equipamento e Centro de Custo
+    // Aplicar filtros de Equipamento, Setor e Centro de Custo
     const veiculosFiltrados = veiculos.filter((v) => {
       if (frotasVeiculoFilter !== 'todos' && v.id !== frotasVeiculoFilter) {
+        return false
+      }
+      if (frotasSetorFilter !== 'todos' && !veiculoCorrespondeAoSetor(v.setor, frotasSetorFilter)) {
         return false
       }
       if (
@@ -542,6 +548,7 @@ export default function Relatorios() {
     manutencoes,
     selectedMes,
     frotasVeiculoFilter,
+    frotasSetorFilter,
     frotasCentroCustoFilter,
     centrosCusto,
   ])
@@ -712,7 +719,9 @@ export default function Relatorios() {
                       )
                     } else if (activeReport === 'relatorio_frotas') {
                       const suffix =
-                        frotasVeiculoFilter !== 'todos' || frotasCentroCustoFilter !== 'todos'
+                        frotasVeiculoFilter !== 'todos' ||
+                        frotasSetorFilter !== 'todos' ||
+                        frotasCentroCustoFilter !== 'todos'
                           ? '_Filtrado'
                           : ''
                       exportCSV(
@@ -1284,13 +1293,30 @@ export default function Relatorios() {
                         </Select>
                       </div>
 
+                      {/* Dropdown Setor / Área Operacional */}
+                      <div className="flex items-center gap-1">
+                        <Select value={frotasSetorFilter} onValueChange={setFrotasSetorFilter}>
+                          <SelectTrigger className="w-[190px] bg-white border-[#ECEAE4] text-xs h-8 font-medium">
+                            <SelectValue placeholder="Setor / Área" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="todos">Todos os Setores</SelectItem>
+                            {SETORES_FROTA.map((s) => (
+                              <SelectItem key={s} value={s}>
+                                {s === 'Entrega' ? '🚛 Entrega' : s}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+
                       {/* Dropdown Centro de Custo */}
                       <div className="flex items-center gap-1">
                         <Select
                           value={frotasCentroCustoFilter}
                           onValueChange={setFrotasCentroCustoFilter}
                         >
-                          <SelectTrigger className="w-[220px] bg-white border-[#ECEAE4] text-xs h-8 font-medium">
+                          <SelectTrigger className="w-[200px] bg-white border-[#ECEAE4] text-xs h-8 font-medium">
                             <SelectValue placeholder="Centro de Custo" />
                           </SelectTrigger>
                           <SelectContent>
@@ -1304,12 +1330,15 @@ export default function Relatorios() {
                         </Select>
                       </div>
 
-                      {(frotasVeiculoFilter !== 'todos' || frotasCentroCustoFilter !== 'todos') && (
+                      {(frotasVeiculoFilter !== 'todos' ||
+                        frotasSetorFilter !== 'todos' ||
+                        frotasCentroCustoFilter !== 'todos') && (
                         <Button
                           variant="ghost"
                           size="sm"
                           onClick={() => {
                             setFrotasVeiculoFilter('todos')
+                            setFrotasSetorFilter('todos')
                             setFrotasCentroCustoFilter('todos')
                           }}
                           className="h-8 text-xs text-gray-500 hover:text-gray-900"

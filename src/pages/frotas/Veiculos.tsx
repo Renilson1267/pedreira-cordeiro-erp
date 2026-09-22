@@ -4,7 +4,14 @@ import pb from '@/lib/pocketbase/client'
 import { useRealtime } from '@/hooks/use-realtime'
 import { formatCurrency } from '@/lib/formatters'
 import type { Veiculo, TipoVeiculo, TipoMedidor, StatusVeiculo } from '@/types/erp'
-import { Card, CardContent } from '@/components/ui/card'
+import {
+  SETORES_FROTA,
+  SETORES_PEDREIRA,
+  TIPO_LABELS,
+  normalizarSetorFrota,
+  veiculoCorrespondeAoSetor,
+} from '@/lib/frota'
+import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -29,38 +36,14 @@ import {
   Clock,
   Wrench,
   CheckCircle2,
-  AlertCircle,
   Construction,
   Filter,
   DollarSign,
-  Building2,
+  Layers,
 } from 'lucide-react'
 
-export const TIPO_LABELS: Record<TipoVeiculo, { label: string; icon: string }> = {
-  caminhao: { label: 'Caminhão de Entrega / Basculante / Caçamba', icon: '🚛' },
-  escavadeira: { label: 'Escavadeira Hidráulica', icon: '🚜' },
-  carregadeira: { label: 'Pá Carregadeira', icon: '🚜' },
-  perfuratriz: { label: 'Perfuratriz Hidráulica', icon: '⚙️' },
-  trator: { label: 'Trator / Motoniveladora', icon: '🚜' },
-  betoneira: { label: 'Caminhão Betoneira', icon: '🚚' },
-  pipa: { label: 'Caminhão Pipa', icon: '🚛' },
-  bomba: { label: 'Bomba de Concreto', icon: '🚜' },
-  central_concreto: { label: 'Central de Concreto (Usina)', icon: '🏭' },
-  britador: { label: 'Britador / Lokotrack', icon: '⚙️' },
-  peneira: { label: 'Peneira Classificadora', icon: '🏗️' },
-  moto: { label: 'Motocicleta', icon: '🏍️' },
-  carro_passeio: { label: 'Carro de Passeio / Pickup 4x4', icon: '🛻' },
-  outro: { label: 'Outro Equipamento', icon: '🏗️' },
-}
-
-export const SETORES_PEDREIRA = [
-  'Central Britagem',
-  'Entrega',
-  'Entrega de Brita',
-  'Central de Concreto',
-  'Central Britagem Lokotrack',
-  'Engenharia / Supervisão',
-]
+// Re-exporta para compatibilidade reversa caso outros módulos importem daqui
+export { SETORES_PEDREIRA, TIPO_LABELS }
 
 export default function Veiculos() {
   const { currentEmpresa, canEdit } = useCompany()
@@ -220,7 +203,7 @@ export default function Veiculos() {
   const filteredVeiculos = useMemo(() => {
     return veiculos.filter((v) => {
       if (tipoFilter !== 'todos' && v.tipo !== tipoFilter) return false
-      if (setorFilter !== 'todos' && v.setor !== setorFilter) return false
+      if (setorFilter !== 'todos' && !veiculoCorrespondeAoSetor(v.setor, setorFilter)) return false
       if (statusFilter !== 'todos' && v.status !== statusFilter) return false
       if (searchQuery.trim()) {
         const q = searchQuery.toLowerCase()
@@ -235,6 +218,27 @@ export default function Veiculos() {
       return true
     })
   }, [veiculos, tipoFilter, setorFilter, statusFilter, searchQuery])
+
+  // Contagem de equipamentos por setor principal da pedreira
+  const contagemPorSetor = useMemo(() => {
+    const counts: Record<string, number> = {
+      todos: veiculos.length,
+      Entrega: 0,
+      'Central Britagem': 0,
+      'Central de Concreto': 0,
+      'Central Britagem Lokotrack': 0,
+      'Engenharia / Supervisão': 0,
+    }
+    veiculos.forEach((v) => {
+      const norm = normalizarSetorFrota(v.setor)
+      if (counts[norm] !== undefined) {
+        counts[norm] += 1
+      } else if (v.setor && counts[v.setor] !== undefined) {
+        counts[v.setor] += 1
+      }
+    })
+    return counts
+  }, [veiculos])
 
   // KPIs
   const totalEquipamentos = veiculos.length
@@ -257,7 +261,7 @@ export default function Veiculos() {
           </div>
           <p className="text-xs text-gray-500 mt-1">
             Controle duplo independente por Km (odômetro) e Horas (horímetro) em todas as áreas
-            operacionais
+            operacionais (Britagem, Entrega, Concreto, Lokotrack e Supervisão)
           </p>
         </div>
 
@@ -323,21 +327,96 @@ export default function Veiculos() {
         </Card>
       </div>
 
+      {/* Setores da Frota - Barra de Navegação Rápida por Setor (Badges/Filtros) */}
+      <div className="flex flex-wrap items-center gap-2 pt-1 pb-1">
+        <span className="text-xs font-semibold text-gray-500 flex items-center gap-1 mr-1">
+          <Layers className="w-3.5 h-3.5 text-teal-700" />
+          <span>Setor / Operação:</span>
+        </span>
+        <button
+          type="button"
+          onClick={() => setSetorFilter('todos')}
+          className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-medium transition-all ${
+            setorFilter === 'todos'
+              ? 'bg-teal-700 text-white shadow-xs'
+              : 'bg-white border border-[#ECEAE4] text-gray-600 hover:bg-gray-50'
+          }`}
+        >
+          <span>Todos</span>
+          <span
+            className={`text-[10px] px-1.5 py-0.2 rounded-full font-mono ${
+              setorFilter === 'todos' ? 'bg-teal-800 text-white' : 'bg-gray-100 text-gray-600'
+            }`}
+          >
+            {contagemPorSetor.todos || 0}
+          </span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setSetorFilter('Entrega')}
+          className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-medium transition-all ${
+            setorFilter === 'Entrega' || setorFilter === 'Entrega de Brita'
+              ? 'bg-amber-600 text-white shadow-xs ring-2 ring-amber-400/50'
+              : 'bg-amber-50/70 border border-amber-200 text-amber-900 hover:bg-amber-100/70'
+          }`}
+        >
+          <span>🚛 Entrega</span>
+          <span
+            className={`text-[10px] px-1.5 py-0.2 rounded-full font-mono ${
+              setorFilter === 'Entrega' || setorFilter === 'Entrega de Brita'
+                ? 'bg-amber-700 text-white'
+                : 'bg-amber-100 text-amber-900'
+            }`}
+          >
+            {contagemPorSetor['Entrega'] || 0}
+          </span>
+        </button>
+
+        {SETORES_FROTA.filter((s) => s !== 'Entrega').map((s) => {
+          const isSelected = setorFilter === s
+          const count = contagemPorSetor[s] || 0
+          return (
+            <button
+              key={s}
+              type="button"
+              onClick={() => setSetorFilter(s)}
+              className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-medium transition-all ${
+                isSelected
+                  ? 'bg-teal-700 text-white shadow-xs'
+                  : 'bg-white border border-[#ECEAE4] text-gray-700 hover:bg-gray-50'
+              }`}
+            >
+              <span>{s}</span>
+              <span
+                className={`text-[10px] px-1.5 py-0.2 rounded-full font-mono ${
+                  isSelected ? 'bg-teal-800 text-white' : 'bg-gray-100 text-gray-600'
+                }`}
+              >
+                {count}
+              </span>
+            </button>
+          )
+        })}
+      </div>
+
       {/* Filters Bar */}
       <Card className="rounded-2xl border-[#ECEAE4] bg-white shadow-xs p-4">
         <div className="flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-3">
           <div className="flex flex-wrap items-center gap-2">
             <Select value={setorFilter} onValueChange={setSetorFilter}>
-              <SelectTrigger className="w-[200px] bg-[#FAF9F7] border-[#ECEAE4] text-xs h-9">
+              <SelectTrigger className="w-[220px] bg-[#FAF9F7] border-[#ECEAE4] text-xs h-9">
                 <SelectValue placeholder="Setor / Área" />
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="todos">Todos os Setores (Áreas)</SelectItem>
-                {SETORES_PEDREIRA.map((s) => (
-                  <SelectItem key={s} value={s}>
-                    {s}
-                  </SelectItem>
-                ))}
+                <SelectItem value="Entrega">Entrega (Caminhões e Caçambas)</SelectItem>
+                <SelectItem value="Central Britagem">Central Britagem</SelectItem>
+                <SelectItem value="Central de Concreto">Central de Concreto</SelectItem>
+                <SelectItem value="Central Britagem Lokotrack">
+                  Central Britagem Lokotrack
+                </SelectItem>
+                <SelectItem value="Engenharia / Supervisão">Engenharia / Supervisão</SelectItem>
               </SelectContent>
             </Select>
 
@@ -449,7 +528,13 @@ export default function Veiculos() {
                         </div>
                       </td>
                       <td className="py-3.5 px-4">
-                        <span className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-medium bg-slate-100 text-slate-800">
+                        <span
+                          className={`inline-flex items-center px-2 py-0.5 rounded text-[11px] font-medium ${
+                            normalizarSetorFrota(v.setor) === 'Entrega'
+                              ? 'bg-amber-100 text-amber-900 border border-amber-200'
+                              : 'bg-slate-100 text-slate-800'
+                          }`}
+                        >
                           {v.setor || 'Geral'}
                         </span>
                       </td>
@@ -579,11 +664,22 @@ export default function Veiculos() {
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    {SETORES_PEDREIRA.map((s) => (
-                      <SelectItem key={s} value={s}>
-                        {s}
-                      </SelectItem>
-                    ))}
+                    <SelectItem value="Entrega">Entrega (Caminhões de Brita / Caçambas)</SelectItem>
+                    <SelectItem value="Central Britagem">Central Britagem</SelectItem>
+                    <SelectItem value="Central de Concreto">Central de Concreto</SelectItem>
+                    <SelectItem value="Central Britagem Lokotrack">
+                      Central Britagem Lokotrack
+                    </SelectItem>
+                    <SelectItem value="Engenharia / Supervisão">Engenharia / Supervisão</SelectItem>
+                    {/* Opções legadas caso o veículo já tenha gravado outro texto */}
+                    {![
+                      'Entrega',
+                      'Central Britagem',
+                      'Central de Concreto',
+                      'Central Britagem Lokotrack',
+                      'Engenharia / Supervisão',
+                    ].includes(setor) &&
+                      setor && <SelectItem value={setor}>{setor}</SelectItem>}
                   </SelectContent>
                 </Select>
               </div>
