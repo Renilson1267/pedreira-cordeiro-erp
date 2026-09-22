@@ -104,14 +104,32 @@ const MESES_MAP: Record<string, number> = {
   AGOSTO: 8,
   AGO: 8,
   SETEMBRO: 9,
+  SETEMB: 9,
+  SETE: 9,
   SET: 9,
+  SEPTEMBER: 9,
+  SEP: 9,
   OUTUBRO: 10,
+  OUTUB: 10,
+  OUTU: 10,
   OUT: 10,
+  OCTOBER: 10,
+  OCT: 10,
   NOVEMBRO: 11,
+  NOVEMB: 11,
+  NOVE: 11,
   NOV: 11,
+  NOVEMBER: 11,
   DEZEMBRO: 12,
+  DEZEMB: 12,
+  DEZE: 12,
   DEZ: 12,
+  DECEMBER: 12,
+  DEC: 12,
 }
+
+// Ordenados do nome mais longo para o mais curto para evitar match prefixal inadequado
+const MESES_ENTRIES_ORDENADOS = Object.entries(MESES_MAP).sort((a, b) => b[0].length - a[0].length)
 
 export function inferirCompetenciaAba(sheetName: string): {
   ano: number
@@ -119,11 +137,11 @@ export function inferirCompetenciaAba(sheetName: string): {
   sufixo: string
 } {
   const currentYear = new Date().getFullYear()
-  const raw = sheetName.trim()
+  const raw = String(sheetName || '').trim()
 
-  // Extrair sufixo .2 ou similar
+  // Extrair sufixo .2 ou similar (ex: .2, _2, -2 ou folhas duplicadas)
   let sufixo = ''
-  const sufixoMatch = raw.match(/\.(\d+)$/)
+  const sufixoMatch = raw.match(/(?:[._\-\s])(\d+)$/)
   if (sufixoMatch) {
     sufixo = `.${sufixoMatch[1]}`
   }
@@ -147,13 +165,43 @@ export function inferirCompetenciaAba(sheetName: string): {
     }
   }
 
-  // Inferir mês
+  // Se o ano inferido for ano atual mas a planilha ou contexto indicar 2026, respeitar caso esteja em 2026
+  if (ano < 2020 || ano > 2035) {
+    ano = 2026
+  }
+
+  // Inferir mês procurando termos ordenados por especificidade (longest first)
   let mes = new Date().getMonth() + 1
-  for (const [nomeMes, numMes] of Object.entries(MESES_MAP)) {
-    const regex = new RegExp(`(^|[^A-Z0-9])${nomeMes}([^A-Z0-9]|$)`, 'i')
+  let encontrouMes = false
+
+  for (const [nomeMes, numMes] of MESES_ENTRIES_ORDENADOS) {
+    const regex = new RegExp(`(?:^|[^A-Z0-9])${nomeMes}(?:[^A-Z0-9]|$)`, 'i')
     if (regex.test(norm)) {
       mes = numMes
+      encontrouMes = true
       break
+    }
+  }
+
+  // Caso o nome seja colado sem separador, ex.: "SETEMBRO2026", "OUTUBRO2026", "NOVEMBRO2026", "DEZEMBRO2026"
+  if (!encontrouMes) {
+    for (const [nomeMes, numMes] of MESES_ENTRIES_ORDENADOS) {
+      if (norm.includes(nomeMes)) {
+        mes = numMes
+        encontrouMes = true
+        break
+      }
+    }
+  }
+
+  // Fallback se contiver números de mês no formato 09_2026 ou 09-2026 ou 2026_09
+  if (!encontrouMes) {
+    const numMesMatch =
+      norm.match(/(?:^|[^0-9])(0?[1-9]|1[0-2])(?:[-_])20\d{2}/) ||
+      norm.match(/20\d{2}(?:[-_])(0?[1-9]|1[0-2])/)
+    if (numMesMatch) {
+      mes = parseInt(numMesMatch[1], 10)
+      encontrouMes = true
     }
   }
 
