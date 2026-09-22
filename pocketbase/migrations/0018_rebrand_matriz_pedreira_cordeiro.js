@@ -114,7 +114,7 @@ migrate(
       }
     }
   },
-  (app) => {
-    // Reversão defensiva (opcional - não deleta dados em produção)
+  (_app) => {
+    // Reversão defensiva idempotente
   },
 )
