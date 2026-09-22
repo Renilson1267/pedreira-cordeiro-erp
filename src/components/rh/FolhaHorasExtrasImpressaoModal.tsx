@@ -150,9 +150,8 @@ export const FolhaHorasExtrasImpressaoModal: React.FC<FolhaHorasExtrasImpressaoM
                 <thead>
                   <tr className="bg-gray-100 print:bg-gray-200 text-gray-800 font-bold border-b border-gray-300 uppercase text-[10px]">
                     <th className="py-2 px-1.5 text-center w-8 border-r border-gray-300">Nº</th>
-                    <th className="py-2 px-2 border-r border-gray-300">Funcionário / CPF</th>
-                    <th className="py-2 px-2 border-r border-gray-300">Cargo / Setor</th>
-                    <th className="py-2 px-2 text-right border-r border-gray-300">Salário Base</th>
+                    <th className="py-2 px-2.5 border-r border-gray-300">Funcionário / CPF</th>
+                    <th className="py-2 px-2.5 border-r border-gray-300">Cargo / Setor</th>
                     <th className="py-2 px-2 text-center border-r border-gray-300">
                       HE 50%
                       <span className="block font-normal text-[9px] text-gray-600">Qtd / R$</span>
@@ -172,13 +171,13 @@ export const FolhaHorasExtrasImpressaoModal: React.FC<FolhaHorasExtrasImpressaoM
                     <th className="py-2 px-2.5 text-right border-r border-gray-300 text-teal-950 bg-teal-50/70 print:bg-teal-100/50">
                       VALOR LÍQUIDO
                     </th>
-                    <th className="py-2 px-2 text-center w-36">Assinatura do Funcionário</th>
+                    <th className="py-2 px-2 text-center w-40">Assinatura do Funcionário</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-200">
                   {itens.length === 0 ? (
                     <tr>
-                      <td colSpan={12} className="py-8 text-center text-gray-500 italic">
+                      <td colSpan={11} className="py-8 text-center text-gray-500 italic">
                         Nenhum lançamento encontrado para os filtros selecionados.
                       </td>
                     </tr>
@@ -200,7 +199,7 @@ export const FolhaHorasExtrasImpressaoModal: React.FC<FolhaHorasExtrasImpressaoM
                           <td className="py-1.5 px-1.5 text-center font-mono text-gray-500 border-r border-gray-200">
                             {idx + 1}
                           </td>
-                          <td className="py-1.5 px-2 border-r border-gray-200">
+                          <td className="py-1.5 px-2.5 border-r border-gray-200">
                             <div className="font-bold text-gray-900 leading-tight">
                               {func?.nome || 'Não informado'}
                             </div>
@@ -210,16 +209,13 @@ export const FolhaHorasExtrasImpressaoModal: React.FC<FolhaHorasExtrasImpressaoM
                               </div>
                             )}
                           </td>
-                          <td className="py-1.5 px-2 border-r border-gray-200">
+                          <td className="py-1.5 px-2.5 border-r border-gray-200">
                             <div className="font-medium text-gray-800 leading-tight">
                               {func?.cargo || 'Colaborador'}
                             </div>
                             <div className="text-[9px] text-gray-500">
                               {func?.setor || 'Operacional'}
                             </div>
-                          </td>
-                          <td className="py-1.5 px-2 text-right font-mono text-gray-700 border-r border-gray-200 tabular-nums">
-                            {formatCurrency(folha.salario_base)}
                           </td>
                           <td className="py-1.5 px-2 text-center font-mono border-r border-gray-200 tabular-nums">
                             <div>{(folha.horas_50 || 0).toFixed(1)}h</div>
@@ -275,7 +271,7 @@ export const FolhaHorasExtrasImpressaoModal: React.FC<FolhaHorasExtrasImpressaoM
                 <tfoot>
                   <tr className="bg-gray-100 print:bg-gray-200 border-t-2 border-gray-400 font-bold text-[11px] text-gray-900">
                     <td
-                      colSpan={4}
+                      colSpan={3}
                       className="py-2.5 px-3 text-right uppercase border-r border-gray-300"
                     >
                       TOTAIS GERAIS DO PERÍODO:
