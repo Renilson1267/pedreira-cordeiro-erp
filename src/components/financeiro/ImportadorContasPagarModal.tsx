@@ -233,10 +233,61 @@ export function normalizarNomeColuna(str: any): string {
     .trim()
 }
 
+// Expande todas as células mescladas (ws['!merges']) copiando o valor da célula mestre (topo-esquerda)
+// para todas as outras células do intervalo mesclado.
+// Isso evita que linhas subsequentes de blocos do mesmo dia/favorecido fiquem com células vazias.
+export function desdobrarCelulasMescladas(ws: XLSX.WorkSheet): void {
+  if (!ws || !ws['!merges'] || !Array.isArray(ws['!merges']) || ws['!merges'].length === 0) {
+    return
+  }
+
+  ws['!merges'].forEach((range: XLSX.Range) => {
+    const startCellAddress = XLSX.utils.encode_cell({ r: range.s.r, c: range.s.c })
+    const masterCell = ws[startCellAddress]
+    if (!masterCell || masterCell.v === undefined || masterCell.v === null || masterCell.v === '') {
+      return
+    }
+
+    for (let r = range.s.r; r <= range.e.r; r++) {
+      for (let c = range.s.c; c <= range.e.c; c++) {
+        // Pular a própria célula mestre
+        if (r === range.s.r && c === range.s.c) continue
+
+        const cellAddr = XLSX.utils.encode_cell({ r, c })
+        // Se a célula já tiver valor diferente de vazio, preserva; caso contrário clona da mestre
+        if (
+          !ws[cellAddr] ||
+          ws[cellAddr].v === undefined ||
+          ws[cellAddr].v === null ||
+          ws[cellAddr].v === ''
+        ) {
+          ws[cellAddr] = {
+            t: masterCell.t,
+            v: masterCell.v,
+            w: masterCell.w,
+            z: masterCell.z,
+          }
+        }
+      }
+    }
+  })
+}
+
+// Regex padronizadas de sinônimos para identificação de colunas em qualquer aba
+export const REGEX_COL_VENCIMENTO =
+  /^(?:DT\s*VENC|DATA\s*VENC|VENCIMENTO|VENC|DATA|DT|DIA)\b|VENC|DT\s*VENC|DATA\s*VENC/i
+export const REGEX_COL_VALOR =
+  /VALOR\s*TOTAL|VALOR\s*R\$?|A\s*PAGAR|PREVISTO|VALOR|TOTAL|LIQUIDO|BRUTO|R\$|PAGO/i
+export const REGEX_COL_VALOR_PAGO = /VALOR\s*PAGO|PAGO|PG|LIQUID/i
+export const REGEX_COL_DATA_PAGAMENTO = /DT\s*PAG|DATA\s*PAG|BAIXA|DATA\s*BAIXA|LIQUID/i
+export const REGEX_COL_FORNECEDOR =
+  /FORNECEDOR|FAVORECIDO|CREDOR|BENEFICIARIO|EMPRESA|NOME|HISTORICO\s*FAVORECIDO/i
+export const REGEX_COL_DESCRICAO = /HISTORICO|DESCRICAO|DESC|SERV|PROD|REFERENCIA|ITEM|DISCRIM/i
+
 export function detectarLinhaCabecalho(matrix: any[][]): number {
   if (!matrix || matrix.length === 0) return 1
 
-  // Buscar até a linha 30 (cabeçalho pode ter títulos, sumários ou células mescladas acima)
+  // Buscar dinamicamente até a linha 30 (cabeçalho pode ter títulos ou sumários acima)
   const maxScan = Math.min(matrix.length, 30)
 
   let bestRow = -1
@@ -251,7 +302,6 @@ export function detectarLinhaCabecalho(matrix: any[][]): number {
     if (texts.length < 2) continue
 
     // Verifica se esta linha parece ser o título do relatório mesclado (ex: "RELATORIO DE CONTAS A PAGAR")
-    // Se uma única célula tiver todo o texto longo ou contiver RELATORIO sem outras colunas estruturais
     const rowJoin = texts.join(' ')
     const isPureTitle =
       texts.length <= 2 &&
@@ -294,7 +344,14 @@ export function detectarLinhaCabecalho(matrix: any[][]): number {
         t === 'VALOR R' ||
         t === 'VALOR TOTAL' ||
         t === 'VALOR PAGO' ||
+        t === 'A PAGAR' ||
+        t === 'PREVISTO' ||
+        t === 'LIQUIDO' ||
+        t === 'BRUTO' ||
+        t === 'TOTAL' ||
         t.includes('VALOR') ||
+        t.includes('PAGAR') ||
+        t.includes('PREVIST') ||
         t.includes('TOTAL') ||
         t.includes('PAGO') ||
         t.includes('BRUTO') ||
@@ -673,6 +730,14 @@ export function ImportadorContasPagarModal({
 
       setWorkbook(wb)
 
+      // Desdobrar células mescladas em todas as abas
+      wb.SheetNames.forEach((sName) => {
+        const ws = wb.Sheets[sName]
+        if (ws) {
+          desdobrarCelulasMescladas(ws)
+        }
+      })
+
       // Analisar cada aba
       const configs: SheetCompetencia[] = wb.SheetNames.map((sName) => {
         const comp = inferirCompetenciaAba(sName)
@@ -721,6 +786,7 @@ export function ImportadorContasPagarModal({
     if (!workbook) return
     const ws = workbook.Sheets[sheetName]
     if (!ws) return
+    desdobrarCelulasMescladas(ws)
     const matrix: any[][] = XLSX.utils.sheet_to_json(ws, {
       header: 1,
       defval: '',
@@ -764,6 +830,7 @@ export function ImportadorContasPagarModal({
     const ws = wb.Sheets[config.name]
     if (!ws) return
 
+    desdobrarCelulasMescladas(ws)
     const matrix: any[][] = XLSX.utils.sheet_to_json(ws, {
       header: 1,
       defval: '',
@@ -793,14 +860,14 @@ export function ImportadorContasPagarModal({
     // Heurística de sugestão de mapeamento inteligente com normalização profunda
     const findCol = (regex: RegExp) =>
       headers.find((h) => regex.test(normalizarNomeColuna(h)) || regex.test(h)) || ''
-    const descColFound = findCol(/HIST|DESC|SERV|PROD|REFERENCIA|ITEM|DISCRIM/i) || ''
-    const fornColFound = findCol(/FORN|FAVOREC|CREDOR|BENEFICIARIO|EMPRESA/i) || ''
+    const descColFound = findCol(REGEX_COL_DESCRICAO) || ''
+    const fornColFound = findCol(REGEX_COL_FORNECEDOR) || ''
 
     setMapping((prev) => ({
       vencimento:
         prev.vencimento && headers.includes(prev.vencimento)
           ? prev.vencimento
-          : findCol(/^VENC|VENCIMENTO|DT VENC|DATA VENC|DIA|DATA/i) || headers[0] || '',
+          : findCol(REGEX_COL_VENCIMENTO) || headers[0] || '',
       fornecedor:
         prev.fornecedor && headers.includes(prev.fornecedor)
           ? prev.fornecedor
@@ -810,17 +877,15 @@ export function ImportadorContasPagarModal({
           ? prev.descricao
           : descColFound || fornColFound || '',
       valor:
-        prev.valor && headers.includes(prev.valor)
-          ? prev.valor
-          : findCol(/VALOR|VALOR R|VALOR TOTAL|BRUTO|A PAGAR/i) || findCol(/^VALOR/i) || '',
+        prev.valor && headers.includes(prev.valor) ? prev.valor : findCol(REGEX_COL_VALOR) || '',
       valorPago:
         prev.valorPago && headers.includes(prev.valorPago)
           ? prev.valorPago
-          : findCol(/VALOR PAGO|PAGO|PG|LIQUID/i) || '',
+          : findCol(REGEX_COL_VALOR_PAGO) || '',
       dataPagamento:
         prev.dataPagamento && headers.includes(prev.dataPagamento)
           ? prev.dataPagamento
-          : findCol(/DT PAG|DATA PAG|BAIXA|LIQUID/i) || '',
+          : findCol(REGEX_COL_DATA_PAGAMENTO) || '',
       formaPagamento:
         prev.formaPagamento && headers.includes(prev.formaPagamento)
           ? prev.formaPagamento
@@ -958,7 +1023,14 @@ export function ImportadorContasPagarModal({
           continue
         }
 
-        const headerIdx = sheetCfg.headerRowIndex || 1
+        // Redetectar a linha de cabeçalho dinamicamente para CADA aba (mesmo se o usuário configurou o wizard baseado na primeira aba)
+        // Isso resolve quando abas como OUTUBRO/NOVEMBRO/DEZEMBRO têm cabeçalho em linha diferente ou nomes diferentes
+        const autoDetectedHeaderRow = detectarLinhaCabecalho(matrix)
+        const headerIdx =
+          sheetCfg.headerRowIndex && sheetCfg.headerRowIndex === autoDetectedHeaderRow
+            ? sheetCfg.headerRowIndex
+            : autoDetectedHeaderRow || sheetCfg.headerRowIndex || 1
+
         const rawHeaders = matrix[headerIdx - 1] || []
         const currentSheetHeaders = rawHeaders.map(
           (c, i) => String(c || '').trim() || `Coluna_${i + 1}`,
@@ -987,31 +1059,39 @@ export function ImportadorContasPagarModal({
 
         const vencCol = matchColWithFallback(
           mapping.vencimento,
-          /^VENC|VENCIMENTO|DT VENC|DATA VENC|DIA|DATA/i,
-          currentSheetHeaders[0] || '',
+          REGEX_COL_VENCIMENTO,
+          findColInSheet(REGEX_COL_VENCIMENTO) || currentSheetHeaders[0] || '',
         )
 
         const fornCol = matchColWithFallback(
           mapping.fornecedor,
-          /FORNECEDOR|FAVORECIDO|CREDOR|BENEFICIARIO|EMPRESA|HISTORICO FAVORECIDO/i,
+          REGEX_COL_FORNECEDOR,
+          findColInSheet(REGEX_COL_FORNECEDOR),
         )
 
         const descCol = matchColWithFallback(
           mapping.descricao,
-          /HISTORICO|DESCRICAO|HIST|DESC|SERV|PROD|REFERENCIA|ITEM|DISCRIM/i,
+          REGEX_COL_DESCRICAO,
+          findColInSheet(REGEX_COL_DESCRICAO),
         )
 
-        // Candidatos de coluna de valor para a aba
+        // Candidatos de coluna de valor para a aba (com ampla gama de sinônimos: A PAGAR, PREVISTO, LIQUIDO, BRUTO, etc.)
         const valCol = matchColWithFallback(
           mapping.valor,
-          /VALOR TOTAL|VALOR R|VALOR|BRUTO|A PAGAR/i,
+          REGEX_COL_VALOR,
+          findColInSheet(REGEX_COL_VALOR),
         )
 
-        const valPagoCol = matchColWithFallback(mapping.valorPago, /VALOR PAGO|PAGO|PG|LIQUID/i)
+        const valPagoCol = matchColWithFallback(
+          mapping.valorPago,
+          REGEX_COL_VALOR_PAGO,
+          findColInSheet(REGEX_COL_VALOR_PAGO),
+        )
 
         const dataPagCol = matchColWithFallback(
           mapping.dataPagamento,
-          /DT PAG|DATA PAG|BAIXA|LIQUID/i,
+          REGEX_COL_DATA_PAGAMENTO,
+          findColInSheet(REGEX_COL_DATA_PAGAMENTO),
         )
 
         const formaCol = matchColWithFallback(mapping.formaPagamento, /FORMA|MEIO|TIPO PAG/i)
@@ -1033,10 +1113,17 @@ export function ImportadorContasPagarModal({
           return row[colIdx] ?? ''
         }
 
+        const vencColIdx = vencCol ? currentSheetHeaders.indexOf(vencCol) : -1
+        const docColIdx = docCol ? currentSheetHeaders.indexOf(docCol) : -1
+
         let sheetLidos = 0
         let sheetImportados = 0
         let sheetDuplicados = 0
         let sheetErrosCount = 0
+
+        // Data herdada em bloco: se a linha tem descrição e valor válidos mas a célula de data está vazia (mesclagem),
+        // herdar a data do lançamento anterior válido da mesma aba
+        let ultimaDataValida: any = null
 
         for (let r = 0; r < dataRows.length; r++) {
           const row = dataRows[r]
@@ -1046,21 +1133,33 @@ export function ImportadorContasPagarModal({
           const temConteudo = row.some((c) => String(c ?? '').trim().length > 0)
           if (!temConteudo) continue
 
-          // Normalizar todas as células como texto para checagem de totais/subtotais semanais
+          // Normalizar todas as células como texto para checagem de totais/subtotais semanais e cabeçalhos repetidos
           const rowTextJoined = row
             .map((c) => normalizarNomeColuna(c))
             .filter(Boolean)
             .join(' ')
 
-          // Pular linhas puramente de total, subtotal ou resumo semanal (sem descartar lançamentos reais)
+          // Pular linhas puramente de total, subtotal, saldo, semana ou cabeçalhos repetidos no meio da planilha com continue (NUNCA break)
           const isTotalRow =
             rowTextJoined.startsWith('TOTAL') ||
             rowTextJoined.startsWith('SUBTOTAL') ||
             rowTextJoined.startsWith('SUB TOTAL') ||
             rowTextJoined.startsWith('SALDO') ||
+            rowTextJoined.startsWith('SEMANA') ||
             rowTextJoined.includes('TOTAL SEMANA') ||
             rowTextJoined.includes('SUBTOTAL SEMANA')
           if (isTotalRow) {
+            continue
+          }
+
+          // Se for linha de cabeçalho repetida no meio da aba (ex: "VENCIMENTO HISTORICO VALOR"), pular com continue
+          if (
+            (rowTextJoined.includes('VENC') || rowTextJoined.includes('DATA')) &&
+            (rowTextJoined.includes('VALOR') || rowTextJoined.includes('PAGAR')) &&
+            (rowTextJoined.includes('FORNEC') ||
+              rowTextJoined.includes('FAVOREC') ||
+              rowTextJoined.includes('HIST'))
+          ) {
             continue
           }
 
@@ -1068,7 +1167,7 @@ export function ImportadorContasPagarModal({
           resultSummary.totalLidos += 1
 
           try {
-            const rawVenc = getVal(row, vencCol)
+            let rawVenc = getVal(row, vencCol)
             let rawForn = String(getVal(row, fornCol) || '').trim()
             const rawDesc = String(getVal(row, descCol) || '').trim()
             if (!rawForn && rawDesc) {
@@ -1090,28 +1189,52 @@ export function ImportadorContasPagarModal({
               lowerDesc.startsWith('total') ||
               lowerDesc.startsWith('subtotal') ||
               lowerDesc.startsWith('saldo') ||
+              lowerDesc.startsWith('semana') ||
               lowerDesc.includes('total semanal')
             ) {
               continue
             }
 
-            // Descobrir valor final testando coluna valor, coluna valorPago ou qualquer outra coluna numérica candidata
+            // Descobrir valor final:
+            // 1) Testar coluna mapeada de valor ou valorPago
+            // 2) Se não produzir número > 0, varrer as células da linha (pulando a coluna de vencimento e a de documento)
+            //    e usar o maior valor monetário positivo encontrado como valor do lançamento
             let valorFinal = rawValor > 0 ? rawValor : rawValorPago
             if (valorFinal <= 0) {
-              // Tentar encontrar valor em outras células numéricas da linha caso a coluna não esteja mapeada perfeitamente
+              let maiorValorEncontrado = 0
               for (let colIdx = 0; colIdx < row.length; colIdx++) {
-                const cellVal = parseValorPagar(row[colIdx])
+                // Pular coluna de vencimento e coluna de documento
+                if (colIdx === vencColIdx || colIdx === docColIdx) continue
+
+                const cellRaw = row[colIdx]
+                // Se a célula contiver formato evidente de documento/NF ou data, não considerar
+                if (typeof cellRaw === 'string' && /^(?:NF|DOC|NOTA|DUPL)/i.test(cellRaw.trim()))
+                  continue
+                if (cellRaw instanceof Date) continue
+
+                const cellVal = parseValorPagar(cellRaw)
                 if (cellVal > 0) {
                   const hName = normalizarNomeColuna(currentSheetHeaders[colIdx])
+                  // Se o cabeçalho tiver indício explícito de valor, prioriza imediatamente
                   if (
                     hName.includes('VALOR') ||
+                    hName.includes('PAGAR') ||
+                    hName.includes('PREVIST') ||
                     hName.includes('TOTAL') ||
+                    hName.includes('LIQUID') ||
+                    hName.includes('BRUTO') ||
                     hName.includes('PAGO')
                   ) {
-                    valorFinal = cellVal
-                    break
+                    if (cellVal > valorFinal) {
+                      valorFinal = cellVal
+                    }
+                  } else if (cellVal > maiorValorEncontrado) {
+                    maiorValorEncontrado = cellVal
                   }
                 }
+              }
+              if (valorFinal <= 0 && maiorValorEncontrado > 0) {
+                valorFinal = maiorValorEncontrado
               }
             }
 
@@ -1177,8 +1300,18 @@ export function ImportadorContasPagarModal({
               }
             }
 
-            // 2. Data de Vencimento
-            const dataVencimentoISO = parseDataPagar(rawVenc, sheetCfg.ano, sheetCfg.mes)
+            // 2. Data de Vencimento com herança de bloco:
+            // Se rawVenc estiver vazio ou indefinido, herdar da ultimaDataValida da mesma aba
+            let dataParaVenc = rawVenc
+            const rawVencStr = String(rawVenc ?? '').trim()
+            if (!rawVencStr && ultimaDataValida) {
+              dataParaVenc = ultimaDataValida
+            }
+
+            const dataVencimentoISO = parseDataPagar(dataParaVenc, sheetCfg.ano, sheetCfg.mes)
+            if (rawVencStr) {
+              ultimaDataValida = rawVenc
+            }
 
             // 3. Descrição
             const docInfo = rawDoc ? ` [NF/Doc: ${rawDoc}]` : ''

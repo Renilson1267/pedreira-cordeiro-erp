@@ -6,9 +6,16 @@ import type { Fornecedor, PlanoConta, CentroCusto, ContaPagar } from '@/types/er
 import {
   inferirCompetenciaAba,
   detectarLinhaCabecalho,
+  desdobrarCelulasMescladas,
   normalizarNomeColuna,
   parseValorPagar,
   parseDataPagar,
+  REGEX_COL_VENCIMENTO,
+  REGEX_COL_VALOR,
+  REGEX_COL_VALOR_PAGO,
+  REGEX_COL_DATA_PAGAMENTO,
+  REGEX_COL_FORNECEDOR,
+  REGEX_COL_DESCRICAO,
   type SheetCompetencia,
   type ColumnMappingPagar,
 } from './ImportadorContasPagarModal'
@@ -216,6 +223,14 @@ export function ConferirPlanilhaPagarModal({
 
       setWorkbook(wb)
 
+      // Desdobrar células mescladas em todas as abas
+      wb.SheetNames.forEach((sName) => {
+        const ws = wb.Sheets[sName]
+        if (ws) {
+          desdobrarCelulasMescladas(ws)
+        }
+      })
+
       // Configurar abas
       const configs: SheetCompetencia[] = wb.SheetNames.map((sName) => {
         const comp = inferirCompetenciaAba(sName)
@@ -262,6 +277,7 @@ export function ConferirPlanilhaPagarModal({
     const ws = wb.Sheets[config.name]
     if (!ws) return
 
+    desdobrarCelulasMescladas(ws)
     const matrix: any[][] = XLSX.utils.sheet_to_json(ws, {
       header: 1,
       defval: '',
@@ -291,14 +307,14 @@ export function ConferirPlanilhaPagarModal({
     // Sugestão de mapeamento inteligente com normalização profunda
     const findCol = (regex: RegExp) =>
       headers.find((h) => regex.test(normalizarNomeColuna(h)) || regex.test(h)) || ''
-    const descColFound = findCol(/HIST|DESC|SERV|PROD|REFERENCIA|ITEM|DISCRIM/i) || ''
-    const fornColFound = findCol(/FORN|FAVOREC|CREDOR|BENEFICIARIO|EMPRESA/i) || ''
+    const descColFound = findCol(REGEX_COL_DESCRICAO) || ''
+    const fornColFound = findCol(REGEX_COL_FORNECEDOR) || ''
 
     setMapping((prev) => ({
       vencimento:
         prev.vencimento && headers.includes(prev.vencimento)
           ? prev.vencimento
-          : findCol(/^VENC|VENCIMENTO|DT VENC|DATA VENC|DIA|DATA/i) || headers[0] || '',
+          : findCol(REGEX_COL_VENCIMENTO) || headers[0] || '',
       fornecedor:
         prev.fornecedor && headers.includes(prev.fornecedor)
           ? prev.fornecedor
@@ -308,17 +324,15 @@ export function ConferirPlanilhaPagarModal({
           ? prev.descricao
           : descColFound || fornColFound || '',
       valor:
-        prev.valor && headers.includes(prev.valor)
-          ? prev.valor
-          : findCol(/VALOR|VALOR R|VALOR TOTAL|BRUTO|A PAGAR/i) || findCol(/^VALOR/i) || '',
+        prev.valor && headers.includes(prev.valor) ? prev.valor : findCol(REGEX_COL_VALOR) || '',
       valorPago:
         prev.valorPago && headers.includes(prev.valorPago)
           ? prev.valorPago
-          : findCol(/VALOR PAGO|PAGO|PG|LIQUID/i) || '',
+          : findCol(REGEX_COL_VALOR_PAGO) || '',
       dataPagamento:
         prev.dataPagamento && headers.includes(prev.dataPagamento)
           ? prev.dataPagamento
-          : findCol(/DT PAG|DATA PAG|BAIXA|LIQUID/i) || '',
+          : findCol(REGEX_COL_DATA_PAGAMENTO) || '',
       formaPagamento:
         prev.formaPagamento && headers.includes(prev.formaPagamento)
           ? prev.formaPagamento
@@ -357,6 +371,7 @@ export function ConferirPlanilhaPagarModal({
     if (!workbook) return
     const ws = workbook.Sheets[sheetName]
     if (!ws) return
+    desdobrarCelulasMescladas(ws)
     const matrix: any[][] = XLSX.utils.sheet_to_json(ws, {
       header: 1,
       defval: '',
@@ -481,7 +496,13 @@ export function ConferirPlanilhaPagarModal({
           blankrows: false,
         })
 
-        const headerIdx = sheetCfg.headerRowIndex || 1
+        // Redetectar a linha de cabeçalho dinamicamente para CADA aba
+        const autoDetectedHeaderRow = detectarLinhaCabecalho(matrix)
+        const headerIdx =
+          sheetCfg.headerRowIndex && sheetCfg.headerRowIndex === autoDetectedHeaderRow
+            ? sheetCfg.headerRowIndex
+            : autoDetectedHeaderRow || sheetCfg.headerRowIndex || 1
+
         const rawHeaders = matrix[headerIdx - 1] || []
         const currentSheetHeaders = rawHeaders.map(
           (c, i) => String(c || '').trim() || `Coluna_${i + 1}`,
@@ -510,30 +531,38 @@ export function ConferirPlanilhaPagarModal({
 
         const vencCol = matchColWithFallback(
           mapping.vencimento,
-          /^VENC|VENCIMENTO|DT VENC|DATA VENC|DIA|DATA/i,
-          currentSheetHeaders[0] || '',
+          REGEX_COL_VENCIMENTO,
+          findColInSheet(REGEX_COL_VENCIMENTO) || currentSheetHeaders[0] || '',
         )
 
         const fornCol = matchColWithFallback(
           mapping.fornecedor,
-          /FORNECEDOR|FAVORECIDO|CREDOR|BENEFICIARIO|EMPRESA|HISTORICO FAVORECIDO/i,
+          REGEX_COL_FORNECEDOR,
+          findColInSheet(REGEX_COL_FORNECEDOR),
         )
 
         const descCol = matchColWithFallback(
           mapping.descricao,
-          /HISTORICO|DESCRICAO|HIST|DESC|SERV|PROD|REFERENCIA|ITEM|DISCRIM/i,
+          REGEX_COL_DESCRICAO,
+          findColInSheet(REGEX_COL_DESCRICAO),
         )
 
         const valCol = matchColWithFallback(
           mapping.valor,
-          /VALOR TOTAL|VALOR R|VALOR|BRUTO|A PAGAR/i,
+          REGEX_COL_VALOR,
+          findColInSheet(REGEX_COL_VALOR),
         )
 
-        const valPagoCol = matchColWithFallback(mapping.valorPago, /VALOR PAGO|PAGO|PG|LIQUID/i)
+        const valPagoCol = matchColWithFallback(
+          mapping.valorPago,
+          REGEX_COL_VALOR_PAGO,
+          findColInSheet(REGEX_COL_VALOR_PAGO),
+        )
 
         const dataPagCol = matchColWithFallback(
           mapping.dataPagamento,
-          /DT PAG|DATA PAG|BAIXA|LIQUID/i,
+          REGEX_COL_DATA_PAGAMENTO,
+          findColInSheet(REGEX_COL_DATA_PAGAMENTO),
         )
 
         const formaCol = matchColWithFallback(mapping.formaPagamento, /FORMA|MEIO|TIPO PAG/i)
@@ -555,6 +584,11 @@ export function ConferirPlanilhaPagarModal({
           return row[colIdx] ?? ''
         }
 
+        const vencColIdx = vencCol ? currentSheetHeaders.indexOf(vencCol) : -1
+        const docColIdx = docCol ? currentSheetHeaders.indexOf(docCol) : -1
+
+        let ultimaDataValida: any = null
+
         for (let r = 0; r < dataRows.length; r++) {
           const row = dataRows[r]
 
@@ -567,19 +601,31 @@ export function ConferirPlanilhaPagarModal({
             .filter(Boolean)
             .join(' ')
 
-          // Pular linhas puramente de total, subtotal ou resumo semanal (sem descartar lançamentos reais)
+          // Pular linhas puramente de total, subtotal, saldo, semana ou cabeçalhos repetidos no meio da planilha com continue (NUNCA break)
           const isTotalRow =
             rowTextJoined.startsWith('TOTAL') ||
             rowTextJoined.startsWith('SUBTOTAL') ||
             rowTextJoined.startsWith('SUB TOTAL') ||
             rowTextJoined.startsWith('SALDO') ||
+            rowTextJoined.startsWith('SEMANA') ||
             rowTextJoined.includes('TOTAL SEMANA') ||
             rowTextJoined.includes('SUBTOTAL SEMANA')
           if (isTotalRow) {
             continue
           }
 
-          const rawVenc = getVal(row, vencCol)
+          // Se for linha de cabeçalho repetida no meio da aba, pular com continue
+          if (
+            (rowTextJoined.includes('VENC') || rowTextJoined.includes('DATA')) &&
+            (rowTextJoined.includes('VALOR') || rowTextJoined.includes('PAGAR')) &&
+            (rowTextJoined.includes('FORNEC') ||
+              rowTextJoined.includes('FAVOREC') ||
+              rowTextJoined.includes('HIST'))
+          ) {
+            continue
+          }
+
+          let rawVenc = getVal(row, vencCol)
           let rawForn = String(getVal(row, fornCol) || '').trim()
           const rawDesc = String(getVal(row, descCol) || '').trim()
           if (!rawForn && rawDesc) {
@@ -601,29 +647,64 @@ export function ConferirPlanilhaPagarModal({
             lowerDesc.startsWith('total') ||
             lowerDesc.startsWith('subtotal') ||
             lowerDesc.startsWith('saldo') ||
+            lowerDesc.startsWith('semana') ||
             lowerDesc.includes('total semanal')
           ) {
             continue
           }
 
+          // Descobrir valor final:
+          // 1) Testar coluna mapeada de valor ou valorPago
+          // 2) Se não produzir número > 0, varrer as células da linha (pulando vencimento e doc)
           let valorFinal = rawValor > 0 ? rawValor : rawValorPago
           if (valorFinal <= 0) {
+            let maiorValorEncontrado = 0
             for (let colIdx = 0; colIdx < row.length; colIdx++) {
-              const cellVal = parseValorPagar(row[colIdx])
+              if (colIdx === vencColIdx || colIdx === docColIdx) continue
+
+              const cellRaw = row[colIdx]
+              if (typeof cellRaw === 'string' && /^(?:NF|DOC|NOTA|DUPL)/i.test(cellRaw.trim()))
+                continue
+              if (cellRaw instanceof Date) continue
+
+              const cellVal = parseValorPagar(cellRaw)
               if (cellVal > 0) {
                 const hName = normalizarNomeColuna(currentSheetHeaders[colIdx])
-                if (hName.includes('VALOR') || hName.includes('TOTAL') || hName.includes('PAGO')) {
-                  valorFinal = cellVal
-                  break
+                if (
+                  hName.includes('VALOR') ||
+                  hName.includes('PAGAR') ||
+                  hName.includes('PREVIST') ||
+                  hName.includes('TOTAL') ||
+                  hName.includes('LIQUID') ||
+                  hName.includes('BRUTO') ||
+                  hName.includes('PAGO')
+                ) {
+                  if (cellVal > valorFinal) {
+                    valorFinal = cellVal
+                  }
+                } else if (cellVal > maiorValorEncontrado) {
+                  maiorValorEncontrado = cellVal
                 }
               }
+            }
+            if (valorFinal <= 0 && maiorValorEncontrado > 0) {
+              valorFinal = maiorValorEncontrado
             }
           }
 
           if (valorFinal <= 0) continue
 
-          // Data Vencimento Planilha
-          const vencIso = parseDataPagar(rawVenc, sheetCfg.ano, sheetCfg.mes)
+          // Data Vencimento Planilha com herança de bloco
+          let dataParaVenc = rawVenc
+          const rawVencStr = String(rawVenc ?? '').trim()
+          if (!rawVencStr && ultimaDataValida) {
+            dataParaVenc = ultimaDataValida
+          }
+
+          const vencIso = parseDataPagar(dataParaVenc, sheetCfg.ano, sheetCfg.mes)
+          if (rawVencStr) {
+            ultimaDataValida = rawVenc
+          }
           const vencDateOnly = vencIso.slice(0, 10)
 
           // Status Planilha
