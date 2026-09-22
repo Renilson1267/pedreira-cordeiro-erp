@@ -80,10 +80,12 @@ export default function HorasExtras() {
   })
   const [modoCalculo, setModoCalculo] = useState<ModoCalculoHorasExtras>('padrao_50')
 
-  // Inputs de horas
+  // Inputs de horas, gratificação e adiantamento
   const [horas50Todas, setHoras50Todas] = useState<number | ''>('')
   const [horasCltUteis50, setHorasCltUteis50] = useState<number | ''>('')
   const [horasCltDomingos100, setHorasCltDomingos100] = useState<number | ''>('')
+  const [gratificacao, setGratificacao] = useState<number | ''>('')
+  const [adiantamento, setAdiantamento] = useState<number | ''>('')
   const [observacoes, setObservacoes] = useState<string>('')
   const [isSaving, setIsSaving] = useState(false)
 
@@ -154,8 +156,18 @@ export default function HorasExtras() {
       horasTotais50: Number(horas50Todas) || 0,
       horasUteis50: Number(horasCltUteis50) || 0,
       horasDomingos100: Number(horasCltDomingos100) || 0,
+      gratificacao: Number(gratificacao) || 0,
+      adiantamento: Number(adiantamento) || 0,
     })
-  }, [salarioEfetivo, modoCalculo, horas50Todas, horasCltUteis50, horasCltDomingos100])
+  }, [
+    salarioEfetivo,
+    modoCalculo,
+    horas50Todas,
+    horasCltUteis50,
+    horasCltDomingos100,
+    gratificacao,
+    adiantamento,
+  ])
 
   // Abertura do formulário
   const handleOpenNovoCalculo = (funcionarioId?: string) => {
@@ -170,6 +182,8 @@ export default function HorasExtras() {
     setHoras50Todas('')
     setHorasCltUteis50('')
     setHorasCltDomingos100('')
+    setGratificacao('')
+    setAdiantamento('')
     setObservacoes('')
     setDrawerOpen(true)
   }
@@ -227,15 +241,18 @@ export default function HorasExtras() {
         valor_horas_100: memoriaCalculo.valorHoras100,
         total_horas: memoriaCalculo.totalHoras,
         total_valor: memoriaCalculo.totalValor,
+        gratificacao: memoriaCalculo.gratificacao,
+        adiantamento: memoriaCalculo.adiantamento,
+        valor_liquido: memoriaCalculo.valorLiquido,
         status: 'calculado',
         observacoes: observacoes.trim() || undefined,
       })
 
       toast({
         title: 'Cálculo de horas extras salvo com sucesso!',
-        description: `Total de ${memoriaCalculo.totalHoras}h apuradas (${formatCurrency(
-          memoriaCalculo.totalValor,
-        )}).`,
+        description: `Total de ${memoriaCalculo.totalHoras}h apuradas • Líquido a pagar: ${formatCurrency(
+          memoriaCalculo.valorLiquido,
+        )}.`,
       })
 
       setDrawerOpen(false)
@@ -271,16 +288,22 @@ export default function HorasExtras() {
     }
   }
 
-  // Lançar no Financeiro (gerar Conta a Pagar)
+  // Lançar no Financeiro (gerar Conta a Pagar pelo VALOR LÍQUIDO)
   const handleLancarNoFinanceiro = async (folha: FolhaHorasExtras) => {
     if (!currentEmpresa) return
     const fNome = folha.expand?.funcionario_id?.nome || 'Colaborador'
+    const valorLiquido =
+      typeof folha.valor_liquido === 'number'
+        ? folha.valor_liquido
+        : Number(
+            (folha.total_valor + (folha.gratificacao || 0) - (folha.adiantamento || 0)).toFixed(2),
+          )
 
     if (
       !confirm(
-        `Deseja gerar uma Conta a Pagar de ${formatCurrency(
-          folha.total_valor,
-        )} referente às horas extras de ${fNome}?`,
+        `Deseja gerar uma Conta a Pagar no valor LÍQUIDO de ${formatCurrency(
+          valorLiquido,
+        )} referente às horas extras de ${fNome} (Mês: ${folha.mes_referencia})?`,
       )
     ) {
       return
@@ -302,30 +325,44 @@ export default function HorasExtras() {
       dVenc.setDate(5)
       dVenc.setMonth(dVenc.getMonth() + 1)
 
+      const detalhesMemoria: string[] = [
+        `Bruto HE: ${formatCurrency(folha.total_valor)} (${folha.total_horas}h)`,
+      ]
+      if (folha.gratificacao && folha.gratificacao > 0) {
+        detalhesMemoria.push(`Gratificação (+): ${formatCurrency(folha.gratificacao)}`)
+      }
+      if (folha.adiantamento && folha.adiantamento > 0) {
+        detalhesMemoria.push(`Adiantamento (-): ${formatCurrency(folha.adiantamento)}`)
+      }
+      detalhesMemoria.push(`Líquido: ${formatCurrency(valorLiquido)}`)
+
       const payloadConta = {
         empresa_id: currentEmpresa.id,
-        descricao: `Horas Extras (${folha.total_horas}h): ${fNome} [${folha.mes_referencia}]`,
+        descricao: `Horas Extras (${folha.total_horas}h) - Líquido a Pagar: ${fNome} [${folha.mes_referencia}]`,
         categoria_id: catFolha?.id || null,
-        valor: folha.total_valor,
+        valor: valorLiquido,
         vencimento: dVenc.toISOString(),
         parcelas: 1,
         status: 'Aberta',
-        observacoes: `Apuração de Horas Extras (${
+        observacoes: `Apuração de Horas Extras de ${folha.mes_referencia}. Colaborador: ${fNome}. Salário base: ${formatCurrency(
+          folha.salario_base,
+        )}. Memória: ${detalhesMemoria.join(' | ')}. Modo: ${
           folha.modo_calculo === 'padrao_50' ? '50% Geral' : 'Regra CLT 50%/100%'
-        }). Salário base: ${formatCurrency(folha.salario_base)}. Colaborador: ${fNome}.`,
+        }.`,
       }
 
       const contaCriada = await pb.collection('contas_pagar').create(payloadConta)
 
-      // Atualiza o registro de horas extras como aprovado/vinculado
+      // Atualiza o registro de horas extras como aprovado/vinculado e garante os campos
       await folhaHorasExtrasService.update(folha.id, {
         status: 'aprovado',
         conta_pagar_id: contaCriada.id,
+        valor_liquido: valorLiquido,
       })
 
       toast({
         title: 'Conta a Pagar de Horas Extras gerada com sucesso!',
-        description: `Lançado no Contas a Pagar: ${formatCurrency(folha.total_valor)}.`,
+        description: `Lançado no Contas a Pagar pelo valor líquido de ${formatCurrency(valorLiquido)}.`,
       })
 
       await loadDados()
@@ -367,8 +404,16 @@ export default function HorasExtras() {
   // KPIs
   const totalLancamentos = folhasFiltradas.length
   const totalHorasGeral = folhasFiltradas.reduce((acc, f) => acc + (f.total_horas || 0), 0)
-  const totalValorGeral = folhasFiltradas.reduce((acc, f) => acc + (f.total_valor || 0), 0)
-  const mediaPorFuncionario = totalLancamentos > 0 ? totalValorGeral / totalLancamentos : 0
+  const totalBrutoGeral = folhasFiltradas.reduce((acc, f) => acc + (f.total_valor || 0), 0)
+  const totalGratificacoes = folhasFiltradas.reduce((acc, f) => acc + (f.gratificacao || 0), 0)
+  const totalAdiantamentos = folhasFiltradas.reduce((acc, f) => acc + (f.adiantamento || 0), 0)
+  const totalLiquidoGeral = folhasFiltradas.reduce((acc, f) => {
+    const liq =
+      typeof f.valor_liquido === 'number'
+        ? f.valor_liquido
+        : f.total_valor + (f.gratificacao || 0) - (f.adiantamento || 0)
+    return acc + liq
+  }, 0)
 
   return (
     <div className="space-y-6">
@@ -382,8 +427,8 @@ export default function HorasExtras() {
             <Badge className="bg-amber-100 text-amber-900 border-amber-300">Apuração & CLT</Badge>
           </div>
           <p className="text-xs text-gray-500 mt-1">
-            Cálculo de horas suplementares (50% geral ou regime CLT 50% / 100%), emissão de recibos
-            em A4 Paisagem para assinatura e integração financeira.
+            Cálculo de horas suplementares (50% ou CLT 50%/100%), gratificações, adiantamentos e
+            apuração do valor líquido a pagar com comprovante A4 Paisagem.
           </p>
         </div>
 
@@ -419,46 +464,55 @@ export default function HorasExtras() {
             </div>
           </div>
           <div className="text-2xl font-bold text-gray-900 mt-2 font-mono">{totalLancamentos}</div>
-          <p className="text-[11px] text-teal-700 mt-0.5">Recibos no período filtrado</p>
+          <p className="text-[11px] text-teal-700 mt-0.5">
+            {totalHorasGeral.toFixed(1)}h extras somadas
+          </p>
         </Card>
 
         <Card className="rounded-2xl border-[#ECEAE4] bg-white shadow-xs p-4">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold text-gray-500 uppercase">Total de Horas</span>
+            <span className="text-xs font-semibold text-gray-500 uppercase">Total Bruto HE</span>
             <div className="w-7 h-7 rounded-lg bg-blue-50 text-blue-700 flex items-center justify-center">
               <Clock className="w-4 h-4" />
             </div>
           </div>
           <div className="text-2xl font-bold text-gray-900 mt-2 font-mono tabular-nums">
-            {totalHorasGeral.toFixed(1)}h
+            {formatCurrency(totalBrutoGeral)}
           </div>
-          <p className="text-[11px] text-gray-400 mt-0.5">Horas suplementares somadas</p>
+          <p className="text-[11px] text-gray-400 mt-0.5">Sem bônus / descontos</p>
         </Card>
 
         <Card className="rounded-2xl border-[#ECEAE4] bg-white shadow-xs p-4">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold text-gray-500 uppercase">Total a Pagar</span>
-            <div className="w-7 h-7 rounded-lg bg-emerald-50 text-emerald-700 flex items-center justify-center">
-              <DollarSign className="w-4 h-4" />
-            </div>
-          </div>
-          <div className="text-2xl font-bold text-emerald-900 mt-2 font-mono tabular-nums">
-            {formatCurrency(totalValorGeral)}
-          </div>
-          <p className="text-[11px] text-emerald-600 mt-0.5">Proventos brutos de horas extras</p>
-        </Card>
-
-        <Card className="rounded-2xl border-[#ECEAE4] bg-white shadow-xs p-4">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold text-gray-500 uppercase">Média / Recibo</span>
+            <span className="text-xs font-semibold text-gray-500 uppercase">Bônus & Descontos</span>
             <div className="w-7 h-7 rounded-lg bg-amber-50 text-amber-700 flex items-center justify-center">
               <Calculator className="w-4 h-4" />
             </div>
           </div>
-          <div className="text-2xl font-bold text-gray-900 mt-2 font-mono tabular-nums">
-            {formatCurrency(mediaPorFuncionario)}
+          <div className="text-xs mt-2 space-y-0.5">
+            <div className="flex items-center justify-between text-emerald-700 font-semibold font-mono">
+              <span>Gratificação (+):</span>
+              <span>{formatCurrency(totalGratificacoes)}</span>
+            </div>
+            <div className="flex items-center justify-between text-red-600 font-semibold font-mono">
+              <span>Adiantamento (−):</span>
+              <span>{formatCurrency(totalAdiantamentos)}</span>
+            </div>
           </div>
-          <p className="text-[11px] text-gray-400 mt-0.5">Ticket médio por colaborador</p>
+          <p className="text-[10px] text-gray-400 mt-1">Ajustes da folha</p>
+        </Card>
+
+        <Card className="rounded-2xl border-emerald-200 bg-emerald-50/40 shadow-xs p-4">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-semibold text-emerald-900 uppercase">Total Líquido</span>
+            <div className="w-7 h-7 rounded-lg bg-emerald-100 text-emerald-800 flex items-center justify-center">
+              <DollarSign className="w-4 h-4" />
+            </div>
+          </div>
+          <div className="text-2xl font-bold text-emerald-900 mt-2 font-mono tabular-nums">
+            {formatCurrency(totalLiquidoGeral)}
+          </div>
+          <p className="text-[11px] text-emerald-700 mt-0.5 font-medium">Valor efetivo a pagar</p>
         </Card>
       </div>
 
@@ -527,11 +581,15 @@ export default function HorasExtras() {
               <tr className="bg-[#FAF9F7] border-b border-[#ECEAE4] text-gray-500 uppercase font-semibold">
                 <th className="py-3 px-4">Colaborador / Função</th>
                 <th className="py-3 px-4">Mês Ref.</th>
-                <th className="py-3 px-4">Critério de Cálculo</th>
+                <th className="py-3 px-4">Critério</th>
                 <th className="py-3 px-4 text-right">Salário Base</th>
-                <th className="py-3 px-4 text-right">Hora Normal</th>
-                <th className="py-3 px-4 text-center">Horas Extras</th>
-                <th className="py-3 px-4 text-right">Total a Pagar</th>
+                <th className="py-3 px-4 text-center">Horas</th>
+                <th className="py-3 px-4 text-right">Bruto HE</th>
+                <th className="py-3 px-4 text-right">Gratificação (+)</th>
+                <th className="py-3 px-4 text-right">Adiantamento (−)</th>
+                <th className="py-3 px-4 text-right text-emerald-900 bg-emerald-50/50">
+                  Líquido a Pagar
+                </th>
                 <th className="py-3 px-4 text-center">Status / Financeiro</th>
                 <th className="py-3 px-4 text-right">Ações</th>
               </tr>
@@ -539,19 +597,26 @@ export default function HorasExtras() {
             <tbody className="divide-y divide-[#ECEAE4]">
               {loading ? (
                 <tr>
-                  <td colSpan={9} className="py-12 text-center text-gray-400">
+                  <td colSpan={11} className="py-12 text-center text-gray-400">
                     Carregando apurações de horas extras...
                   </td>
                 </tr>
               ) : folhasFiltradas.length === 0 ? (
                 <tr>
-                  <td colSpan={9} className="py-12 text-center text-gray-400">
+                  <td colSpan={11} className="py-12 text-center text-gray-400">
                     Nenhuma folha de horas extras cadastrada ou encontrada para os filtros.
                   </td>
                 </tr>
               ) : (
                 folhasFiltradas.map((folha) => {
                   const func = folha.expand?.funcionario_id
+                  const grat = folha.gratificacao || 0
+                  const adiant = folha.adiantamento || 0
+                  const liq =
+                    typeof folha.valor_liquido === 'number'
+                      ? folha.valor_liquido
+                      : folha.total_valor + grat - adiant
+
                   return (
                     <tr key={folha.id} className="hover:bg-teal-50/20 transition-colors">
                       <td className="py-3.5 px-4">
@@ -572,21 +637,17 @@ export default function HorasExtras() {
                       <td className="py-3.5 px-4">
                         {folha.modo_calculo === 'padrao_50' ? (
                           <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium bg-blue-50 text-blue-700 border border-blue-200">
-                            50% Todas as Horas
+                            50% Todas
                           </span>
                         ) : (
                           <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium bg-purple-50 text-purple-700 border border-purple-200">
-                            CLT Atual (50% + 100%)
+                            CLT 50%/100%
                           </span>
                         )}
                       </td>
 
                       <td className="py-3.5 px-4 text-right font-mono text-gray-700 tabular-nums">
                         {formatCurrency(folha.salario_base)}
-                      </td>
-
-                      <td className="py-3.5 px-4 text-right font-mono text-gray-500 tabular-nums text-[11px]">
-                        {formatCurrency(folha.valor_hora_normal)}
                       </td>
 
                       <td className="py-3.5 px-4 text-center">
@@ -601,8 +662,28 @@ export default function HorasExtras() {
                         </div>
                       </td>
 
-                      <td className="py-3.5 px-4 text-right font-mono font-bold text-emerald-800 text-sm tabular-nums">
+                      <td className="py-3.5 px-4 text-right font-mono font-semibold text-gray-800 tabular-nums">
                         {formatCurrency(folha.total_valor)}
+                      </td>
+
+                      <td className="py-3.5 px-4 text-right font-mono text-emerald-700 tabular-nums">
+                        {grat > 0 ? (
+                          `+ ${formatCurrency(grat)}`
+                        ) : (
+                          <span className="text-gray-300">—</span>
+                        )}
+                      </td>
+
+                      <td className="py-3.5 px-4 text-right font-mono text-red-600 tabular-nums">
+                        {adiant > 0 ? (
+                          `- ${formatCurrency(adiant)}`
+                        ) : (
+                          <span className="text-gray-300">—</span>
+                        )}
+                      </td>
+
+                      <td className="py-3.5 px-4 text-right font-mono font-bold text-emerald-950 text-sm tabular-nums bg-emerald-50/50">
+                        {formatCurrency(liq)}
                       </td>
 
                       <td className="py-3.5 px-4 text-center">
@@ -847,7 +928,62 @@ export default function HorasExtras() {
               </div>
             )}
 
-            {/* 5. MEMÓRIA DE CÁLCULO DETALHADA AO VIVO */}
+            {/* 5. GRATIFICAÇÃO (+) E ADIANTAMENTO (−) */}
+            <div className="p-3.5 bg-amber-50/40 border border-amber-200 rounded-xl space-y-3">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold text-amber-950 uppercase tracking-wider flex items-center gap-1.5">
+                  <DollarSign className="w-3.5 h-3.5 text-amber-700" />
+                  Gratificação (+) e Adiantamento (−)
+                </span>
+                <span className="text-[10px] text-amber-800">Ajustes da Folha</span>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <Label className="text-xs font-semibold text-emerald-900 flex items-center gap-1">
+                    Gratificação / Bônus (R$)
+                    <span className="text-[10px] font-normal text-emerald-700">(Soma +)</span>
+                  </Label>
+                  <Input
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    value={gratificacao}
+                    onChange={(e) =>
+                      setGratificacao(e.target.value === '' ? '' : parseFloat(e.target.value) || 0)
+                    }
+                    placeholder="0,00"
+                    className="mt-1 font-mono font-bold text-emerald-800 bg-white"
+                  />
+                  <span className="text-[10px] text-gray-500 mt-0.5 block">
+                    Prêmio, bônus ou adicional extraordinário.
+                  </span>
+                </div>
+
+                <div>
+                  <Label className="text-xs font-semibold text-red-900 flex items-center gap-1">
+                    Adiantamento (R$)
+                    <span className="text-[10px] font-normal text-red-700">(Desconta −)</span>
+                  </Label>
+                  <Input
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    value={adiantamento}
+                    onChange={(e) =>
+                      setAdiantamento(e.target.value === '' ? '' : parseFloat(e.target.value) || 0)
+                    }
+                    placeholder="0,00"
+                    className="mt-1 font-mono font-bold text-red-700 bg-white"
+                  />
+                  <span className="text-[10px] text-gray-500 mt-0.5 block">
+                    Vales ou adiantamentos já pagos no período.
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            {/* 6. MEMÓRIA DE CÁLCULO DETALHADA AO VIVO */}
             <div className="p-3.5 bg-teal-50/50 border border-teal-200 rounded-xl space-y-2">
               <div className="flex items-center justify-between border-b border-teal-200 pb-1.5">
                 <span className="text-xs font-bold text-teal-900 uppercase tracking-wider flex items-center gap-1.5">
@@ -878,18 +1014,53 @@ export default function HorasExtras() {
                 </div>
               </div>
 
-              <div className="border-t border-teal-200 pt-2 flex items-center justify-between">
-                <div>
-                  <span className="text-xs text-gray-600 block">Total de Horas Extras:</span>
-                  <span className="font-mono font-bold text-sm text-gray-900">
+              <div className="border-t border-teal-200 pt-2 space-y-1.5">
+                <div className="flex items-center justify-between text-xs">
+                  <span className="text-gray-600">Total de Horas Extras:</span>
+                  <span className="font-mono font-bold text-gray-900">
                     {memoriaCalculo.totalHoras.toFixed(1)} horas
                   </span>
                 </div>
-                <div className="text-right">
-                  <span className="text-xs text-gray-600 block">Total Bruto a Pagar:</span>
-                  <span className="font-mono font-bold text-lg text-teal-900">
+
+                <div className="flex items-center justify-between text-xs">
+                  <span className="text-gray-600">Total Bruto Horas Extras:</span>
+                  <span className="font-mono font-semibold text-gray-800">
                     {formatCurrency(memoriaCalculo.totalValor)}
                   </span>
+                </div>
+
+                {memoriaCalculo.gratificacao > 0 && (
+                  <div className="flex items-center justify-between text-xs text-emerald-800">
+                    <span>(+) Gratificação / Bônus:</span>
+                    <span className="font-mono font-semibold">
+                      +{formatCurrency(memoriaCalculo.gratificacao)}
+                    </span>
+                  </div>
+                )}
+
+                {memoriaCalculo.adiantamento > 0 && (
+                  <div className="flex items-center justify-between text-xs text-red-700">
+                    <span>(−) Adiantamento:</span>
+                    <span className="font-mono font-semibold">
+                      -{formatCurrency(memoriaCalculo.adiantamento)}
+                    </span>
+                  </div>
+                )}
+
+                <div className="border-t border-teal-300 pt-2 flex items-center justify-between bg-teal-100/60 p-2 rounded-lg">
+                  <div>
+                    <span className="text-xs font-bold text-teal-950 block">
+                      Valor Líquido a Pagar:
+                    </span>
+                    <span className="text-[10px] text-teal-800">
+                      Bruto + Gratificação − Adiantamento
+                    </span>
+                  </div>
+                  <div className="text-right">
+                    <span className="font-mono font-bold text-xl text-teal-950 tabular-nums">
+                      {formatCurrency(memoriaCalculo.valorLiquido)}
+                    </span>
+                  </div>
                 </div>
               </div>
             </div>

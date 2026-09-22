@@ -378,6 +378,9 @@ export interface FolhaHorasExtras {
   valor_horas_100: number
   total_horas: number
   total_valor: number
+  gratificacao?: number
+  adiantamento?: number
+  valor_liquido?: number
   status: StatusFolhaHorasExtras
   conta_pagar_id?: string
   observacoes?: string

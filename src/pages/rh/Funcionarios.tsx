@@ -84,7 +84,7 @@ export default function Funcionarios() {
   const [observacoes, setObservacoes] = useState('')
   const [isSubmitting, setIsSubmitting] = useState(false)
 
-  // Modal Gerar Conta a Pagar (Folha/Salário)
+  // Modal Gerar Conta a Pagar (Folha/Salário com Adiantamento e Gratificação)
   const [gerarContaModalOpen, setGerarContaModalOpen] = useState(false)
   const [selectedFuncionarioParaFolha, setSelectedFuncionarioParaFolha] =
     useState<Funcionario | null>(null)
@@ -99,6 +99,8 @@ export default function Funcionarios() {
     return d.toISOString().slice(0, 10)
   })
   const [valorFolha, setValorFolha] = useState<number>(0)
+  const [gratificacaoFolha, setGratificacaoFolha] = useState<number | ''>('')
+  const [adiantamentoFolha, setAdiantamentoFolha] = useState<number | ''>('')
   const [gerandoFolha, setGerandoFolha] = useState(false)
 
   useRealtime('funcionarios', () => loadFuncionarios())
@@ -239,13 +241,32 @@ export default function Funcionarios() {
   const handleOpenGerarFolha = (f: Funcionario) => {
     setSelectedFuncionarioParaFolha(f)
     setValorFolha(f.salario || 0)
+    setGratificacaoFolha('')
+    setAdiantamentoFolha('')
     setGerarContaModalOpen(true)
   }
+
+  // Cálculo do líquido da folha mensal
+  const liquidoFolhaCalculado = useMemo(() => {
+    const base = Number(valorFolha) || 0
+    const grat = Number(gratificacaoFolha) || 0
+    const adiant = Number(adiantamentoFolha) || 0
+    return Number((base + grat - adiant).toFixed(2))
+  }, [valorFolha, gratificacaoFolha, adiantamentoFolha])
 
   const handleConfirmarGeracaoFolha = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!selectedFuncionarioParaFolha || valorFolha <= 0) {
       toast({ title: 'Informe um valor de salário válido', variant: 'destructive' })
+      return
+    }
+
+    if (liquidoFolhaCalculado <= 0) {
+      toast({
+        title: 'O valor líquido da folha deve ser maior que zero',
+        description: 'Verifique os valores de salário, gratificação e adiantamento.',
+        variant: 'destructive',
+      })
       return
     }
 
@@ -260,22 +281,39 @@ export default function Funcionarios() {
         planoContas[0] ||
         null
 
+      const partesObs: string[] = [
+        `Colaborador: ${selectedFuncionarioParaFolha.nome}`,
+        `Cargo: ${selectedFuncionarioParaFolha.cargo}`,
+        `Setor: ${selectedFuncionarioParaFolha.setor}`,
+        `Salário Base: ${formatCurrency(valorFolha)}`,
+      ]
+      if (Number(gratificacaoFolha) > 0) {
+        partesObs.push(`Gratificação (+): ${formatCurrency(Number(gratificacaoFolha))}`)
+      }
+      if (Number(adiantamentoFolha) > 0) {
+        partesObs.push(`Adiantamento (-): ${formatCurrency(Number(adiantamentoFolha))}`)
+      }
+      partesObs.push(`Líquido a Pagar: ${formatCurrency(liquidoFolhaCalculado)}`)
+      partesObs.push(`Chave PIX: ${selectedFuncionarioParaFolha.chave_pix || 'Não cadastrada'}`)
+
       const payloadConta = {
         empresa_id: currentEmpresa!.id,
-        descricao: `Salário / Folha: ${selectedFuncionarioParaFolha.nome} (${mesReferencia})`,
+        descricao: `Salário / Folha Líquida: ${selectedFuncionarioParaFolha.nome} (${mesReferencia})`,
         categoria_id: catFolha?.id || null,
-        valor: Number(valorFolha),
+        valor: liquidoFolhaCalculado,
         vencimento: new Date(vencimentoFolha).toISOString(),
         parcelas: 1,
         status: 'Aberta',
-        observacoes: `Colaborador: ${selectedFuncionarioParaFolha.nome} | Cargo: ${selectedFuncionarioParaFolha.cargo} | Setor: ${selectedFuncionarioParaFolha.setor}. Chave PIX: ${selectedFuncionarioParaFolha.chave_pix || 'Não cadastrada'}`,
+        observacoes: partesObs.join(' | '),
       }
 
       await pb.collection('contas_pagar').create(payloadConta)
 
       toast({
         title: 'Conta a Pagar de Folha gerada com sucesso!',
-        description: `Lançado no módulo financeiro no valor de ${formatCurrency(valorFolha)}.`,
+        description: `Lançado no financeiro pelo valor líquido de ${formatCurrency(
+          liquidoFolhaCalculado,
+        )}.`,
       })
       setGerarContaModalOpen(false)
     } catch (err: any) {
@@ -843,7 +881,7 @@ export default function Funcionarios() {
                 </div>
 
                 <div>
-                  <Label className="text-xs font-semibold text-gray-700">Valor do Salário *</Label>
+                  <Label className="text-xs font-semibold text-gray-700">Salário Base (R$) *</Label>
                   <Input
                     type="number"
                     step="0.01"
@@ -851,15 +889,103 @@ export default function Funcionarios() {
                     value={valorFolha || ''}
                     onChange={(e) => setValorFolha(parseFloat(e.target.value) || 0)}
                     placeholder="0,00"
-                    className="mt-1 font-mono font-bold text-red-600"
+                    className="mt-1 font-mono font-bold text-gray-900"
                   />
                 </div>
               </div>
 
-              <div className="p-3 bg-amber-50/70 rounded-xl border border-amber-200 text-amber-900 text-[11px]">
-                Esta ação gerará uma nova <strong>Conta a Pagar</strong> no módulo financeiro,
-                permitindo acompanhar a liquidação, baixa bancária e histórico de pagamentos do
-                colaborador.
+              {/* Gratificação e Adiantamento na Folha Mensal */}
+              <div className="p-3.5 bg-amber-50/40 rounded-xl border border-amber-200 space-y-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold text-amber-950 uppercase tracking-wider flex items-center gap-1.5">
+                    <DollarSign className="w-3.5 h-3.5 text-amber-700" />
+                    Gratificação (+) e Adiantamento (−)
+                  </span>
+                  <span className="text-[10px] text-amber-800">Ajustes da Folha</span>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <Label className="text-xs font-semibold text-emerald-900 flex items-center gap-1">
+                      Gratificação / Bônus (R$)
+                      <span className="text-[10px] font-normal text-emerald-700">(Soma +)</span>
+                    </Label>
+                    <Input
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      value={gratificacaoFolha}
+                      onChange={(e) =>
+                        setGratificacaoFolha(
+                          e.target.value === '' ? '' : parseFloat(e.target.value) || 0,
+                        )
+                      }
+                      placeholder="0,00"
+                      className="mt-1 font-mono font-bold text-emerald-800 bg-white"
+                    />
+                  </div>
+
+                  <div>
+                    <Label className="text-xs font-semibold text-red-900 flex items-center gap-1">
+                      Adiantamento (R$)
+                      <span className="text-[10px] font-normal text-red-700">(Desconta −)</span>
+                    </Label>
+                    <Input
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      value={adiantamentoFolha}
+                      onChange={(e) =>
+                        setAdiantamentoFolha(
+                          e.target.value === '' ? '' : parseFloat(e.target.value) || 0,
+                        )
+                      }
+                      placeholder="0,00"
+                      className="mt-1 font-mono font-bold text-red-700 bg-white"
+                    />
+                  </div>
+                </div>
+
+                {/* Resumo do Cálculo e Líquido Destacado */}
+                <div className="pt-2 border-t border-amber-200 space-y-1">
+                  <div className="flex items-center justify-between text-xs text-gray-600">
+                    <span>Salário Base:</span>
+                    <span className="font-mono">{formatCurrency(valorFolha || 0)}</span>
+                  </div>
+                  {Number(gratificacaoFolha) > 0 && (
+                    <div className="flex items-center justify-between text-xs text-emerald-800">
+                      <span>(+) Gratificação / Bônus:</span>
+                      <span className="font-mono font-semibold">
+                        +{formatCurrency(Number(gratificacaoFolha))}
+                      </span>
+                    </div>
+                  )}
+                  {Number(adiantamentoFolha) > 0 && (
+                    <div className="flex items-center justify-between text-xs text-red-700">
+                      <span>(−) Adiantamento:</span>
+                      <span className="font-mono font-semibold">
+                        -{formatCurrency(Number(adiantamentoFolha))}
+                      </span>
+                    </div>
+                  )}
+                  <div className="flex items-center justify-between pt-1 border-t border-amber-300 bg-emerald-50/80 p-2 rounded-lg text-emerald-950">
+                    <div>
+                      <span className="font-bold text-xs block">Valor Líquido a Pagar:</span>
+                      <span className="text-[10px] text-emerald-700">
+                        Base + Gratificação − Adiantamento
+                      </span>
+                    </div>
+                    <span className="font-mono font-bold text-lg tabular-nums">
+                      {formatCurrency(liquidoFolhaCalculado)}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="p-3 bg-gray-50 rounded-xl border border-gray-200 text-gray-600 text-[11px]">
+                Esta ação gerará uma nova <strong>Conta a Pagar</strong> no valor{' '}
+                <strong>LÍQUIDO ({formatCurrency(liquidoFolhaCalculado)})</strong> no módulo
+                financeiro para controle de baixa bancária e histórico do colaborador.
               </div>
 
               <SheetFooter className="pt-4 flex justify-between">

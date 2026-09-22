@@ -243,16 +243,60 @@ export const ReciboHorasExtrasModal: React.FC<ReciboHorasExtrasProps> = ({
                     </tr>
                   )}
 
-                  {/* LINHA DE TOTAIS */}
-                  <tr className="bg-teal-50/60 print:bg-gray-100 font-bold border-t-2 border-teal-800 text-teal-950">
-                    <td colSpan={4} className="py-2.5 px-3 uppercase text-right">
-                      Total de Horas Extras a Pagar:
+                  {/* LINHA DE TOTAL BRUTO DE HORAS EXTRAS */}
+                  <tr className="bg-gray-100/70 print:bg-gray-200 font-bold border-t border-gray-300 text-gray-900">
+                    <td colSpan={4} className="py-2 px-3 uppercase text-right">
+                      Total Bruto das Horas Extras:
                     </td>
-                    <td className="py-2.5 px-3 text-right font-mono text-sm text-teal-900">
+                    <td className="py-2 px-3 text-right font-mono text-xs text-gray-900">
                       {item.total_horas?.toFixed(1)}h
                     </td>
-                    <td className="py-2.5 px-3 text-right font-mono text-base text-teal-900 tabular-nums">
+                    <td className="py-2 px-3 text-right font-mono text-sm text-gray-900 tabular-nums">
                       {formatCurrency(item.total_valor)}
+                    </td>
+                  </tr>
+
+                  {/* GRATIFICAÇÃO (SE HOUVER OU SEMPRE MOSTRAR QUANDO REGISTRADA) */}
+                  {((item.gratificacao !== undefined && item.gratificacao > 0) ||
+                    (item.adiantamento !== undefined && item.adiantamento > 0)) && (
+                    <>
+                      <tr>
+                        <td colSpan={5} className="py-1.5 px-3 font-medium text-emerald-800">
+                          (+) Gratificação / Bônus Extraordinário
+                        </td>
+                        <td className="py-1.5 px-3 text-right font-mono font-semibold text-emerald-800 tabular-nums">
+                          {item.gratificacao && item.gratificacao > 0
+                            ? `+ ${formatCurrency(item.gratificacao)}`
+                            : '+ R$ 0,00'}
+                        </td>
+                      </tr>
+                      <tr>
+                        <td colSpan={5} className="py-1.5 px-3 font-medium text-red-700">
+                          (−) Adiantamento / Vales Anteriores (Desconto)
+                        </td>
+                        <td className="py-1.5 px-3 text-right font-mono font-semibold text-red-700 tabular-nums">
+                          {item.adiantamento && item.adiantamento > 0
+                            ? `- ${formatCurrency(item.adiantamento)}`
+                            : '- R$ 0,00'}
+                        </td>
+                      </tr>
+                    </>
+                  )}
+
+                  {/* LINHA DE VALOR LÍQUIDO A RECEBER */}
+                  <tr className="bg-teal-50/80 print:bg-teal-100/60 font-bold border-t-2 border-teal-800 text-teal-950">
+                    <td colSpan={4} className="py-2.5 px-3 uppercase text-right text-xs">
+                      Valor Líquido a Receber / Pagar:
+                    </td>
+                    <td className="py-2.5 px-3 text-right font-mono text-xs text-teal-900">
+                      {item.total_horas?.toFixed(1)}h
+                    </td>
+                    <td className="py-2.5 px-3 text-right font-mono text-base font-extrabold text-teal-950 tabular-nums">
+                      {formatCurrency(
+                        typeof item.valor_liquido === 'number'
+                          ? item.valor_liquido
+                          : item.total_valor + (item.gratificacao || 0) - (item.adiantamento || 0),
+                      )}
                     </td>
                   </tr>
                 </tbody>

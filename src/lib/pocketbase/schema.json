@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-09-22T13:08:21.191Z",
+  "generatedAt": "2026-09-22T13:15:47.299Z",
   "collections": [
     {
       "name": "users",
@@ -1886,6 +1886,24 @@
           "required": false,
           "system": false,
           "autodateTriggers": ["onCreate", "onUpdate"]
+        },
+        {
+          "name": "gratificacao",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "adiantamento",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "valor_liquido",
+          "type": "number",
+          "required": false,
+          "system": false
         }
       ],
       "indexes": [
