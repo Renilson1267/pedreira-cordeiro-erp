@@ -132,9 +132,11 @@ export default function Layout() {
               </svg>
             </div>
             <div>
-              <span className="font-bold text-lg text-gray-900 tracking-tight">NovaGest</span>
+              <span className="font-bold text-lg text-gray-900 tracking-tight">
+                Pedreira Cordeiro
+              </span>
               <span className="text-[10px] text-teal-700 font-semibold uppercase tracking-wider block -mt-1">
-                ERP Empresarial
+                Grupo Pedreira Cordeiro
               </span>
             </div>
           </div>
@@ -161,10 +163,10 @@ export default function Layout() {
               </div>
               <div className="overflow-hidden">
                 <div className="text-xs font-semibold text-gray-900 truncate">
-                  {currentEmpresa?.nome_fantasia || 'NovaGest Principal'}
+                  {currentEmpresa?.nome_fantasia || 'Grupo Pedreira Cordeiro'}
                 </div>
                 <div className="text-[10px] text-gray-500 font-mono truncate">
-                  {currentEmpresa?.cnpj || '00.000.000/0001-00'}
+                  {currentEmpresa?.cnpj || '05.581.899/0001-05'}
                 </div>
               </div>
             </div>
@@ -274,7 +276,7 @@ export default function Layout() {
                 className="cursor-pointer text-xs text-red-600 focus:text-red-700 rounded-lg hover:bg-red-50"
               >
                 <LogOut className="w-3.5 h-3.5 mr-2" />
-                Sair do NovaGest
+                Sair do Pedreira Cordeiro
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
@@ -294,7 +296,7 @@ export default function Layout() {
             </button>
             <div className="hidden sm:flex items-center space-x-2 text-xs text-gray-500 font-medium">
               <Building className="w-3.5 h-3.5 text-teal-600" />
-              <span>{currentEmpresa?.nome_fantasia || 'NovaGest'}</span>
+              <span>{currentEmpresa?.nome_fantasia || 'Pedreira Cordeiro'}</span>
               <span>•</span>
               <span className="capitalize">
                 {location.pathname.replace('/', '').replace('/', ' / ') || 'Dashboard'}
@@ -354,9 +356,12 @@ export default function Layout() {
 
         {/* Footer */}
         <footer className="h-10 border-t border-[#ECEAE4] bg-white px-6 flex items-center justify-between text-xs text-gray-400 shrink-0">
-          <div>NovaGest ERP • v1.0 • Sistema Integrado de Gestão</div>
+          <div>
+            Pedreira Cordeiro ERP • v1.0 •{' '}
+            {currentEmpresa?.nome_fantasia || 'Grupo Pedreira Cordeiro'}
+          </div>
           <div className="font-medium text-gray-500 truncate max-w-[240px]">
-            {currentEmpresa?.nome_fantasia || 'NovaGest'}
+            {currentEmpresa?.nome_fantasia || 'Pedreira Cordeiro'}
           </div>
         </footer>
       </div>

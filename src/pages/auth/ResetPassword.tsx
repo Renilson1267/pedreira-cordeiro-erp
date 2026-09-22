@@ -51,7 +51,7 @@ export default function ResetPassword() {
             Definir nova senha
           </h1>
           <p className="text-xs text-gray-500 mb-6">
-            Crie uma nova senha segura para acessar sua conta no NovaGest.
+            Crie uma nova senha segura para acessar sua conta no Pedreira Cordeiro ERP.
           </p>
 
           {success ? (

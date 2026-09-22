@@ -18,7 +18,7 @@ interface CompanyContextType {
 
 const CompanyContext = createContext<CompanyContextType | undefined>(undefined)
 
-const LOCAL_STORAGE_KEY = 'novagest_current_empresa_id'
+const LOCAL_STORAGE_KEY = 'pedreira_cordeiro_current_empresa_id'
 
 export const CompanyProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { user } = useAuth()

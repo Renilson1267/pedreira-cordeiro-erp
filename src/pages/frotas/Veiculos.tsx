@@ -251,7 +251,7 @@ export default function Veiculos() {
               Frota & Maquinário Real da Pedreira
             </h1>
             <Badge className="bg-amber-100 text-amber-900 border-amber-300">
-              GC do Amaral Sertânia - ME
+              Grupo Pedreira Cordeiro
             </Badge>
           </div>
           <p className="text-xs text-gray-500 mt-1">

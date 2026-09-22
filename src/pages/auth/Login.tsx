@@ -30,7 +30,7 @@ export default function Login() {
       setLoading(true)
       await login(email.trim(), password)
       toast({
-        title: 'Bem-vindo ao NovaGest!',
+        title: 'Bem-vindo ao Grupo Pedreira Cordeiro!',
         description: 'Login realizado com sucesso.',
       })
       navigate('/')
@@ -70,8 +70,12 @@ export default function Login() {
                 <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" />
               </svg>
             </div>
-            <h1 className="text-2xl font-bold tracking-tight text-gray-900">NovaGest ERP</h1>
-            <p className="text-xs text-gray-500 mt-1">Gestão inteligente, acolhedora e integrada</p>
+            <h1 className="text-2xl font-bold tracking-tight text-gray-900">
+              Pedreira Cordeiro ERP
+            </h1>
+            <p className="text-xs text-gray-500 mt-1">
+              Grupo Pedreira Cordeiro • Gestão Inteligente e Integrada
+            </p>
           </div>
 
           <form onSubmit={handleSubmit} className="space-y-4">

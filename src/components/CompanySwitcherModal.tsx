@@ -241,7 +241,7 @@ export const CompanySwitcherModal: React.FC<CompanySwitcherModalProps> = ({
                 required
                 value={nomeFantasia}
                 onChange={(e) => setNomeFantasia(e.target.value)}
-                placeholder="Ex: NovaGest Filial Campinas"
+                placeholder="Ex: Pedreira Cordeiro - Filial Monteiro"
                 className="mt-1"
               />
             </div>
@@ -251,7 +251,7 @@ export const CompanySwitcherModal: React.FC<CompanySwitcherModalProps> = ({
               <Input
                 value={razaoSocial}
                 onChange={(e) => setRazaoSocial(e.target.value)}
-                placeholder="Ex: NovaGest Serviços e Tecnologia Ltda"
+                placeholder="Ex: Pedreira Cordeiro Indústria e Mineração Ltda"
                 className="mt-1"
               />
             </div>
@@ -281,7 +281,7 @@ export const CompanySwitcherModal: React.FC<CompanySwitcherModalProps> = ({
                     value={cnpj}
                     onChange={handleCnpjChange}
                     onBlur={() => executarBuscaCnpj()}
-                    placeholder="00.000.000/0001-00"
+                    placeholder="05.581.899/0001-05"
                     className={`font-mono text-xs pr-8 ${
                       buscandoCnpj ? 'border-teal-500 ring-1 ring-teal-200 bg-teal-50/20' : ''
                     }`}

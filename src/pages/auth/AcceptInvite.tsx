@@ -62,9 +62,11 @@ export default function AcceptInvite() {
             <UserCheck className="w-6 h-6" />
           </div>
 
-          <h1 className="text-xl font-bold text-gray-900 mb-2">Convite para o NovaGest ERP</h1>
+          <h1 className="text-xl font-bold text-gray-900 mb-2">
+            Convite para o Pedreira Cordeiro ERP
+          </h1>
           <p className="text-xs text-gray-500 mb-6">
-            Você foi convidado a participar da gestão empresarial de uma organização.
+            Você foi convidado a participar da gestão empresarial do Grupo Pedreira Cordeiro.
           </p>
 
           {errorMsg && (
