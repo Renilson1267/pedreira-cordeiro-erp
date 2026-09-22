@@ -41,6 +41,7 @@ import {
   HelpCircle,
 } from 'lucide-react'
 import { ReciboHorasExtrasModal } from '@/components/rh/ReciboHorasExtrasModal'
+import { FolhaHorasExtrasImpressaoModal } from '@/components/rh/FolhaHorasExtrasImpressaoModal'
 
 export default function HorasExtras() {
   const { currentEmpresa, canEdit, isReadOnly } = useCompany()
@@ -89,11 +90,14 @@ export default function HorasExtras() {
   const [observacoes, setObservacoes] = useState<string>('')
   const [isSaving, setIsSaving] = useState(false)
 
-  // Modal de Impressão / Recibo
+  // Modal de Impressão / Recibo Individual
   const [reciboModalOpen, setReciboModalOpen] = useState(false)
   const [selectedFolhaParaRecibo, setSelectedFolhaParaRecibo] = useState<FolhaHorasExtras | null>(
     null,
   )
+
+  // Modal de Impressão da Folha Completa (A4 Paisagem com todos os funcionários que couberem)
+  const [folhaCompletaModalOpen, setFolhaCompletaModalOpen] = useState(false)
 
   // Modal / Ação de Lançar no Financeiro (Conta a Pagar)
   const [lancandoContaId, setLancandoContaId] = useState<string | null>(null)
@@ -440,6 +444,16 @@ export default function HorasExtras() {
           >
             <UserCheck className="w-4 h-4 mr-1.5 text-teal-700" />
             Ver Colaboradores
+          </Button>
+
+          <Button
+            variant="outline"
+            onClick={() => setFolhaCompletaModalOpen(true)}
+            className="border-teal-300 bg-teal-50/60 text-teal-900 hover:bg-teal-100/70 rounded-xl shadow-xs text-xs"
+            title="Imprimir folha completa A4 Paisagem com a lista de funcionários do mês"
+          >
+            <Printer className="w-4 h-4 mr-1.5 text-teal-700" />
+            Imprimir Folha Completa
           </Button>
 
           {canEdit && (
@@ -1095,7 +1109,7 @@ export default function HorasExtras() {
         </SheetContent>
       </Sheet>
 
-      {/* MODAL DE IMPRESSÃO A4 PAISAGEM */}
+      {/* MODAL DE IMPRESSÃO INDIVIDUAL A4 PAISAGEM */}
       {selectedFolhaParaRecibo && (
         <ReciboHorasExtrasModal
           open={reciboModalOpen}
@@ -1105,6 +1119,16 @@ export default function HorasExtras() {
           funcionario={selectedFolhaParaRecibo.expand?.funcionario_id}
         />
       )}
+
+      {/* MODAL DE IMPRESSÃO DA FOLHA COMPLETA A4 PAISAGEM */}
+      <FolhaHorasExtrasImpressaoModal
+        open={folhaCompletaModalOpen}
+        onOpenChange={setFolhaCompletaModalOpen}
+        itens={folhasFiltradas}
+        empresa={currentEmpresa}
+        mesReferenciaFiltro={mesFiltro}
+        modoCalculoFiltro={modoFiltro}
+      />
     </div>
   )
 }

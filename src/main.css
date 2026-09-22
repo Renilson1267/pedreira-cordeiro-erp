@@ -294,7 +294,7 @@
   }
 }
 
-/* Print styles specifically for Comprovante de Horas Extras in A4 Landscape */
+/* Print styles specifically for Comprovante de Horas Extras e Folha Completa in A4 Landscape */
 @media print {
   @page {
     size: A4 landscape;
@@ -322,5 +322,24 @@
     width: 100% !important;
     margin: 0 !important;
     padding: 0 !important;
+  }
+
+  /* Suporte a paginação e repetição de cabeçalho da tabela */
+  .folha-print-table thead {
+    display: table-header-group !important;
+  }
+
+  .folha-print-table tfoot {
+    display: table-footer-group !important;
+  }
+
+  .folha-print-table tr {
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
+  }
+
+  .page-break-inside-avoid {
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
   }
 }
