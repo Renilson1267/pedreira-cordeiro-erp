@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-09-22T15:04:52.949Z",
+  "generatedAt": "2026-09-22T15:24:26.201Z",
   "collections": [
     {
       "name": "users",
@@ -2085,6 +2085,18 @@
         },
         {
           "name": "km_rota",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "valor_venda",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "preco_unitario_venda",
           "type": "number",
           "required": false,
           "system": false

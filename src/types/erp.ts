@@ -418,6 +418,8 @@ export interface Entrega {
   litros_estimados?: number
   custo_estimado: number
   custo_por_km?: number
+  valor_venda?: number
+  preco_unitario_venda?: number
   status: StatusEntrega
   conta_pagar_id?: string
   observacoes?: string

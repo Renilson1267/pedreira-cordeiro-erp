@@ -22,6 +22,8 @@ export interface CreateEntregaPayload {
   litros_estimados?: number | null
   custo_estimado: number
   custo_por_km?: number | null
+  valor_venda?: number | null
+  preco_unitario_venda?: number | null
   status: 'concluida' | 'em_transito' | 'cancelada'
   conta_pagar_id?: string | null
   observacoes?: string | null

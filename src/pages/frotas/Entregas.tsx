@@ -57,10 +57,19 @@ import {
   Sparkles,
   Calculator,
   Navigation,
+  Printer,
+  DollarSign,
+  AlertCircle,
 } from 'lucide-react'
 import { CidadeInputAutocomplete } from '@/components/frotas/CidadeInputAutocomplete'
 import { BlocoKmRota } from '@/components/frotas/BlocoKmRota'
 import { BadgeComparativoKm } from '@/components/frotas/BadgeComparativoKm'
+import { RomaneioEntregaImpressaoModal } from '@/components/frotas/RomaneioEntregaImpressaoModal'
+import {
+  converterM3ParaToneladas,
+  converterToneladasParaM3,
+  sugerirDensidadePorNome,
+} from '@/services/produtos'
 import {
   calcularDistanciaRotaOSRM,
   COORDENADAS_PEDREIRA_PADRAO,
@@ -109,6 +118,9 @@ export default function Entregas() {
   // Modal de Detalhes da Entrega
   const [selectedEntregaDetalhe, setSelectedEntregaDetalhe] = useState<Entrega | null>(null)
 
+  // Modal de Impressão do Romaneio de Entrega
+  const [selectedEntregaImpressao, setSelectedEntregaImpressao] = useState<Entrega | null>(null)
+
   // Drawer Form State
   const [isDrawerOpen, setIsDrawerOpen] = useState(false)
   const [editingEntregaId, setEditingEntregaId] = useState<string | null>(null)
@@ -140,6 +152,11 @@ export default function Entregas() {
   const [produtoNome, setProdutoNome] = useState('')
   const [quantidade, setQuantidade] = useState<number>(0)
   const [unidadeMedida, setUnidadeMedida] = useState<UnidadeMedidaCarga>('m³')
+
+  // Valor da Venda do Produto
+  const [usarValorVendaManual, setUsarValorVendaManual] = useState(false)
+  const [precoUnitarioVenda, setPrecoUnitarioVenda] = useState<number>(0)
+  const [valorVendaManual, setValorVendaManual] = useState<number>(0)
 
   // Custo & Consumo
   const [usarCustoManual, setUsarCustoManual] = useState(false)
@@ -211,6 +228,34 @@ export default function Entregas() {
   const currentVeiculo = useMemo(() => {
     return veiculos.find((v) => v.id === veiculoId)
   }, [veiculos, veiculoId])
+
+  // Produto selecionado no formulário
+  const currentProduto = useMemo(() => {
+    if (produtoId && produtoId !== 'nenhum') {
+      return produtos.find((p) => p.id === produtoId) || null
+    }
+    if (produtoNome) {
+      return (
+        produtos.find(
+          (p) =>
+            p.nome.toLowerCase().trim() === produtoNome.toLowerCase().trim() ||
+            p.nome.toLowerCase().includes(produtoNome.toLowerCase().trim()),
+        ) || null
+      )
+    }
+    return null
+  }, [produtos, produtoId, produtoNome])
+
+  // Cálculo da densidade do produto selecionado
+  const densidadeProduto = useMemo(() => {
+    if (currentProduto?.densidade && currentProduto.densidade > 0) {
+      return currentProduto.densidade
+    }
+    if (produtoNome) {
+      return sugerirDensidadePorNome(produtoNome) || 1.5
+    }
+    return 1.5
+  }, [currentProduto, produtoNome])
 
   // Motoristas da frota
   const motoristasFrota = useMemo(() => {
@@ -298,6 +343,103 @@ export default function Entregas() {
     }
     return 0
   }, [kmEfetivo, custoCalculado])
+
+  // Cálculo automático do valor de venda da carga
+  const calculoVenda = useMemo(() => {
+    const qtd = Number(quantidade) || 0
+    if (qtd <= 0) {
+      return {
+        quantidadeBase: 0,
+        quantidadeConvertida: 0,
+        unidadeOriginal: unidadeMedida,
+        unidadePreco: currentProduto?.unidade || 'm³',
+        precisaConversao: false,
+        densidadeUsada: densidadeProduto,
+        precoUnitario: precoUnitarioVenda || 0,
+        valorTotal: usarValorVendaManual ? Number(valorVendaManual) || 0 : 0,
+        margem: 0,
+      }
+    }
+
+    if (usarValorVendaManual) {
+      const vManual = Number(valorVendaManual) || 0
+      return {
+        quantidadeBase: qtd,
+        quantidadeConvertida: qtd,
+        unidadeOriginal: unidadeMedida,
+        unidadePreco: currentProduto?.unidade || 'm³',
+        precisaConversao: false,
+        densidadeUsada: densidadeProduto,
+        precoUnitario: precoUnitarioVenda || (qtd > 0 ? vManual / qtd : 0),
+        valorTotal: vManual,
+        margem: vManual - (Number(custoCalculado) || 0),
+      }
+    }
+
+    // Se temos preço unitário configurado
+    const precoUnit = precoUnitarioVenda > 0 ? precoUnitarioVenda : currentProduto?.preco_venda || 0
+    const unidProd = currentProduto?.unidade || 'm³'
+
+    // Casos de conversão:
+    // 1. Carga informada em TON, mas produto precificado em M³
+    //    m³ = ton / densidade
+    if (unidadeMedida === 'ton' && unidProd === 'm³') {
+      const qtdEmM3 = converterToneladasParaM3(qtd, densidadeProduto)
+      const total = Number((qtdEmM3 * precoUnit).toFixed(2))
+      return {
+        quantidadeBase: qtd,
+        quantidadeConvertida: qtdEmM3,
+        unidadeOriginal: 'ton',
+        unidadePreco: 'm³',
+        precisaConversao: true,
+        densidadeUsada: densidadeProduto,
+        precoUnitario: precoUnit,
+        valorTotal: total,
+        margem: total - (Number(custoCalculado) || 0),
+      }
+    }
+
+    // 2. Carga informada em M³, mas produto precificado em TON
+    //    ton = m³ * densidade
+    if (unidadeMedida === 'm³' && unidProd === 'ton') {
+      const qtdEmTon = converterM3ParaToneladas(qtd, densidadeProduto)
+      const total = Number((qtdEmTon * precoUnit).toFixed(2))
+      return {
+        quantidadeBase: qtd,
+        quantidadeConvertida: qtdEmTon,
+        unidadeOriginal: 'm³',
+        unidadePreco: 'ton',
+        precisaConversao: true,
+        densidadeUsada: densidadeProduto,
+        precoUnitario: precoUnit,
+        valorTotal: total,
+        margem: total - (Number(custoCalculado) || 0),
+      }
+    }
+
+    // 3. Mesma unidade ou viagem fechada
+    const total = Number((qtd * precoUnit).toFixed(2))
+    return {
+      quantidadeBase: qtd,
+      quantidadeConvertida: qtd,
+      unidadeOriginal: unidadeMedida,
+      unidadePreco: unidProd,
+      precisaConversao: false,
+      densidadeUsada: densidadeProduto,
+      precoUnitario: precoUnit,
+      valorTotal: total,
+      margem: total - (Number(custoCalculado) || 0),
+    }
+  }, [
+    quantidade,
+    unidadeMedida,
+    currentProduto,
+    densidadeProduto,
+    precoUnitarioVenda,
+    usarValorVendaManual,
+    valorVendaManual,
+    custoCalculado,
+  ])
 
   // Atualiza parâmetros de consumo quando o veículo muda
   const handleVeiculoChange = (vid: string) => {
@@ -431,6 +573,10 @@ export default function Entregas() {
     setQuantidade(14) // padrão 14m³ (caçamba toco/truck)
     setUnidadeMedida('m³')
 
+    setUsarValorVendaManual(false)
+    setPrecoUnitarioVenda(0)
+    setValorVendaManual(0)
+
     setUsarCustoManual(false)
     setConsumoEstimadoKmL(mediaConsumoVeiculo || 2.8)
     setPrecoCombustivelLitro(precoDieselApurado || 5.89)
@@ -479,6 +625,14 @@ export default function Entregas() {
     setQuantidade(ent.quantidade || 0)
     setUnidadeMedida(ent.unidade_medida || 'm³')
 
+    const prodCorrespondente = ent.produto_id
+      ? produtos.find((p) => p.id === ent.produto_id)
+      : produtos.find((p) => p.nome === ent.produto_nome)
+
+    setPrecoUnitarioVenda(ent.preco_unitario_venda || prodCorrespondente?.preco_venda || 0)
+    setValorVendaManual(ent.valor_venda || 0)
+    setUsarValorVendaManual(false)
+
     setConsumoEstimadoKmL(ent.consumo_estimado_km_l || 2.8)
     setPrecoCombustivelLitro(ent.preco_combustivel_litro || 5.89)
     setCustoManualInformado(ent.custo_estimado || 0)
@@ -521,6 +675,9 @@ export default function Entregas() {
         setProdutoNome(prod.nome)
         if (prod.unidade === 'ton' || prod.unidade === 'm³') {
           setUnidadeMedida(prod.unidade)
+        }
+        if (prod.preco_venda && prod.preco_venda > 0) {
+          setPrecoUnitarioVenda(prod.preco_venda)
         }
       }
     } else {
@@ -611,6 +768,8 @@ export default function Entregas() {
         litros_estimados: litrosCalculados || null,
         custo_estimado: custoCalculado,
         custo_por_km: custoPorKmCalculado || null,
+        valor_venda: calculoVenda.valorTotal > 0 ? calculoVenda.valorTotal : null,
+        preco_unitario_venda: calculoVenda.precoUnitario > 0 ? calculoVenda.precoUnitario : null,
         status,
         conta_pagar_id: contaPagarId,
         observacoes: observacoes.trim() || null,
@@ -737,6 +896,9 @@ export default function Entregas() {
     const totalEntregas = filteredEntregas.length
     const kmTotal = filteredEntregas.reduce((acc, e) => acc + (e.km_rodado || 0), 0)
     const custoTotal = filteredEntregas.reduce((acc, e) => acc + (e.custo_estimado || 0), 0)
+    const vendaTotal = filteredEntregas.reduce((acc, e) => acc + (e.valor_venda || 0), 0)
+    const margemTotal = vendaTotal - custoTotal
+    const margemPercentual = vendaTotal > 0 ? (margemTotal / vendaTotal) * 100 : 0
     const custoMedioPorKm = kmTotal > 0 ? custoTotal / kmTotal : 0
     const custoMedioPorEntrega = totalEntregas > 0 ? custoTotal / totalEntregas : 0
     const volumeTotal = filteredEntregas.reduce((acc, e) => acc + (e.quantidade || 0), 0)
@@ -745,6 +907,9 @@ export default function Entregas() {
       totalEntregas,
       kmTotal,
       custoTotal,
+      vendaTotal,
+      margemTotal,
+      margemPercentual,
       custoMedioPorKm,
       custoMedioPorEntrega,
       volumeTotal,
@@ -843,43 +1008,29 @@ export default function Entregas() {
         )}
       </div>
 
-      {/* 5 KPI Cards */}
+      {/* 5 KPI Cards com Total Vendido e Margem */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
         <Card className="rounded-2xl border-[#ECEAE4] bg-white shadow-xs p-4">
           <div className="flex items-center justify-between">
             <span className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider">
-              Entregas Realizadas
-            </span>
-            <div className="w-7 h-7 rounded-lg bg-teal-50 text-teal-700 flex items-center justify-center">
-              <Truck className="w-4 h-4" />
-            </div>
-          </div>
-          <div className="text-2xl font-bold text-gray-900 mt-1.5 font-mono">
-            {kpis.totalEntregas}
-          </div>
-          <p className="text-[11px] text-gray-400 mt-0.5">Viagens no período</p>
-        </Card>
-
-        <Card className="rounded-2xl border-[#ECEAE4] bg-white shadow-xs p-4">
-          <div className="flex items-center justify-between">
-            <span className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider">
-              Km Total Rodado
+              Total Vendido
             </span>
             <div className="w-7 h-7 rounded-lg bg-emerald-50 text-emerald-700 flex items-center justify-center">
-              <Route className="w-4 h-4" />
+              <DollarSign className="w-4 h-4" />
             </div>
           </div>
-          <div className="text-2xl font-bold text-gray-900 mt-1.5 font-mono">
-            {kpis.kmTotal.toLocaleString('pt-BR', { maximumFractionDigits: 1 })}{' '}
-            <span className="text-xs font-normal text-gray-500">km</span>
+          <div className="text-2xl font-bold text-emerald-800 mt-1.5 font-mono tabular-nums">
+            {formatCurrency(kpis.vendaTotal)}
           </div>
-          <p className="text-[11px] text-gray-400 mt-0.5">Distância acumulada</p>
+          <p className="text-[11px] text-gray-400 mt-0.5">
+            {kpis.totalEntregas} {kpis.totalEntregas === 1 ? 'viagem' : 'viagens'} no período
+          </p>
         </Card>
 
         <Card className="rounded-2xl border-[#ECEAE4] bg-white shadow-xs p-4">
           <div className="flex items-center justify-between">
             <span className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider">
-              Custo Total Estimado
+              Custo Combustível
             </span>
             <div className="w-7 h-7 rounded-lg bg-red-50 text-red-600 flex items-center justify-center">
               <Receipt className="w-4 h-4" />
@@ -888,7 +1039,30 @@ export default function Entregas() {
           <div className="text-2xl font-bold text-red-600 mt-1.5 font-mono tabular-nums">
             {formatCurrency(kpis.custoTotal)}
           </div>
-          <p className="text-[11px] text-gray-400 mt-0.5">Baseado no consumo km/l</p>
+          <p className="text-[11px] text-gray-400 mt-0.5">
+            {kpis.kmTotal.toLocaleString('pt-BR', { maximumFractionDigits: 1 })} km rodados
+          </p>
+        </Card>
+
+        <Card className="rounded-2xl border-[#ECEAE4] bg-white shadow-xs p-4">
+          <div className="flex items-center justify-between">
+            <span className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider">
+              Margem Bruta (Venda − Custo)
+            </span>
+            <div className="w-7 h-7 rounded-lg bg-teal-50 text-teal-700 flex items-center justify-center">
+              <TrendingUp className="w-4 h-4" />
+            </div>
+          </div>
+          <div
+            className={`text-2xl font-bold mt-1.5 font-mono tabular-nums ${
+              kpis.margemTotal >= 0 ? 'text-teal-900' : 'text-red-700'
+            }`}
+          >
+            {formatCurrency(kpis.margemTotal)}
+          </div>
+          <p className="text-[11px] text-gray-400 mt-0.5">
+            {kpis.vendaTotal > 0 ? `${kpis.margemPercentual.toFixed(1)}% de margem` : 'Sem vendas'}
+          </p>
         </Card>
 
         <Card className="rounded-2xl border-[#ECEAE4] bg-white shadow-xs p-4">
@@ -897,7 +1071,7 @@ export default function Entregas() {
               Custo Médio / Km
             </span>
             <div className="w-7 h-7 rounded-lg bg-amber-50 text-amber-700 flex items-center justify-center">
-              <TrendingUp className="w-4 h-4" />
+              <Route className="w-4 h-4" />
             </div>
           </div>
           <div className="text-2xl font-bold text-gray-900 mt-1.5 font-mono tabular-nums">
@@ -1142,18 +1316,17 @@ export default function Entregas() {
                 <th className="py-3 px-4 text-right">Km Lançado</th>
                 <th className="py-3 px-4 text-center">Km Rota × Motorista</th>
                 <th className="py-3 px-4">Produto & Carga</th>
-                <th className="py-3 px-4">Motorista</th>
-                <th className="py-3 px-4 text-right">Custo Estimado</th>
-                <th className="py-3 px-4 text-right">Custo / Km</th>
+                <th className="py-3 px-4 text-right">Valor Venda</th>
+                <th className="py-3 px-4 text-right">Custo Viagem</th>
+                <th className="py-3 px-4 text-right">Margem</th>
                 <th className="py-3 px-4 text-center">Status</th>
-                <th className="py-3 px-4 text-center">Financeiro</th>
                 <th className="py-3 px-4 text-right">Ações</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-[#ECEAE4]">
               {filteredEntregas.length === 0 ? (
                 <tr>
-                  <td colSpan={12} className="py-12 text-center text-gray-400">
+                  <td colSpan={11} className="py-12 text-center text-gray-400">
                     <div className="flex flex-col items-center justify-center gap-2">
                       <Truck className="w-8 h-8 text-gray-300" />
                       <p>Nenhuma entrega encontrada para os critérios selecionados.</p>
@@ -1174,7 +1347,9 @@ export default function Entregas() {
               ) : (
                 filteredEntregas.map((ent) => {
                   const veic = ent.expand?.veiculo_id
-                  const temConta = !!ent.conta_pagar_id
+                  const vVenda = Number(ent.valor_venda) || 0
+                  const cViagem = Number(ent.custo_estimado) || 0
+                  const margem = vVenda - cViagem
 
                   return (
                     <tr key={ent.id} className="hover:bg-teal-50/20 transition-colors">
@@ -1187,7 +1362,7 @@ export default function Entregas() {
                             {veic?.codigo_interno || '—'}
                           </span>
                           <span>•</span>
-                          <span className="text-gray-700 truncate max-w-[130px]">
+                          <span className="text-gray-700 truncate max-w-[120px]">
                             {veic?.modelo || ''}
                           </span>
                         </div>
@@ -1195,7 +1370,7 @@ export default function Entregas() {
                           <div className="text-[10px] text-gray-400 font-mono">{veic.placa}</div>
                         )}
                       </td>
-                      <td className="py-3 px-4 max-w-[220px]">
+                      <td className="py-3 px-4 max-w-[200px]">
                         <div className="flex items-center gap-1 text-gray-900 font-medium truncate">
                           <span className="text-gray-500 truncate">{ent.origem}</span>
                           <ArrowRight className="w-3 h-3 text-teal-600 shrink-0" />
@@ -1203,11 +1378,9 @@ export default function Entregas() {
                             {ent.destino}
                           </span>
                         </div>
-                        {ent.observacoes && (
-                          <div className="text-[10px] text-gray-400 truncate mt-0.5">
-                            {ent.observacoes}
-                          </div>
-                        )}
+                        <div className="text-[10px] text-gray-400 truncate mt-0.5">
+                          Motorista: {ent.motorista || ent.expand?.funcionario_id?.nome || '—'}
+                        </div>
                       </td>
                       <td className="py-3 px-4 text-right font-mono font-bold text-gray-900 whitespace-nowrap">
                         {ent.km_rodado.toLocaleString('pt-BR', { maximumFractionDigits: 1 })}{' '}
@@ -1236,16 +1409,24 @@ export default function Entregas() {
                       </td>
                       <td className="py-3 px-4">
                         {ent.produto_nome ? (
-                          <div className="flex items-center gap-1">
-                            <Badge
-                              variant="outline"
-                              className="text-[10px] bg-amber-50/60 border-amber-200 text-amber-900"
-                            >
-                              {ent.produto_nome}
-                            </Badge>
-                            {ent.quantidade ? (
-                              <span className="text-[11px] font-mono text-gray-600">
-                                {ent.quantidade} {ent.unidade_medida || 'm³'}
+                          <div className="flex flex-col gap-0.5">
+                            <div className="flex items-center gap-1">
+                              <Badge
+                                variant="outline"
+                                className="text-[10px] bg-amber-50/60 border-amber-200 text-amber-900 font-medium"
+                              >
+                                {ent.produto_nome}
+                              </Badge>
+                              {ent.quantidade ? (
+                                <span className="text-[11px] font-mono font-semibold text-gray-700">
+                                  {ent.quantidade} {ent.unidade_medida || 'm³'}
+                                </span>
+                              ) : null}
+                            </div>
+                            {ent.preco_unitario_venda && ent.preco_unitario_venda > 0 ? (
+                              <span className="text-[10px] font-mono text-gray-400">
+                                {formatCurrency(ent.preco_unitario_venda)} /{' '}
+                                {ent.unidade_medida || 'm³'}
                               </span>
                             ) : null}
                           </div>
@@ -1253,14 +1434,24 @@ export default function Entregas() {
                           <span className="text-gray-400">—</span>
                         )}
                       </td>
-                      <td className="py-3 px-4 text-gray-700">
-                        {ent.motorista || ent.expand?.funcionario_id?.nome || '—'}
+                      <td className="py-3 px-4 text-right font-mono font-bold text-emerald-800 tabular-nums whitespace-nowrap">
+                        {vVenda > 0 ? (
+                          formatCurrency(vVenda)
+                        ) : (
+                          <span className="text-gray-300">—</span>
+                        )}
                       </td>
                       <td className="py-3 px-4 text-right font-mono font-bold text-red-600 tabular-nums whitespace-nowrap">
-                        {formatCurrency(ent.custo_estimado)}
+                        {formatCurrency(cViagem)}
                       </td>
-                      <td className="py-3 px-4 text-right font-mono text-gray-600 tabular-nums whitespace-nowrap">
-                        {ent.custo_por_km ? `${formatCurrency(ent.custo_por_km)}/km` : '—'}
+                      <td className="py-3 px-4 text-right font-mono font-bold tabular-nums whitespace-nowrap">
+                        {vVenda > 0 ? (
+                          <span className={margem >= 0 ? 'text-teal-900' : 'text-red-600'}>
+                            {formatCurrency(margem)}
+                          </span>
+                        ) : (
+                          <span className="text-gray-300">—</span>
+                        )}
                       </td>
                       <td className="py-3 px-4 text-center">
                         {ent.status === 'concluida' ? (
@@ -1280,17 +1471,18 @@ export default function Entregas() {
                           </Badge>
                         )}
                       </td>
-                      <td className="py-3 px-4 text-center">
-                        {temConta ? (
-                          <Badge className="bg-emerald-50 text-emerald-700 border-emerald-200 text-[10px]">
-                            ✓ A Pagar
-                          </Badge>
-                        ) : (
-                          <span className="text-gray-400 text-[10px]">Manual</span>
-                        )}
-                      </td>
                       <td className="py-3 px-4 text-right">
                         <div className="flex items-center justify-end gap-1">
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => setSelectedEntregaImpressao(ent)}
+                            className="h-7 px-2 text-xs text-teal-800 hover:text-teal-950 hover:bg-teal-50"
+                            title="Imprimir Romaneio de Entrega (A4)"
+                          >
+                            <Printer className="w-3.5 h-3.5 mr-1" />
+                            Imprimir
+                          </Button>
                           <Button
                             size="sm"
                             variant="ghost"
@@ -1712,16 +1904,16 @@ export default function Entregas() {
 
               {/* Produto */}
               <div>
-                <Label className="text-xs font-semibold text-gray-700">Produto Entregue</Label>
+                <Label className="text-xs font-semibold text-gray-700">Produto da Pedreira</Label>
                 <Select value={produtoId || 'nenhum'} onValueChange={handleProdutoChange}>
                   <SelectTrigger className="mt-1 bg-white">
-                    <SelectValue placeholder="Selecione da pedreira" />
+                    <SelectValue placeholder="Selecione o produto" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="nenhum">Produto personalizado / outro</SelectItem>
+                    <SelectItem value="nenhum">Outro / Avulso...</SelectItem>
                     {produtos.map((p) => (
                       <SelectItem key={p.id} value={p.id}>
-                        {p.nome} ({p.codigo})
+                        {p.nome} (Preço: {formatCurrency(p.preco_venda || 0)}/{p.unidade || 'm³'})
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -1747,7 +1939,7 @@ export default function Entregas() {
                   value={quantidade || ''}
                   onChange={(e) => setQuantidade(parseFloat(e.target.value) || 0)}
                   placeholder="14"
-                  className="mt-1 font-mono bg-white"
+                  className="mt-1 font-mono font-bold bg-white text-gray-900"
                 />
               </div>
 
@@ -1767,6 +1959,150 @@ export default function Entregas() {
                   </SelectContent>
                 </Select>
               </div>
+            </div>
+
+            {/* DESTAQUE VISUAL: CÁLCULO AUTOMÁTICO DO VALOR DA VENDA */}
+            <div className="p-3.5 bg-emerald-50/70 rounded-xl border border-emerald-200 space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-1.5 text-xs font-bold text-emerald-950">
+                  <DollarSign className="w-4 h-4 text-emerald-700" />
+                  <span>Valor da Venda da Carga (Automático)</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setUsarValorVendaManual(!usarValorVendaManual)}
+                  className="text-[10px] text-emerald-800 hover:underline font-semibold"
+                >
+                  {usarValorVendaManual ? 'Usar cálculo automático' : 'Informar valor manual'}
+                </button>
+              </div>
+
+              {!usarValorVendaManual ? (
+                <>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <Label className="text-xs font-semibold text-gray-700">
+                        Preço Unitário de Venda (R$)
+                      </Label>
+                      <div className="relative mt-1">
+                        <Input
+                          type="number"
+                          step="0.01"
+                          value={precoUnitarioVenda || ''}
+                          onChange={(e) => setPrecoUnitarioVenda(parseFloat(e.target.value) || 0)}
+                          placeholder={
+                            currentProduto ? String(currentProduto.preco_venda || '') : '0.00'
+                          }
+                          className="font-mono bg-white text-xs pr-12"
+                        />
+                        <span className="absolute right-3 top-2.5 text-[11px] font-mono text-gray-400">
+                          /{currentProduto?.unidade || unidadeMedida}
+                        </span>
+                      </div>
+                      <span className="text-[10px] text-gray-400 mt-0.5 block">
+                        {currentProduto
+                          ? `Cadastrado: ${formatCurrency(currentProduto.preco_venda || 0)}/${currentProduto.unidade || 'm³'}`
+                          : 'Preço padrão do produto'}
+                      </span>
+                    </div>
+
+                    <div>
+                      <Label className="text-xs font-semibold text-gray-700">
+                        Densidade do Material
+                      </Label>
+                      <div className="relative mt-1">
+                        <Input
+                          type="text"
+                          disabled
+                          value={`${densidadeProduto.toFixed(2)} t/m³`}
+                          className="font-mono bg-gray-100 text-xs text-gray-600"
+                        />
+                      </div>
+                      <span className="text-[10px] text-gray-400 mt-0.5 block">
+                        Conversão volumétrica m³ ⇄ ton
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Alerta se o produto não tem preço cadastrado */}
+                  {(!currentProduto ||
+                    !currentProduto.preco_venda ||
+                    currentProduto.preco_venda === 0) &&
+                    precoUnitarioVenda === 0 && (
+                      <div className="p-2 bg-amber-50 rounded-lg border border-amber-200 text-amber-900 text-[11px] flex items-center gap-2">
+                        <AlertCircle className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                        <span>
+                          Produto sem preço de venda cadastrado. Informe o preço unitário acima ou
+                          digite o valor manual.
+                        </span>
+                      </div>
+                    )}
+
+                  {/* Informação sobre conversão se aplicável */}
+                  {calculoVenda.precisaConversao && (
+                    <div className="p-2 bg-blue-50 rounded-lg border border-blue-200 text-blue-900 text-[11px]">
+                      Conversão automática aplicada:{' '}
+                      <strong>
+                        {calculoVenda.quantidadeBase} {calculoVenda.unidadeOriginal}
+                      </strong>{' '}
+                      ={' '}
+                      <strong>
+                        {calculoVenda.quantidadeConvertida.toFixed(2)} {calculoVenda.unidadePreco}
+                      </strong>{' '}
+                      (densidade {densidadeProduto} t/m³).
+                    </div>
+                  )}
+
+                  {/* Placa de destaque do Valor da Venda e Margem */}
+                  <div className="p-3 bg-white rounded-xl border border-emerald-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-2xs">
+                    <div>
+                      <span className="text-[10px] uppercase font-bold text-gray-500 block">
+                        Total da Venda Estimado
+                      </span>
+                      <div className="text-2xl font-bold font-mono text-emerald-800 tabular-nums">
+                        {formatCurrency(calculoVenda.valorTotal)}
+                      </div>
+                      <span className="text-[10px] text-gray-500 font-mono">
+                        {calculoVenda.quantidadeConvertida} {calculoVenda.unidadePreco} ×{' '}
+                        {formatCurrency(calculoVenda.precoUnitario)}
+                      </span>
+                    </div>
+
+                    <div className="text-left sm:text-right border-t sm:border-t-0 pt-2 sm:pt-0 border-gray-100">
+                      <span className="text-[10px] uppercase font-bold text-gray-500 block">
+                        Margem da Viagem (Venda − Custo)
+                      </span>
+                      <div
+                        className={`text-xl font-bold font-mono tabular-nums ${
+                          calculoVenda.margem >= 0 ? 'text-teal-900' : 'text-red-600'
+                        }`}
+                      >
+                        {formatCurrency(calculoVenda.margem)}
+                      </div>
+                      <span className="text-[10px] text-gray-400 font-mono">
+                        Custo Viagem: {formatCurrency(custoCalculado)}
+                      </span>
+                    </div>
+                  </div>
+                </>
+              ) : (
+                <div>
+                  <Label className="text-xs font-semibold text-gray-700">
+                    Valor Total da Venda Manual (R$)
+                  </Label>
+                  <Input
+                    type="number"
+                    step="0.01"
+                    value={valorVendaManual || ''}
+                    onChange={(e) => setValorVendaManual(parseFloat(e.target.value) || 0)}
+                    placeholder="0.00"
+                    className="mt-1 font-mono font-bold text-emerald-800 bg-white"
+                  />
+                  <span className="text-[10px] text-gray-400 mt-0.5 block">
+                    Valor faturado fixado para esta entrega
+                  </span>
+                </div>
+              )}
             </div>
 
             {/* INTEGRAÇÕES COM OUTROS MÓDULOS */}
@@ -1973,27 +2309,50 @@ export default function Entregas() {
                 </div>
               </div>
 
-              {/* Custo Total */}
-              <div className="p-3 bg-red-50/60 rounded-xl border border-red-200 flex items-center justify-between">
-                <div>
-                  <span className="text-[10px] uppercase font-semibold text-red-900 block">
-                    Custo Estimado de Combustível
-                  </span>
-                  <span className="text-[11px] text-red-700 font-mono">
-                    Consumo: {selectedEntregaDetalhe.consumo_estimado_km_l || 2.8} km/l • Diesel:{' '}
-                    {formatCurrency(selectedEntregaDetalhe.preco_combustivel_litro || 5.89)}
+              {/* Valores Financeiros: Valor da Venda, Custo da Viagem e Margem */}
+              <div className="p-3 bg-white rounded-xl border border-[#ECEAE4] space-y-2">
+                <div className="flex items-center justify-between text-xs pb-2 border-b border-gray-100">
+                  <span className="text-gray-500">Valor da Venda da Carga:</span>
+                  <span className="font-mono font-bold text-emerald-800 text-sm">
+                    {selectedEntregaDetalhe.valor_venda
+                      ? formatCurrency(selectedEntregaDetalhe.valor_venda)
+                      : 'Não informado'}
                   </span>
                 </div>
-                <div className="text-right">
-                  <div className="text-xl font-bold font-mono text-red-700">
-                    {formatCurrency(selectedEntregaDetalhe.custo_estimado)}
+
+                <div className="flex items-center justify-between text-xs pb-2 border-b border-gray-100">
+                  <div>
+                    <span className="text-gray-500 block">Custo Viagem (Combustível):</span>
+                    <span className="text-[10px] text-gray-400 font-mono">
+                      {selectedEntregaDetalhe.consumo_estimado_km_l || 2.8} km/l • Diesel{' '}
+                      {formatCurrency(selectedEntregaDetalhe.preco_combustivel_litro || 5.89)}
+                    </span>
                   </div>
-                  {selectedEntregaDetalhe.custo_por_km && (
-                    <div className="text-[10px] font-mono text-gray-500">
-                      {formatCurrency(selectedEntregaDetalhe.custo_por_km)}/km
-                    </div>
-                  )}
+                  <span className="font-mono font-bold text-red-600 text-sm">
+                    {formatCurrency(selectedEntregaDetalhe.custo_estimado)}
+                  </span>
                 </div>
+
+                {selectedEntregaDetalhe.valor_venda ? (
+                  <div className="flex items-center justify-between text-xs pt-1">
+                    <span className="font-bold text-teal-950 uppercase text-[10px]">
+                      Margem da Operação:
+                    </span>
+                    <span
+                      className={`font-mono font-bold text-base ${
+                        selectedEntregaDetalhe.valor_venda -
+                          selectedEntregaDetalhe.custo_estimado >=
+                        0
+                          ? 'text-teal-950'
+                          : 'text-red-700'
+                      }`}
+                    >
+                      {formatCurrency(
+                        selectedEntregaDetalhe.valor_venda - selectedEntregaDetalhe.custo_estimado,
+                      )}
+                    </span>
+                  </div>
+                ) : null}
               </div>
 
               {selectedEntregaDetalhe.observacoes && (
@@ -2005,7 +2364,7 @@ export default function Entregas() {
             </div>
           )}
 
-          <DialogFooter className="pt-2 flex justify-between sm:justify-between">
+          <DialogFooter className="pt-2 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2">
             <Button
               type="button"
               variant="outline"
@@ -2015,23 +2374,49 @@ export default function Entregas() {
             >
               Fechar
             </Button>
-            {selectedEntregaDetalhe && (
-              <Button
-                type="button"
-                size="sm"
-                onClick={() => {
-                  const ent = selectedEntregaDetalhe
-                  setSelectedEntregaDetalhe(null)
-                  openEditModal(ent)
-                }}
-                className="bg-teal-700 hover:bg-teal-800 text-white text-xs"
-              >
-                Editar Registro
-              </Button>
-            )}
+            <div className="flex items-center gap-2">
+              {selectedEntregaDetalhe && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    const ent = selectedEntregaDetalhe
+                    setSelectedEntregaDetalhe(null)
+                    setSelectedEntregaImpressao(ent)
+                  }}
+                  className="text-xs text-teal-800 border-teal-300 hover:bg-teal-50"
+                >
+                  <Printer className="w-3.5 h-3.5 mr-1" />
+                  Imprimir Romaneio
+                </Button>
+              )}
+              {selectedEntregaDetalhe && (
+                <Button
+                  type="button"
+                  size="sm"
+                  onClick={() => {
+                    const ent = selectedEntregaDetalhe
+                    setSelectedEntregaDetalhe(null)
+                    openEditModal(ent)
+                  }}
+                  className="bg-teal-700 hover:bg-teal-800 text-white text-xs"
+                >
+                  Editar Registro
+                </Button>
+              )}
+            </div>
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Modal de Impressão do Romaneio Oficial de Entrega em A4 */}
+      <RomaneioEntregaImpressaoModal
+        entrega={selectedEntregaImpressao}
+        empresa={currentEmpresa}
+        open={!!selectedEntregaImpressao}
+        onOpenChange={(open) => !open && setSelectedEntregaImpressao(null)}
+      />
     </div>
   )
 }

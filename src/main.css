@@ -294,10 +294,10 @@
   }
 }
 
-/* Print styles specifically for Comprovante de Horas Extras e Folha Completa in A4 Landscape */
+/* Print styles for Comprovantes e Romaneios */
 @media print {
   @page {
-    size: A4 landscape;
+    size: A4 portrait;
     margin: 8mm 10mm;
   }
 
