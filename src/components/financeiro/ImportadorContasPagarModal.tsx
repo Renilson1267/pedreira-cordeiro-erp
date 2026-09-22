@@ -136,7 +136,7 @@ export function inferirCompetenciaAba(sheetName: string): {
 
   // Inferir ano (4 dígitos como 2026, 2027 ou 2 dígitos como 26, 27)
   let ano = currentYear
-  const ano4Match = norm.match(/\b(20\d{2})\b/)
+  const ano4Match = norm.match(/(?:^|[^0-9])(20\d{2})(?:[^0-9]|$)/)
   if (ano4Match) {
     ano = parseInt(ano4Match[1], 10)
   } else {
@@ -150,7 +150,7 @@ export function inferirCompetenciaAba(sheetName: string): {
   // Inferir mês
   let mes = new Date().getMonth() + 1
   for (const [nomeMes, numMes] of Object.entries(MESES_MAP)) {
-    const regex = new RegExp(`\\b${nomeMes}\\b`, 'i')
+    const regex = new RegExp(`(^|[^A-Z0-9])${nomeMes}([^A-Z0-9]|$)`, 'i')
     if (regex.test(norm)) {
       mes = numMes
       break
@@ -174,18 +174,48 @@ export function detectarLinhaCabecalho(matrix: any[][]): number {
     )
 
     const hasVenc = texts.some(
-      (t) => t.includes('VENC') || t.includes('DATA') || t.includes('EMISS'),
+      (t) =>
+        t.includes('VENC') ||
+        t.includes('DATA') ||
+        t.includes('EMISS') ||
+        t.includes('DIA') ||
+        t.includes('DT'),
     )
     const hasForn = texts.some(
       (t) =>
-        t.includes('FORN') || t.includes('FAVOREC') || t.includes('CREDOR') || t.includes('NOME'),
+        t.includes('FORN') ||
+        t.includes('FAVOREC') ||
+        t.includes('CREDOR') ||
+        t.includes('NOME') ||
+        t.includes('EMPRESA') ||
+        t.includes('BENEFICI'),
     )
-    const hasVal = texts.some((t) => t.includes('VAL') || t.includes('PAGO') || t.includes('TOTAL'))
+    const hasVal = texts.some(
+      (t) =>
+        t.includes('VAL') ||
+        t.includes('PAGO') ||
+        t.includes('TOTAL') ||
+        t.includes('BRUTO') ||
+        t.includes('LIQUIDO'),
+    )
     const hasDesc = texts.some(
-      (t) => t.includes('HIST') || t.includes('DESC') || t.includes('REF') || t.includes('CONTA'),
+      (t) =>
+        t.includes('HIST') ||
+        t.includes('DESC') ||
+        t.includes('REF') ||
+        t.includes('CONTA') ||
+        t.includes('DISCRIM') ||
+        t.includes('ITEM') ||
+        t.includes('SERVIC'),
     )
 
-    if ((hasVenc && hasVal) || (hasForn && hasVal) || (hasDesc && hasVal)) {
+    if (
+      (hasVenc && hasVal) ||
+      (hasForn && hasVal) ||
+      (hasDesc && hasVal) ||
+      (hasVenc && hasDesc) ||
+      (hasForn && hasDesc)
+    ) {
       return r + 1 // 1-based
     }
   }
@@ -442,14 +472,14 @@ export function ImportadorContasPagarModal({
 
     // Heurística de sugestão de mapeamento inteligente
     const findCol = (regex: RegExp) => headers.find((h) => regex.test(h)) || ''
-    const descColFound = findCol(/hist|desc|serv|prod|refer[eê]ncia|item/i) || ''
+    const descColFound = findCol(/hist|desc|serv|prod|refer[eê]ncia|item|discrim/i) || ''
     const fornColFound = findCol(/forn|favorec|credor|benefici[aá]rio|empresa/i) || ''
 
     setMapping((prev) => ({
       vencimento:
         prev.vencimento && headers.includes(prev.vencimento)
           ? prev.vencimento
-          : findCol(/venc|data_venc|dt_venc|data/i) || headers[0] || '',
+          : findCol(/venc|data_venc|dt_venc|data|dia/i) || headers[0] || '',
       fornecedor:
         prev.fornecedor && headers.includes(prev.fornecedor)
           ? prev.fornecedor

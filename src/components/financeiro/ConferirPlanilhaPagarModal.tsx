@@ -289,14 +289,14 @@ export function ConferirPlanilhaPagarModal({
 
     // Sugestão de mapeamento inteligente
     const findCol = (regex: RegExp) => headers.find((h) => regex.test(h)) || ''
-    const descColFound = findCol(/hist|desc|serv|prod|refer[eê]ncia|item/i) || ''
+    const descColFound = findCol(/hist|desc|serv|prod|refer[eê]ncia|item|discrim/i) || ''
     const fornColFound = findCol(/forn|favorec|credor|benefici[aá]rio|empresa/i) || ''
 
     setMapping((prev) => ({
       vencimento:
         prev.vencimento && headers.includes(prev.vencimento)
           ? prev.vencimento
-          : findCol(/venc|data_venc|dt_venc|data/i) || headers[0] || '',
+          : findCol(/venc|data_venc|dt_venc|data|dia/i) || headers[0] || '',
       fornecedor:
         prev.fornecedor && headers.includes(prev.fornecedor)
           ? prev.fornecedor
