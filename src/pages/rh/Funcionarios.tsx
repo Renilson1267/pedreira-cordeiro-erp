@@ -38,6 +38,7 @@ import {
   UserCheck,
 } from 'lucide-react'
 import { formatarCpf, apenasDigitos, formatarTelefoneBrasil, validarCpf } from '@/lib/brasilApi'
+import { ImportadorFuncionariosModal } from '@/components/rh/ImportadorFuncionariosModal'
 
 const SETOR_COLORS: Record<SetorFuncionario, { bg: string; text: string; border: string }> = {
   Britagem: { bg: 'bg-amber-50', text: 'text-amber-800', border: 'border-amber-200' },
@@ -58,6 +59,9 @@ export default function Funcionarios() {
   const [searchQuery, setSearchQuery] = useState('')
   const [setorFilter, setSetorFilter] = useState<string>('todos')
   const [statusFilter, setStatusFilter] = useState<string>('todos')
+
+  // Importador Modal
+  const [importadorOpen, setImportadorOpen] = useState(false)
 
   // Drawer Form
   const [isDrawerOpen, setIsDrawerOpen] = useState(false)
@@ -323,13 +327,23 @@ export default function Funcionarios() {
         </div>
 
         {canEdit && (
-          <Button
-            onClick={openCreateModal}
-            className="bg-teal-700 hover:bg-teal-800 text-white rounded-xl shadow-xs"
-          >
-            <Plus className="w-4 h-4 mr-1.5" />
-            Novo Colaborador
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              onClick={() => setImportadorOpen(true)}
+              className="border-teal-300 text-teal-800 hover:bg-teal-50 rounded-xl shadow-xs"
+            >
+              <FileSpreadsheet className="w-4 h-4 mr-1.5 text-teal-700" />
+              Importar Planilha
+            </Button>
+            <Button
+              onClick={openCreateModal}
+              className="bg-teal-700 hover:bg-teal-800 text-white rounded-xl shadow-xs"
+            >
+              <Plus className="w-4 h-4 mr-1.5" />
+              Novo Colaborador
+            </Button>
+          </div>
         )}
       </div>
 
@@ -840,6 +854,17 @@ export default function Funcionarios() {
           )}
         </SheetContent>
       </Sheet>
+
+      {/* Modal Importador de Planilha Excel de Funcionários */}
+      {currentEmpresa && (
+        <ImportadorFuncionariosModal
+          open={importadorOpen}
+          onOpenChange={setImportadorOpen}
+          empresaId={currentEmpresa.id}
+          funcionariosExistentes={funcionarios}
+          onImportComplete={loadFuncionarios}
+        />
+      )}
     </div>
   )
 }
