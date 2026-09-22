@@ -37,7 +37,9 @@ import {
   Calendar,
   AlertCircle,
   FileText,
+  FileSpreadsheet,
 } from 'lucide-react'
+import { ImportadorContasPagarModal } from '@/components/financeiro/ImportadorContasPagarModal'
 
 export default function ContasPagar() {
   const { currentEmpresa, canEdit, isReadOnly } = useCompany()
@@ -53,6 +55,9 @@ export default function ContasPagar() {
   const [statusFilter, setStatusFilter] = useState<'Todas' | 'Aberta' | 'Paga' | 'Vencida'>('Todas')
   const [centroCustoFilter, setCentroCustoFilter] = useState<string>('todos')
   const [searchQuery, setSearchQuery] = useState('')
+
+  // Import Modal
+  const [importModalOpen, setImportModalOpen] = useState(false)
 
   // Drawer Create / Edit
   const [isDrawerOpen, setIsDrawerOpen] = useState(false)
@@ -354,15 +359,28 @@ export default function ContasPagar() {
           <p className="text-xs text-gray-500">Gestão de obrigações, vencimentos e fornecedores</p>
         </div>
 
-        {canEdit && (
-          <Button
-            onClick={openCreateModal}
-            className="bg-teal-700 hover:bg-teal-800 text-white rounded-xl shadow-xs"
-          >
-            <Plus className="w-4 h-4 mr-1.5" />
-            Nova Conta a Pagar
-          </Button>
-        )}
+        <div className="flex items-center gap-2">
+          {canEdit && (
+            <Button
+              variant="outline"
+              onClick={() => setImportModalOpen(true)}
+              className="border-teal-300 text-teal-800 hover:bg-teal-50 rounded-xl shadow-xs"
+            >
+              <FileSpreadsheet className="w-4 h-4 mr-1.5 text-teal-700" />
+              Importar Planilha XLSX
+            </Button>
+          )}
+
+          {canEdit && (
+            <Button
+              onClick={openCreateModal}
+              className="bg-teal-700 hover:bg-teal-800 text-white rounded-xl shadow-xs"
+            >
+              <Plus className="w-4 h-4 mr-1.5" />
+              Nova Conta a Pagar
+            </Button>
+          )}
+        </div>
       </div>
 
       {/* Summary Pills Row */}
@@ -897,6 +915,18 @@ export default function ContasPagar() {
           )}
         </SheetContent>
       </Sheet>
+
+      {/* Modal Importador XLSX Contas a Pagar */}
+      <ImportadorContasPagarModal
+        open={importModalOpen}
+        onOpenChange={setImportModalOpen}
+        empresaId={currentEmpresa?.id || ''}
+        fornecedores={fornecedores}
+        categorias={categorias}
+        centrosCusto={centrosCusto}
+        contasExistentes={contas}
+        onImportComplete={loadData}
+      />
     </div>
   )
 }
