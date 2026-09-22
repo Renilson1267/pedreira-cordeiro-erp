@@ -153,7 +153,7 @@ export function inferirCompetenciaAba(sheetName: string): {
     .toUpperCase()
 
   // Inferir ano (4 dígitos como 2026, 2027 ou 2 dígitos como 26, 27)
-  let ano = currentYear
+  let ano = 2026
   const ano4Match = norm.match(/(?:^|[^0-9])(20\d{2})(?:[^0-9]|$)/)
   if (ano4Match) {
     ano = parseInt(ano4Match[1], 10)
@@ -162,16 +162,17 @@ export function inferirCompetenciaAba(sheetName: string): {
     if (ano2Match) {
       const yy = parseInt(ano2Match[1], 10)
       ano = 2000 + yy
+    } else {
+      ano = currentYear >= 2020 && currentYear <= 2035 ? currentYear : 2026
     }
   }
 
-  // Se o ano inferido for ano atual mas a planilha ou contexto indicar 2026, respeitar caso esteja em 2026
   if (ano < 2020 || ano > 2035) {
     ano = 2026
   }
 
   // Inferir mês procurando termos ordenados por especificidade (longest first)
-  let mes = new Date().getMonth() + 1
+  let mes = 1
   let encontrouMes = false
 
   for (const [nomeMes, numMes] of MESES_ENTRIES_ORDENADOS) {
@@ -284,61 +285,173 @@ export function parseValorPagar(val: any): number {
   return isNaN(num) ? 0 : Math.abs(num)
 }
 
+const MESES_INGLES_MAP: Record<string, number> = {
+  jan: 1,
+  feb: 2,
+  mar: 3,
+  apr: 4,
+  may: 5,
+  jun: 6,
+  jul: 7,
+  aug: 8,
+  sep: 9,
+  oct: 10,
+  nov: 11,
+  dec: 12,
+}
+
+const MESES_PT_MAP: Record<string, number> = {
+  jan: 1,
+  fev: 2,
+  mar: 3,
+  abr: 4,
+  mai: 5,
+  jun: 6,
+  jul: 7,
+  ago: 8,
+  set: 9,
+  out: 10,
+  nov: 11,
+  dez: 12,
+}
+
 export function parseDataPagar(val: any, anoFallback?: number, mesFallback?: number): string {
-  if (!val) {
+  // Safe helper to construct UTC noon ISO string
+  const toUtcNoon = (y: number, m: number, d: number) => {
+    const clampedDay = Math.min(31, Math.max(1, d))
+    return new Date(Date.UTC(y, m - 1, clampedDay, 12, 0, 0)).toISOString()
+  }
+
+  if (val === null || val === undefined || val === '') {
     if (anoFallback && mesFallback) {
-      const d = new Date(Date.UTC(anoFallback, mesFallback - 1, 10, 12, 0, 0))
-      return d.toISOString()
+      return toUtcNoon(anoFallback, mesFallback, 10)
     }
-    return new Date().toISOString()
+    const now = new Date()
+    return toUtcNoon(now.getUTCFullYear(), now.getUTCMonth() + 1, now.getUTCDate())
   }
 
+  // 1. Objeto Date (ex: lido pelo XLSX com cellDates: true)
   if (val instanceof Date) {
-    return isNaN(val.getTime()) ? new Date().toISOString() : val.toISOString()
+    if (!isNaN(val.getTime())) {
+      // Usar a data do calendário do Date sem shift indesejado de timezone
+      // Se a data veio em UTC meia-noite (como XLSX lê células de data), getUTCDate() tem o dia exato
+      // Se tiver horas > 20 em UTC com offset negativo local, os métodos UTC ou locais podem divergir:
+      // XLSX com cellDates: true gera a data como UTC midnight (ex: 2026-08-31 00:00:00 UTC).
+      // Então getUTCFullYear / getUTCMonth + 1 / getUTCDate reflete o dia exato da célula!
+      const y = val.getUTCFullYear()
+      const m = val.getUTCMonth() + 1
+      const d = val.getUTCDate()
+      return toUtcNoon(y, m, d)
+    }
+    if (anoFallback && mesFallback) {
+      return toUtcNoon(anoFallback, mesFallback, 10)
+    }
+    const now = new Date()
+    return toUtcNoon(now.getUTCFullYear(), now.getUTCMonth() + 1, now.getUTCDate())
   }
 
+  // 2. Número serial Excel (ex: 46265)
   if (typeof val === 'number') {
-    // Número serial Excel
-    const d = new Date(Math.round((val - 25569) * 86400 * 1000))
-    if (!isNaN(d.getTime())) return d.toISOString()
+    if (!isNaN(val) && val > 0) {
+      // Excel epoch: 1899-12-30 UTC
+      const ms = Math.round((val - 25569) * 86400 * 1000)
+      const d = new Date(ms)
+      if (!isNaN(d.getTime())) {
+        return toUtcNoon(d.getUTCFullYear(), d.getUTCMonth() + 1, d.getUTCDate())
+      }
+    }
   }
 
   const str = String(val).trim()
-  // Dia apenas (ex.: 5, 12, 28) acompanhado de competência
-  if (/^\d{1,2}$/.test(str) && anoFallback && mesFallback) {
-    const dia = Math.min(31, Math.max(1, parseInt(str, 10)))
-    const d = new Date(Date.UTC(anoFallback, mesFallback - 1, dia, 12, 0, 0))
-    if (!isNaN(d.getTime())) return d.toISOString()
+  if (!str) {
+    if (anoFallback && mesFallback) {
+      return toUtcNoon(anoFallback, mesFallback, 10)
+    }
+    const now = new Date()
+    return toUtcNoon(now.getUTCFullYear(), now.getUTCMonth() + 1, now.getUTCDate())
   }
 
-  // DD/MM/YYYY ou DD/MM/YY
+  // 3. String date em formato "Mon Jun 01 2026" ou "Wed Mar 06 2024" ou "Mon Jun 01 2026 00:00:00 GMT-0300"
+  // Padrão: (DiaSemana) (MêsInglês) (Dia) (Ano) ...
+  const textDateMatch = str.match(
+    /^(?:[A-Za-z]{3}\s+)?([A-Za-z]{3})\s+(\d{1,2})(?:st|nd|rd|th)?(?:,?\s+(\d{4}))?/,
+  )
+  if (textDateMatch) {
+    const rawMesNome = textDateMatch[1].toLowerCase()
+    const mesNum = MESES_INGLES_MAP[rawMesNome] || MESES_PT_MAP[rawMesNome]
+    if (mesNum) {
+      const diaNum = parseInt(textDateMatch[2], 10)
+      let anoNum = textDateMatch[3] ? parseInt(textDateMatch[3], 10) : anoFallback || 2026
+      if (anoNum < 100) anoNum += 2000
+      return toUtcNoon(anoNum, mesNum, diaNum)
+    }
+  }
+
+  // 4. Dia apenas (ex.: "5", "12", "28") acompanhado de competência
+  if (/^\d{1,2}$/.test(str)) {
+    const dia = parseInt(str, 10)
+    if (dia >= 1 && dia <= 31) {
+      const y = anoFallback || 2026
+      const m = mesFallback || 1
+      return toUtcNoon(y, m, dia)
+    }
+  }
+
+  // 5. Formato brasileiro DD/MM/YYYY ou DD/MM/YY ou DD-MM-YYYY
   const brMatch = str.match(/^(\d{1,2})[/.-](\d{1,2})[/.-](\d{2,4})/)
   if (brMatch) {
     const d = parseInt(brMatch[1], 10)
-    const m = parseInt(brMatch[2], 10) - 1
+    const m = parseInt(brMatch[2], 10)
     let y = parseInt(brMatch[3], 10)
     if (y < 100) y += 2000
-    const date = new Date(Date.UTC(y, m, d, 12, 0, 0))
-    if (!isNaN(date.getTime())) return date.toISOString()
+    if (m >= 1 && m <= 12) {
+      return toUtcNoon(y, m, d)
+    }
   }
 
-  // YYYY-MM-DD
+  // 6. Formato ISO YYYY-MM-DD ou YYYY/MM/DD
   const isoMatch = str.match(/^(\d{4})[/.-](\d{1,2})[/.-](\d{1,2})/)
   if (isoMatch) {
     const y = parseInt(isoMatch[1], 10)
-    const m = parseInt(isoMatch[2], 10) - 1
+    const m = parseInt(isoMatch[2], 10)
     const d = parseInt(isoMatch[3], 10)
-    const date = new Date(Date.UTC(y, m, d, 12, 0, 0))
-    if (!isNaN(date.getTime())) return date.toISOString()
+    if (m >= 1 && m <= 12) {
+      return toUtcNoon(y, m, d)
+    }
   }
 
+  // 7. Data por extenso em Português: "01 de Junho de 2026" ou "01/Jun/2026"
+  const ptExtensoMatch = str.match(/^(\d{1,2})\s*(?:de\s+)?([A-Za-zçÇ]+)(?:\s*(?:de\s+)?(\d{4}))?/i)
+  if (ptExtensoMatch) {
+    const d = parseInt(ptExtensoMatch[1], 10)
+    const nomeMes = ptExtensoMatch[2].slice(0, 3).toLowerCase()
+    const mesNum = MESES_PT_MAP[nomeMes] || MESES_INGLES_MAP[nomeMes]
+    if (mesNum && d >= 1 && d <= 31) {
+      const y = ptExtensoMatch[3] ? parseInt(ptExtensoMatch[3], 10) : anoFallback || 2026
+      return toUtcNoon(y, mesNum, d)
+    }
+  }
+
+  // 8. Tentar parse genérico com new Date(str)
   const parsed = new Date(str)
-  if (!isNaN(parsed.getTime())) return parsed.toISOString()
-
-  if (anoFallback && mesFallback) {
-    return new Date(Date.UTC(anoFallback, mesFallback - 1, 10, 12, 0, 0)).toISOString()
+  if (!isNaN(parsed.getTime())) {
+    // Para evitar que "2026-08-31" sofra off-by-one de fuso local, pegamos os componentes:
+    // Se a string tem formato date-only, Date.parse assume UTC em browsers modernos
+    // Se tem formato local, pega os componentes locais
+    const isIsoDateOnly = /^\d{4}-\d{2}-\d{2}$/.test(str)
+    const y = isIsoDateOnly ? parsed.getUTCFullYear() : parsed.getFullYear()
+    const m = isIsoDateOnly ? parsed.getUTCMonth() + 1 : parsed.getMonth() + 1
+    const d = isIsoDateOnly ? parsed.getUTCDate() : parsed.getDate()
+    return toUtcNoon(y, m, d)
   }
-  return new Date().toISOString()
+
+  // 9. Fallback com competência
+  if (anoFallback && mesFallback) {
+    return toUtcNoon(anoFallback, mesFallback, 10)
+  }
+
+  const now = new Date()
+  return toUtcNoon(now.getUTCFullYear(), now.getUTCMonth() + 1, now.getUTCDate())
 }
 
 export function ImportadorContasPagarModal({
@@ -634,11 +747,15 @@ export function ImportadorContasPagarModal({
         categoriasCache.set(cat.nome.trim().toLowerCase(), cat)
       })
 
-      // Deduplicação: fornecedor_id + data(YYYY-MM-DD) + valor + descricao
+      // Deduplicação: fornecedor_id + data(YYYY-MM-DD) + valor + descricao normalizada
       const existingKeys = new Set<string>()
       contasExistentes.forEach((c) => {
         const d = c.vencimento.slice(0, 10)
-        const descNorm = (c.descricao || '').trim().toLowerCase().slice(0, 30)
+        const descNorm = (c.descricao || '')
+          .toLowerCase()
+          .replace(/[\s\-_]+/g, ' ')
+          .trim()
+          .slice(0, 30)
         const key = `${c.fornecedor_id || ''}_${d}_${Number(c.valor).toFixed(2)}_${descNorm}`
         existingKeys.add(key)
       })
@@ -770,8 +887,13 @@ export function ImportadorContasPagarModal({
             const descFinal = rawDesc || `Despesa ${rawForn || sheetCfg.name}${docInfo}`
 
             // 4. Verificação de Duplicidade
+            // Deduplicação: fornecedor_id + YYYY-MM-DD + valor + desc (prefixo normalizado)
             const dateOnly = dataVencimentoISO.slice(0, 10)
-            const descNorm = descFinal.toLowerCase().slice(0, 30)
+            const descNorm = descFinal
+              .toLowerCase()
+              .replace(/[\s\-_]+/g, ' ')
+              .trim()
+              .slice(0, 30)
             const dedupeKey = `${fornecedorId || ''}_${dateOnly}_${valorFinal.toFixed(2)}_${descNorm}`
 
             if (detectarDuplicados && existingKeys.has(dedupeKey)) {
