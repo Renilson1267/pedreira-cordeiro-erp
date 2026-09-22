@@ -37,7 +37,7 @@ import {
 } from 'lucide-react'
 
 export const TIPO_LABELS: Record<TipoVeiculo, { label: string; icon: string }> = {
-  caminhao: { label: 'Caminhão Basculante / Caçamba', icon: '🚛' },
+  caminhao: { label: 'Caminhão de Entrega / Basculante / Caçamba', icon: '🚛' },
   escavadeira: { label: 'Escavadeira Hidráulica', icon: '🚜' },
   carregadeira: { label: 'Pá Carregadeira', icon: '🚜' },
   perfuratriz: { label: 'Perfuratriz Hidráulica', icon: '⚙️' },
@@ -55,6 +55,7 @@ export const TIPO_LABELS: Record<TipoVeiculo, { label: string; icon: string }> =
 
 export const SETORES_PEDREIRA = [
   'Central Britagem',
+  'Entrega',
   'Entrega de Brita',
   'Central de Concreto',
   'Central Britagem Lokotrack',
@@ -348,7 +349,7 @@ export default function Veiculos() {
                 <SelectItem value="todos">Todos os Tipos</SelectItem>
                 <SelectItem value="escavadeira">Escavadeiras Hidráulicas</SelectItem>
                 <SelectItem value="carregadeira">Pás Carregadeiras</SelectItem>
-                <SelectItem value="caminhao">Caminhões / Caçambas</SelectItem>
+                <SelectItem value="caminhao">Caminhões de Entrega / Caçambas</SelectItem>
                 <SelectItem value="betoneira">Caminhões Betoneira</SelectItem>
                 <SelectItem value="pipa">Caminhões Pipa</SelectItem>
                 <SelectItem value="bomba">Bombas de Concreto</SelectItem>
@@ -594,7 +595,9 @@ export default function Veiculos() {
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="caminhao">Caminhão Basculante / Caçamba</SelectItem>
+                    <SelectItem value="caminhao">
+                      Caminhão de Entrega / Basculante / Caçamba
+                    </SelectItem>
                     <SelectItem value="escavadeira">Escavadeira Hidráulica</SelectItem>
                     <SelectItem value="carregadeira">Pá Carregadeira</SelectItem>
                     <SelectItem value="betoneira">Caminhão Betoneira</SelectItem>

@@ -422,7 +422,12 @@ export default function Relatorios() {
     }
 
     // 2. Transporte / Frota / Entrega
-    if (ccNome.includes('transp') || ccNome.includes('frota') || ccCod.includes('02')) {
+    if (
+      ccNome.includes('transp') ||
+      ccNome.includes('frota') ||
+      ccNome.includes('entrega') ||
+      ccCod.includes('02')
+    ) {
       if (
         vSetor.includes('entrega') ||
         vSetor.includes('transporte') ||
