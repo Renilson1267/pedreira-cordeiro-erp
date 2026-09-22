@@ -3,7 +3,7 @@ import { useCompany } from '@/contexts/CompanyContext'
 import pb from '@/lib/pocketbase/client'
 import { useRealtime } from '@/hooks/use-realtime'
 import { formatCurrency, formatDate } from '@/lib/formatters'
-import type { MovimentoFinanceiro, PlanoConta } from '@/types/erp'
+import type { MovimentoFinanceiro, PlanoConta, CentroCusto } from '@/types/erp'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -31,6 +31,9 @@ export default function DRE() {
 
   const [movimentosAtual, setMovimentosAtual] = useState<MovimentoFinanceiro[]>([])
   const [movimentosAnterior, setMovimentosAnterior] = useState<MovimentoFinanceiro[]>([])
+  const [centrosCusto, setCentrosCusto] = useState<CentroCusto[]>([])
+  const [selectedCentroCusto, setSelectedCentroCusto] = useState<string>('todos')
+  const [visaoQuebraCentro, setVisaoQuebraCentro] = useState(false)
   const [loading, setLoading] = useState(false)
 
   // Drilldown Drawer
@@ -57,21 +60,26 @@ export default function DRE() {
       const startPrev = new Date(Date.UTC(prevYear, prevMonth - 1, 1)).toISOString()
       const endPrev = new Date(Date.UTC(prevYear, prevMonth, 0, 23, 59, 59)).toISOString()
 
-      const [resCurrent, resPrev] = await Promise.all([
+      const [resCurrent, resPrev, ccList] = await Promise.all([
         pb.collection('movimentos_financeiros').getFullList<MovimentoFinanceiro>({
           filter: `empresa_id = '${currentEmpresa.id}' && data >= '${startCurrent}' && data <= '${endCurrent}'`,
-          expand: 'categoria_id',
+          expand: 'categoria_id,centro_custo_id',
           sort: '-data',
         }),
         pb.collection('movimentos_financeiros').getFullList<MovimentoFinanceiro>({
           filter: `empresa_id = '${currentEmpresa.id}' && data >= '${startPrev}' && data <= '${endPrev}'`,
-          expand: 'categoria_id',
+          expand: 'categoria_id,centro_custo_id',
           sort: '-data',
+        }),
+        pb.collection('centros_custos').getFullList<CentroCusto>({
+          filter: `empresa_id = '${currentEmpresa.id}'`,
+          sort: 'codigo',
         }),
       ])
 
       setMovimentosAtual(resCurrent)
       setMovimentosAnterior(resPrev)
+      setCentrosCusto(ccList)
     } catch (err) {
       console.error('Error loading DRE:', err)
     } finally {
@@ -158,8 +166,39 @@ export default function DRE() {
     }
   }
 
-  const dreAtual = useMemo(() => calculateSections(movimentosAtual), [movimentosAtual])
-  const dreAnterior = useMemo(() => calculateSections(movimentosAnterior), [movimentosAnterior])
+  // Aplicar filtro de centro de custo se selecionado
+  const movsAtualFiltrados = useMemo(() => {
+    if (selectedCentroCusto === 'todos') return movimentosAtual
+    return movimentosAtual.filter((m) => m.centro_custo_id === selectedCentroCusto)
+  }, [movimentosAtual, selectedCentroCusto])
+
+  const movsAnteriorFiltrados = useMemo(() => {
+    if (selectedCentroCusto === 'todos') return movimentosAnterior
+    return movimentosAnterior.filter((m) => m.centro_custo_id === selectedCentroCusto)
+  }, [movimentosAnterior, selectedCentroCusto])
+
+  const dreAtual = useMemo(() => calculateSections(movsAtualFiltrados), [movsAtualFiltrados])
+  const dreAnterior = useMemo(
+    () => calculateSections(movsAnteriorFiltrados),
+    [movsAnteriorFiltrados],
+  )
+
+  // Quebra por centro de custo no período atual
+  const quebraPorCentro = useMemo(() => {
+    return centrosCusto.map((cc) => {
+      const movsCentro = movimentosAtual.filter((m) => m.centro_custo_id === cc.id)
+      const sec = calculateSections(movsCentro)
+      return {
+        centro: cc,
+        receitaLiquida: sec.receitaLiquida,
+        custos: sec.custos,
+        despesasOp: sec.despesasOp,
+        resultadoOperacional: sec.resultadoOperacional,
+        resultadoLiquido: sec.resultadoLiquido,
+        qtdMovs: movsCentro.length,
+      }
+    })
+  }, [centrosCusto, movimentosAtual])
 
   const calcVariation = (current: number, prev: number) => {
     if (prev === 0) return current === 0 ? '0%' : '+100%'
@@ -309,16 +348,115 @@ export default function DRE() {
             </div>
           </div>
 
-          <div className="w-full sm:w-60">
-            <Input
-              type="month"
-              value={selectedMes}
-              onChange={(e) => setSelectedMes(e.target.value)}
-              className="bg-[#FAF9F7] border-[#ECEAE4] font-mono text-xs"
-            />
+          <div className="flex flex-col sm:flex-row items-center gap-2.5 w-full sm:w-auto">
+            {/* Filtro Centro de Custo */}
+            <div className="w-full sm:w-56">
+              <select
+                value={selectedCentroCusto}
+                onChange={(e) => setSelectedCentroCusto(e.target.value)}
+                className="w-full h-9 rounded-xl bg-[#FAF9F7] border border-[#ECEAE4] text-xs px-2.5 text-gray-700 font-medium"
+              >
+                <option value="todos">Todos os Centros de Custo</option>
+                {centrosCusto.map((cc) => (
+                  <option key={cc.id} value={cc.id}>
+                    {cc.codigo} - {cc.nome}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="w-full sm:w-44">
+              <Input
+                type="month"
+                value={selectedMes}
+                onChange={(e) => setSelectedMes(e.target.value)}
+                className="bg-[#FAF9F7] border-[#ECEAE4] font-mono text-xs h-9"
+              ></Input>
+            </div>
+
+            <Button
+              size="sm"
+              variant={visaoQuebraCentro ? 'default' : 'outline'}
+              onClick={() => setVisaoQuebraCentro(!visaoQuebraCentro)}
+              className={`h-9 text-xs rounded-xl shadow-xs ${
+                visaoQuebraCentro
+                  ? 'bg-teal-700 hover:bg-teal-800 text-white'
+                  : 'border-[#ECEAE4] text-gray-700'
+              }`}
+            >
+              <Layers className="w-3.5 h-3.5 mr-1.5" />
+              Quebra p/ Centro de Custo
+            </Button>
           </div>
         </div>
       </Card>
+
+      {/* Visão Quebra por Centro de Custo */}
+      {visaoQuebraCentro && (
+        <Card className="rounded-2xl border-[#ECEAE4] bg-white shadow-xs overflow-hidden">
+          <CardHeader className="bg-[#FAF9F7] border-b border-[#ECEAE4] py-3.5 px-6">
+            <CardTitle className="text-sm font-bold text-gray-900 flex items-center gap-2">
+              <Layers className="w-4 h-4 text-teal-700" />
+              Visão Gerencial por Centro de Custo ({selectedMes})
+            </CardTitle>
+          </CardHeader>
+          <div className="overflow-x-auto">
+            <table className="w-full text-left border-collapse text-xs">
+              <thead className="bg-[#FAF9F7] border-b border-[#ECEAE4] text-gray-500 uppercase font-semibold">
+                <tr>
+                  <th className="py-3 px-6">Centro de Custo</th>
+                  <th className="py-3 px-4 text-right">Rec. Líquida</th>
+                  <th className="py-3 px-4 text-right">(-) Custos</th>
+                  <th className="py-3 px-4 text-right">(-) Despesas</th>
+                  <th className="py-3 px-4 text-right">EBITDA Operacional</th>
+                  <th className="py-3 px-6 text-right">Resultado Líquido</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-[#ECEAE4]">
+                {quebraPorCentro.map((item) => (
+                  <tr key={item.centro.id} className="hover:bg-teal-50/20">
+                    <td className="py-3.5 px-6 font-semibold text-gray-900 flex items-center gap-2">
+                      <span
+                        className="w-2.5 h-2.5 rounded-full shrink-0"
+                        style={{ backgroundColor: item.centro.cor || '#0F766E' }}
+                      />
+                      <span>
+                        <strong className="font-mono text-teal-800">{item.centro.codigo}</strong> —{' '}
+                        {item.centro.nome}
+                      </span>
+                    </td>
+                    <td className="py-3.5 px-4 text-right font-mono text-emerald-700 font-semibold tabular-nums">
+                      {formatCurrency(item.receitaLiquida)}
+                    </td>
+                    <td className="py-3.5 px-4 text-right font-mono text-red-600 tabular-nums">
+                      {formatCurrency(item.custos)}
+                    </td>
+                    <td className="py-3.5 px-4 text-right font-mono text-amber-700 tabular-nums">
+                      {formatCurrency(item.despesasOp)}
+                    </td>
+                    <td className="py-3.5 px-4 text-right font-mono font-bold tabular-nums">
+                      <span
+                        className={
+                          item.resultadoOperacional >= 0 ? 'text-teal-700' : 'text-red-600'
+                        }
+                      >
+                        {formatCurrency(item.resultadoOperacional)}
+                      </span>
+                    </td>
+                    <td className="py-3.5 px-6 text-right font-mono font-bold tabular-nums">
+                      <span
+                        className={item.resultadoLiquido >= 0 ? 'text-emerald-700' : 'text-red-700'}
+                      >
+                        {formatCurrency(item.resultadoLiquido)}
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </Card>
+      )}
 
       {/* DRE Structured Report Table */}
       <Card className="rounded-2xl border-[#ECEAE4] bg-white shadow-xs overflow-hidden">

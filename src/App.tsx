@@ -23,6 +23,7 @@ import Clientes from '@/pages/cadastros/Clientes'
 import Fornecedores from '@/pages/cadastros/Fornecedores'
 import Produtos from '@/pages/cadastros/Produtos'
 import PlanoContas from '@/pages/cadastros/PlanoContas'
+import CentrosCusto from '@/pages/cadastros/CentrosCusto'
 
 import Relatorios from '@/pages/relatorios/Relatorios'
 import Perfil from '@/pages/perfil/Perfil'
@@ -72,6 +73,7 @@ export default function App() {
               <Route path="/cadastros/fornecedores" element={<Fornecedores />} />
               <Route path="/cadastros/produtos" element={<Produtos />} />
               <Route path="/cadastros/plano-de-contas" element={<PlanoContas />} />
+              <Route path="/cadastros/centros-de-custo" element={<CentrosCusto />} />
 
               {/* Relatórios */}
               <Route path="/relatorios" element={<Relatorios />} />

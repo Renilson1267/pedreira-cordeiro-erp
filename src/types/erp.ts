@@ -91,12 +91,45 @@ export interface PlanoConta {
   updated: string
 }
 
+export interface CentroCusto {
+  id: string
+  empresa_id: string
+  codigo: string
+  nome: string
+  descricao?: string
+  cor?: string
+  ativo: boolean
+  created: string
+  updated: string
+}
+
+export type StatusCredito = 'disponivel' | 'parcial' | 'utilizado'
+
+export interface CreditoCliente {
+  id: string
+  empresa_id: string
+  cliente_id: string
+  valor: number
+  saldo_restante: number
+  origem: string
+  descricao?: string
+  data: string
+  status: StatusCredito
+  referencia_conta_id?: string
+  created: string
+  updated: string
+  expand?: {
+    cliente_id?: Cliente
+  }
+}
+
 export interface ContaPagar {
   id: string
   empresa_id: string
   fornecedor_id?: string
   descricao: string
   categoria_id?: string
+  centro_custo_id?: string
   valor: number
   vencimento: string
   parcelas?: number
@@ -109,8 +142,11 @@ export interface ContaPagar {
   expand?: {
     fornecedor_id?: Fornecedor
     categoria_id?: PlanoConta
+    centro_custo_id?: CentroCusto
   }
 }
+
+export type StatusContaReceber = 'Aberta' | 'Recebida' | 'Vencida' | 'Recebimento Antecipado'
 
 export interface ContaReceber {
   id: string
@@ -118,10 +154,11 @@ export interface ContaReceber {
   cliente_id?: string
   descricao: string
   categoria_id?: string
+  centro_custo_id?: string
   valor: number
   vencimento: string
   parcelas?: number
-  status: 'Aberta' | 'Recebida' | 'Vencida'
+  status: StatusContaReceber
   data_recebimento?: string
   forma_recebimento?: 'Dinheiro' | 'Pix' | 'Cartão' | 'Boleto' | 'Transferência'
   observacoes?: string
@@ -130,6 +167,7 @@ export interface ContaReceber {
   expand?: {
     cliente_id?: Cliente
     categoria_id?: PlanoConta
+    centro_custo_id?: CentroCusto
   }
 }
 
@@ -141,6 +179,7 @@ export interface MovimentoFinanceiro {
   valor: number
   data: string
   categoria_id?: string
+  centro_custo_id?: string
   origem: 'ContaPagar' | 'ContaReceber' | 'Manual' | 'Conciliacao'
   referencia_id?: string
   conciliado: boolean
@@ -150,6 +189,7 @@ export interface MovimentoFinanceiro {
   expand?: {
     categoria_id?: PlanoConta
     caixa_id?: BancoConta
+    centro_custo_id?: CentroCusto
   }
 }
 

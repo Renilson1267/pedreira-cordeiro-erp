@@ -4,7 +4,8 @@ import { useCompany } from '@/contexts/CompanyContext'
 import pb from '@/lib/pocketbase/client'
 import { useRealtime } from '@/hooks/use-realtime'
 import { formatCurrency, formatDate, toInputDate } from '@/lib/formatters'
-import type { ContaReceber, Cliente, PlanoConta } from '@/types/erp'
+import type { ContaReceber, Cliente, PlanoConta, CentroCusto, CreditoCliente } from '@/types/erp'
+import { ImportadorRecebimentosModal } from '@/components/financeiro/ImportadorRecebimentosModal'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -27,7 +28,19 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { toast } from '@/hooks/use-toast'
-import { Plus, Search, CheckCircle, Trash2, Edit2, Calendar, AlertCircle } from 'lucide-react'
+import {
+  Plus,
+  Search,
+  CheckCircle,
+  CheckCircle2,
+  Clock,
+  Trash2,
+  Edit2,
+  Calendar,
+  AlertCircle,
+  ArrowDownLeft,
+  FileSpreadsheet,
+} from 'lucide-react'
 
 export default function ContasReceber() {
   const { currentEmpresa, canEdit } = useCompany()
@@ -36,13 +49,19 @@ export default function ContasReceber() {
   const [contas, setContas] = useState<ContaReceber[]>([])
   const [clientes, setClientes] = useState<Cliente[]>([])
   const [categorias, setCategorias] = useState<PlanoConta[]>([])
+  const [centrosCusto, setCentrosCusto] = useState<CentroCusto[]>([])
+  const [creditos, setCreditos] = useState<CreditoCliente[]>([])
   const [loading, setLoading] = useState(true)
 
   // Filters
-  const [statusFilter, setStatusFilter] = useState<'Todas' | 'Aberta' | 'Recebida' | 'Vencida'>(
-    'Todas',
-  )
+  const [statusFilter, setStatusFilter] = useState<
+    'Todas' | 'Aberta' | 'Recebida' | 'Vencida' | 'Recebimento Antecipado'
+  >('Todas')
+  const [centroCustoFilter, setCentroCustoFilter] = useState<string>('todos')
   const [searchQuery, setSearchQuery] = useState('')
+
+  // Import Modal
+  const [importModalOpen, setImportModalOpen] = useState(false)
 
   // Drawer Create / Edit
   const [isDrawerOpen, setIsDrawerOpen] = useState(false)
@@ -55,7 +74,9 @@ export default function ContasReceber() {
   const [valor, setValor] = useState<number>(0)
   const [vencimento, setVencimento] = useState('')
   const [parcelas, setParcelas] = useState<number>(1)
-  const [status, setStatus] = useState<'Aberta' | 'Recebida'>('Aberta')
+  const [status, setStatus] = useState<
+    'Aberta' | 'Recebida' | 'Vencida' | 'Recebimento Antecipado'
+  >('Aberta')
   const [observacoes, setObservacoes] = useState('')
 
   // Settle (Receber) Modal
@@ -64,8 +85,10 @@ export default function ContasReceber() {
   const [dataRecebimento, setDataRecebimento] = useState('')
   const [valorRecebido, setValorRecebido] = useState<number>(0)
   const [formaRecebimento, setFormaRecebimento] = useState<
-    'Dinheiro' | 'Pix' | 'Cartão' | 'Boleto' | 'Transferência'
+    'Dinheiro' | 'Pix' | 'Cartão' | 'Boleto' | 'Transferência' | 'Crédito do Cliente'
   >('Pix')
+  const [usarCreditoCliente, setUsarCreditoCliente] = useState(false)
+  const [valorCreditoUsado, setValorCreditoUsado] = useState<number>(0)
   const [isSubmitting, setIsSubmitting] = useState(false)
 
   // Read-only Detail Drawer
@@ -78,26 +101,35 @@ export default function ContasReceber() {
 
     try {
       setLoading(true)
-      const [crList, cList, pcList] = await Promise.all([
+      const [crList, cList, pcList, ccList, credList] = await Promise.all([
         pb.collection('contas_receber').getFullList<ContaReceber>({
           filter: `empresa_id = '${currentEmpresa.id}'`,
           sort: 'vencimento',
-          expand: 'cliente_id,categoria_id',
+          expand: 'cliente_id,categoria_id,centro_custo_id',
         }),
         pb.collection('clientes').getFullList<Cliente>({
           filter: `empresa_id = '${currentEmpresa.id}'`,
           sort: 'nome',
         }),
         pb.collection('plano_contas').getFullList<PlanoConta>({
-          filter: `empresa_id = '${currentEmpresa.id}' && tipo = 'Receita'`,
+          filter: `empresa_id = '${currentEmpresa.id}' && (tipo = 'Receita' || tipo = 'Outro')`,
           sort: 'codigo',
+        }),
+        pb.collection('centros_custos').getFullList<CentroCusto>({
+          filter: `empresa_id = '${currentEmpresa.id}'`,
+          sort: 'codigo',
+        }),
+        pb.collection('creditos_clientes').getFullList<CreditoCliente>({
+          filter: `empresa_id = '${currentEmpresa.id}' && status != 'utilizado'`,
+          sort: 'data',
         }),
       ])
 
       setContas(crList)
       setClientes(cList)
       setCategorias(pcList)
-
+      setCentrosCusto(ccList)
+      setCreditos(credList)
       const qNovo = searchParams.get('novo')
       const qId = searchParams.get('id')
       const qAction = searchParams.get('action')
@@ -130,9 +162,12 @@ export default function ContasReceber() {
     loadData()
   }, [currentEmpresa])
 
+  const [centroCustoId, setCentroCustoId] = useState('')
+
   const openCreateModal = () => {
     setEditingId(null)
     setClienteId('')
+    setCentroCustoId('')
     setDescricao('')
     setCategoriaId(categorias[0]?.id || '')
     setValor(0)
@@ -146,6 +181,7 @@ export default function ContasReceber() {
   const handleEdit = (c: ContaReceber) => {
     setEditingId(c.id)
     setClienteId(c.cliente_id || '')
+    setCentroCustoId(c.centro_custo_id || '')
     setDescricao(c.descricao)
     setCategoriaId(c.categoria_id || '')
     setValor(c.valor)
@@ -169,8 +205,9 @@ export default function ContasReceber() {
       if (editingId) {
         await pb.collection('contas_receber').update(editingId, {
           descricao: descricao.trim(),
-          cliente_id: clienteId || null,
-          categoria_id: categoriaId || null,
+          cliente_id: clienteId === 'none' || !clienteId ? null : clienteId,
+          categoria_id: categoriaId === 'none' || !categoriaId ? null : categoriaId,
+          centro_custo_id: centroCustoId === 'none' || !centroCustoId ? null : centroCustoId,
           valor: Number(valor),
           vencimento: new Date(vencimento).toISOString(),
           parcelas: Number(parcelas),
@@ -185,21 +222,39 @@ export default function ContasReceber() {
         for (let i = 0; i < numParcelas; i++) {
           const installmentDate = new Date(baseDate)
           installmentDate.setMonth(baseDate.getMonth() + i)
+          const parcelValue = Number(valor) / (numParcelas > 1 ? numParcelas : 1)
 
           const desc =
             numParcelas > 1 ? `${descricao.trim()} (${i + 1}/${numParcelas})` : descricao.trim()
 
-          await pb.collection('contas_receber').create({
+          const createdConta = await pb.collection('contas_receber').create<ContaReceber>({
             empresa_id: currentEmpresa!.id,
             descricao: desc,
-            cliente_id: clienteId || null,
-            categoria_id: categoriaId || null,
-            valor: Number(valor) / (numParcelas > 1 ? numParcelas : 1),
+            cliente_id: clienteId === 'none' || !clienteId ? null : clienteId,
+            categoria_id: categoriaId === 'none' || !categoriaId ? null : categoriaId,
+            centro_custo_id: centroCustoId === 'none' || !centroCustoId ? null : centroCustoId,
+            valor: parcelValue,
             vencimento: installmentDate.toISOString(),
             parcelas: numParcelas,
             status: status,
             observacoes: observacoes.trim(),
+            data_recebimento:
+              status === 'Recebimento Antecipado' ? installmentDate.toISOString() : undefined,
           })
+
+          if (status === 'Recebimento Antecipado' && clienteId && clienteId !== 'none') {
+            await pb.collection('creditos_clientes').create({
+              empresa_id: currentEmpresa!.id,
+              cliente_id: clienteId,
+              valor: parcelValue,
+              saldo_restante: parcelValue,
+              origem: 'Recebimento Antecipado',
+              descricao: `Depósito/Adiantamento ref. ${desc}`,
+              data: installmentDate.toISOString(),
+              status: 'disponivel',
+              referencia_conta_id: createdConta.id,
+            })
+          }
         }
         toast({ title: 'Conta a receber criada com sucesso!' })
       }
@@ -225,11 +280,23 @@ export default function ContasReceber() {
     }
   }
 
+  // Crédito disponível para o cliente da conta selecionada para baixa
+  const creditosDisponiveisCliente = useMemo(() => {
+    if (!settlingConta?.cliente_id) return []
+    return creditos.filter((c) => c.cliente_id === settlingConta.cliente_id && c.saldo_restante > 0)
+  }, [settlingConta])
+
+  const totalCreditoDisponivelCliente = useMemo(() => {
+    return creditosDisponiveisCliente.reduce((sum, c) => sum + (c.saldo_restante || 0), 0)
+  }, [creditosDisponiveisCliente])
+
   const handleOpenSettle = (conta: ContaReceber) => {
     setSettlingConta(conta)
     setDataRecebimento(toInputDate(new Date().toISOString()))
     setValorRecebido(conta.valor)
     setFormaRecebimento('Pix')
+    setUsarCreditoCliente(false)
+    setValorCreditoUsado(0)
     setSettleModalOpen(true)
   }
 
@@ -239,19 +306,46 @@ export default function ContasReceber() {
       setIsSubmitting(true)
       const recDateISO = new Date(dataRecebimento).toISOString()
 
+      // Abatimento de crédito se selecionado
+      let formaFinal = formaRecebimento
+      if (usarCreditoCliente && valorCreditoUsado > 0) {
+        formaFinal = 'Crédito do Cliente' as any
+        let restanteParaAbater = valorCreditoUsado
+
+        for (const cred of creditosDisponiveisCliente) {
+          if (restanteParaAbater <= 0) break
+          const abatimento = Math.min(cred.saldo_restante, restanteParaAbater)
+          const novoSaldo = cred.saldo_restante - abatimento
+          const novoStatus = novoSaldo <= 0.001 ? 'utilizado' : 'parcial'
+
+          await pb.collection('creditos_clientes').update(cred.id, {
+            saldo_restante: novoSaldo,
+            status: novoStatus,
+          })
+
+          restanteParaAbater -= abatimento
+        }
+      }
+
       await pb.collection('contas_receber').update(settlingConta.id, {
         status: 'Recebida',
         data_recebimento: recDateISO,
-        forma_recebimento: formaRecebimento,
+        forma_recebimento: formaFinal,
+        observacoes:
+          (settlingConta.observacoes || '') +
+          (usarCreditoCliente
+            ? ` [Liquidado com R$ ${valorCreditoUsado.toFixed(2)} de crédito]`
+            : ''),
       })
 
       await pb.collection('movimentos_financeiros').create({
         empresa_id: currentEmpresa!.id,
         tipo: 'Entrada',
-        descricao: `Recebimento: ${settlingConta.descricao}`,
+        descricao: `Recebimento: ${settlingConta.descricao}${usarCreditoCliente ? ' (Compensado via Crédito)' : ''}${settlingConta.expand?.centro_custo_id ? ` [${settlingConta.expand.centro_custo_id.codigo}]` : ''}`,
         valor: Number(valorRecebido),
         data: recDateISO,
         categoria_id: settlingConta.categoria_id || null,
+        centro_custo_id: settlingConta.centro_custo_id || null,
         origem: 'ContaReceber',
         referencia_id: settlingConta.id,
         conciliado: false,
@@ -284,9 +378,16 @@ export default function ContasReceber() {
 
   const totalVencido = useMemo(() => {
     return contas
-      .filter((c) => c.status !== 'Recebida' && c.vencimento.slice(0, 10) < nowISO)
+      .filter(
+        (c) =>
+          c.status === 'Vencida' || (c.status === 'Aberta' && c.vencimento.slice(0, 10) < nowISO),
+      )
       .reduce((sum, c) => sum + (c.valor || 0), 0)
   }, [contas, nowISO])
+
+  const totalRecebido = useMemo(() => {
+    return contas.filter((c) => c.status === 'Recebida').reduce((sum, c) => sum + (c.valor || 0), 0)
+  }, [contas])
 
   const totalRecebidoMes = useMemo(() => {
     return contas
@@ -298,12 +399,21 @@ export default function ContasReceber() {
       .reduce((sum, c) => sum + (c.valor || 0), 0)
   }, [contas, currentMonth, currentYear])
 
+  const totalAntecipado = useMemo(() => {
+    return contas
+      .filter((c) => c.status === 'Recebimento Antecipado')
+      .reduce((sum, c) => sum + (c.valor || 0), 0)
+  }, [contas])
+
   const filteredContas = useMemo(() => {
     return contas.filter((c) => {
-      const isOverdue = c.status !== 'Recebida' && c.vencimento.slice(0, 10) < nowISO
+      const isOverdue = c.status === 'Aberta' && c.vencimento.slice(0, 10) < nowISO
       const currentRealStatus = isOverdue ? 'Vencida' : c.status
 
       if (statusFilter !== 'Todas' && currentRealStatus !== statusFilter) {
+        return false
+      }
+      if (centroCustoFilter !== 'todos' && c.centro_custo_id !== centroCustoFilter) {
         return false
       }
       if (searchQuery.trim()) {
@@ -315,7 +425,7 @@ export default function ContasReceber() {
       }
       return true
     })
-  }, [contas, statusFilter, searchQuery, nowISO])
+  }, [contas, statusFilter, centroCustoFilter, searchQuery, nowISO])
 
   return (
     <div className="space-y-6">
@@ -326,89 +436,132 @@ export default function ContasReceber() {
           <p className="text-xs text-gray-500">Gestão de faturamento, recebíveis e clientes</p>
         </div>
 
-        {canEdit && (
-          <Button
-            onClick={openCreateModal}
-            className="bg-teal-700 hover:bg-teal-800 text-white rounded-xl shadow-xs"
-          >
-            <Plus className="w-4 h-4 mr-1.5" />
-            Nova Conta a Receber
-          </Button>
-        )}
+        <div className="flex items-center gap-2">
+          {canEdit && (
+            <Button
+              variant="outline"
+              onClick={() => setImportModalOpen(true)}
+              className="border-teal-300 text-teal-800 hover:bg-teal-50 rounded-xl shadow-xs"
+            >
+              <FileSpreadsheet className="w-4 h-4 mr-1.5 text-teal-700" />
+              Importar Planilha XLSX
+            </Button>
+          )}
+
+          {canEdit && (
+            <Button
+              onClick={openCreateModal}
+              className="bg-teal-700 hover:bg-teal-800 text-white rounded-xl shadow-xs"
+            >
+              <Plus className="w-4 h-4 mr-1.5" />
+              Nova Conta a Receber
+            </Button>
+          )}
+        </div>
       </div>
 
-      {/* Summary Pills Row */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <div className="p-4 rounded-2xl bg-white border border-[#ECEAE4] shadow-xs flex items-center justify-between">
-          <div>
-            <span className="text-xs font-semibold text-gray-500 uppercase tracking-wider block">
-              Total em Aberto
-            </span>
-            <span className="text-xl font-bold text-gray-900 tabular-nums">
-              {formatCurrency(totalAberto)}
-            </span>
+      {/* KPI Cards */}
+      <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
+        <Card className="rounded-2xl border-[#ECEAE4] bg-white p-5 shadow-xs">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-semibold text-gray-500 uppercase">Recebido</span>
+            <div className="w-8 h-8 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center">
+              <CheckCircle2 className="w-4 h-4" />
+            </div>
           </div>
-          <div className="w-10 h-10 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center font-bold">
-            R$
-          </div>
-        </div>
+          <p className="text-xl font-bold text-gray-900 mt-2 font-mono">
+            {formatCurrency(totalRecebido)}
+          </p>
+        </Card>
 
-        <div className="p-4 rounded-2xl bg-white border border-[#ECEAE4] shadow-xs flex items-center justify-between">
-          <div>
-            <span className="text-xs font-semibold text-red-500 uppercase tracking-wider block">
-              Total Vencido
-            </span>
-            <span className="text-xl font-bold text-red-600 tabular-nums">
-              {formatCurrency(totalVencido)}
-            </span>
+        <Card className="rounded-2xl border-[#ECEAE4] bg-white p-5 shadow-xs">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-semibold text-gray-500 uppercase">Em Aberto</span>
+            <div className="w-8 h-8 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center">
+              <Clock className="w-4 h-4" />
+            </div>
           </div>
-          <div className="w-10 h-10 rounded-xl bg-red-50 text-red-600 flex items-center justify-center font-bold">
-            !
-          </div>
-        </div>
+          <p className="text-xl font-bold text-gray-900 mt-2 font-mono">
+            {formatCurrency(totalAberto)}
+          </p>
+        </Card>
 
-        <div className="p-4 rounded-2xl bg-white border border-[#ECEAE4] shadow-xs flex items-center justify-between">
-          <div>
-            <span className="text-xs font-semibold text-emerald-600 uppercase tracking-wider block">
-              Recebido no Mês
-            </span>
-            <span className="text-xl font-bold text-emerald-700 tabular-nums">
-              {formatCurrency(totalRecebidoMes)}
-            </span>
+        <Card className="rounded-2xl border-[#ECEAE4] bg-white p-5 shadow-xs">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-semibold text-gray-500 uppercase">Vencido</span>
+            <div className="w-8 h-8 rounded-xl bg-red-50 text-red-600 flex items-center justify-center">
+              <AlertCircle className="w-4 h-4" />
+            </div>
           </div>
-          <div className="w-10 h-10 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center font-bold">
-            ✓
+          <p className="text-xl font-bold text-gray-900 mt-2 font-mono">
+            {formatCurrency(totalVencido)}
+          </p>
+        </Card>
+
+        <Card className="rounded-2xl border-teal-200 bg-teal-50/50 p-5 shadow-xs">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-semibold text-teal-800 uppercase">
+              Recebimento Antecipado
+            </span>
+            <div className="w-8 h-8 rounded-xl bg-teal-100 text-teal-700 flex items-center justify-center">
+              <ArrowDownLeft className="w-4 h-4" />
+            </div>
           </div>
-        </div>
+          <p className="text-xl font-bold text-teal-900 mt-2 font-mono">
+            {formatCurrency(totalAntecipado)}
+          </p>
+        </Card>
       </div>
 
       {/* Filter and Search Bar */}
       <Card className="rounded-2xl border-[#ECEAE4] bg-white shadow-xs p-4">
         <div className="flex flex-col md:flex-row items-center justify-between gap-3">
           <div className="flex flex-wrap items-center gap-1.5 w-full md:w-auto">
-            {(['Todas', 'Aberta', 'Recebida', 'Vencida'] as const).map((st) => (
-              <button
-                key={st}
-                onClick={() => setStatusFilter(st)}
-                className={`px-3 py-1.5 rounded-xl text-xs font-medium transition-all ${
-                  statusFilter === st
-                    ? 'bg-teal-700 text-white shadow-xs'
-                    : 'bg-[#FAF9F7] text-gray-600 hover:bg-gray-200/70'
-                }`}
-              >
-                {st === 'Todas' ? 'Todos os Status' : st}
-              </button>
-            ))}
+            {(['Todas', 'Aberta', 'Recebida', 'Vencida', 'Recebimento Antecipado'] as const).map(
+              (st) => (
+                <button
+                  key={st}
+                  onClick={() => setStatusFilter(st)}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-medium transition-all whitespace-nowrap ${
+                    statusFilter === st
+                      ? 'bg-teal-700 text-white shadow-xs'
+                      : 'bg-[#FAF9F7] text-gray-600 hover:bg-gray-200/70'
+                  }`}
+                >
+                  {st === 'Todas'
+                    ? 'Todos os Status'
+                    : st === 'Recebimento Antecipado'
+                      ? 'Antecipados'
+                      : st}
+                </button>
+              ),
+            )}
           </div>
 
-          <div className="relative w-full md:w-72">
-            <Search className="w-4 h-4 absolute left-3 top-3 text-gray-400" />
-            <Input
-              placeholder="Buscar descrição ou cliente..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="pl-9 bg-[#FAF9F7] border-[#ECEAE4] text-xs h-9 rounded-xl"
-            />
+          <div className="flex items-center gap-2 w-full md:w-auto">
+            <Select value={centroCustoFilter} onValueChange={setCentroCustoFilter}>
+              <SelectTrigger className="w-[180px] bg-[#FAF9F7] border-[#ECEAE4] text-xs h-9 rounded-xl">
+                <SelectValue placeholder="Centro de Custo" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="todos">Todos Centros</SelectItem>
+                {centrosCusto.map((cc) => (
+                  <SelectItem key={cc.id} value={cc.id}>
+                    {cc.codigo} - {cc.nome}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+
+            <div className="relative w-full md:w-64">
+              <Search className="w-4 h-4 absolute left-3 top-2.5 text-gray-400" />
+              <Input
+                placeholder="Buscar descrição ou cliente..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="pl-9 bg-[#FAF9F7] border-[#ECEAE4] text-xs h-9 rounded-xl"
+              />
+            </div>
           </div>
         </div>
       </Card>
@@ -422,6 +575,7 @@ export default function ContasReceber() {
                 <th className="py-3 px-4">Vencimento</th>
                 <th className="py-3 px-4">Descrição</th>
                 <th className="py-3 px-4">Cliente</th>
+                <th className="py-3 px-4">Centro Custo</th>
                 <th className="py-3 px-4">Categoria</th>
                 <th className="py-3 px-4 text-right">Valor</th>
                 <th className="py-3 px-4 text-center">Status</th>
@@ -453,6 +607,19 @@ export default function ContasReceber() {
                       <td className="py-3.5 px-4 text-gray-600">
                         {c.expand?.cliente_id?.nome || '—'}
                       </td>
+                      <td className="py-3.5 px-4 text-gray-600">
+                        {c.expand?.centro_custo_id ? (
+                          <span className="inline-flex items-center gap-1 font-mono text-[11px] font-semibold text-gray-700 bg-gray-100 px-1.5 py-0.5 rounded">
+                            <span
+                              className="w-2 h-2 rounded-full"
+                              style={{ backgroundColor: c.expand.centro_custo_id.cor || '#0F766E' }}
+                            />
+                            {c.expand.centro_custo_id.codigo}
+                          </span>
+                        ) : (
+                          '—'
+                        )}
+                      </td>
                       <td className="py-3.5 px-4 text-gray-500">
                         {c.expand?.categoria_id?.nome || '—'}
                       </td>
@@ -467,7 +634,9 @@ export default function ContasReceber() {
                               ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
                               : displayStatus === 'Vencida'
                                 ? 'bg-red-50 text-red-700 border-red-200'
-                                : 'bg-blue-50 text-blue-700 border-blue-200'
+                                : displayStatus === 'Recebimento Antecipado'
+                                  ? 'bg-teal-50 text-teal-800 border-teal-300 font-semibold'
+                                  : 'bg-blue-50 text-blue-700 border-blue-200'
                           }
                         >
                           {displayStatus}
@@ -555,22 +724,39 @@ export default function ContasReceber() {
               </Select>
             </div>
 
-            <div>
-              <Label className="text-xs font-semibold text-gray-700">
-                Categoria (Plano de Contas)
-              </Label>
-              <Select value={categoriaId} onValueChange={setCategoriaId}>
-                <SelectTrigger className="mt-1">
-                  <SelectValue placeholder="Selecione a categoria de receita..." />
-                </SelectTrigger>
-                <SelectContent>
-                  {categorias.map((cat) => (
-                    <SelectItem key={cat.id} value={cat.id}>
-                      {cat.codigo} - {cat.nome}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <Label className="text-xs font-semibold text-gray-700">Centro de Custo</Label>
+                <Select value={centroCustoId} onValueChange={setCentroCustoId}>
+                  <SelectTrigger className="mt-1">
+                    <SelectValue placeholder="Selecione o centro..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">Nenhum / Não alocado</SelectItem>
+                    {centrosCusto.map((cc) => (
+                      <SelectItem key={cc.id} value={cc.id}>
+                        {cc.codigo} - {cc.nome}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div>
+                <Label className="text-xs font-semibold text-gray-700">Categoria Contábil</Label>
+                <Select value={categoriaId} onValueChange={setCategoriaId}>
+                  <SelectTrigger className="mt-1">
+                    <SelectValue placeholder="Selecione a categoria..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {categorias.map((cat) => (
+                      <SelectItem key={cat.id} value={cat.id}>
+                        {cat.codigo} - {cat.nome}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
             </div>
 
             <div className="grid grid-cols-2 gap-3">
@@ -616,16 +802,26 @@ export default function ContasReceber() {
             )}
 
             <div>
-              <Label className="text-xs font-semibold text-gray-700">Status Inicial</Label>
+              <Label className="text-xs font-semibold text-gray-700">Situação / Status *</Label>
               <Select value={status} onValueChange={(val: any) => setStatus(val)}>
                 <SelectTrigger className="mt-1">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="Aberta">Aberta</SelectItem>
-                  <SelectItem value="Recebida">Recebida</SelectItem>
+                  <SelectItem value="Aberta">Aberta (A Receber no Vencimento)</SelectItem>
+                  <SelectItem value="Recebida">Recebida (Baixada)</SelectItem>
+                  <SelectItem value="Recebimento Antecipado">
+                    Recebimento Antecipado (Gera Crédito ao Cliente)
+                  </SelectItem>
+                  <SelectItem value="Vencida">Vencida</SelectItem>
                 </SelectContent>
               </Select>
+              {status === 'Recebimento Antecipado' && (
+                <p className="text-[11px] text-teal-700 mt-1">
+                  💡 Um saldo de crédito equivalente será adicionado à conta do cliente para ser
+                  abatido em futuras entregas/vendas.
+                </p>
+              )}
             </div>
 
             <div>
@@ -699,6 +895,56 @@ export default function ContasReceber() {
               />
             </div>
 
+            {/* Opção: Usar Crédito do Cliente */}
+            {totalCreditoDisponivelCliente > 0 && (
+              <div className="p-3 bg-emerald-50 rounded-xl border border-emerald-200 space-y-2">
+                <label className="flex items-center space-x-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={usarCreditoCliente}
+                    onChange={(e) => {
+                      const chk = e.target.checked
+                      setUsarCreditoCliente(chk)
+                      if (chk) {
+                        const valorAbater = Math.min(
+                          settlingConta?.valor || 0,
+                          totalCreditoDisponivelCliente,
+                        )
+                        setValorCreditoUsado(valorAbater)
+                        setFormaRecebimento('Crédito do Cliente' as any)
+                      } else {
+                        setValorCreditoUsado(0)
+                        setFormaRecebimento('Pix')
+                      }
+                    }}
+                    className="rounded text-emerald-600 focus:ring-emerald-500"
+                  />
+                  <span className="font-semibold text-emerald-950 text-xs">
+                    Usar Crédito Disponível deste Cliente (Saldo:{' '}
+                    {formatCurrency(totalCreditoDisponivelCliente)})
+                  </span>
+                </label>
+
+                {usarCreditoCliente && (
+                  <div className="space-y-2 pt-1 border-t border-emerald-200">
+                    <div>
+                      <Label className="text-[11px] text-emerald-900 font-medium">
+                        Valor do Crédito a Utilizar (R$):
+                      </Label>
+                      <Input
+                        type="number"
+                        step="0.01"
+                        max={Math.min(settlingConta?.valor || 0, totalCreditoDisponivelCliente)}
+                        value={valorCreditoUsado}
+                        onChange={(e) => setValorCreditoUsado(parseFloat(e.target.value) || 0)}
+                        className="mt-1 font-mono font-bold text-emerald-900 h-8"
+                      />
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
             <div>
               <Label className="text-xs font-semibold text-gray-700">Forma de Recebimento</Label>
               <Select value={formaRecebimento} onValueChange={(v: any) => setFormaRecebimento(v)}>
@@ -711,6 +957,9 @@ export default function ContasReceber() {
                   <SelectItem value="Transferência">Transferência (TED/DOC)</SelectItem>
                   <SelectItem value="Cartão">Cartão de Crédito/Débito</SelectItem>
                   <SelectItem value="Dinheiro">Dinheiro em Espécie</SelectItem>
+                  <SelectItem value="Crédito do Cliente">
+                    Crédito do Cliente (Saldo Antecipado)
+                  </SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -819,6 +1068,17 @@ export default function ContasReceber() {
           )}
         </SheetContent>
       </Sheet>
+      {/* Modal Importador XLSX */}
+      <ImportadorRecebimentosModal
+        open={importModalOpen}
+        onOpenChange={setImportModalOpen}
+        empresaId={currentEmpresa?.id || ''}
+        clientes={clientes}
+        categorias={categorias}
+        centrosCusto={centrosCusto}
+        contasExistentes={contas}
+        onImportComplete={loadData}
+      />
     </div>
   )
 }

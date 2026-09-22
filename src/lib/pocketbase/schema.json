@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-09-21T23:55:34.672Z",
+  "generatedAt": "2026-09-22T00:26:12.226Z",
   "collections": [
     {
       "name": "users",
@@ -610,6 +610,13 @@
           "required": false,
           "system": false,
           "autodateTriggers": ["onCreate", "onUpdate"]
+        },
+        {
+          "name": "centro_custo_id",
+          "type": "relation",
+          "required": false,
+          "system": false,
+          "collectionRef": "centros_custos"
         }
       ],
       "indexes": [
@@ -680,7 +687,7 @@
           "type": "select",
           "required": true,
           "system": false,
-          "selectValues": ["Aberta", "Recebida", "Vencida"]
+          "selectValues": ["Aberta", "Recebida", "Vencida", "Recebimento Antecipado"]
         },
         {
           "name": "data_recebimento",
@@ -714,6 +721,13 @@
           "required": false,
           "system": false,
           "autodateTriggers": ["onCreate", "onUpdate"]
+        },
+        {
+          "name": "centro_custo_id",
+          "type": "relation",
+          "required": false,
+          "system": false,
+          "collectionRef": "centros_custos"
         }
       ],
       "indexes": [
@@ -877,6 +891,13 @@
           "required": false,
           "system": false,
           "autodateTriggers": ["onCreate", "onUpdate"]
+        },
+        {
+          "name": "centro_custo_id",
+          "type": "relation",
+          "required": false,
+          "system": false,
+          "collectionRef": "centros_custos"
         }
       ],
       "indexes": [
@@ -1388,6 +1409,163 @@
         "CREATE INDEX idx_manut_veiculo ON manutencoes (veiculo_id)",
         "CREATE INDEX idx_manut_data ON manutencoes (data)",
         "CREATE INDEX idx_manut_status ON manutencoes (status)"
+      ]
+    },
+    {
+      "name": "centros_custos",
+      "type": "base",
+      "apiRules": {
+        "list": "@request.auth.id != ''",
+        "view": "@request.auth.id != ''",
+        "create": "@request.auth.id != ''",
+        "update": "@request.auth.id != ''",
+        "delete": "@request.auth.id != ''"
+      },
+      "fields": [
+        {
+          "name": "empresa_id",
+          "type": "relation",
+          "required": true,
+          "system": false,
+          "collectionRef": "empresas"
+        },
+        {
+          "name": "codigo",
+          "type": "text",
+          "required": true,
+          "system": false
+        },
+        {
+          "name": "nome",
+          "type": "text",
+          "required": true,
+          "system": false
+        },
+        {
+          "name": "descricao",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "cor",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "ativo",
+          "type": "bool",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "created",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate"]
+        },
+        {
+          "name": "updated",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate", "onUpdate"]
+        }
+      ],
+      "indexes": [
+        "CREATE INDEX idx_centros_custos_empresa ON centros_custos (empresa_id)",
+        "CREATE INDEX idx_centros_custos_codigo ON centros_custos (codigo)"
+      ]
+    },
+    {
+      "name": "creditos_clientes",
+      "type": "base",
+      "apiRules": {
+        "list": "@request.auth.id != ''",
+        "view": "@request.auth.id != ''",
+        "create": "@request.auth.id != ''",
+        "update": "@request.auth.id != ''",
+        "delete": "@request.auth.id != ''"
+      },
+      "fields": [
+        {
+          "name": "empresa_id",
+          "type": "relation",
+          "required": true,
+          "system": false,
+          "collectionRef": "empresas"
+        },
+        {
+          "name": "cliente_id",
+          "type": "relation",
+          "required": true,
+          "system": false,
+          "collectionRef": "clientes"
+        },
+        {
+          "name": "valor",
+          "type": "number",
+          "required": true,
+          "system": false
+        },
+        {
+          "name": "saldo_restante",
+          "type": "number",
+          "required": true,
+          "system": false
+        },
+        {
+          "name": "origem",
+          "type": "text",
+          "required": true,
+          "system": false
+        },
+        {
+          "name": "descricao",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "data",
+          "type": "date",
+          "required": true,
+          "system": false
+        },
+        {
+          "name": "status",
+          "type": "select",
+          "required": true,
+          "system": false,
+          "selectValues": ["disponivel", "parcial", "utilizado"]
+        },
+        {
+          "name": "referencia_conta_id",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "created",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate"]
+        },
+        {
+          "name": "updated",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate", "onUpdate"]
+        }
+      ],
+      "indexes": [
+        "CREATE INDEX idx_creditos_empresa ON creditos_clientes (empresa_id)",
+        "CREATE INDEX idx_creditos_cliente ON creditos_clientes (cliente_id)",
+        "CREATE INDEX idx_creditos_status ON creditos_clientes (status)"
       ]
     }
   ]

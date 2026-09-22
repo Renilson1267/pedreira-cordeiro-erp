@@ -4,7 +4,7 @@ import { useCompany } from '@/contexts/CompanyContext'
 import pb from '@/lib/pocketbase/client'
 import { useRealtime } from '@/hooks/use-realtime'
 import { formatCurrency, formatDate, toInputDate } from '@/lib/formatters'
-import type { ContaPagar, Fornecedor, PlanoConta } from '@/types/erp'
+import type { ContaPagar, Fornecedor, PlanoConta, CentroCusto } from '@/types/erp'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -46,10 +46,12 @@ export default function ContasPagar() {
   const [contas, setContas] = useState<ContaPagar[]>([])
   const [fornecedores, setFornecedores] = useState<Fornecedor[]>([])
   const [categorias, setCategorias] = useState<PlanoConta[]>([])
+  const [centrosCusto, setCentrosCusto] = useState<CentroCusto[]>([])
   const [loading, setLoading] = useState(true)
 
   // Filters
   const [statusFilter, setStatusFilter] = useState<'Todas' | 'Aberta' | 'Paga' | 'Vencida'>('Todas')
+  const [centroCustoFilter, setCentroCustoFilter] = useState<string>('todos')
   const [searchQuery, setSearchQuery] = useState('')
 
   // Drawer Create / Edit
@@ -58,6 +60,7 @@ export default function ContasPagar() {
 
   // Form State
   const [fornecedorId, setFornecedorId] = useState('')
+  const [centroCustoId, setCentroCustoId] = useState('')
   const [descricao, setDescricao] = useState('')
   const [categoriaId, setCategoriaId] = useState('')
   const [valor, setValor] = useState<number>(0)
@@ -86,11 +89,11 @@ export default function ContasPagar() {
 
     try {
       setLoading(true)
-      const [cpList, fList, pcList] = await Promise.all([
+      const [cpList, fList, pcList, ccList] = await Promise.all([
         pb.collection('contas_pagar').getFullList<ContaPagar>({
           filter: `empresa_id = '${currentEmpresa.id}'`,
           sort: 'vencimento',
-          expand: 'fornecedor_id,categoria_id',
+          expand: 'fornecedor_id,categoria_id,centro_custo_id',
         }),
         pb.collection('fornecedores').getFullList<Fornecedor>({
           filter: `empresa_id = '${currentEmpresa.id}'`,
@@ -100,11 +103,16 @@ export default function ContasPagar() {
           filter: `empresa_id = '${currentEmpresa.id}' && (tipo = 'Despesa' || tipo = 'Custo')`,
           sort: 'codigo',
         }),
+        pb.collection('centros_custos').getFullList<CentroCusto>({
+          filter: `empresa_id = '${currentEmpresa.id}'`,
+          sort: 'codigo',
+        }),
       ])
 
       setContas(cpList)
       setFornecedores(fList)
       setCategorias(pcList)
+      setCentrosCusto(ccList)
 
       // Handle query params e.g. ?novo=1 or ?id=xyz
       const qNovo = searchParams.get('novo')
@@ -142,6 +150,7 @@ export default function ContasPagar() {
   const openCreateModal = () => {
     setEditingId(null)
     setFornecedorId('')
+    setCentroCustoId('')
     setDescricao('')
     setCategoriaId(categorias[0]?.id || '')
     setValor(0)
@@ -155,6 +164,7 @@ export default function ContasPagar() {
   const handleEdit = (c: ContaPagar) => {
     setEditingId(c.id)
     setFornecedorId(c.fornecedor_id || '')
+    setCentroCustoId(c.centro_custo_id || '')
     setDescricao(c.descricao)
     setCategoriaId(c.categoria_id || '')
     setValor(c.valor)
@@ -179,8 +189,9 @@ export default function ContasPagar() {
         // Update single record
         await pb.collection('contas_pagar').update(editingId, {
           descricao: descricao.trim(),
-          fornecedor_id: fornecedorId || null,
-          categoria_id: categoriaId || null,
+          fornecedor_id: fornecedorId === 'none' || !fornecedorId ? null : fornecedorId,
+          categoria_id: categoriaId === 'none' || !categoriaId ? null : categoriaId,
+          centro_custo_id: centroCustoId === 'none' || !centroCustoId ? null : centroCustoId,
           valor: Number(valor),
           vencimento: new Date(vencimento).toISOString(),
           parcelas: Number(parcelas),
@@ -203,8 +214,9 @@ export default function ContasPagar() {
           await pb.collection('contas_pagar').create({
             empresa_id: currentEmpresa!.id,
             descricao: desc,
-            fornecedor_id: fornecedorId || null,
-            categoria_id: categoriaId || null,
+            fornecedor_id: fornecedorId === 'none' || !fornecedorId ? null : fornecedorId,
+            categoria_id: categoriaId === 'none' || !categoriaId ? null : categoriaId,
+            centro_custo_id: centroCustoId === 'none' || !centroCustoId ? null : centroCustoId,
             valor: Number(valor) / (numParcelas > 1 ? numParcelas : 1),
             vencimento: installmentDate.toISOString(),
             parcelas: numParcelas,
@@ -261,10 +273,11 @@ export default function ContasPagar() {
       await pb.collection('movimentos_financeiros').create({
         empresa_id: currentEmpresa!.id,
         tipo: 'Saida',
-        descricao: `Pagamento: ${settlingConta.descricao}`,
+        descricao: `Pagamento: ${settlingConta.descricao}${settlingConta.expand?.centro_custo_id ? ` [${settlingConta.expand.centro_custo_id.codigo}]` : ''}`,
         valor: Number(valorPago),
         data: payDateISO,
         categoria_id: settlingConta.categoria_id || null,
+        centro_custo_id: settlingConta.centro_custo_id || null,
         origem: 'ContaPagar',
         referencia_id: settlingConta.id,
         conciliado: false,
@@ -318,6 +331,9 @@ export default function ContasPagar() {
       if (statusFilter !== 'Todas' && currentRealStatus !== statusFilter) {
         return false
       }
+      if (centroCustoFilter !== 'todos' && c.centro_custo_id !== centroCustoFilter) {
+        return false
+      }
       if (searchQuery.trim()) {
         const q = searchQuery.toLowerCase()
         const fornecedorNome = c.expand?.fornecedor_id?.nome?.toLowerCase() || ''
@@ -327,7 +343,7 @@ export default function ContasPagar() {
       }
       return true
     })
-  }, [contas, statusFilter, searchQuery, nowISO])
+  }, [contas, statusFilter, centroCustoFilter, searchQuery, nowISO])
 
   return (
     <div className="space-y-6">
@@ -414,15 +430,32 @@ export default function ContasPagar() {
             ))}
           </div>
 
-          {/* Search Input */}
-          <div className="relative w-full md:w-72">
-            <Search className="w-4 h-4 absolute left-3 top-3 text-gray-400" />
-            <Input
-              placeholder="Buscar descrição ou fornecedor..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="pl-9 bg-[#FAF9F7] border-[#ECEAE4] text-xs h-9 rounded-xl"
-            />
+          <div className="flex items-center gap-2 w-full md:w-auto">
+            {/* Centro de Custo Filter */}
+            <Select value={centroCustoFilter} onValueChange={setCentroCustoFilter}>
+              <SelectTrigger className="w-[180px] bg-[#FAF9F7] border-[#ECEAE4] text-xs h-9 rounded-xl">
+                <SelectValue placeholder="Centro de Custo" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="todos">Todos Centros</SelectItem>
+                {centrosCusto.map((cc) => (
+                  <SelectItem key={cc.id} value={cc.id}>
+                    {cc.codigo} - {cc.nome}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+
+            {/* Search Input */}
+            <div className="relative w-full md:w-64">
+              <Search className="w-4 h-4 absolute left-3 top-2.5 text-gray-400" />
+              <Input
+                placeholder="Buscar descrição ou fornecedor..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="pl-9 bg-[#FAF9F7] border-[#ECEAE4] text-xs h-9 rounded-xl"
+              />
+            </div>
           </div>
         </div>
       </Card>
@@ -436,6 +469,7 @@ export default function ContasPagar() {
                 <th className="py-3 px-4">Vencimento</th>
                 <th className="py-3 px-4">Descrição</th>
                 <th className="py-3 px-4">Fornecedor</th>
+                <th className="py-3 px-4">Centro Custo</th>
                 <th className="py-3 px-4">Categoria</th>
                 <th className="py-3 px-4 text-right">Valor</th>
                 <th className="py-3 px-4 text-center">Status</th>
@@ -466,6 +500,19 @@ export default function ContasPagar() {
                       <td className="py-3.5 px-4 font-semibold text-gray-900">{c.descricao}</td>
                       <td className="py-3.5 px-4 text-gray-600">
                         {c.expand?.fornecedor_id?.nome || '—'}
+                      </td>
+                      <td className="py-3.5 px-4 text-gray-600">
+                        {c.expand?.centro_custo_id ? (
+                          <span className="inline-flex items-center gap-1 font-mono text-[11px] font-semibold text-gray-700 bg-gray-100 px-1.5 py-0.5 rounded">
+                            <span
+                              className="w-2 h-2 rounded-full"
+                              style={{ backgroundColor: c.expand.centro_custo_id.cor || '#0F766E' }}
+                            />
+                            {c.expand.centro_custo_id.codigo}
+                          </span>
+                        ) : (
+                          '—'
+                        )}
                       </td>
                       <td className="py-3.5 px-4 text-gray-500">
                         {c.expand?.categoria_id?.nome || '—'}
@@ -569,22 +616,39 @@ export default function ContasPagar() {
               </Select>
             </div>
 
-            <div>
-              <Label className="text-xs font-semibold text-gray-700">
-                Categoria (Plano de Contas)
-              </Label>
-              <Select value={categoriaId} onValueChange={setCategoriaId}>
-                <SelectTrigger className="mt-1">
-                  <SelectValue placeholder="Selecione a categoria..." />
-                </SelectTrigger>
-                <SelectContent>
-                  {categorias.map((cat) => (
-                    <SelectItem key={cat.id} value={cat.id}>
-                      {cat.codigo} - {cat.nome} ({cat.tipo})
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <Label className="text-xs font-semibold text-gray-700">Centro de Custo</Label>
+                <Select value={centroCustoId} onValueChange={setCentroCustoId}>
+                  <SelectTrigger className="mt-1">
+                    <SelectValue placeholder="Selecione o centro..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">Nenhum / Não alocado</SelectItem>
+                    {centrosCusto.map((cc) => (
+                      <SelectItem key={cc.id} value={cc.id}>
+                        {cc.codigo} - {cc.nome}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div>
+                <Label className="text-xs font-semibold text-gray-700">Categoria Contábil</Label>
+                <Select value={categoriaId} onValueChange={setCategoriaId}>
+                  <SelectTrigger className="mt-1">
+                    <SelectValue placeholder="Selecione a categoria..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {categorias.map((cat) => (
+                      <SelectItem key={cat.id} value={cat.id}>
+                        {cat.codigo} - {cat.nome} ({cat.tipo})
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
             </div>
 
             <div className="grid grid-cols-2 gap-3">

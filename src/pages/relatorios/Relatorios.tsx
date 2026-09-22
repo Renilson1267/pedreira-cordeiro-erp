@@ -9,6 +9,7 @@ import type {
   Fornecedor,
   Cliente,
   PlanoConta,
+  CentroCusto,
   Veiculo,
   Abastecimento,
   Manutencao,
@@ -62,6 +63,7 @@ export default function Relatorios() {
   const [fornecedores, setFornecedores] = useState<Fornecedor[]>([])
   const [clientes, setClientes] = useState<Cliente[]>([])
   const [planoContas, setPlanoContas] = useState<PlanoConta[]>([])
+  const [centrosCusto, setCentrosCusto] = useState<CentroCusto[]>([])
   const [veiculos, setVeiculos] = useState<Veiculo[]>([])
   const [abastecimentos, setAbastecimentos] = useState<Abastecimento[]>([])
   const [manutencoes, setManutencoes] = useState<Manutencao[]>([])
@@ -71,19 +73,19 @@ export default function Relatorios() {
     if (!currentEmpresa) return
     try {
       setLoading(true)
-      const [m, cp, cr, f, c, pc, v, ab, mn] = await Promise.all([
+      const [m, cp, cr, f, c, pc, cc, v, ab, mn] = await Promise.all([
         pb.collection('movimentos_financeiros').getFullList<MovimentoFinanceiro>({
           filter: `empresa_id = '${currentEmpresa.id}'`,
-          expand: 'categoria_id',
+          expand: 'categoria_id,centro_custo_id',
           sort: '-data',
         }),
         pb.collection('contas_pagar').getFullList<ContaPagar>({
           filter: `empresa_id = '${currentEmpresa.id}'`,
-          expand: 'fornecedor_id,categoria_id',
+          expand: 'fornecedor_id,categoria_id,centro_custo_id',
         }),
         pb.collection('contas_receber').getFullList<ContaReceber>({
           filter: `empresa_id = '${currentEmpresa.id}'`,
-          expand: 'cliente_id,categoria_id',
+          expand: 'cliente_id,categoria_id,centro_custo_id',
         }),
         pb.collection('fornecedores').getFullList<Fornecedor>({
           filter: `empresa_id = '${currentEmpresa.id}'`,
@@ -93,6 +95,10 @@ export default function Relatorios() {
         }),
         pb.collection('plano_contas').getFullList<PlanoConta>({
           filter: `empresa_id = '${currentEmpresa.id}'`,
+        }),
+        pb.collection('centros_custos').getFullList<CentroCusto>({
+          filter: `empresa_id = '${currentEmpresa.id}'`,
+          sort: 'codigo',
         }),
         pb.collection('veiculos').getFullList<Veiculo>({
           filter: `empresa_id = '${currentEmpresa.id}'`,
@@ -116,6 +122,7 @@ export default function Relatorios() {
       setFornecedores(f)
       setClientes(c)
       setPlanoContas(pc)
+      setCentrosCusto(cc)
       setVeiculos(v)
       setAbastecimentos(ab)
       setManutencoes(mn)
@@ -157,10 +164,17 @@ export default function Relatorios() {
     {
       id: 'resultado_categoria',
       title: 'Resultado por Categoria',
-      description:
-        'Demonstrativo visual com barras horizontais dos maiores centros de custos e receitas.',
+      description: 'Demonstrativo visual das despesas e receitas por plano de contas.',
       icon: BarChart2,
       color: 'bg-amber-50 text-amber-700',
+    },
+    {
+      id: 'resultado_centros_custos',
+      title: 'Relatório de Centros de Custo',
+      description:
+        'Apurado por frente operacional (Extração, Transporte, Manutenção, Administrativo) com totalização de receitas e despesas.',
+      icon: Layers,
+      color: 'bg-teal-50 text-teal-800',
     },
     {
       id: 'movimentacao_periodo',
@@ -233,6 +247,30 @@ export default function Relatorios() {
     })
     return Object.values(map).sort((a, b) => b.total - a.total)
   }, [filteredMovimentos])
+
+  // Aggregation for resultado_centros_custos
+  const resultadoPorCentrosCusto = useMemo(() => {
+    return centrosCusto
+      .map((cc) => {
+        const movsCentro = filteredMovimentos.filter((m) => m.centro_custo_id === cc.id)
+        const entradas = movsCentro
+          .filter((m) => m.tipo === 'Entrada')
+          .reduce((sum, m) => sum + (m.valor || 0), 0)
+        const saidas = movsCentro
+          .filter((m) => m.tipo === 'Saida')
+          .reduce((sum, m) => sum + (m.valor || 0), 0)
+        const saldo = entradas - saidas
+
+        return {
+          centro: cc,
+          entradas,
+          saidas,
+          saldo,
+          qtd: movsCentro.length,
+        }
+      })
+      .sort((a, b) => b.saidas - a.saidas)
+  }, [centrosCusto, filteredMovimentos])
 
   // Aggregation for relatorio_frotas
   const frotasPorVeiculo = useMemo(() => {
@@ -398,6 +436,18 @@ export default function Relatorios() {
                           cat.nome,
                           cat.tipo,
                           cat.total.toFixed(2),
+                        ]),
+                      )
+                    } else if (activeReport === 'resultado_centros_custos') {
+                      exportCSV(
+                        `Centros_Custo_${selectedMes}`,
+                        ['Código', 'Centro de Custo', 'Receitas', 'Despesas', 'Saldo'],
+                        resultadoPorCentrosCusto.map((item) => [
+                          item.centro.codigo,
+                          item.centro.nome,
+                          item.entradas.toFixed(2),
+                          item.saidas.toFixed(2),
+                          item.saldo.toFixed(2),
                         ]),
                       )
                     } else if (activeReport === 'relatorio_frotas') {
@@ -579,6 +629,71 @@ export default function Relatorios() {
                     ))}
                   </tbody>
                 </table>
+              </div>
+            )}
+
+            {/* Relatório de Centros de Custo */}
+            {activeReport === 'resultado_centros_custos' && (
+              <div className="space-y-6">
+                <div className="h-64 w-full">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart
+                      data={resultadoPorCentrosCusto.map((item) => ({
+                        nome: item.centro.codigo,
+                        Receitas: item.entradas,
+                        Despesas: item.saidas,
+                      }))}
+                      margin={{ top: 10, right: 10, left: 0, bottom: 0 }}
+                    >
+                      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#ECEAE4" />
+                      <XAxis dataKey="nome" />
+                      <YAxis tickFormatter={(val) => `R$${(val / 1000).toFixed(0)}k`} />
+                      <Tooltip formatter={(val: any) => formatCurrency(Number(val))} />
+                      <Legend />
+                      <Bar dataKey="Receitas" fill="#0F766E" radius={[4, 4, 0, 0]} />
+                      <Bar dataKey="Despesas" fill="#DC2626" radius={[4, 4, 0, 0]} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+
+                <div className="border border-[#ECEAE4] rounded-2xl overflow-hidden">
+                  <table className="w-full text-left text-xs">
+                    <thead className="bg-[#FAF9F7] border-b border-[#ECEAE4] text-gray-500 uppercase font-semibold">
+                      <tr>
+                        <th className="py-2.5 px-4">Centro de Custo</th>
+                        <th className="py-2.5 px-4 text-right">Receitas</th>
+                        <th className="py-2.5 px-4 text-right">Despesas</th>
+                        <th className="py-2.5 px-4 text-right">Resultado</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-[#ECEAE4]">
+                      {resultadoPorCentrosCusto.map((item) => (
+                        <tr key={item.centro.id} className="hover:bg-gray-50/50">
+                          <td className="py-2.5 px-4 font-semibold text-gray-900 flex items-center gap-2">
+                            <span
+                              className="w-2.5 h-2.5 rounded-full shrink-0"
+                              style={{ backgroundColor: item.centro.cor || '#0F766E' }}
+                            />
+                            <span className="font-mono text-teal-800">{item.centro.codigo}</span>
+                            <span>•</span>
+                            <span>{item.centro.nome}</span>
+                          </td>
+                          <td className="py-2.5 px-4 text-right tabular-nums font-mono text-emerald-700">
+                            {formatCurrency(item.entradas)}
+                          </td>
+                          <td className="py-2.5 px-4 text-right tabular-nums font-mono text-red-600">
+                            {formatCurrency(item.saidas)}
+                          </td>
+                          <td className="py-2.5 px-4 text-right tabular-nums font-mono font-bold">
+                            <span className={item.saldo >= 0 ? 'text-teal-700' : 'text-red-600'}>
+                              {formatCurrency(item.saldo)}
+                            </span>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
               </div>
             )}
 

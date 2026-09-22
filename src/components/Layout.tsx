@@ -37,6 +37,7 @@ import {
   Fuel,
   Wrench,
   Construction,
+  PieChart,
 } from 'lucide-react'
 
 export default function Layout() {
@@ -82,6 +83,7 @@ export default function Layout() {
         { label: 'Fornecedores', path: '/cadastros/fornecedores', icon: Truck },
         { label: 'Produtos e Serviços', path: '/cadastros/produtos', icon: Package },
         { label: 'Plano de Contas', path: '/cadastros/plano-de-contas', icon: Layers },
+        { label: 'Centros de Custo', path: '/cadastros/centros-de-custo', icon: PieChart },
       ],
     },
     {
