@@ -698,8 +698,8 @@ export function ImportadorFuncionariosModal({
                 </h3>
                 <p className="text-gray-500 text-xs max-w-md mx-auto mb-4">
                   Suporta arquivos com títulos de cabeçalho na primeira linha ou linhas superiores
-                  (ex.: "TODOS OS FUNCIONARIOS GC MIX"). O importador detecta automaticamente os
-                  nomes e cargos.
+                  (ex.: "Planilha de Funcionários"). O importador detecta automaticamente os nomes e
+                  cargos.
                 </p>
                 <label className="cursor-pointer">
                   <span className="px-4 py-2.5 rounded-xl bg-teal-700 hover:bg-teal-800 text-white font-semibold text-xs shadow-xs inline-flex items-center gap-2">
