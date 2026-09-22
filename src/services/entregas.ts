@@ -8,6 +8,7 @@ export interface CreateEntregaPayload {
   origem: string
   destino: string
   km_rodado: number
+  km_rota?: number | null
   km_inicial?: number | null
   km_final?: number | null
   motorista?: string | null

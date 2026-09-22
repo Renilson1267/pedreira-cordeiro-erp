@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-09-22T14:51:35.144Z",
+  "generatedAt": "2026-09-22T15:04:52.949Z",
   "collections": [
     {
       "name": "users",
@@ -2082,6 +2082,12 @@
           "required": false,
           "system": false,
           "autodateTriggers": ["onCreate", "onUpdate"]
+        },
+        {
+          "name": "km_rota",
+          "type": "number",
+          "required": false,
+          "system": false
         }
       ],
       "indexes": []

@@ -30,6 +30,13 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetFooter } from '@/components/ui/sheet'
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from '@/components/ui/dialog'
 import { toast } from '@/hooks/use-toast'
 import {
   Truck,
@@ -49,7 +56,16 @@ import {
   Layers,
   Sparkles,
   Calculator,
+  Navigation,
 } from 'lucide-react'
+import { CidadeInputAutocomplete } from '@/components/frotas/CidadeInputAutocomplete'
+import { BlocoKmRota } from '@/components/frotas/BlocoKmRota'
+import { BadgeComparativoKm } from '@/components/frotas/BadgeComparativoKm'
+import {
+  calcularDistanciaRotaOSRM,
+  COORDENADAS_PEDREIRA_PADRAO,
+  buscarCidadesNominatim,
+} from '@/services/rotasGeocoding'
 
 // Origens frequentes sugeridas na Pedreira
 const ORIGENS_SUGERIDAS = [
@@ -90,6 +106,9 @@ export default function Entregas() {
   const [selectedStatusFilter, setSelectedStatusFilter] = useState('todos')
   const [searchQuery, setSearchQuery] = useState('')
 
+  // Modal de Detalhes da Entrega
+  const [selectedEntregaDetalhe, setSelectedEntregaDetalhe] = useState<Entrega | null>(null)
+
   // Drawer Form State
   const [isDrawerOpen, setIsDrawerOpen] = useState(false)
   const [editingEntregaId, setEditingEntregaId] = useState<string | null>(null)
@@ -97,6 +116,16 @@ export default function Entregas() {
   const [dataEntrega, setDataEntrega] = useState(() => new Date().toISOString().slice(0, 10))
   const [origem, setOrigem] = useState(ORIGENS_SUGERIDAS[0])
   const [destino, setDestino] = useState('')
+
+  // Coordenadas e Km da rota automática (Nominatim + OSRM)
+  const [origemCoords, setOrigemCoords] = useState<{ lat: number; lon: number } | null>(
+    COORDENADAS_PEDREIRA_PADRAO,
+  )
+  const [destinoCoords, setDestinoCoords] = useState<{ lat: number; lon: number } | null>(null)
+  const [kmRotaCalculado, setKmRotaCalculado] = useState<number | null>(null)
+  const [duracaoRotaMinutos, setDuracaoRotaMinutos] = useState<number | undefined>(undefined)
+  const [carregandoRota, setCarregandoRota] = useState(false)
+  const [erroRota, setErroRota] = useState<string | null>(null)
 
   // Km e Odômetro
   const [modoKm, setModoKm] = useState<'direto' | 'odometro'>('direto')
@@ -293,6 +322,80 @@ export default function Entregas() {
     }
   }
 
+  // Recalcula rota OSRM entre origem e destino
+  const recalcularRota = async (
+    coordsOrig?: { lat: number; lon: number } | null,
+    coordsDest?: { lat: number; lon: number } | null,
+  ) => {
+    let pA = coordsOrig !== undefined ? coordsOrig : origemCoords
+    let pB = coordsDest !== undefined ? coordsDest : destinoCoords
+
+    // Se origem for texto livre ou unidade da pedreira, tenta usar o ponto da pedreira ou geocodificar
+    if (!pA && origem.trim()) {
+      const eUnidadePedreira = ORIGENS_SUGERIDAS.some((u) =>
+        origem.toLowerCase().includes(u.split('(')[0].trim().toLowerCase()),
+      )
+      if (eUnidadePedreira || origem.toLowerCase().includes('pedreira')) {
+        pA = COORDENADAS_PEDREIRA_PADRAO
+        setOrigemCoords(COORDENADAS_PEDREIRA_PADRAO)
+      } else {
+        const buscou = await buscarCidadesNominatim(origem)
+        if (buscou.length > 0) {
+          pA = { lat: buscou[0].lat, lon: buscou[0].lon }
+          setOrigemCoords(pA)
+        }
+      }
+    }
+
+    // Se destino não tiver coordenadas, tenta resolver via Nominatim
+    if (!pB && destino.trim()) {
+      const buscou = await buscarCidadesNominatim(destino)
+      if (buscou.length > 0) {
+        pB = { lat: buscou[0].lat, lon: buscou[0].lon }
+        setDestinoCoords(pB)
+      }
+    }
+
+    if (!pA || !pB) {
+      return
+    }
+
+    try {
+      setCarregandoRota(true)
+      setErroRota(null)
+      const res = await calcularDistanciaRotaOSRM(pA, pB)
+      if (res.sucesso) {
+        setKmRotaCalculado(res.distanciaKm)
+        setDuracaoRotaMinutos(res.duracaoMinutos)
+      } else {
+        setKmRotaCalculado(res.distanciaKm || null)
+        setErroRota(res.erro || 'Falha ao traçar rota')
+      }
+    } catch (err: any) {
+      console.warn('Erro ao calcular rota:', err)
+      setErroRota(err.message || 'Erro ao traçar trajeto')
+    } finally {
+      setCarregandoRota(false)
+    }
+  }
+
+  // Preenche o campo de km com o valor calculado pela rota
+  const handleUsarKmRota = () => {
+    if (!kmRotaCalculado || kmRotaCalculado <= 0) return
+
+    if (modoKm === 'odometro') {
+      const finalDerivado = Number(((kmInicial || 0) + kmRotaCalculado).toFixed(1))
+      setKmFinal(finalDerivado)
+    } else {
+      setKmRodado(kmRotaCalculado)
+    }
+
+    toast({
+      title: 'Quilometragem aplicada!',
+      description: `${kmRotaCalculado} km preenchidos com base na rota rodoviária.`,
+    })
+  }
+
   // Prepara criação de nova entrega
   const openCreateModal = () => {
     setEditingEntregaId(null)
@@ -307,7 +410,13 @@ export default function Entregas() {
     setVeiculoId(vid)
     setDataEntrega(new Date().toISOString().slice(0, 10))
     setOrigem(ORIGENS_SUGERIDAS[0])
+    setOrigemCoords(COORDENADAS_PEDREIRA_PADRAO)
     setDestino('')
+    setDestinoCoords(null)
+    setKmRotaCalculado(null)
+    setDuracaoRotaMinutos(undefined)
+    setErroRota(null)
+
     setModoKm('direto')
     setKmRodado(45)
 
@@ -340,6 +449,17 @@ export default function Entregas() {
     setDataEntrega(ent.data ? ent.data.slice(0, 10) : new Date().toISOString().slice(0, 10))
     setOrigem(ent.origem)
     setDestino(ent.destino)
+    setKmRotaCalculado(ent.km_rota || null)
+    setDuracaoRotaMinutos(undefined)
+    setErroRota(null)
+
+    // Define coords iniciais da pedreira se origem for pedreira
+    if (ent.origem.toLowerCase().includes('pedreira')) {
+      setOrigemCoords(COORDENADAS_PEDREIRA_PADRAO)
+    } else {
+      setOrigemCoords(null)
+    }
+    setDestinoCoords(null)
 
     if (ent.km_inicial !== undefined && ent.km_final !== undefined && (ent.km_final || 0) > 0) {
       setModoKm('odometro')
@@ -370,6 +490,13 @@ export default function Entregas() {
     setAtualizarOdometro(false)
 
     setIsDrawerOpen(true)
+
+    // Se não tiver km_rota salvo, tenta traçar em background
+    if (!ent.km_rota) {
+      setTimeout(() => {
+        recalcularRota()
+      }, 500)
+    }
   }
 
   // Preenche dados do motorista a partir do funcionário
@@ -470,6 +597,7 @@ export default function Entregas() {
         origem: origem.trim(),
         destino: destino.trim(),
         km_rodado: kmEfetivo,
+        km_rota: kmRotaCalculado || null,
         km_inicial: kmCalculadoInicial,
         km_final: kmCalculadoFinal,
         motorista: motoristaNome.trim() || null,
@@ -1011,7 +1139,8 @@ export default function Entregas() {
                 <th className="py-3 px-4">Data</th>
                 <th className="py-3 px-4">Veículo</th>
                 <th className="py-3 px-4">Rota (Origem ➔ Destino)</th>
-                <th className="py-3 px-4 text-right">Km Rodado</th>
+                <th className="py-3 px-4 text-right">Km Lançado</th>
+                <th className="py-3 px-4 text-center">Km Rota × Motorista</th>
                 <th className="py-3 px-4">Produto & Carga</th>
                 <th className="py-3 px-4">Motorista</th>
                 <th className="py-3 px-4 text-right">Custo Estimado</th>
@@ -1024,7 +1153,7 @@ export default function Entregas() {
             <tbody className="divide-y divide-[#ECEAE4]">
               {filteredEntregas.length === 0 ? (
                 <tr>
-                  <td colSpan={11} className="py-12 text-center text-gray-400">
+                  <td colSpan={12} className="py-12 text-center text-gray-400">
                     <div className="flex flex-col items-center justify-center gap-2">
                       <Truck className="w-8 h-8 text-gray-300" />
                       <p>Nenhuma entrega encontrada para os critérios selecionados.</p>
@@ -1084,6 +1213,27 @@ export default function Entregas() {
                         {ent.km_rodado.toLocaleString('pt-BR', { maximumFractionDigits: 1 })}{' '}
                         <span className="text-[10px] text-gray-400 font-normal">km</span>
                       </td>
+                      <td className="py-3 px-4 text-center whitespace-nowrap">
+                        {ent.km_rota ? (
+                          <div className="flex flex-col items-center gap-0.5">
+                            <BadgeComparativoKm
+                              kmMotorista={ent.km_rodado}
+                              kmRota={ent.km_rota}
+                              compacto
+                            />
+                            <span className="text-[9px] font-mono text-gray-400">
+                              Rota: {ent.km_rota} km
+                            </span>
+                          </div>
+                        ) : (
+                          <span
+                            className="text-gray-300 text-[10px]"
+                            title="Distância da rota não calculada neste registro"
+                          >
+                            —
+                          </span>
+                        )}
+                      </td>
                       <td className="py-3 px-4">
                         {ent.produto_nome ? (
                           <div className="flex items-center gap-1">
@@ -1141,6 +1291,15 @@ export default function Entregas() {
                       </td>
                       <td className="py-3 px-4 text-right">
                         <div className="flex items-center justify-end gap-1">
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => setSelectedEntregaDetalhe(ent)}
+                            className="h-7 px-2 text-xs text-gray-600 hover:text-gray-900 hover:bg-gray-100"
+                            title="Ver detalhes da entrega"
+                          >
+                            Ver
+                          </Button>
                           <Button
                             size="sm"
                             variant="ghost"
@@ -1261,52 +1420,75 @@ export default function Entregas() {
               </div>
             </div>
 
-            {/* ORIGEM E DESTINO */}
+            {/* ORIGEM E DESTINO COM AUTOCOMPLETE DE CIDADES */}
             <div className="p-3.5 bg-teal-50/50 rounded-xl border border-teal-200 space-y-3">
-              <div className="flex items-center gap-1.5 text-xs font-bold text-teal-950">
-                <MapPin className="w-3.5 h-3.5 text-teal-700" />
-                <span>Definição da Rota de Transporte</span>
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-1.5 text-xs font-bold text-teal-950">
+                  <MapPin className="w-3.5 h-3.5 text-teal-700" />
+                  <span>Definição da Rota de Transporte</span>
+                </div>
+                <span className="text-[10px] text-gray-500 font-mono">
+                  Origem ➔ Destino (Cidades / Pedreira)
+                </span>
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div>
-                  <Label className="text-xs font-semibold text-gray-700">Origem *</Label>
-                  <Input
-                    required
-                    value={origem}
-                    onChange={(e) => setOrigem(e.target.value)}
-                    placeholder="Ex: Pedreira Cordeiro (Britador Principal)"
-                    className="mt-1 bg-white"
-                  />
-                  {/* Sugestões de Origem */}
-                  <div className="flex flex-wrap gap-1 mt-1.5">
-                    {ORIGENS_SUGERIDAS.map((sug) => (
-                      <button
-                        type="button"
-                        key={sug}
-                        onClick={() => setOrigem(sug)}
-                        className="text-[10px] px-1.5 py-0.5 rounded bg-white border border-teal-200 text-teal-800 hover:bg-teal-100/60"
-                      >
-                        {sug.split('(')[0].trim()}
-                      </button>
-                    ))}
-                  </div>
-                </div>
+                <CidadeInputAutocomplete
+                  label="Origem *"
+                  required
+                  value={origem}
+                  placeholder="Ex: Pedreira Cordeiro ou Cidade de saída"
+                  atalhos={ORIGENS_SUGERIDAS}
+                  onSelectAtalho={(atalho) => {
+                    setOrigem(atalho)
+                    setOrigemCoords(COORDENADAS_PEDREIRA_PADRAO)
+                    recalcularRota(COORDENADAS_PEDREIRA_PADRAO, destinoCoords)
+                  }}
+                  onChange={(val, coords) => {
+                    setOrigem(val)
+                    if (coords) {
+                      setOrigemCoords(coords)
+                      recalcularRota(coords, destinoCoords)
+                    } else if (val.toLowerCase().includes('pedreira')) {
+                      setOrigemCoords(COORDENADAS_PEDREIRA_PADRAO)
+                      recalcularRota(COORDENADAS_PEDREIRA_PADRAO, destinoCoords)
+                    } else {
+                      setOrigemCoords(null)
+                    }
+                  }}
+                  helperText="Selecione uma unidade da pedreira ou digite uma cidade"
+                />
 
-                <div>
-                  <Label className="text-xs font-semibold text-gray-700">Destino / Cliente *</Label>
-                  <Input
-                    required
-                    value={destino}
-                    onChange={(e) => setDestino(e.target.value)}
-                    placeholder="Ex: Obra Rodovia PB-110 / Construtora Rocha"
-                    className="mt-1 bg-white"
-                  />
-                  <span className="text-[10px] text-gray-400 mt-1 block">
-                    Nome da cidade, obra ou cliente recebedor
-                  </span>
-                </div>
+                <CidadeInputAutocomplete
+                  label="Destino / Cidade do Cliente *"
+                  required
+                  value={destino}
+                  placeholder="Digite a cidade de entrega (ex: Patos, Monteiro, Caicó...)"
+                  onChange={(val, coords) => {
+                    setDestino(val)
+                    if (coords) {
+                      setDestinoCoords(coords)
+                      recalcularRota(origemCoords, coords)
+                    } else {
+                      setDestinoCoords(null)
+                    }
+                  }}
+                  helperText="Nome da cidade, obra ou cliente recebedor"
+                />
               </div>
+
+              {/* BLOCO KM AUTOMÁTICO DA ROTA (OSRM) */}
+              <BlocoKmRota
+                kmRota={kmRotaCalculado}
+                carregandoRota={carregandoRota}
+                erroRota={erroRota}
+                kmMotorista={kmEfetivo}
+                origem={origem}
+                destino={destino}
+                duracaoMinutos={duracaoRotaMinutos}
+                onUsarKmRota={handleUsarKmRota}
+                onRecalcular={() => recalcularRota()}
+              />
             </div>
 
             {/* QUILOMETRAGEM (DIRETA OU POR ODÔMETRO) */}
@@ -1660,6 +1842,196 @@ export default function Entregas() {
           </form>
         </SheetContent>
       </Sheet>
+
+      {/* Modal de Detalhes da Entrega com Comparativo Km da Rota vs Motorista */}
+      <Dialog
+        open={!!selectedEntregaDetalhe}
+        onOpenChange={(open) => !open && setSelectedEntregaDetalhe(null)}
+      >
+        <DialogContent className="sm:max-w-[550px] bg-white border-[#ECEAE4]">
+          <DialogHeader>
+            <div className="flex items-center gap-2">
+              <div className="w-8 h-8 rounded-lg bg-teal-100 text-teal-800 flex items-center justify-center">
+                <Truck className="w-4 h-4" />
+              </div>
+              <div>
+                <DialogTitle className="text-base font-bold text-gray-900">
+                  Detalhes do Romaneio de Entrega
+                </DialogTitle>
+                <p className="text-[11px] text-gray-500 font-mono">
+                  {selectedEntregaDetalhe && formatDate(selectedEntregaDetalhe.data)} •{' '}
+                  {selectedEntregaDetalhe?.expand?.veiculo_id?.codigo_interno || 'Veículo'}
+                </p>
+              </div>
+            </div>
+          </DialogHeader>
+
+          {selectedEntregaDetalhe && (
+            <div className="space-y-3.5 py-2 text-xs">
+              {/* Rota */}
+              <div className="p-3 bg-[#FAF9F7] rounded-xl border border-[#ECEAE4] space-y-1.5">
+                <span className="text-[10px] uppercase font-semibold text-gray-500 block">
+                  Percurso da Viagem
+                </span>
+                <div className="flex items-center gap-2 text-sm font-semibold text-gray-900">
+                  <span className="text-gray-700">{selectedEntregaDetalhe.origem}</span>
+                  <ArrowRight className="w-4 h-4 text-teal-600 shrink-0" />
+                  <span className="text-teal-900 font-bold">{selectedEntregaDetalhe.destino}</span>
+                </div>
+              </div>
+
+              {/* Comparativo de Quilometragem */}
+              <div className="p-3.5 bg-gradient-to-r from-teal-50/80 to-blue-50/60 rounded-xl border border-teal-200 space-y-2.5">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-1.5 font-bold text-teal-950">
+                    <Route className="w-4 h-4 text-teal-700" />
+                    <span>Conferência de Quilometragem</span>
+                  </div>
+                  {selectedEntregaDetalhe.km_rota && (
+                    <BadgeComparativoKm
+                      kmMotorista={selectedEntregaDetalhe.km_rodado}
+                      kmRota={selectedEntregaDetalhe.km_rota}
+                      compacto
+                    />
+                  )}
+                </div>
+
+                <div className="grid grid-cols-2 gap-2 text-xs">
+                  <div className="p-2.5 bg-white rounded-lg border border-teal-100">
+                    <span className="text-[10px] uppercase font-semibold text-gray-400 block">
+                      Km Lançado pelo Motorista
+                    </span>
+                    <span className="text-lg font-bold font-mono text-gray-900">
+                      {selectedEntregaDetalhe.km_rodado.toLocaleString('pt-BR', {
+                        maximumFractionDigits: 1,
+                      })}{' '}
+                      km
+                    </span>
+                    {selectedEntregaDetalhe.km_inicial !== undefined &&
+                      selectedEntregaDetalhe.km_final !== undefined && (
+                        <span className="text-[10px] font-mono text-gray-400 block mt-0.5">
+                          Odômetro: {selectedEntregaDetalhe.km_inicial} ➔{' '}
+                          {selectedEntregaDetalhe.km_final}
+                        </span>
+                      )}
+                  </div>
+
+                  <div className="p-2.5 bg-white rounded-lg border border-teal-100">
+                    <span className="text-[10px] uppercase font-semibold text-gray-400 block">
+                      Km Calculado da Rota (OSRM)
+                    </span>
+                    <span className="text-lg font-bold font-mono text-teal-900">
+                      {selectedEntregaDetalhe.km_rota
+                        ? `${selectedEntregaDetalhe.km_rota} km`
+                        : 'Não calculado'}
+                    </span>
+                    <span className="text-[10px] text-gray-400 block mt-0.5">
+                      Distância rodoviária por satélite
+                    </span>
+                  </div>
+                </div>
+
+                {selectedEntregaDetalhe.km_rota && (
+                  <div className="bg-white p-2.5 rounded-lg border border-teal-100">
+                    <BadgeComparativoKm
+                      kmMotorista={selectedEntregaDetalhe.km_rodado}
+                      kmRota={selectedEntregaDetalhe.km_rota}
+                    />
+                  </div>
+                )}
+              </div>
+
+              {/* Informações Operacionais & Custo */}
+              <div className="grid grid-cols-2 gap-2 text-xs">
+                <div className="p-2.5 bg-[#FAF9F7] rounded-xl border border-[#ECEAE4]">
+                  <span className="text-[10px] uppercase font-semibold text-gray-400 block">
+                    Carga Transportada
+                  </span>
+                  <div className="font-semibold text-gray-900 mt-0.5">
+                    {selectedEntregaDetalhe.produto_nome || 'Agregados'}
+                  </div>
+                  {selectedEntregaDetalhe.quantidade && (
+                    <div className="text-[11px] font-mono text-gray-600">
+                      {selectedEntregaDetalhe.quantidade}{' '}
+                      {selectedEntregaDetalhe.unidade_medida || 'm³'}
+                    </div>
+                  )}
+                </div>
+
+                <div className="p-2.5 bg-[#FAF9F7] rounded-xl border border-[#ECEAE4]">
+                  <span className="text-[10px] uppercase font-semibold text-gray-400 block">
+                    Motorista / Condutor
+                  </span>
+                  <div className="font-semibold text-gray-900 mt-0.5">
+                    {selectedEntregaDetalhe.motorista ||
+                      selectedEntregaDetalhe.expand?.funcionario_id?.nome ||
+                      'Não informado'}
+                  </div>
+                  <div className="text-[11px] text-gray-500">
+                    {selectedEntregaDetalhe.expand?.veiculo_id?.modelo || 'Frota'}
+                  </div>
+                </div>
+              </div>
+
+              {/* Custo Total */}
+              <div className="p-3 bg-red-50/60 rounded-xl border border-red-200 flex items-center justify-between">
+                <div>
+                  <span className="text-[10px] uppercase font-semibold text-red-900 block">
+                    Custo Estimado de Combustível
+                  </span>
+                  <span className="text-[11px] text-red-700 font-mono">
+                    Consumo: {selectedEntregaDetalhe.consumo_estimado_km_l || 2.8} km/l • Diesel:{' '}
+                    {formatCurrency(selectedEntregaDetalhe.preco_combustivel_litro || 5.89)}
+                  </span>
+                </div>
+                <div className="text-right">
+                  <div className="text-xl font-bold font-mono text-red-700">
+                    {formatCurrency(selectedEntregaDetalhe.custo_estimado)}
+                  </div>
+                  {selectedEntregaDetalhe.custo_por_km && (
+                    <div className="text-[10px] font-mono text-gray-500">
+                      {formatCurrency(selectedEntregaDetalhe.custo_por_km)}/km
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {selectedEntregaDetalhe.observacoes && (
+                <div className="p-2.5 bg-gray-50 rounded-xl border border-[#ECEAE4] text-[11px] text-gray-600">
+                  <span className="font-semibold text-gray-700 block mb-0.5">Observações:</span>
+                  {selectedEntregaDetalhe.observacoes}
+                </div>
+              )}
+            </div>
+          )}
+
+          <DialogFooter className="pt-2 flex justify-between sm:justify-between">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => setSelectedEntregaDetalhe(null)}
+              className="text-xs"
+            >
+              Fechar
+            </Button>
+            {selectedEntregaDetalhe && (
+              <Button
+                type="button"
+                size="sm"
+                onClick={() => {
+                  const ent = selectedEntregaDetalhe
+                  setSelectedEntregaDetalhe(null)
+                  openEditModal(ent)
+                }}
+                className="bg-teal-700 hover:bg-teal-800 text-white text-xs"
+              >
+                Editar Registro
+              </Button>
+            )}
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

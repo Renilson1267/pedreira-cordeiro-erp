@@ -404,6 +404,7 @@ export interface Entrega {
   origem: string
   destino: string
   km_rodado: number
+  km_rota?: number
   km_inicial?: number
   km_final?: number
   motorista?: string
