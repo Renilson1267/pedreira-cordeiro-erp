@@ -41,6 +41,12 @@ import {
 } from 'lucide-react'
 import { ImportadorContasPagarModal } from '@/components/financeiro/ImportadorContasPagarModal'
 import { ConferirPlanilhaPagarModal } from '@/components/financeiro/ConferirPlanilhaPagarModal'
+import {
+  SeletorParcelas,
+  TipoPrazo,
+  ItemParcela,
+  gerarGradeParcelas,
+} from '@/components/financeiro/SeletorParcelas'
 
 export default function ContasPagar() {
   const { currentEmpresa, canEdit, isReadOnly } = useCompany()
@@ -74,6 +80,9 @@ export default function ContasPagar() {
   const [valor, setValor] = useState<number>(0)
   const [vencimento, setVencimento] = useState('')
   const [parcelas, setParcelas] = useState<number>(1)
+  const [prazoSelecionado, setPrazoSelecionado] = useState<TipoPrazo>('mensal')
+  const [gradeParcelas, setGradeParcelas] = useState<ItemParcela[]>([])
+  const [datasCustomizadasManuais, setDatasCustomizadasManuais] = useState(false)
   const [status, setStatus] = useState<'Aberta' | 'Paga'>('Aberta')
   const [observacoes, setObservacoes] = useState('')
 
@@ -156,31 +165,97 @@ export default function ContasPagar() {
   }, [currentEmpresa])
 
   const openCreateModal = () => {
+    const hoje = toInputDate(new Date().toISOString())
     setEditingId(null)
     setFornecedorId('')
     setCentroCustoId('')
     setDescricao('')
     setCategoriaId(categorias[0]?.id || '')
     setValor(0)
-    setVencimento(toInputDate(new Date().toISOString()))
+    setVencimento(hoje)
     setParcelas(1)
+    setPrazoSelecionado('mensal')
+    setDatasCustomizadasManuais(false)
+    setGradeParcelas(gerarGradeParcelas(hoje, 1, 'mensal', 0))
     setStatus('Aberta')
     setObservacoes('')
     setIsDrawerOpen(true)
   }
 
   const handleEdit = (c: ContaPagar) => {
+    const venc = toInputDate(c.vencimento)
+    const numP = c.parcelas || 1
     setEditingId(c.id)
     setFornecedorId(c.fornecedor_id || '')
     setCentroCustoId(c.centro_custo_id || '')
     setDescricao(c.descricao)
     setCategoriaId(c.categoria_id || '')
     setValor(c.valor)
-    setVencimento(toInputDate(c.vencimento))
-    setParcelas(c.parcelas || 1)
+    setVencimento(venc)
+    setParcelas(numP)
+    setPrazoSelecionado('mensal')
+    setDatasCustomizadasManuais(false)
+    setGradeParcelas(gerarGradeParcelas(venc, numP, 'mensal', c.valor))
     setStatus(c.status === 'Paga' ? 'Paga' : 'Aberta')
     setObservacoes(c.observacoes || '')
     setIsDrawerOpen(true)
+  }
+
+  // Handlers para o parcelamento
+  const handleChangeVencimentoBase = (novaData: string) => {
+    setVencimento(novaData)
+    if (!editingId && !datasCustomizadasManuais) {
+      setGradeParcelas(gerarGradeParcelas(novaData, parcelas, prazoSelecionado, valor))
+    } else if (!editingId && gradeParcelas.length > 0) {
+      // Atualiza ao menos a primeira parcela se o usuário mexer na data base
+      setGradeParcelas((prev) =>
+        prev.map((item, idx) => (idx === 0 ? { ...item, vencimento: novaData } : item)),
+      )
+    }
+  }
+
+  const handleChangeValorTotal = (novoValor: number) => {
+    setValor(novoValor)
+    if (!editingId && gradeParcelas.length > 0) {
+      const n = gradeParcelas.length
+      const unit = novoValor > 0 ? Number((novoValor / n).toFixed(2)) : 0
+      setGradeParcelas((prev) =>
+        prev.map((item, idx) => {
+          let v = unit
+          if (idx === n - 1 && novoValor > 0) {
+            const somaAnt = unit * (n - 1)
+            const diff = Number((novoValor - somaAnt).toFixed(2))
+            if (diff > 0) v = diff
+          }
+          return { ...item, valor: v }
+        }),
+      )
+    }
+  }
+
+  const handleChangeNumParcelas = (novoNum: number) => {
+    setParcelas(novoNum)
+    setDatasCustomizadasManuais(false)
+    setGradeParcelas(gerarGradeParcelas(vencimento, novoNum, prazoSelecionado, valor))
+  }
+
+  const handleSelecionarPrazoRapido = (novoPrazo: TipoPrazo) => {
+    setPrazoSelecionado(novoPrazo)
+    setDatasCustomizadasManuais(false)
+    setGradeParcelas(gerarGradeParcelas(vencimento, parcelas, novoPrazo, valor))
+  }
+
+  const handleChangeDataParcelaIndividual = (index: number, novaData: string) => {
+    setDatasCustomizadasManuais(true)
+    setGradeParcelas((prev) => {
+      const novaGrade = prev.map((item, idx) =>
+        idx === index ? { ...item, vencimento: novaData } : item,
+      )
+      return novaGrade
+    })
+    if (index === 0) {
+      setVencimento(novaData)
+    }
   }
 
   // Função para resolver ou cadastrar fornecedor a partir do ID ou da descrição
@@ -253,13 +328,21 @@ export default function ContasPagar() {
         })
         toast({ title: 'Conta a pagar atualizada!' })
       } else {
-        // Multiple installments support
+        // Multiple installments support com datas digitadas/calculadas
         const numParcelas = Math.max(1, Number(parcelas))
-        const baseDate = new Date(vencimento)
 
-        for (let i = 0; i < numParcelas; i++) {
-          const installmentDate = new Date(baseDate)
-          installmentDate.setMonth(baseDate.getMonth() + i)
+        // Se gradeParcelas estiver vazia ou com tamanho diferente, gera fallback
+        const parcelasParaSalvar =
+          gradeParcelas.length === numParcelas
+            ? gradeParcelas
+            : gerarGradeParcelas(vencimento, numParcelas, prazoSelecionado, valor)
+
+        for (let i = 0; i < parcelasParaSalvar.length; i++) {
+          const item = parcelasParaSalvar[i]
+          // Salvar com a data de vencimento digitada pelo usuário (meio-dia UTC ou ISO da data)
+          const dataVencIso = item.vencimento
+            ? new Date(`${item.vencimento}T12:00:00Z`).toISOString()
+            : new Date(vencimento).toISOString()
 
           const desc =
             numParcelas > 1 ? `${descricao.trim()} (${i + 1}/${numParcelas})` : descricao.trim()
@@ -270,8 +353,8 @@ export default function ContasPagar() {
             fornecedor_id: finalFornecedorId,
             categoria_id: categoriaId === 'none' || !categoriaId ? null : categoriaId,
             centro_custo_id: centroCustoId === 'none' || !centroCustoId ? null : centroCustoId,
-            valor: Number(valor) / (numParcelas > 1 ? numParcelas : 1),
-            vencimento: installmentDate.toISOString(),
+            valor: Number(item.valor) || Number(valor) / (numParcelas > 1 ? numParcelas : 1),
+            vencimento: dataVencIso,
             parcelas: numParcelas,
             status: status,
             observacoes: observacoes.trim(),
@@ -756,38 +839,36 @@ export default function ContasPagar() {
                   step="0.01"
                   required
                   value={valor || ''}
-                  onChange={(e) => setValor(parseFloat(e.target.value) || 0)}
+                  onChange={(e) => handleChangeValorTotal(parseFloat(e.target.value) || 0)}
                   placeholder="0,00"
                   className="mt-1 font-mono"
                 />
               </div>
 
               <div>
-                <Label className="text-xs font-semibold text-gray-700">Vencimento *</Label>
+                <Label className="text-xs font-semibold text-gray-700">
+                  {editingId || parcelas <= 1 ? 'Vencimento *' : '1º Vencimento (Data Base) *'}
+                </Label>
                 <Input
                   type="date"
                   required
                   value={vencimento}
-                  onChange={(e) => setVencimento(e.target.value)}
+                  onChange={(e) => handleChangeVencimentoBase(e.target.value)}
                   className="mt-1 font-mono"
                 />
               </div>
             </div>
 
             {!editingId && (
-              <div>
-                <Label className="text-xs font-semibold text-gray-700">
-                  Parcelas (Gera lançamentos mensais automáticos)
-                </Label>
-                <Input
-                  type="number"
-                  min="1"
-                  max="48"
-                  value={parcelas}
-                  onChange={(e) => setParcelas(parseInt(e.target.value) || 1)}
-                  className="mt-1"
-                />
-              </div>
+              <SeletorParcelas
+                parcelas={parcelas}
+                onChangeParcelas={handleChangeNumParcelas}
+                prazoSelecionado={prazoSelecionado}
+                onSelecionarPrazo={handleSelecionarPrazoRapido}
+                listaParcelas={gradeParcelas}
+                onChangeDataParcela={handleChangeDataParcelaIndividual}
+                valorTotal={valor}
+              />
             )}
 
             <div>

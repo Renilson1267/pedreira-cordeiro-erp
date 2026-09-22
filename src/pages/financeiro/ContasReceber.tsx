@@ -6,6 +6,12 @@ import { useRealtime } from '@/hooks/use-realtime'
 import { formatCurrency, formatDate, toInputDate } from '@/lib/formatters'
 import type { ContaReceber, Cliente, PlanoConta, CentroCusto, CreditoCliente } from '@/types/erp'
 import { ImportadorRecebimentosModal } from '@/components/financeiro/ImportadorRecebimentosModal'
+import {
+  SeletorParcelas,
+  TipoPrazo,
+  ItemParcela,
+  gerarGradeParcelas,
+} from '@/components/financeiro/SeletorParcelas'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -74,6 +80,9 @@ export default function ContasReceber() {
   const [valor, setValor] = useState<number>(0)
   const [vencimento, setVencimento] = useState('')
   const [parcelas, setParcelas] = useState<number>(1)
+  const [prazoSelecionado, setPrazoSelecionado] = useState<TipoPrazo>('mensal')
+  const [gradeParcelas, setGradeParcelas] = useState<ItemParcela[]>([])
+  const [datasCustomizadasManuais, setDatasCustomizadasManuais] = useState(false)
   const [status, setStatus] = useState<
     'Aberta' | 'Recebida' | 'Vencida' | 'Recebimento Antecipado'
   >('Aberta')
@@ -165,31 +174,96 @@ export default function ContasReceber() {
   const [centroCustoId, setCentroCustoId] = useState('')
 
   const openCreateModal = () => {
+    const hoje = toInputDate(new Date().toISOString())
     setEditingId(null)
     setClienteId('')
     setCentroCustoId('')
     setDescricao('')
     setCategoriaId(categorias[0]?.id || '')
     setValor(0)
-    setVencimento(toInputDate(new Date().toISOString()))
+    setVencimento(hoje)
     setParcelas(1)
+    setPrazoSelecionado('mensal')
+    setDatasCustomizadasManuais(false)
+    setGradeParcelas(gerarGradeParcelas(hoje, 1, 'mensal', 0))
     setStatus('Aberta')
     setObservacoes('')
     setIsDrawerOpen(true)
   }
 
   const handleEdit = (c: ContaReceber) => {
+    const venc = toInputDate(c.vencimento)
+    const numP = c.parcelas || 1
     setEditingId(c.id)
     setClienteId(c.cliente_id || '')
     setCentroCustoId(c.centro_custo_id || '')
     setDescricao(c.descricao)
     setCategoriaId(c.categoria_id || '')
     setValor(c.valor)
-    setVencimento(toInputDate(c.vencimento))
-    setParcelas(c.parcelas || 1)
+    setVencimento(venc)
+    setParcelas(numP)
+    setPrazoSelecionado('mensal')
+    setDatasCustomizadasManuais(false)
+    setGradeParcelas(gerarGradeParcelas(venc, numP, 'mensal', c.valor))
     setStatus(c.status === 'Recebida' ? 'Recebida' : 'Aberta')
     setObservacoes(c.observacoes || '')
     setIsDrawerOpen(true)
+  }
+
+  // Handlers para parcelamento com prazos rápidos e datas livres
+  const handleChangeVencimentoBase = (novaData: string) => {
+    setVencimento(novaData)
+    if (!editingId && !datasCustomizadasManuais) {
+      setGradeParcelas(gerarGradeParcelas(novaData, parcelas, prazoSelecionado, valor))
+    } else if (!editingId && gradeParcelas.length > 0) {
+      setGradeParcelas((prev) =>
+        prev.map((item, idx) => (idx === 0 ? { ...item, vencimento: novaData } : item)),
+      )
+    }
+  }
+
+  const handleChangeValorTotal = (novoValor: number) => {
+    setValor(novoValor)
+    if (!editingId && gradeParcelas.length > 0) {
+      const n = gradeParcelas.length
+      const unit = novoValor > 0 ? Number((novoValor / n).toFixed(2)) : 0
+      setGradeParcelas((prev) =>
+        prev.map((item, idx) => {
+          let v = unit
+          if (idx === n - 1 && novoValor > 0) {
+            const somaAnt = unit * (n - 1)
+            const diff = Number((novoValor - somaAnt).toFixed(2))
+            if (diff > 0) v = diff
+          }
+          return { ...item, valor: v }
+        }),
+      )
+    }
+  }
+
+  const handleChangeNumParcelas = (novoNum: number) => {
+    setParcelas(novoNum)
+    setDatasCustomizadasManuais(false)
+    setGradeParcelas(gerarGradeParcelas(vencimento, novoNum, prazoSelecionado, valor))
+  }
+
+  const handleSelecionarPrazoRapido = (novoPrazo: TipoPrazo) => {
+    setPrazoSelecionado(novoPrazo)
+    setDatasCustomizadasManuais(false)
+    setGradeParcelas(gerarGradeParcelas(vencimento, parcelas, novoPrazo, valor))
+  }
+
+  const handleChangeDataParcelaIndividual = (index: number, novaData: string) => {
+    setDatasCustomizadasManuais(true)
+    setGradeParcelas((prev) => {
+      const novaGrade = prev.map((item, idx) =>
+        idx === index ? { ...item, vencimento: novaData } : item,
+      )
+      return novaGrade
+    })
+    if (index === 0) {
+      setVencimento(novaData)
+    }
   }
 
   const handleSave = async (e: React.FormEvent) => {
@@ -217,12 +291,19 @@ export default function ContasReceber() {
         toast({ title: 'Conta a receber atualizada!' })
       } else {
         const numParcelas = Math.max(1, Number(parcelas))
-        const baseDate = new Date(vencimento)
+        const parcelasParaSalvar =
+          gradeParcelas.length === numParcelas
+            ? gradeParcelas
+            : gerarGradeParcelas(vencimento, numParcelas, prazoSelecionado, valor)
 
-        for (let i = 0; i < numParcelas; i++) {
-          const installmentDate = new Date(baseDate)
-          installmentDate.setMonth(baseDate.getMonth() + i)
-          const parcelValue = Number(valor) / (numParcelas > 1 ? numParcelas : 1)
+        for (let i = 0; i < parcelasParaSalvar.length; i++) {
+          const item = parcelasParaSalvar[i]
+          const dataVencIso = item.vencimento
+            ? new Date(`${item.vencimento}T12:00:00Z`).toISOString()
+            : new Date(vencimento).toISOString()
+
+          const parcelValue =
+            Number(item.valor) || Number(valor) / (numParcelas > 1 ? numParcelas : 1)
 
           const desc =
             numParcelas > 1 ? `${descricao.trim()} (${i + 1}/${numParcelas})` : descricao.trim()
@@ -234,12 +315,11 @@ export default function ContasReceber() {
             categoria_id: categoriaId === 'none' || !categoriaId ? null : categoriaId,
             centro_custo_id: centroCustoId === 'none' || !centroCustoId ? null : centroCustoId,
             valor: parcelValue,
-            vencimento: installmentDate.toISOString(),
+            vencimento: dataVencIso,
             parcelas: numParcelas,
             status: status,
             observacoes: observacoes.trim(),
-            data_recebimento:
-              status === 'Recebimento Antecipado' ? installmentDate.toISOString() : undefined,
+            data_recebimento: status === 'Recebimento Antecipado' ? dataVencIso : undefined,
           })
 
           if (status === 'Recebimento Antecipado' && clienteId && clienteId !== 'none') {
@@ -250,7 +330,7 @@ export default function ContasReceber() {
               saldo_restante: parcelValue,
               origem: 'Recebimento Antecipado',
               descricao: `Depósito/Adiantamento ref. ${desc}`,
-              data: installmentDate.toISOString(),
+              data: dataVencIso,
               status: 'disponivel',
               referencia_conta_id: createdConta.id,
             })
@@ -767,38 +847,36 @@ export default function ContasReceber() {
                   step="0.01"
                   required
                   value={valor || ''}
-                  onChange={(e) => setValor(parseFloat(e.target.value) || 0)}
+                  onChange={(e) => handleChangeValorTotal(parseFloat(e.target.value) || 0)}
                   placeholder="0,00"
                   className="mt-1 font-mono"
                 />
               </div>
 
               <div>
-                <Label className="text-xs font-semibold text-gray-700">Vencimento *</Label>
+                <Label className="text-xs font-semibold text-gray-700">
+                  {editingId || parcelas <= 1 ? 'Vencimento *' : '1º Vencimento (Data Base) *'}
+                </Label>
                 <Input
                   type="date"
                   required
                   value={vencimento}
-                  onChange={(e) => setVencimento(e.target.value)}
+                  onChange={(e) => handleChangeVencimentoBase(e.target.value)}
                   className="mt-1 font-mono"
                 />
               </div>
             </div>
 
             {!editingId && (
-              <div>
-                <Label className="text-xs font-semibold text-gray-700">
-                  Parcelas (Gera lançamentos mensais automáticos)
-                </Label>
-                <Input
-                  type="number"
-                  min="1"
-                  max="48"
-                  value={parcelas}
-                  onChange={(e) => setParcelas(parseInt(e.target.value) || 1)}
-                  className="mt-1"
-                />
-              </div>
+              <SeletorParcelas
+                parcelas={parcelas}
+                onChangeParcelas={handleChangeNumParcelas}
+                prazoSelecionado={prazoSelecionado}
+                onSelecionarPrazo={handleSelecionarPrazoRapido}
+                listaParcelas={gradeParcelas}
+                onChangeDataParcela={handleChangeDataParcelaIndividual}
+                valorTotal={valor}
+              />
             )}
 
             <div>
