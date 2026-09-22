@@ -6,6 +6,7 @@ import type { Fornecedor, PlanoConta, CentroCusto, ContaPagar } from '@/types/er
 import {
   inferirCompetenciaAba,
   detectarLinhaCabecalho,
+  normalizarNomeColuna,
   parseValorPagar,
   parseDataPagar,
   type SheetCompetencia,
@@ -287,16 +288,17 @@ export function ConferirPlanilhaPagarModal({
 
     setPreviewRows(preview)
 
-    // Sugestão de mapeamento inteligente
-    const findCol = (regex: RegExp) => headers.find((h) => regex.test(h)) || ''
-    const descColFound = findCol(/hist|desc|serv|prod|refer[eê]ncia|item|discrim/i) || ''
-    const fornColFound = findCol(/forn|favorec|credor|benefici[aá]rio|empresa/i) || ''
+    // Sugestão de mapeamento inteligente com normalização profunda
+    const findCol = (regex: RegExp) =>
+      headers.find((h) => regex.test(normalizarNomeColuna(h)) || regex.test(h)) || ''
+    const descColFound = findCol(/HIST|DESC|SERV|PROD|REFERENCIA|ITEM|DISCRIM/i) || ''
+    const fornColFound = findCol(/FORN|FAVOREC|CREDOR|BENEFICIARIO|EMPRESA/i) || ''
 
     setMapping((prev) => ({
       vencimento:
         prev.vencimento && headers.includes(prev.vencimento)
           ? prev.vencimento
-          : findCol(/venc|data_venc|dt_venc|data|dia/i) || headers[0] || '',
+          : findCol(/^VENC|VENCIMENTO|DT VENC|DATA VENC|DIA|DATA/i) || headers[0] || '',
       fornecedor:
         prev.fornecedor && headers.includes(prev.fornecedor)
           ? prev.fornecedor
@@ -308,36 +310,36 @@ export function ConferirPlanilhaPagarModal({
       valor:
         prev.valor && headers.includes(prev.valor)
           ? prev.valor
-          : findCol(/val|total|bruto|a pagar/i) || '',
+          : findCol(/VALOR|VALOR R|VALOR TOTAL|BRUTO|A PAGAR/i) || findCol(/^VALOR/i) || '',
       valorPago:
         prev.valorPago && headers.includes(prev.valorPago)
           ? prev.valorPago
-          : findCol(/pago|pg|liquid|valor_pago/i) || '',
+          : findCol(/VALOR PAGO|PAGO|PG|LIQUID/i) || '',
       dataPagamento:
         prev.dataPagamento && headers.includes(prev.dataPagamento)
           ? prev.dataPagamento
-          : findCol(/dt_pag|data_pag|baixa|liquid/i) || '',
+          : findCol(/DT PAG|DATA PAG|BAIXA|LIQUID/i) || '',
       formaPagamento:
         prev.formaPagamento && headers.includes(prev.formaPagamento)
           ? prev.formaPagamento
-          : findCol(/forma|meio|tipo_pag/i) || '',
+          : findCol(/FORMA|MEIO|TIPO PAG/i) || '',
       status:
         prev.status && headers.includes(prev.status)
           ? prev.status
-          : findCol(/status|situa[cç][aã]o|cond/i) || '',
+          : findCol(/STATUS|SITUACAO|COND/i) || '',
       centroCusto:
         prev.centroCusto && headers.includes(prev.centroCusto)
           ? prev.centroCusto
-          : findCol(/centro|cc|custo|frente|setor/i) || '',
+          : findCol(/CENTRO|CC|CUSTO|FRENTE|SETOR/i) || '',
       categoria:
         prev.categoria && headers.includes(prev.categoria)
           ? prev.categoria
-          : findCol(/categ|plano|conta/i) || '',
+          : findCol(/CATEG|PLANO|CONTA/i) || '',
       documento:
         prev.documento && headers.includes(prev.documento)
           ? prev.documento
-          : findCol(/doc|nf|nota|duplicata|fatura/i) || '',
-      cnpj: prev.cnpj && headers.includes(prev.cnpj) ? prev.cnpj : findCol(/cnpj|cpf|insc/i) || '',
+          : findCol(/DOC|NF|NOTA|DUPLICATA|FATURA/i) || '',
+      cnpj: prev.cnpj && headers.includes(prev.cnpj) ? prev.cnpj : findCol(/CNPJ|CPF|INSC/i) || '',
     }))
   }
 
@@ -486,69 +488,65 @@ export function ConferirPlanilhaPagarModal({
         )
         const dataRows = matrix.slice(headerIdx)
 
-        // Resolução dinâmica de colunas para esta aba específica
+        // Resolução dinâmica e tolerante de colunas para esta aba específica (normalização avançada)
         const findColInSheet = (pattern: RegExp) =>
-          currentSheetHeaders.find((h) => pattern.test(h)) || ''
+          currentSheetHeaders.find(
+            (h) => pattern.test(normalizarNomeColuna(h)) || pattern.test(h),
+          ) || ''
 
-        const vencCol =
-          mapping.vencimento && currentSheetHeaders.includes(mapping.vencimento)
-            ? mapping.vencimento
-            : findColInSheet(/venc|data_venc|dt_venc|data|dia/i) || currentSheetHeaders[0] || ''
+        const matchColWithFallback = (
+          userCol: string,
+          pattern: RegExp,
+          fallbackDefault: string = '',
+        ) => {
+          if (userCol && currentSheetHeaders.includes(userCol)) return userCol
+          if (userCol) {
+            const userNorm = normalizarNomeColuna(userCol)
+            const matched = currentSheetHeaders.find((h) => normalizarNomeColuna(h) === userNorm)
+            if (matched) return matched
+          }
+          return findColInSheet(pattern) || fallbackDefault
+        }
 
-        const fornCol =
-          mapping.fornecedor && currentSheetHeaders.includes(mapping.fornecedor)
-            ? mapping.fornecedor
-            : findColInSheet(/forn|favorec|credor|benefici[aá]rio|empresa/i) || ''
+        const vencCol = matchColWithFallback(
+          mapping.vencimento,
+          /^VENC|VENCIMENTO|DT VENC|DATA VENC|DIA|DATA/i,
+          currentSheetHeaders[0] || '',
+        )
 
-        const descCol =
-          mapping.descricao && currentSheetHeaders.includes(mapping.descricao)
-            ? mapping.descricao
-            : findColInSheet(/hist|desc|serv|prod|refer[eê]ncia|item|discrim/i) || ''
+        const fornCol = matchColWithFallback(
+          mapping.fornecedor,
+          /FORNECEDOR|FAVORECIDO|CREDOR|BENEFICIARIO|EMPRESA|HISTORICO FAVORECIDO/i,
+        )
 
-        const valCol =
-          mapping.valor && currentSheetHeaders.includes(mapping.valor)
-            ? mapping.valor
-            : findColInSheet(/val|total|bruto|a pagar/i) || ''
+        const descCol = matchColWithFallback(
+          mapping.descricao,
+          /HISTORICO|DESCRICAO|HIST|DESC|SERV|PROD|REFERENCIA|ITEM|DISCRIM/i,
+        )
 
-        const valPagoCol =
-          mapping.valorPago && currentSheetHeaders.includes(mapping.valorPago)
-            ? mapping.valorPago
-            : findColInSheet(/pago|pg|liquid|valor_pago/i) || ''
+        const valCol = matchColWithFallback(
+          mapping.valor,
+          /VALOR TOTAL|VALOR R|VALOR|BRUTO|A PAGAR/i,
+        )
 
-        const dataPagCol =
-          mapping.dataPagamento && currentSheetHeaders.includes(mapping.dataPagamento)
-            ? mapping.dataPagamento
-            : findColInSheet(/dt_pag|data_pag|baixa|liquid/i) || ''
+        const valPagoCol = matchColWithFallback(mapping.valorPago, /VALOR PAGO|PAGO|PG|LIQUID/i)
 
-        const formaCol =
-          mapping.formaPagamento && currentSheetHeaders.includes(mapping.formaPagamento)
-            ? mapping.formaPagamento
-            : findColInSheet(/forma|meio|tipo_pag/i) || ''
+        const dataPagCol = matchColWithFallback(
+          mapping.dataPagamento,
+          /DT PAG|DATA PAG|BAIXA|LIQUID/i,
+        )
 
-        const statusCol =
-          mapping.status && currentSheetHeaders.includes(mapping.status)
-            ? mapping.status
-            : findColInSheet(/status|situa[cç][aã]o|cond/i) || ''
+        const formaCol = matchColWithFallback(mapping.formaPagamento, /FORMA|MEIO|TIPO PAG/i)
 
-        const centroCol =
-          mapping.centroCusto && currentSheetHeaders.includes(mapping.centroCusto)
-            ? mapping.centroCusto
-            : findColInSheet(/centro|cc|custo|frente|setor/i) || ''
+        const statusCol = matchColWithFallback(mapping.status, /STATUS|SITUACAO|COND/i)
 
-        const catCol =
-          mapping.categoria && currentSheetHeaders.includes(mapping.categoria)
-            ? mapping.categoria
-            : findColInSheet(/categ|plano|conta/i) || ''
+        const centroCol = matchColWithFallback(mapping.centroCusto, /CENTRO|CC|CUSTO|FRENTE|SETOR/i)
 
-        const docCol =
-          mapping.documento && currentSheetHeaders.includes(mapping.documento)
-            ? mapping.documento
-            : findColInSheet(/doc|nf|nota|duplicata|fatura/i) || ''
+        const catCol = matchColWithFallback(mapping.categoria, /CATEG|PLANO|CONTA/i)
 
-        const cnpjCol =
-          mapping.cnpj && currentSheetHeaders.includes(mapping.cnpj)
-            ? mapping.cnpj
-            : findColInSheet(/cnpj|cpf|insc/i) || ''
+        const docCol = matchColWithFallback(mapping.documento, /DOC|NF|NOTA|DUPLICATA|FATURA/i)
+
+        const cnpjCol = matchColWithFallback(mapping.cnpj, /CNPJ|CPF|INSC/i)
 
         const getVal = (row: any[], headerName: string): any => {
           if (!headerName) return ''
@@ -559,6 +557,28 @@ export function ConferirPlanilhaPagarModal({
 
         for (let r = 0; r < dataRows.length; r++) {
           const row = dataRows[r]
+
+          // Checar se a linha inteira está vazia
+          const temConteudo = row.some((c) => String(c ?? '').trim().length > 0)
+          if (!temConteudo) continue
+
+          const rowTextJoined = row
+            .map((c) => normalizarNomeColuna(c))
+            .filter(Boolean)
+            .join(' ')
+
+          // Pular linhas puramente de total, subtotal ou resumo semanal (sem descartar lançamentos reais)
+          const isTotalRow =
+            rowTextJoined.startsWith('TOTAL') ||
+            rowTextJoined.startsWith('SUBTOTAL') ||
+            rowTextJoined.startsWith('SUB TOTAL') ||
+            rowTextJoined.startsWith('SALDO') ||
+            rowTextJoined.includes('TOTAL SEMANA') ||
+            rowTextJoined.includes('SUBTOTAL SEMANA')
+          if (isTotalRow) {
+            continue
+          }
+
           const rawVenc = getVal(row, vencCol)
           let rawForn = String(getVal(row, fornCol) || '').trim()
           const rawDesc = String(getVal(row, descCol) || '').trim()
@@ -575,22 +595,31 @@ export function ConferirPlanilhaPagarModal({
           const rawDoc = String(getVal(row, docCol) || '').trim()
           const rawCnpj = String(getVal(row, cnpjCol) || '').trim()
 
-          // Pular linhas vazias
-          if (rawValor <= 0 && rawValorPago <= 0 && !rawDesc && !rawForn) {
-            continue
-          }
-
-          // Pular totais e subtotais
-          const lowerDesc = rawDesc.toLowerCase()
+          // Ignorar se a descrição ou favorecido for totalizador
+          const lowerDesc = (rawDesc || rawForn).toLowerCase()
           if (
             lowerDesc.startsWith('total') ||
+            lowerDesc.startsWith('subtotal') ||
             lowerDesc.startsWith('saldo') ||
-            lowerDesc.startsWith('subtotal')
+            lowerDesc.includes('total semanal')
           ) {
             continue
           }
 
-          const valorFinal = rawValor > 0 ? rawValor : rawValorPago
+          let valorFinal = rawValor > 0 ? rawValor : rawValorPago
+          if (valorFinal <= 0) {
+            for (let colIdx = 0; colIdx < row.length; colIdx++) {
+              const cellVal = parseValorPagar(row[colIdx])
+              if (cellVal > 0) {
+                const hName = normalizarNomeColuna(currentSheetHeaders[colIdx])
+                if (hName.includes('VALOR') || hName.includes('TOTAL') || hName.includes('PAGO')) {
+                  valorFinal = cellVal
+                  break
+                }
+              }
+            }
+          }
+
           if (valorFinal <= 0) continue
 
           // Data Vencimento Planilha

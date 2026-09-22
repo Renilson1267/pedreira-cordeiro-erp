@@ -220,11 +220,24 @@ export function inferirCompetenciaAba(sheetName: string): {
   return { ano, mes, sufixo }
 }
 
+// Normalização profunda de rótulos e células para comparação tolerante
+export function normalizarNomeColuna(str: any): string {
+  if (str === null || str === undefined) return ''
+  return String(str)
+    .replace(/\u00A0/g, ' ') // NBSP -> space
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '') // acentos
+    .toUpperCase()
+    .replace(/[^A-Z0-9]/g, ' ') // remove pontuações, parênteses, barras, etc
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
 export function detectarLinhaCabecalho(matrix: any[][]): number {
   if (!matrix || matrix.length === 0) return 1
 
-  // Buscar até a linha 25 (cabeçalho pode ter títulos, logos ou sumários acima)
-  const maxScan = Math.min(matrix.length, 25)
+  // Buscar até a linha 30 (cabeçalho pode ter títulos, sumários ou células mescladas acima)
+  const maxScan = Math.min(matrix.length, 30)
 
   let bestRow = -1
   let bestScore = 0
@@ -233,30 +246,34 @@ export function detectarLinhaCabecalho(matrix: any[][]): number {
     const row = matrix[r] || []
     if (!Array.isArray(row) || row.length === 0) continue
 
-    const texts = row
-      .map((cell) =>
-        String(cell ?? '')
-          .normalize('NFD')
-          .replace(/[\u0300-\u036f]/g, '')
-          .toUpperCase()
-          .trim(),
-      )
-      .filter((t) => t.length > 0)
+    const texts = row.map((cell) => normalizarNomeColuna(cell)).filter((t) => t.length > 0)
 
     if (texts.length < 2) continue
+
+    // Verifica se esta linha parece ser o título do relatório mesclado (ex: "RELATORIO DE CONTAS A PAGAR")
+    // Se uma única célula tiver todo o texto longo ou contiver RELATORIO sem outras colunas estruturais
+    const rowJoin = texts.join(' ')
+    const isPureTitle =
+      texts.length <= 2 &&
+      (rowJoin.includes('RELATORIO') ||
+        rowJoin.includes('CONSOLIDADO') ||
+        rowJoin.includes('PEDREIRA') ||
+        rowJoin.includes('EXTRATO'))
+    if (isPureTitle) continue
 
     const hasVenc = texts.some(
       (t) =>
         t === 'VENC' ||
         t === 'VENCIMENTO' ||
+        t === 'DT VENC' ||
+        t === 'DATA VENC' ||
+        t === 'DATA VENCIMENTO' ||
         t === 'DATA' ||
         t === 'DT' ||
         t === 'DIA' ||
         t.includes('VENC') ||
         t.includes('DATA') ||
-        t.includes('EMISS') ||
-        t.includes('DT_') ||
-        t.includes('DT.'),
+        t.includes('EMISS'),
     )
     const hasForn = texts.some(
       (t) =>
@@ -268,16 +285,18 @@ export function detectarLinhaCabecalho(matrix: any[][]): number {
         t.includes('CREDOR') ||
         t.includes('BENEFICI') ||
         t.includes('EMPRESA') ||
-        t.includes('NOME'),
+        t.includes('NOME') ||
+        t.includes('HISTORICO FAVORECIDO'),
     )
     const hasVal = texts.some(
       (t) =>
         t === 'VALOR' ||
+        t === 'VALOR R' ||
+        t === 'VALOR TOTAL' ||
         t === 'VALOR PAGO' ||
-        t === 'TOTAL' ||
-        t.includes('VAL') ||
-        t.includes('PAGO') ||
+        t.includes('VALOR') ||
         t.includes('TOTAL') ||
+        t.includes('PAGO') ||
         t.includes('BRUTO') ||
         t.includes('LIQUID'),
     )
@@ -285,6 +304,7 @@ export function detectarLinhaCabecalho(matrix: any[][]): number {
       (t) =>
         t === 'DESCRICAO' ||
         t === 'HISTORICO' ||
+        t === 'HISTORICO FAVORECIDO' ||
         t.includes('HIST') ||
         t.includes('DESC') ||
         t.includes('REF') ||
@@ -300,21 +320,19 @@ export function detectarLinhaCabecalho(matrix: any[][]): number {
     )
 
     let score = 0
-    if (hasVenc) score += 3
-    if (hasVal) score += 3
-    if (hasForn) score += 2
+    if (hasVenc) score += 4
+    if (hasVal) score += 4
+    if (hasForn) score += 3
     if (hasDesc) score += 2
     if (hasDoc) score += 1
     if (hasStatus) score += 1
 
-    // Excluir linhas que parecem ser títulos de relatório ou subtotais
-    const rowJoin = texts.join(' ')
     if (
-      rowJoin.includes('RELATORIO') ||
-      rowJoin.includes('CONSOLIDADO') ||
-      rowJoin.startsWith('TOTAL')
+      rowJoin.startsWith('TOTAL') ||
+      rowJoin.startsWith('SUBTOTAL') ||
+      rowJoin.startsWith('SALDO')
     ) {
-      score -= 3
+      score -= 5
     }
 
     if (score >= 4 && score > bestScore) {
@@ -342,6 +360,7 @@ export function parseValorPagar(val: any): number {
   if (val === null || val === undefined || val === '') return 0
 
   let str = String(val)
+    .replace(/\u00A0/g, ' ')
     .replace(/R\$/gi, '')
     .replace(/\s+/g, '')
     .replace(/[^\d.,+-]/g, '')
@@ -483,8 +502,8 @@ export function parseDataPagar(val: any, anoFallback?: number, mesFallback?: num
     }
   }
 
-  // 5. Formato brasileiro DD/MM/YYYY ou DD/MM/YY ou DD-MM-YYYY
-  const brMatch = str.match(/^(\d{1,2})[/.-](\d{1,2})[/.-](\d{2,4})/)
+  // 5. Formato brasileiro DD/MM/YYYY ou DD/MM/YY ou DD-MM-YYYY com possíveis espaços ao redor
+  const brMatch = str.match(/^(\d{1,2})\s*[/.-]\s*(\d{1,2})\s*[/.-]\s*(\d{2,4})/)
   if (brMatch) {
     const d = parseInt(brMatch[1], 10)
     const m = parseInt(brMatch[2], 10)
@@ -771,16 +790,17 @@ export function ImportadorContasPagarModal({
 
     setPreviewRows(preview)
 
-    // Heurística de sugestão de mapeamento inteligente
-    const findCol = (regex: RegExp) => headers.find((h) => regex.test(h)) || ''
-    const descColFound = findCol(/hist|desc|serv|prod|refer[eê]ncia|item|discrim/i) || ''
-    const fornColFound = findCol(/forn|favorec|credor|benefici[aá]rio|empresa/i) || ''
+    // Heurística de sugestão de mapeamento inteligente com normalização profunda
+    const findCol = (regex: RegExp) =>
+      headers.find((h) => regex.test(normalizarNomeColuna(h)) || regex.test(h)) || ''
+    const descColFound = findCol(/HIST|DESC|SERV|PROD|REFERENCIA|ITEM|DISCRIM/i) || ''
+    const fornColFound = findCol(/FORN|FAVOREC|CREDOR|BENEFICIARIO|EMPRESA/i) || ''
 
     setMapping((prev) => ({
       vencimento:
         prev.vencimento && headers.includes(prev.vencimento)
           ? prev.vencimento
-          : findCol(/venc|data_venc|dt_venc|data|dia/i) || headers[0] || '',
+          : findCol(/^VENC|VENCIMENTO|DT VENC|DATA VENC|DIA|DATA/i) || headers[0] || '',
       fornecedor:
         prev.fornecedor && headers.includes(prev.fornecedor)
           ? prev.fornecedor
@@ -792,36 +812,36 @@ export function ImportadorContasPagarModal({
       valor:
         prev.valor && headers.includes(prev.valor)
           ? prev.valor
-          : findCol(/val|total|bruto|a pagar/i) || '',
+          : findCol(/VALOR|VALOR R|VALOR TOTAL|BRUTO|A PAGAR/i) || findCol(/^VALOR/i) || '',
       valorPago:
         prev.valorPago && headers.includes(prev.valorPago)
           ? prev.valorPago
-          : findCol(/pago|pg|liquid|valor_pago/i) || '',
+          : findCol(/VALOR PAGO|PAGO|PG|LIQUID/i) || '',
       dataPagamento:
         prev.dataPagamento && headers.includes(prev.dataPagamento)
           ? prev.dataPagamento
-          : findCol(/dt_pag|data_pag|baixa|liquid/i) || '',
+          : findCol(/DT PAG|DATA PAG|BAIXA|LIQUID/i) || '',
       formaPagamento:
         prev.formaPagamento && headers.includes(prev.formaPagamento)
           ? prev.formaPagamento
-          : findCol(/forma|meio|tipo_pag/i) || '',
+          : findCol(/FORMA|MEIO|TIPO PAG/i) || '',
       status:
         prev.status && headers.includes(prev.status)
           ? prev.status
-          : findCol(/status|situa[cç][aã]o|cond/i) || '',
+          : findCol(/STATUS|SITUACAO|COND/i) || '',
       centroCusto:
         prev.centroCusto && headers.includes(prev.centroCusto)
           ? prev.centroCusto
-          : findCol(/centro|cc|custo|frente|setor/i) || '',
+          : findCol(/CENTRO|CC|CUSTO|FRENTE|SETOR/i) || '',
       categoria:
         prev.categoria && headers.includes(prev.categoria)
           ? prev.categoria
-          : findCol(/categ|plano|conta/i) || '',
+          : findCol(/CATEG|PLANO|CONTA/i) || '',
       documento:
         prev.documento && headers.includes(prev.documento)
           ? prev.documento
-          : findCol(/doc|nf|nota|duplicata|fatura/i) || '',
-      cnpj: prev.cnpj && headers.includes(prev.cnpj) ? prev.cnpj : findCol(/cnpj|cpf|insc/i) || '',
+          : findCol(/DOC|NF|NOTA|DUPLICATA|FATURA/i) || '',
+      cnpj: prev.cnpj && headers.includes(prev.cnpj) ? prev.cnpj : findCol(/CNPJ|CPF|INSC/i) || '',
     }))
   }
 
@@ -945,69 +965,66 @@ export function ImportadorContasPagarModal({
         )
         const dataRows = matrix.slice(headerIdx)
 
-        // Resolução dinâmica de colunas para esta aba específica (caso os nomes variem um pouco)
+        // Resolução dinâmica e tolerante de colunas para esta aba específica (normalização avançada)
         const findColInSheet = (pattern: RegExp) =>
-          currentSheetHeaders.find((h) => pattern.test(h)) || ''
+          currentSheetHeaders.find(
+            (h) => pattern.test(normalizarNomeColuna(h)) || pattern.test(h),
+          ) || ''
 
-        const vencCol =
-          mapping.vencimento && currentSheetHeaders.includes(mapping.vencimento)
-            ? mapping.vencimento
-            : findColInSheet(/venc|data_venc|dt_venc|data|dia/i) || currentSheetHeaders[0] || ''
+        const matchColWithFallback = (
+          userCol: string,
+          pattern: RegExp,
+          fallbackDefault: string = '',
+        ) => {
+          if (userCol && currentSheetHeaders.includes(userCol)) return userCol
+          if (userCol) {
+            const userNorm = normalizarNomeColuna(userCol)
+            const matched = currentSheetHeaders.find((h) => normalizarNomeColuna(h) === userNorm)
+            if (matched) return matched
+          }
+          return findColInSheet(pattern) || fallbackDefault
+        }
 
-        const fornCol =
-          mapping.fornecedor && currentSheetHeaders.includes(mapping.fornecedor)
-            ? mapping.fornecedor
-            : findColInSheet(/forn|favorec|credor|benefici[aá]rio|empresa/i) || ''
+        const vencCol = matchColWithFallback(
+          mapping.vencimento,
+          /^VENC|VENCIMENTO|DT VENC|DATA VENC|DIA|DATA/i,
+          currentSheetHeaders[0] || '',
+        )
 
-        const descCol =
-          mapping.descricao && currentSheetHeaders.includes(mapping.descricao)
-            ? mapping.descricao
-            : findColInSheet(/hist|desc|serv|prod|refer[eê]ncia|item|discrim/i) || ''
+        const fornCol = matchColWithFallback(
+          mapping.fornecedor,
+          /FORNECEDOR|FAVORECIDO|CREDOR|BENEFICIARIO|EMPRESA|HISTORICO FAVORECIDO/i,
+        )
 
-        const valCol =
-          mapping.valor && currentSheetHeaders.includes(mapping.valor)
-            ? mapping.valor
-            : findColInSheet(/val|total|bruto|a pagar/i) || ''
+        const descCol = matchColWithFallback(
+          mapping.descricao,
+          /HISTORICO|DESCRICAO|HIST|DESC|SERV|PROD|REFERENCIA|ITEM|DISCRIM/i,
+        )
 
-        const valPagoCol =
-          mapping.valorPago && currentSheetHeaders.includes(mapping.valorPago)
-            ? mapping.valorPago
-            : findColInSheet(/pago|pg|liquid|valor_pago/i) || ''
+        // Candidatos de coluna de valor para a aba
+        const valCol = matchColWithFallback(
+          mapping.valor,
+          /VALOR TOTAL|VALOR R|VALOR|BRUTO|A PAGAR/i,
+        )
 
-        const dataPagCol =
-          mapping.dataPagamento && currentSheetHeaders.includes(mapping.dataPagamento)
-            ? mapping.dataPagamento
-            : findColInSheet(/dt_pag|data_pag|baixa|liquid/i) || ''
+        const valPagoCol = matchColWithFallback(mapping.valorPago, /VALOR PAGO|PAGO|PG|LIQUID/i)
 
-        const formaCol =
-          mapping.formaPagamento && currentSheetHeaders.includes(mapping.formaPagamento)
-            ? mapping.formaPagamento
-            : findColInSheet(/forma|meio|tipo_pag/i) || ''
+        const dataPagCol = matchColWithFallback(
+          mapping.dataPagamento,
+          /DT PAG|DATA PAG|BAIXA|LIQUID/i,
+        )
 
-        const statusCol =
-          mapping.status && currentSheetHeaders.includes(mapping.status)
-            ? mapping.status
-            : findColInSheet(/status|situa[cç][aã]o|cond/i) || ''
+        const formaCol = matchColWithFallback(mapping.formaPagamento, /FORMA|MEIO|TIPO PAG/i)
 
-        const centroCol =
-          mapping.centroCusto && currentSheetHeaders.includes(mapping.centroCusto)
-            ? mapping.centroCusto
-            : findColInSheet(/centro|cc|custo|frente|setor/i) || ''
+        const statusCol = matchColWithFallback(mapping.status, /STATUS|SITUACAO|COND/i)
 
-        const catCol =
-          mapping.categoria && currentSheetHeaders.includes(mapping.categoria)
-            ? mapping.categoria
-            : findColInSheet(/categ|plano|conta/i) || ''
+        const centroCol = matchColWithFallback(mapping.centroCusto, /CENTRO|CC|CUSTO|FRENTE|SETOR/i)
 
-        const docCol =
-          mapping.documento && currentSheetHeaders.includes(mapping.documento)
-            ? mapping.documento
-            : findColInSheet(/doc|nf|nota|duplicata|fatura/i) || ''
+        const catCol = matchColWithFallback(mapping.categoria, /CATEG|PLANO|CONTA/i)
 
-        const cnpjCol =
-          mapping.cnpj && currentSheetHeaders.includes(mapping.cnpj)
-            ? mapping.cnpj
-            : findColInSheet(/cnpj|cpf|insc/i) || ''
+        const docCol = matchColWithFallback(mapping.documento, /DOC|NF|NOTA|DUPLICATA|FATURA/i)
+
+        const cnpjCol = matchColWithFallback(mapping.cnpj, /CNPJ|CPF|INSC/i)
 
         const getVal = (row: any[], headerName: string): any => {
           if (!headerName) return ''
@@ -1029,6 +1046,24 @@ export function ImportadorContasPagarModal({
           const temConteudo = row.some((c) => String(c ?? '').trim().length > 0)
           if (!temConteudo) continue
 
+          // Normalizar todas as células como texto para checagem de totais/subtotais semanais
+          const rowTextJoined = row
+            .map((c) => normalizarNomeColuna(c))
+            .filter(Boolean)
+            .join(' ')
+
+          // Pular linhas puramente de total, subtotal ou resumo semanal (sem descartar lançamentos reais)
+          const isTotalRow =
+            rowTextJoined.startsWith('TOTAL') ||
+            rowTextJoined.startsWith('SUBTOTAL') ||
+            rowTextJoined.startsWith('SUB TOTAL') ||
+            rowTextJoined.startsWith('SALDO') ||
+            rowTextJoined.includes('TOTAL SEMANA') ||
+            rowTextJoined.includes('SUBTOTAL SEMANA')
+          if (isTotalRow) {
+            continue
+          }
+
           sheetLidos += 1
           resultSummary.totalLidos += 1
 
@@ -1049,17 +1084,37 @@ export function ImportadorContasPagarModal({
             const rawDoc = String(getVal(row, docCol) || '').trim()
             const rawCnpj = String(getVal(row, cnpjCol) || '').trim()
 
-            // Ignorar linhas de cabeçalho repetidas ou rótulos de totais
-            const lowerDesc = rawDesc.toLowerCase()
+            // Ignorar se a descrição ou favorecido for totalizador
+            const lowerDesc = (rawDesc || rawForn).toLowerCase()
             if (
               lowerDesc.startsWith('total') ||
+              lowerDesc.startsWith('subtotal') ||
               lowerDesc.startsWith('saldo') ||
-              lowerDesc.startsWith('subtotal')
+              lowerDesc.includes('total semanal')
             ) {
               continue
             }
 
-            const valorFinal = rawValor > 0 ? rawValor : rawValorPago
+            // Descobrir valor final testando coluna valor, coluna valorPago ou qualquer outra coluna numérica candidata
+            let valorFinal = rawValor > 0 ? rawValor : rawValorPago
+            if (valorFinal <= 0) {
+              // Tentar encontrar valor em outras células numéricas da linha caso a coluna não esteja mapeada perfeitamente
+              for (let colIdx = 0; colIdx < row.length; colIdx++) {
+                const cellVal = parseValorPagar(row[colIdx])
+                if (cellVal > 0) {
+                  const hName = normalizarNomeColuna(currentSheetHeaders[colIdx])
+                  if (
+                    hName.includes('VALOR') ||
+                    hName.includes('TOTAL') ||
+                    hName.includes('PAGO')
+                  ) {
+                    valorFinal = cellVal
+                    break
+                  }
+                }
+              }
+            }
+
             if (valorFinal <= 0) {
               // Se há descrição ou favorecido mas o valor foi 0, registrar motivo
               if (rawDesc || rawForn) {
