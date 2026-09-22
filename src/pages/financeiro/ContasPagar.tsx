@@ -180,6 +180,44 @@ export default function ContasPagar() {
     setIsDrawerOpen(true)
   }
 
+  // Função para resolver ou cadastrar fornecedor a partir do ID ou da descrição
+  const resolverFornecedorId = async (
+    fId: string,
+    descTexto: string,
+    empresaId: string,
+  ): Promise<string | null> => {
+    if (fId && fId !== 'none') {
+      return fId
+    }
+
+    const nomeSugerido = descTexto.trim()
+    if (!nomeSugerido) {
+      return null
+    }
+
+    // Verificar se já existe algum fornecedor cadastrado com esse nome
+    const fornExistente = fornecedores.find(
+      (f) => f.nome.trim().toLowerCase() === nomeSugerido.toLowerCase(),
+    )
+    if (fornExistente) {
+      return fornExistente.id
+    }
+
+    // Criar fornecedor automaticamente com o nome da descrição
+    try {
+      const novoForn = await pb.collection('fornecedores').create<Fornecedor>({
+        empresa_id: empresaId,
+        nome: nomeSugerido,
+        observacoes: 'Cadastrado automaticamente a partir da descrição da Conta a Pagar',
+      })
+      setFornecedores((prev) => [...prev, novoForn])
+      return novoForn.id
+    } catch (err) {
+      console.warn('Erro ao criar fornecedor automático com a descrição:', err)
+      return null
+    }
+  }
+
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!descricao.trim() || valor <= 0 || !vencimento) {
@@ -190,11 +228,18 @@ export default function ContasPagar() {
     try {
       setIsSubmitting(true)
 
+      // Regra: se o fornecedor não for informado, preenche automaticamente com a descrição
+      const finalFornecedorId = await resolverFornecedorId(
+        fornecedorId,
+        descricao,
+        currentEmpresa!.id,
+      )
+
       if (editingId) {
         // Update single record
         await pb.collection('contas_pagar').update(editingId, {
           descricao: descricao.trim(),
-          fornecedor_id: fornecedorId === 'none' || !fornecedorId ? null : fornecedorId,
+          fornecedor_id: finalFornecedorId,
           categoria_id: categoriaId === 'none' || !categoriaId ? null : categoriaId,
           centro_custo_id: centroCustoId === 'none' || !centroCustoId ? null : centroCustoId,
           valor: Number(valor),
@@ -219,7 +264,7 @@ export default function ContasPagar() {
           await pb.collection('contas_pagar').create({
             empresa_id: currentEmpresa!.id,
             descricao: desc,
-            fornecedor_id: fornecedorId === 'none' || !fornecedorId ? null : fornecedorId,
+            fornecedor_id: finalFornecedorId,
             categoria_id: categoriaId === 'none' || !categoriaId ? null : categoriaId,
             centro_custo_id: centroCustoId === 'none' || !centroCustoId ? null : centroCustoId,
             valor: Number(valor) / (numParcelas > 1 ? numParcelas : 1),
@@ -516,8 +561,8 @@ export default function ContasPagar() {
                         {formatDate(c.vencimento)}
                       </td>
                       <td className="py-3.5 px-4 font-semibold text-gray-900">{c.descricao}</td>
-                      <td className="py-3.5 px-4 text-gray-600">
-                        {c.expand?.fornecedor_id?.nome || '—'}
+                      <td className="py-3.5 px-4 text-gray-600 font-medium">
+                        {c.expand?.fornecedor_id?.nome || c.descricao || '—'}
                       </td>
                       <td className="py-3.5 px-4 text-gray-600">
                         {c.expand?.centro_custo_id ? (
@@ -618,13 +663,30 @@ export default function ContasPagar() {
             </div>
 
             <div>
-              <Label className="text-xs font-semibold text-gray-700">Fornecedor</Label>
+              <div className="flex items-center justify-between">
+                <Label className="text-xs font-semibold text-gray-700">Fornecedor</Label>
+                {descricao.trim() && (fornecedorId === 'none' || !fornecedorId) && (
+                  <span className="text-[11px] text-teal-700 font-medium">
+                    Preenchimento automático: &ldquo;{descricao.trim()}&rdquo;
+                  </span>
+                )}
+              </div>
               <Select value={fornecedorId} onValueChange={setFornecedorId}>
                 <SelectTrigger className="mt-1">
-                  <SelectValue placeholder="Selecione o fornecedor..." />
+                  <SelectValue
+                    placeholder={
+                      descricao.trim()
+                        ? `Usar descrição: "${descricao.trim()}"`
+                        : 'Selecione ou deixe em branco para usar a descrição'
+                    }
+                  />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="none">Nenhum / Não informado</SelectItem>
+                  <SelectItem value="none">
+                    {descricao.trim()
+                      ? `Usar a Descrição ("${descricao.trim()}")`
+                      : 'Mesmo da Descrição (Automático)'}
+                  </SelectItem>
                   {fornecedores.map((f) => (
                     <SelectItem key={f.id} value={f.id}>
                       {f.nome}
@@ -632,6 +694,9 @@ export default function ContasPagar() {
                   ))}
                 </SelectContent>
               </Select>
+              <p className="text-[10px] text-gray-400 mt-1">
+                Se não selecionado, o fornecedor receberá automaticamente o texto da Descrição.
+              </p>
             </div>
 
             <div className="grid grid-cols-2 gap-3">
@@ -855,7 +920,9 @@ export default function ContasPagar() {
                 <div className="flex justify-between py-1">
                   <span className="text-gray-500">Fornecedor:</span>
                   <span className="font-medium text-gray-800">
-                    {detailItem.expand?.fornecedor_id?.nome || 'Não informado'}
+                    {detailItem.expand?.fornecedor_id?.nome ||
+                      detailItem.descricao ||
+                      'Não informado'}
                   </span>
                 </div>
                 <div className="flex justify-between py-1">

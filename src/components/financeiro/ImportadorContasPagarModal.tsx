@@ -442,6 +442,8 @@ export function ImportadorContasPagarModal({
 
     // Heurística de sugestão de mapeamento inteligente
     const findCol = (regex: RegExp) => headers.find((h) => regex.test(h)) || ''
+    const descColFound = findCol(/hist|desc|serv|prod|refer[eê]ncia|item/i) || ''
+    const fornColFound = findCol(/forn|favorec|credor|benefici[aá]rio|empresa/i) || ''
 
     setMapping((prev) => ({
       vencimento:
@@ -451,11 +453,11 @@ export function ImportadorContasPagarModal({
       fornecedor:
         prev.fornecedor && headers.includes(prev.fornecedor)
           ? prev.fornecedor
-          : findCol(/forn|favorec|credor|benefici[aá]rio|nome|empresa/i) || '',
+          : fornColFound || descColFound || '',
       descricao:
         prev.descricao && headers.includes(prev.descricao)
           ? prev.descricao
-          : findCol(/hist|desc|serv|prod|refer[eê]ncia|item/i) || '',
+          : descColFound || fornColFound || '',
       valor:
         prev.valor && headers.includes(prev.valor)
           ? prev.valor
@@ -594,8 +596,12 @@ export function ImportadorContasPagarModal({
 
           try {
             const rawVenc = getVal(row, mapping.vencimento)
-            const rawForn = String(getVal(row, mapping.fornecedor) || '').trim()
+            let rawForn = String(getVal(row, mapping.fornecedor) || '').trim()
             const rawDesc = String(getVal(row, mapping.descricao) || '').trim()
+            // Regra: se o campo Fornecedor vier vazio (ou não mapeado), usar o conteúdo da coluna Descrição
+            if (!rawForn && rawDesc) {
+              rawForn = rawDesc
+            }
             const rawValor = parseValorPagar(getVal(row, mapping.valor))
             const rawValorPago = mapping.valorPago
               ? parseValorPagar(getVal(row, mapping.valorPago))
