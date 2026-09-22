@@ -34,6 +34,7 @@ import Veiculos from '@/pages/frotas/Veiculos'
 import Abastecimentos from '@/pages/frotas/Abastecimentos'
 import Manutencoes from '@/pages/frotas/Manutencoes'
 import Funcionarios from '@/pages/rh/Funcionarios'
+import HorasExtras from '@/pages/rh/HorasExtras'
 
 export default function App() {
   return (
@@ -71,6 +72,7 @@ export default function App() {
 
               {/* Recursos Humanos (RH) */}
               <Route path="/rh/funcionarios" element={<Funcionarios />} />
+              <Route path="/rh/horas-extras" element={<HorasExtras />} />
 
               {/* Cadastros */}
               <Route path="/cadastros/clientes" element={<Clientes />} />

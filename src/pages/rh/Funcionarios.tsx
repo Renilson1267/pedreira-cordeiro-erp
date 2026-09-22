@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { useCompany } from '@/contexts/CompanyContext'
 import pb from '@/lib/pocketbase/client'
 import { useRealtime } from '@/hooks/use-realtime'
@@ -36,6 +37,7 @@ import {
   FileSpreadsheet,
   Receipt,
   UserCheck,
+  Clock,
 } from 'lucide-react'
 import { formatarCpf, apenasDigitos, formatarTelefoneBrasil, validarCpf } from '@/lib/brasilApi'
 import { ImportadorFuncionariosModal } from '@/components/rh/ImportadorFuncionariosModal'
@@ -51,6 +53,7 @@ const SETOR_COLORS: Record<SetorFuncionario, { bg: string; text: string; border:
 
 export default function Funcionarios() {
   const { currentEmpresa, canEdit, isReadOnly } = useCompany()
+  const navigate = useNavigate()
 
   const [funcionarios, setFuncionarios] = useState<Funcionario[]>([])
   const [planoContas, setPlanoContas] = useState<PlanoConta[]>([])
@@ -330,15 +333,24 @@ export default function Funcionarios() {
           <div className="flex items-center gap-2">
             <Button
               variant="outline"
+              onClick={() => navigate('/rh/horas-extras')}
+              className="border-amber-300 text-amber-900 bg-amber-50/50 hover:bg-amber-100/70 rounded-xl shadow-xs text-xs"
+              title="Folha e Cálculo de Horas Extras"
+            >
+              <Clock className="w-4 h-4 mr-1.5 text-amber-700" />
+              Folha Horas Extras
+            </Button>
+            <Button
+              variant="outline"
               onClick={() => setImportadorOpen(true)}
-              className="border-teal-300 text-teal-800 hover:bg-teal-50 rounded-xl shadow-xs"
+              className="border-teal-300 text-teal-800 hover:bg-teal-50 rounded-xl shadow-xs text-xs"
             >
               <FileSpreadsheet className="w-4 h-4 mr-1.5 text-teal-700" />
               Importar Planilha
             </Button>
             <Button
               onClick={openCreateModal}
-              className="bg-teal-700 hover:bg-teal-800 text-white rounded-xl shadow-xs"
+              className="bg-teal-700 hover:bg-teal-800 text-white rounded-xl shadow-xs text-xs"
             >
               <Plus className="w-4 h-4 mr-1.5" />
               Novo Colaborador
@@ -544,6 +556,18 @@ export default function Funcionarios() {
                       </td>
                       <td className="py-3.5 px-4 text-right">
                         <div className="flex items-center justify-end gap-1.5">
+                          {canEdit && (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => navigate(`/rh/horas-extras`)}
+                              className="h-7 px-2 text-[11px] text-amber-900 border-amber-200 hover:bg-amber-50"
+                              title="Calcular Horas Extras para este Colaborador"
+                            >
+                              <Clock className="w-3 h-3 mr-1 text-amber-700" />
+                              Horas Extras
+                            </Button>
+                          )}
                           {canEdit && (
                             <Button
                               size="sm"

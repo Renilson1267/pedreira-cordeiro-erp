@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-09-22T13:01:15.288Z",
+  "generatedAt": "2026-09-22T13:08:21.191Z",
   "collections": [
     {
       "name": "users",
@@ -1766,6 +1766,133 @@
         "CREATE INDEX idx_func_status ON funcionarios (status)",
         "CREATE INDEX idx_func_setor ON funcionarios (setor)",
         "CREATE INDEX idx_func_nome ON funcionarios (nome)"
+      ]
+    },
+    {
+      "name": "folha_horas_extras",
+      "type": "base",
+      "apiRules": {
+        "list": "@request.auth.id != ''",
+        "view": "@request.auth.id != ''",
+        "create": "@request.auth.id != ''",
+        "update": "@request.auth.id != ''",
+        "delete": "@request.auth.id != ''"
+      },
+      "fields": [
+        {
+          "name": "empresa_id",
+          "type": "relation",
+          "required": true,
+          "system": false,
+          "collectionRef": "empresas"
+        },
+        {
+          "name": "funcionario_id",
+          "type": "relation",
+          "required": true,
+          "system": false,
+          "collectionRef": "funcionarios"
+        },
+        {
+          "name": "mes_referencia",
+          "type": "text",
+          "required": true,
+          "system": false
+        },
+        {
+          "name": "modo_calculo",
+          "type": "select",
+          "required": true,
+          "system": false,
+          "selectValues": ["padrao_50", "clt_vigente"]
+        },
+        {
+          "name": "salario_base",
+          "type": "number",
+          "required": true,
+          "system": false
+        },
+        {
+          "name": "valor_hora_normal",
+          "type": "number",
+          "required": true,
+          "system": false
+        },
+        {
+          "name": "horas_50",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "valor_horas_50",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "horas_100",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "valor_horas_100",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "total_horas",
+          "type": "number",
+          "required": true,
+          "system": false
+        },
+        {
+          "name": "total_valor",
+          "type": "number",
+          "required": true,
+          "system": false
+        },
+        {
+          "name": "status",
+          "type": "select",
+          "required": true,
+          "system": false,
+          "selectValues": ["calculado", "aprovado", "pago", "cancelado"]
+        },
+        {
+          "name": "conta_pagar_id",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "observacoes",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "created",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate"]
+        },
+        {
+          "name": "updated",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate", "onUpdate"]
+        }
+      ],
+      "indexes": [
+        "CREATE INDEX idx_folha_he_empresa ON folha_horas_extras (empresa_id)",
+        "CREATE INDEX idx_folha_he_func ON folha_horas_extras (funcionario_id)",
+        "CREATE INDEX idx_folha_he_mes ON folha_horas_extras (mes_referencia)",
+        "CREATE INDEX idx_folha_he_status ON folha_horas_extras (status)"
       ]
     }
   ]

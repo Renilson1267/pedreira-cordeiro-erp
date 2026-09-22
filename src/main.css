@@ -293,3 +293,34 @@
     animation: spotlight 2s ease forwards;
   }
 }
+
+/* Print styles specifically for Comprovante de Horas Extras in A4 Landscape */
+@media print {
+  @page {
+    size: A4 landscape;
+    margin: 8mm 10mm;
+  }
+
+  body {
+    background: #ffffff !important;
+    color: #000000 !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  /* Hide entire main app chrome during printing */
+  aside,
+  header,
+  footer,
+  .no-print {
+    display: none !important;
+  }
+
+  /* Make sure print container expands cleanly */
+  .print-only-container {
+    display: block !important;
+    width: 100% !important;
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+}

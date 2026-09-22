@@ -360,3 +360,31 @@ export interface Funcionario {
   created: string
   updated: string
 }
+
+export type ModoCalculoHorasExtras = 'padrao_50' | 'clt_vigente'
+export type StatusFolhaHorasExtras = 'calculado' | 'aprovado' | 'pago' | 'cancelado'
+
+export interface FolhaHorasExtras {
+  id: string
+  empresa_id: string
+  funcionario_id: string
+  mes_referencia: string
+  modo_calculo: ModoCalculoHorasExtras
+  salario_base: number
+  valor_hora_normal: number
+  horas_50: number
+  valor_horas_50: number
+  horas_100: number
+  valor_horas_100: number
+  total_horas: number
+  total_valor: number
+  status: StatusFolhaHorasExtras
+  conta_pagar_id?: string
+  observacoes?: string
+  created: string
+  updated: string
+  expand?: {
+    empresa_id?: Empresa
+    funcionario_id?: Funcionario
+  }
+}

@@ -38,6 +38,7 @@ import {
   Wrench,
   Construction,
   PieChart,
+  Clock,
 } from 'lucide-react'
 
 export default function Layout() {
@@ -78,7 +79,10 @@ export default function Layout() {
     },
     {
       group: 'Recursos Humanos',
-      items: [{ label: 'Funcionários & Folha', path: '/rh/funcionarios', icon: Users }],
+      items: [
+        { label: 'Funcionários & Equipe', path: '/rh/funcionarios', icon: Users },
+        { label: 'Folha de Horas Extras', path: '/rh/horas-extras', icon: Clock },
+      ],
     },
     {
       group: 'Cadastros',
