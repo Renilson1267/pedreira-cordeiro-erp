@@ -40,6 +40,7 @@ import {
   FileSpreadsheet,
 } from 'lucide-react'
 import { ImportadorContasPagarModal } from '@/components/financeiro/ImportadorContasPagarModal'
+import { ConferirPlanilhaPagarModal } from '@/components/financeiro/ConferirPlanilhaPagarModal'
 
 export default function ContasPagar() {
   const { currentEmpresa, canEdit, isReadOnly } = useCompany()
@@ -58,6 +59,8 @@ export default function ContasPagar() {
 
   // Import Modal
   const [importModalOpen, setImportModalOpen] = useState(false)
+  // Conferência Modal
+  const [conferirModalOpen, setConferirModalOpen] = useState(false)
 
   // Drawer Create / Edit
   const [isDrawerOpen, setIsDrawerOpen] = useState(false)
@@ -405,6 +408,17 @@ export default function ContasPagar() {
         </div>
 
         <div className="flex items-center gap-2">
+          {canEdit && (
+            <Button
+              variant="outline"
+              onClick={() => setConferirModalOpen(true)}
+              className="border-amber-400 text-amber-900 bg-amber-50/50 hover:bg-amber-100 rounded-xl shadow-xs font-medium"
+            >
+              <CheckCircle className="w-4 h-4 mr-1.5 text-amber-700" />
+              Conferir Planilha (Comparar)
+            </Button>
+          )}
+
           {canEdit && (
             <Button
               variant="outline"
@@ -993,6 +1007,18 @@ export default function ContasPagar() {
         centrosCusto={centrosCusto}
         contasExistentes={contas}
         onImportComplete={loadData}
+      />
+
+      {/* Modal Conferir Planilha (Comparação com Banco) */}
+      <ConferirPlanilhaPagarModal
+        open={conferirModalOpen}
+        onOpenChange={setConferirModalOpen}
+        empresaId={currentEmpresa?.id || ''}
+        fornecedores={fornecedores}
+        categorias={categorias}
+        centrosCusto={centrosCusto}
+        contasExistentes={contas}
+        onDataChanged={loadData}
       />
     </div>
   )
