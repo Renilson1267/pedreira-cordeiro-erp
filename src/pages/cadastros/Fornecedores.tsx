@@ -23,7 +23,10 @@ import {
   Edit2,
   Trash2,
   ArrowDownLeft,
+  Loader2,
+  Sparkles,
 } from 'lucide-react'
+import { formatarCpfCnpj, formatarCep, apenasDigitos, buscarCep, buscarCnpj } from '@/lib/brasilApi'
 
 export default function Fornecedores() {
   const { currentEmpresa, canEdit } = useCompany()
@@ -48,6 +51,12 @@ export default function Fornecedores() {
   const [cep, setCep] = useState('')
   const [observacoes, setObservacoes] = useState('')
   const [isSubmitting, setIsSubmitting] = useState(false)
+
+  // Estados de busca automática
+  const [buscandoCnpj, setBuscandoCnpj] = useState(false)
+  const [buscandoCep, setBuscandoCep] = useState(false)
+  const [ultimoCnpjBuscado, setUltimoCnpjBuscado] = useState<string | null>(null)
+  const [ultimoCepBuscado, setUltimoCepBuscado] = useState<string | null>(null)
 
   // Detail Drawer State
   const [selectedFornecedor, setSelectedFornecedor] = useState<Fornecedor | null>(null)
@@ -98,6 +107,8 @@ export default function Fornecedores() {
     setUf('')
     setCep('')
     setObservacoes('')
+    setUltimoCnpjBuscado(null)
+    setUltimoCepBuscado(null)
     setIsDrawerOpen(true)
   }
 
@@ -105,15 +116,126 @@ export default function Fornecedores() {
     if (e) e.stopPropagation()
     setEditingId(f.id)
     setNome(f.nome)
-    setCnpjCpf(f.cnpj_cpf || '')
+    setCnpjCpf(f.cnpj_cpf ? formatarCpfCnpj(f.cnpj_cpf) : '')
     setEmail(f.email || '')
     setTelefone(f.telefone || '')
     setEndereco(f.endereco || '')
     setCidade(f.cidade || '')
     setUf(f.uf || '')
-    setCep(f.cep || '')
+    setCep(f.cep ? formatarCep(f.cep) : '')
     setObservacoes(f.observacoes || '')
+    setUltimoCnpjBuscado(f.cnpj_cpf ? apenasDigitos(f.cnpj_cpf) : null)
+    setUltimoCepBuscado(f.cep ? apenasDigitos(f.cep) : null)
     setIsDrawerOpen(true)
+  }
+
+  // Busca automática ao digitar CNPJ (14 dígitos)
+  const handleCnpjCpfChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const raw = e.target.value
+    const formatado = formatarCpfCnpj(raw)
+    setCnpjCpf(formatado)
+
+    const digitos = apenasDigitos(raw)
+    if (digitos.length === 14 && digitos !== ultimoCnpjBuscado) {
+      executarBuscaCnpj(digitos)
+    }
+  }
+
+  const executarBuscaCnpj = async (digitosInput?: string) => {
+    const clean = apenasDigitos(digitosInput || cnpjCpf)
+    if (clean.length !== 14 || clean === ultimoCnpjBuscado || buscandoCnpj) {
+      return
+    }
+
+    setBuscandoCnpj(true)
+    try {
+      const dados = await buscarCnpj(clean)
+      setUltimoCnpjBuscado(clean)
+
+      // Preenche os campos caso estejam vazios ou para complementar
+      setNome((prev) => (!prev.trim() ? dados.razaoSocial || dados.nomeFantasia || prev : prev))
+      if (dados.email) {
+        setEmail((prev) => (!prev.trim() ? dados.email! : prev))
+      }
+      if (dados.telefone) {
+        setTelefone((prev) => (!prev.trim() ? dados.telefone! : prev))
+      }
+      if (dados.enderecoCompleto) {
+        setEndereco((prev) => (!prev.trim() ? dados.enderecoCompleto! : prev))
+      }
+      if (dados.cidade) {
+        setCidade((prev) => (!prev.trim() ? dados.cidade! : prev))
+      }
+      if (dados.uf) {
+        setUf((prev) => (!prev.trim() ? dados.uf! : prev))
+      }
+      if (dados.cep) {
+        setCep((prev) => (!prev.trim() ? dados.cep! : prev))
+        setUltimoCepBuscado(apenasDigitos(dados.cep))
+      }
+
+      toast({
+        title: 'Fornecedor localizado via CNPJ!',
+        description: `Dados preenchidos: ${dados.razaoSocial || dados.nomeFantasia}`,
+      })
+    } catch (err: any) {
+      toast({
+        title: 'Aviso sobre CNPJ',
+        description:
+          err.message || 'Não foi possível preencher automaticamente. Prossiga manualmente.',
+        variant: 'destructive',
+      })
+    } finally {
+      setBuscandoCnpj(false)
+    }
+  }
+
+  // Busca automática ao digitar CEP (8 dígitos)
+  const handleCepChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const raw = e.target.value
+    const formatado = formatarCep(raw)
+    setCep(formatado)
+
+    const digitos = apenasDigitos(raw)
+    if (digitos.length === 8 && digitos !== ultimoCepBuscado) {
+      executarBuscaCep(digitos)
+    }
+  }
+
+  const executarBuscaCep = async (digitosInput?: string) => {
+    const clean = apenasDigitos(digitosInput || cep)
+    if (clean.length !== 8 || clean === ultimoCepBuscado || buscandoCep) {
+      return
+    }
+
+    setBuscandoCep(true)
+    try {
+      const dados = await buscarCep(clean)
+      setUltimoCepBuscado(clean)
+
+      if (dados.enderecoCompleto) {
+        setEndereco((prev) => (!prev.trim() ? dados.enderecoCompleto! : prev))
+      }
+      if (dados.cidade) {
+        setCidade((prev) => (!prev.trim() ? dados.cidade! : prev))
+      }
+      if (dados.uf) {
+        setUf((prev) => (!prev.trim() ? dados.uf! : prev))
+      }
+
+      toast({
+        title: 'CEP localizado!',
+        description: `${dados.logradouro ? dados.logradouro + ' - ' : ''}${dados.cidade}/${dados.uf}`,
+      })
+    } catch (err: any) {
+      toast({
+        title: 'CEP não encontrado',
+        description: err.message || 'Verifique o CEP ou digite o endereço manualmente.',
+        variant: 'destructive',
+      })
+    } finally {
+      setBuscandoCep(false)
+    }
   }
 
   const handleSave = async (e: React.FormEvent) => {
@@ -348,13 +470,39 @@ export default function Fornecedores() {
 
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <Label className="text-xs font-semibold text-gray-700">CNPJ / CPF</Label>
-                <Input
-                  value={cnpjCpf}
-                  onChange={(e) => setCnpjCpf(e.target.value)}
-                  placeholder="00.000.000/0000-00"
-                  className="mt-1 font-mono"
-                />
+                <div className="flex items-center justify-between">
+                  <Label className="text-xs font-semibold text-gray-700">CNPJ / CPF</Label>
+                  {buscandoCnpj ? (
+                    <span className="text-[10px] text-teal-700 flex items-center gap-1 font-medium animate-pulse">
+                      <Loader2 className="w-3 h-3 animate-spin" />
+                      Buscando...
+                    </span>
+                  ) : (
+                    <span
+                      className="text-[10px] text-gray-400 flex items-center gap-0.5"
+                      title="Busca automática de Razão Social e Endereço"
+                    >
+                      <Sparkles className="w-2.5 h-2.5 text-teal-600" />
+                      Auto CNPJ
+                    </span>
+                  )}
+                </div>
+                <div className="relative mt-1">
+                  <Input
+                    value={cnpjCpf}
+                    onChange={handleCnpjCpfChange}
+                    onBlur={() => executarBuscaCnpj()}
+                    placeholder="00.000.000/0000-00"
+                    className={`font-mono text-xs pr-8 ${
+                      buscandoCnpj ? 'border-teal-500 ring-1 ring-teal-200 bg-teal-50/20' : ''
+                    }`}
+                  />
+                  {buscandoCnpj && (
+                    <div className="absolute right-2.5 top-2.5 text-teal-600">
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                    </div>
+                  )}
+                </div>
               </div>
               <div>
                 <Label className="text-xs font-semibold text-gray-700">Telefone</Label>
@@ -362,7 +510,7 @@ export default function Fornecedores() {
                   value={telefone}
                   onChange={(e) => setTelefone(e.target.value)}
                   placeholder="(11) 4004-0000"
-                  className="mt-1"
+                  className="mt-1 text-xs"
                 />
               </div>
             </div>
@@ -413,13 +561,39 @@ export default function Fornecedores() {
             </div>
 
             <div>
-              <Label className="text-xs font-semibold text-gray-700">CEP</Label>
-              <Input
-                value={cep}
-                onChange={(e) => setCep(e.target.value)}
-                placeholder="00000-000"
-                className="mt-1 font-mono"
-              />
+              <div className="flex items-center justify-between">
+                <Label className="text-xs font-semibold text-gray-700">CEP</Label>
+                {buscandoCep ? (
+                  <span className="text-[10px] text-teal-700 flex items-center gap-1 font-medium animate-pulse">
+                    <Loader2 className="w-3 h-3 animate-spin" />
+                    Buscando CEP...
+                  </span>
+                ) : (
+                  <span
+                    className="text-[10px] text-gray-400 flex items-center gap-0.5"
+                    title="Busca automática de rua, bairro, cidade e UF"
+                  >
+                    <Sparkles className="w-2.5 h-2.5 text-teal-600" />
+                    Auto CEP
+                  </span>
+                )}
+              </div>
+              <div className="relative mt-1">
+                <Input
+                  value={cep}
+                  onChange={handleCepChange}
+                  onBlur={() => executarBuscaCep()}
+                  placeholder="00000-000"
+                  className={`font-mono text-xs pr-8 ${
+                    buscandoCep ? 'border-teal-500 ring-1 ring-teal-200 bg-teal-50/20' : ''
+                  }`}
+                />
+                {buscandoCep && (
+                  <div className="absolute right-2.5 top-2.5 text-teal-600">
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  </div>
+                )}
+              </div>
             </div>
 
             <div>

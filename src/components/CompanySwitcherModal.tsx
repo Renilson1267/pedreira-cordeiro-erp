@@ -21,7 +21,8 @@ import {
 import { getInitials } from '@/lib/formatters'
 import pb from '@/lib/pocketbase/client'
 import { toast } from '@/hooks/use-toast'
-import { Search, Plus, Building2, Check } from 'lucide-react'
+import { Search, Plus, Building2, Check, Loader2, Sparkles } from 'lucide-react'
+import { formatarCnpj, apenasDigitos, buscarCnpj } from '@/lib/brasilApi'
 
 interface CompanySwitcherModalProps {
   open: boolean
@@ -45,6 +46,10 @@ export const CompanySwitcherModal: React.FC<CompanySwitcherModalProps> = ({
   const [isFilial, setIsFilial] = useState(false)
   const [empresaPaiId, setEmpresaPaiId] = useState<string>('')
 
+  // Auto CNPJ search state
+  const [buscandoCnpj, setBuscandoCnpj] = useState(false)
+  const [ultimoCnpjBuscado, setUltimoCnpjBuscado] = useState<string | null>(null)
+
   const filteredEmpresas = empresas.filter(
     (e) => e.nome_fantasia.toLowerCase().includes(search.toLowerCase()) || e.cnpj.includes(search),
   )
@@ -52,6 +57,55 @@ export const CompanySwitcherModal: React.FC<CompanySwitcherModalProps> = ({
   const handleSelect = (id: string) => {
     selectEmpresa(id)
     onOpenChange(false)
+  }
+
+  const handleCnpjChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const raw = e.target.value
+    const formatado = formatarCnpj(raw)
+    setCnpj(formatado)
+
+    const digitos = apenasDigitos(raw)
+    if (digitos.length === 14 && digitos !== ultimoCnpjBuscado) {
+      executarBuscaCnpj(digitos)
+    }
+  }
+
+  const executarBuscaCnpj = async (digitosInput?: string) => {
+    const clean = apenasDigitos(digitosInput || cnpj)
+    if (clean.length !== 14 || clean === ultimoCnpjBuscado || buscandoCnpj) {
+      return
+    }
+
+    setBuscandoCnpj(true)
+    try {
+      const dados = await buscarCnpj(clean)
+      setUltimoCnpjBuscado(clean)
+
+      if (dados.nomeFantasia) {
+        setNomeFantasia((prev) => (!prev.trim() ? dados.nomeFantasia! : prev))
+      } else if (dados.razaoSocial) {
+        setNomeFantasia((prev) => (!prev.trim() ? dados.razaoSocial! : prev))
+      }
+
+      if (dados.razaoSocial) {
+        setRazaoSocial((prev) => (!prev.trim() ? dados.razaoSocial! : prev))
+      }
+
+      toast({
+        title: 'Empresa localizada via CNPJ!',
+        description: `Razão: ${dados.razaoSocial || dados.nomeFantasia}`,
+      })
+    } catch (err: any) {
+      toast({
+        title: 'Aviso sobre CNPJ',
+        description:
+          err.message ||
+          'Não foi possível preencher automaticamente os dados da empresa. Preencha manualmente.',
+        variant: 'destructive',
+      })
+    } finally {
+      setBuscandoCnpj(false)
+    }
   }
 
   const handleCreateCompany = async (e: React.FormEvent) => {
@@ -204,14 +258,40 @@ export const CompanySwitcherModal: React.FC<CompanySwitcherModalProps> = ({
 
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <Label className="text-xs font-semibold text-gray-700">CNPJ *</Label>
-                <Input
-                  required
-                  value={cnpj}
-                  onChange={(e) => setCnpj(e.target.value)}
-                  placeholder="00.000.000/0001-00"
-                  className="mt-1 font-mono text-sm"
-                />
+                <div className="flex items-center justify-between">
+                  <Label className="text-xs font-semibold text-gray-700">CNPJ *</Label>
+                  {buscandoCnpj ? (
+                    <span className="text-[10px] text-teal-700 flex items-center gap-1 font-medium animate-pulse">
+                      <Loader2 className="w-3 h-3 animate-spin" />
+                      Buscando...
+                    </span>
+                  ) : (
+                    <span
+                      className="text-[10px] text-gray-400 flex items-center gap-0.5"
+                      title="Preenchimento automático de Razão Social e Nome Fantasia"
+                    >
+                      <Sparkles className="w-2.5 h-2.5 text-teal-600" />
+                      Auto CNPJ
+                    </span>
+                  )}
+                </div>
+                <div className="relative mt-1">
+                  <Input
+                    required
+                    value={cnpj}
+                    onChange={handleCnpjChange}
+                    onBlur={() => executarBuscaCnpj()}
+                    placeholder="00.000.000/0001-00"
+                    className={`font-mono text-xs pr-8 ${
+                      buscandoCnpj ? 'border-teal-500 ring-1 ring-teal-200 bg-teal-50/20' : ''
+                    }`}
+                  />
+                  {buscandoCnpj && (
+                    <div className="absolute right-2.5 top-2.5 text-teal-600">
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                    </div>
+                  )}
+                </div>
               </div>
               <div>
                 <Label className="text-xs font-semibold text-gray-700">Inscrição Estadual</Label>
@@ -219,7 +299,7 @@ export const CompanySwitcherModal: React.FC<CompanySwitcherModalProps> = ({
                   value={inscricaoEstadual}
                   onChange={(e) => setInscricaoEstadual(e.target.value)}
                   placeholder="Isento ou número"
-                  className="mt-1 text-sm"
+                  className="mt-1 text-xs"
                 />
               </div>
             </div>

@@ -37,6 +37,7 @@ import {
   Receipt,
   UserCheck,
 } from 'lucide-react'
+import { formatarCpf, apenasDigitos, formatarTelefoneBrasil, validarCpf } from '@/lib/brasilApi'
 
 const SETOR_COLORS: Record<SetorFuncionario, { bg: string; text: string; border: string }> = {
   Britagem: { bg: 'bg-amber-50', text: 'text-amber-800', border: 'border-amber-200' },
@@ -141,18 +142,33 @@ export default function Funcionarios() {
   const handleEdit = (f: Funcionario) => {
     setEditingId(f.id)
     setNome(f.nome)
-    setCpf(f.cpf || '')
+    setCpf(f.cpf ? formatarCpf(f.cpf) : '')
     setCargo(f.cargo)
     setSetor(f.setor)
     setDataAdmissao(f.data_admissao ? f.data_admissao.slice(0, 10) : '')
     setSalario(f.salario || 0)
-    setTelefone(f.telefone || '')
+    setTelefone(f.telefone ? formatarTelefoneBrasil(f.telefone) : '')
     setEmail(f.email || '')
     setStatus(f.status)
     setChavePix(f.chave_pix || '')
     setBancoConta(f.banco_conta || '')
     setObservacoes(f.observacoes || '')
     setIsDrawerOpen(true)
+  }
+
+  const handleCpfChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setCpf(formatarCpf(e.target.value))
+  }
+
+  const handleCpfBlur = () => {
+    const clean = apenasDigitos(cpf)
+    if (clean.length === 11 && !validarCpf(clean)) {
+      toast({
+        title: 'CPF com dígito verificador inválido',
+        description: 'Verifique se os números digitados estão corretos.',
+        variant: 'destructive',
+      })
+    }
   }
 
   const handleSave = async (e: React.FormEvent) => {
@@ -585,9 +601,10 @@ export default function Funcionarios() {
                 <Label className="text-xs font-semibold text-gray-700">CPF</Label>
                 <Input
                   value={cpf}
-                  onChange={(e) => setCpf(e.target.value)}
+                  onChange={handleCpfChange}
+                  onBlur={handleCpfBlur}
                   placeholder="000.000.000-00"
-                  className="mt-1 font-mono"
+                  className="mt-1 font-mono text-xs"
                 />
               </div>
 
