@@ -926,6 +926,7 @@ export function ImportadorRecebimentosModal({
           rawCat: string
           notaNorm: string
           descNorm: string
+          cliNorm: string
           valorStr: string
           dateOnly: string
         }
@@ -1294,14 +1295,18 @@ export function ImportadorRecebimentosModal({
           }
 
           // 3. Descrição e extração de cidade e nota
-          const docInfo = rawDoc ? ` [Doc: ${rawDoc}]` : ''
-          const descFinal = rawDesc || `Recebimento ${rawCli || sheetCfg.name}${docInfo}`
-
-          const extraidos = extrairCidadeENota(descFinal)
+          // O usuário solicitou que o sistema não gere texto automático de descrição.
+          // Se a planilha tiver uma coluna de descrição preenchida manualmente (rawDesc), mantemos;
+          // caso contrário, gravamos vazio ("").
+          // Para extrair cidade e nota caso venham no texto do cliente ou em rawDesc:
+          const textoParaExtracao = rawDesc || `${rawCli || ''}${rawDoc ? ` [Doc: ${rawDoc}]` : ''}`
+          const extraidos = extrairCidadeENota(textoParaExtracao)
           const notaFinal = (rawDoc || extraidos.nota || '').trim()
           const enderecoFinal = (extraidos.cidade || '').trim()
+          const descFinal = (rawDesc || '').trim()
 
           const dateOnly = dataVencimentoISO.slice(0, 10)
+          const cliNorm = normalizarTextoComparacao(rawCli || sheetCfg.name).slice(0, 30)
           const descNorm = normalizarTextoComparacao(descFinal).slice(0, 30)
           const notaNorm = normalizarTextoComparacao(notaFinal || '')
           const valorStr = valorFinal.toFixed(2)
@@ -1322,6 +1327,7 @@ export function ImportadorRecebimentosModal({
             rawCat,
             notaNorm,
             descNorm,
+            cliNorm,
             valorStr,
             dateOnly,
           })
@@ -1334,7 +1340,7 @@ export function ImportadorRecebimentosModal({
         if (detectarDuplicados) {
           const preBatchKeys = new Set<string>()
           for (const item of preparedItems) {
-            const batchKey = `${item.dateOnly}_${item.valorStr}_${item.descNorm}_${item.notaNorm}`
+            const batchKey = `${item.dateOnly}_${item.valorStr}_${item.cliNorm}_${item.descNorm}_${item.notaNorm}`
             if (preBatchKeys.has(batchKey)) {
               sheetDuplicados += 1
               resultSummary.duplicadosPulados += 1
@@ -1360,7 +1366,7 @@ export function ImportadorRecebimentosModal({
               }
 
               // Chave exata primária e chave secundária por nota para evitar duplicação simultânea no pool
-              const exactKey = `${clienteId || ''}_${item.dateOnly}_${item.valorStr}_${item.descNorm}`
+              const exactKey = `${clienteId || ''}_${item.dateOnly}_${item.valorStr}_${item.descNorm || item.cliNorm}`
               const docLockKey = item.notaNorm
                 ? `lock_doc_${clienteId || ''}_${item.valorStr}_${item.notaNorm}`
                 : null
@@ -1391,7 +1397,7 @@ export function ImportadorRecebimentosModal({
                     existingRecordToUpdate = existingFlexRecords.get(flexKeyDoc)!
                   }
                 }
-                if (!existingRecordToUpdate) {
+                if (!existingRecordToUpdate && item.descNorm) {
                   const flexKeyDesc = `desc_${clienteId || ''}_${item.valorStr}_${item.descNorm}`
                   if (existingFlexRecords.has(flexKeyDesc)) {
                     existingRecordToUpdate = existingFlexRecords.get(flexKeyDesc)!
@@ -1629,12 +1635,16 @@ export function ImportadorRecebimentosModal({
                 dataRecebimentoISO
               ) {
                 try {
+                  const descMovimento = createdConta.descricao
+                    ? `Recebimento${finalStatus === 'Parcial' ? ' parcial' : ''}: ${createdConta.descricao}${item.rawCli ? ` [${item.rawCli}]` : ''}`
+                    : `Recebimento${finalStatus === 'Parcial' ? ' parcial' : ''}${item.rawCli ? `: ${item.rawCli}` : ''}`
+
                   await withRateLimitRetry(
                     () =>
                       pb.collection('movimentos_financeiros').create({
                         empresa_id: empresaId,
                         tipo: 'Entrada',
-                        descricao: `Recebimento${finalStatus === 'Parcial' ? ' parcial' : ''}: ${createdConta.descricao}${item.rawCli ? ` [${item.rawCli}]` : ''}`,
+                        descricao: descMovimento,
                         valor: valorEfetivoRecebido,
                         data: dataRecebimentoISO,
                         categoria_id: finalCategoriaId,

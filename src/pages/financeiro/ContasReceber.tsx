@@ -460,10 +460,15 @@ export default function ContasReceber() {
         observacoes: (settlingConta.observacoes || '') + obsBaixa,
       })
 
+      const clienteNomeTitulo = settlingConta.expand?.cliente_id?.nome || ''
+      const rotuloTitulo = settlingConta.descricao
+        ? `${settlingConta.descricao}${clienteNomeTitulo ? ` [${clienteNomeTitulo}]` : ''}`
+        : clienteNomeTitulo || 'Recebimento'
+
       await pb.collection('movimentos_financeiros').create({
         empresa_id: currentEmpresa!.id,
         tipo: 'Entrada',
-        descricao: `Recebimento${novoStatus === 'Parcial' ? ' parcial' : ''}: ${settlingConta.descricao}${usarCreditoCliente ? ' (Compensado via Crédito)' : ''}${settlingConta.expand?.centro_custo_id ? ` [${settlingConta.expand.centro_custo_id.codigo}]` : ''}`,
+        descricao: `Recebimento${novoStatus === 'Parcial' ? ' parcial' : ''}: ${rotuloTitulo}${usarCreditoCliente ? ' (Compensado via Crédito)' : ''}${settlingConta.expand?.centro_custo_id ? ` [${settlingConta.expand.centro_custo_id.codigo}]` : ''}`,
         valor: valorBaixa,
         data: recDateISO,
         categoria_id: settlingConta.categoria_id || null,
@@ -730,25 +735,24 @@ export default function ContasReceber() {
         <div className="overflow-x-auto">
           <table className="w-full text-left border-collapse text-xs">
             <thead>
-              <tr className="bg-[#FAF9F7] border-b border-[#ECEAE4] text-gray-500 uppercase font-semibold">
-                <th className="py-3 px-4">Vencimento</th>
-                <th className="py-3 px-4">Descrição</th>
-                <th className="py-3 px-4">Nota / Doc</th>
-                <th className="py-3 px-4">Cidade / Endereço</th>
-                <th className="py-3 px-4">Cliente</th>
-                <th className="py-3 px-4">Centro Custo</th>
-                <th className="py-3 px-4">Categoria</th>
-                <th className="py-3 px-4 text-right">Valor Total</th>
-                <th className="py-3 px-4 text-right">Recebido</th>
-                <th className="py-3 px-4 text-right">Saldo Restante</th>
-                <th className="py-3 px-4 text-center">Status</th>
-                <th className="py-3 px-4 text-right">Ações</th>
+              <tr className="bg-[#FAF9F7] border-b border-[#ECEAE4] text-gray-500 uppercase font-semibold text-[11px] tracking-wider">
+                <th className="py-2.5 px-2.5 whitespace-nowrap">Vencimento</th>
+                <th className="py-2.5 px-2.5 min-w-[140px]">Cliente / Pagador</th>
+                <th className="py-2.5 px-2 whitespace-nowrap">Doc / NF</th>
+                <th className="py-2.5 px-2 whitespace-nowrap">Cidade</th>
+                <th className="py-2.5 px-2 whitespace-nowrap">Forma</th>
+                <th className="py-2.5 px-2 whitespace-nowrap">C. Custo</th>
+                <th className="py-2.5 px-2.5 text-right whitespace-nowrap">Valor Total</th>
+                <th className="py-2.5 px-2 text-right whitespace-nowrap">Recebido</th>
+                <th className="py-2.5 px-2.5 text-right whitespace-nowrap">Saldo</th>
+                <th className="py-2.5 px-2 text-center whitespace-nowrap">Status</th>
+                <th className="py-2.5 px-2.5 text-right whitespace-nowrap">Ações</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-[#ECEAE4]">
               {filteredContas.length === 0 ? (
                 <tr>
-                  <td colSpan={12} className="py-12 text-center text-gray-400">
+                  <td colSpan={11} className="py-12 text-center text-gray-400">
                     Nenhuma conta a receber encontrada para os filtros atuais.
                   </td>
                 </tr>
@@ -757,6 +761,8 @@ export default function ContasReceber() {
                   const displayStatus = getContaStatusReal(c)
                   const jaRecebido = getValorRecebidoEfetivo(c)
                   const saldoRestante = getSaldoRestante(c)
+                  const nomeCliente = c.expand?.cliente_id?.nome || ''
+                  const temDescricao = Boolean(c.descricao && c.descricao.trim())
 
                   return (
                     <tr
@@ -764,53 +770,96 @@ export default function ContasReceber() {
                       onClick={() => setDetailItem(c)}
                       className="hover:bg-teal-50/20 cursor-pointer transition-colors"
                     >
-                      <td className="py-3.5 px-4 font-mono font-medium text-gray-700 whitespace-nowrap">
+                      {/* Vencimento */}
+                      <td className="py-2 px-2.5 font-mono font-medium text-gray-800 whitespace-nowrap text-xs">
                         {formatDate(c.vencimento)}
                       </td>
-                      <td
-                        className="py-3.5 px-4 font-semibold text-gray-900 max-w-[260px] truncate"
-                        title={c.descricao}
-                      >
-                        {c.descricao}
+
+                      {/* Cliente / Descrição */}
+                      <td className="py-2 px-2.5 max-w-[240px]">
+                        <div className="flex flex-col">
+                          <span
+                            className="font-semibold text-gray-900 truncate text-xs"
+                            title={nomeCliente || c.descricao || 'Cliente não informado'}
+                          >
+                            {nomeCliente || (temDescricao ? c.descricao : '—')}
+                          </span>
+                          {temDescricao && nomeCliente && (
+                            <span
+                              className="text-[11px] text-gray-500 truncate"
+                              title={c.descricao}
+                            >
+                              {c.descricao}
+                            </span>
+                          )}
+                        </div>
                       </td>
-                      <td className="py-3.5 px-4 font-mono text-gray-700 whitespace-nowrap">
+
+                      {/* Doc / Nota */}
+                      <td className="py-2 px-2 font-mono text-gray-700 whitespace-nowrap text-[11px]">
                         {c.nota ? (
-                          <span className="inline-flex items-center px-1.5 py-0.5 rounded bg-gray-100 text-gray-800 text-[11px] font-semibold">
+                          <span className="inline-flex items-center px-1.5 py-0.5 rounded bg-gray-100 text-gray-800 font-semibold font-mono">
                             {c.nota}
                           </span>
                         ) : (
-                          '—'
+                          <span className="text-gray-300">—</span>
                         )}
                       </td>
-                      <td className="py-3.5 px-4 text-gray-600 whitespace-nowrap">
-                        {c.endereco || '—'}
+
+                      {/* Cidade / Endereço */}
+                      <td className="py-2 px-2 text-gray-600 whitespace-nowrap text-xs">
+                        {c.endereco ? (
+                          <span className="truncate max-w-[100px] inline-block" title={c.endereco}>
+                            {c.endereco}
+                          </span>
+                        ) : (
+                          <span className="text-gray-300">—</span>
+                        )}
                       </td>
-                      <td className="py-3.5 px-4 text-gray-600">
-                        {c.expand?.cliente_id?.nome || '—'}
+
+                      {/* Forma de Recebimento */}
+                      <td className="py-2 px-2 text-gray-600 whitespace-nowrap text-xs">
+                        {c.forma_recebimento ? (
+                          <span className="text-gray-700">{c.forma_recebimento}</span>
+                        ) : (
+                          <span className="text-gray-300">—</span>
+                        )}
                       </td>
-                      <td className="py-3.5 px-4 text-gray-600 whitespace-nowrap">
+
+                      {/* Centro de Custo */}
+                      <td className="py-2 px-2 text-gray-600 whitespace-nowrap">
                         {c.expand?.centro_custo_id ? (
-                          <span className="inline-flex items-center gap-1 font-mono text-[11px] font-semibold text-gray-700 bg-gray-100 px-1.5 py-0.5 rounded">
+                          <span
+                            className="inline-flex items-center gap-1 font-mono text-[11px] font-semibold text-gray-700 bg-gray-100 px-1.5 py-0.5 rounded"
+                            title={`${c.expand.centro_custo_id.codigo} - ${c.expand.centro_custo_id.nome}`}
+                          >
                             <span
-                              className="w-2 h-2 rounded-full"
+                              className="w-1.5 h-1.5 rounded-full"
                               style={{ backgroundColor: c.expand.centro_custo_id.cor || '#0F766E' }}
                             />
                             {c.expand.centro_custo_id.codigo}
                           </span>
                         ) : (
-                          '—'
+                          <span className="text-gray-300">—</span>
                         )}
                       </td>
-                      <td className="py-3.5 px-4 text-gray-500 whitespace-nowrap">
-                        {c.expand?.categoria_id?.nome || '—'}
-                      </td>
-                      <td className="py-3.5 px-4 text-right font-medium text-gray-800 tabular-nums whitespace-nowrap">
+
+                      {/* Valor Total */}
+                      <td className="py-2 px-2.5 text-right font-medium text-gray-800 tabular-nums whitespace-nowrap text-xs">
                         {formatCurrency(c.valor)}
                       </td>
-                      <td className="py-3.5 px-4 text-right font-mono font-semibold text-emerald-700 tabular-nums whitespace-nowrap">
-                        {jaRecebido > 0 ? formatCurrency(jaRecebido) : '—'}
+
+                      {/* Já Recebido */}
+                      <td className="py-2 px-2 text-right font-mono font-semibold text-emerald-700 tabular-nums whitespace-nowrap text-xs">
+                        {jaRecebido > 0 ? (
+                          formatCurrency(jaRecebido)
+                        ) : (
+                          <span className="text-gray-300">—</span>
+                        )}
                       </td>
-                      <td className="py-3.5 px-4 text-right font-mono font-bold tabular-nums whitespace-nowrap">
+
+                      {/* Saldo Restante */}
+                      <td className="py-2 px-2.5 text-right font-mono font-bold tabular-nums whitespace-nowrap text-xs">
                         {saldoRestante > 0 ? (
                           <span
                             className={
@@ -820,13 +869,15 @@ export default function ContasReceber() {
                             {formatCurrency(saldoRestante)}
                           </span>
                         ) : (
-                          <span className="text-gray-400 font-normal">Quitado</span>
+                          <span className="text-emerald-600 font-medium text-[11px]">Quitado</span>
                         )}
                       </td>
-                      <td className="py-3.5 px-4 text-center">
+
+                      {/* Status */}
+                      <td className="py-2 px-2 text-center whitespace-nowrap">
                         <Badge
                           variant="outline"
-                          className={
+                          className={`text-[11px] px-1.5 py-0 leading-tight font-medium ${
                             displayStatus === 'Recebida'
                               ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
                               : displayStatus === 'Parcial'
@@ -836,21 +887,26 @@ export default function ContasReceber() {
                                   : displayStatus === 'Recebimento Antecipado'
                                     ? 'bg-teal-50 text-teal-800 border-teal-300 font-semibold'
                                     : 'bg-blue-50 text-blue-700 border-blue-200'
-                          }
+                          }`}
                         >
                           {displayStatus}
                         </Badge>
                       </td>
-                      <td className="py-3.5 px-4 text-right" onClick={(e) => e.stopPropagation()}>
-                        <div className="flex items-center justify-end gap-1.5">
+
+                      {/* Ações */}
+                      <td
+                        className="py-2 px-2.5 text-right whitespace-nowrap"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <div className="flex items-center justify-end gap-1">
                           {canEdit && displayStatus !== 'Recebida' && (
                             <Button
                               size="sm"
                               variant="outline"
                               onClick={() => handleOpenSettle(c)}
-                              className="h-7 text-xs border-emerald-200 text-emerald-700 hover:bg-emerald-50"
+                              className="h-6 px-2 text-[11px] border-emerald-200 text-emerald-700 hover:bg-emerald-50"
                             >
-                              <CheckCircle className="w-3.5 h-3.5 mr-1" />
+                              <CheckCircle className="w-3 h-3 mr-1" />
                               {c.status === 'Parcial' ? 'Amortizar' : 'Receber'}
                             </Button>
                           )}
@@ -859,9 +915,10 @@ export default function ContasReceber() {
                               size="sm"
                               variant="ghost"
                               onClick={() => handleEdit(c)}
-                              className="h-7 w-7 p-0 text-gray-500 hover:text-gray-900"
+                              className="h-6 w-6 p-0 text-gray-500 hover:text-gray-900"
+                              title="Editar"
                             >
-                              <Edit2 className="w-3.5 h-3.5" />
+                              <Edit2 className="w-3 h-3" />
                             </Button>
                           )}
                           {canEdit && (
@@ -869,9 +926,10 @@ export default function ContasReceber() {
                               size="sm"
                               variant="ghost"
                               onClick={() => handleDelete(c.id)}
-                              className="h-7 w-7 p-0 text-red-500 hover:bg-red-50"
+                              className="h-6 w-6 p-0 text-red-500 hover:bg-red-50"
+                              title="Excluir"
                             >
-                              <Trash2 className="w-3.5 h-3.5" />
+                              <Trash2 className="w-3 h-3" />
                             </Button>
                           )}
                         </div>
@@ -896,12 +954,11 @@ export default function ContasReceber() {
 
           <form onSubmit={handleSave} className="space-y-4 py-4 text-xs">
             <div>
-              <Label className="text-xs font-semibold text-gray-700">Descrição *</Label>
+              <Label className="text-xs font-semibold text-gray-700">Descrição (opcional)</Label>
               <Input
-                required
                 value={descricao}
                 onChange={(e) => setDescricao(e.target.value)}
-                placeholder="Ex: Fatura Mensalidade de Serviços"
+                placeholder="Opcional — identificador ou detalhe do título"
                 className="mt-1"
               />
             </div>
@@ -1082,12 +1139,27 @@ export default function ContasReceber() {
           <div className="space-y-4 py-2 text-xs">
             {settlingConta && (
               <div className="p-3.5 bg-[#FAF9F7] rounded-xl border border-[#ECEAE4] space-y-1.5">
-                <div className="font-semibold text-gray-900 text-sm">{settlingConta.descricao}</div>
+                <div className="font-semibold text-gray-900 text-sm">
+                  {settlingConta.expand?.cliente_id?.nome ||
+                    settlingConta.descricao ||
+                    'Título a Receber'}
+                </div>
+                {settlingConta.descricao && settlingConta.expand?.cliente_id?.nome && (
+                  <div className="text-gray-500 text-xs">
+                    Descrição:{' '}
+                    <span className="font-medium text-gray-800">{settlingConta.descricao}</span>
+                  </div>
+                )}
                 <div className="text-gray-500">
                   Cliente:{' '}
                   <span className="font-medium text-gray-800">
                     {settlingConta.expand?.cliente_id?.nome || 'Não informado'}
                   </span>
+                  {settlingConta.nota && (
+                    <span className="ml-2 font-mono text-[11px] bg-gray-200 text-gray-800 px-1.5 py-0.5 rounded">
+                      Doc: {settlingConta.nota}
+                    </span>
+                  )}
                 </div>
                 <div className="grid grid-cols-3 gap-2 pt-2 border-t border-[#ECEAE4] text-center">
                   <div>
@@ -1307,10 +1379,12 @@ export default function ContasReceber() {
               </div>
 
               <div className="space-y-2 border-t border-[#ECEAE4] pt-4">
-                <div className="flex justify-between py-1">
-                  <span className="text-gray-500">Descrição:</span>
-                  <span className="font-semibold text-gray-900">{detailItem.descricao}</span>
-                </div>
+                {detailItem.descricao && (
+                  <div className="flex justify-between py-1">
+                    <span className="text-gray-500">Descrição:</span>
+                    <span className="font-semibold text-gray-900">{detailItem.descricao}</span>
+                  </div>
+                )}
                 {detailItem.nota && (
                   <div className="flex justify-between py-1">
                     <span className="text-gray-500">Nota / Documento:</span>

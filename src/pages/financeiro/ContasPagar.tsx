@@ -685,23 +685,22 @@ export default function ContasPagar() {
         <div className="overflow-x-auto">
           <table className="w-full text-left border-collapse text-xs">
             <thead>
-              <tr className="bg-[#FAF9F7] border-b border-[#ECEAE4] text-gray-500 uppercase font-semibold">
-                <th className="py-3 px-4">Vencimento</th>
-                <th className="py-3 px-4">Descrição</th>
-                <th className="py-3 px-4">Fornecedor</th>
-                <th className="py-3 px-4">Centro Custo</th>
-                <th className="py-3 px-4">Categoria</th>
-                <th className="py-3 px-4 text-right">Valor Total</th>
-                <th className="py-3 px-4 text-right">Pago</th>
-                <th className="py-3 px-4 text-right">Saldo Restante</th>
-                <th className="py-3 px-4 text-center">Status</th>
-                <th className="py-3 px-4 text-right">Ações</th>
+              <tr className="bg-[#FAF9F7] border-b border-[#ECEAE4] text-gray-500 uppercase font-semibold text-[11px] tracking-wider">
+                <th className="py-2.5 px-2.5 whitespace-nowrap">Vencimento</th>
+                <th className="py-2.5 px-2.5 min-w-[140px]">Descrição / Fornecedor</th>
+                <th className="py-2.5 px-2 whitespace-nowrap">C. Custo</th>
+                <th className="py-2.5 px-2 whitespace-nowrap">Categoria</th>
+                <th className="py-2.5 px-2.5 text-right whitespace-nowrap">Valor Total</th>
+                <th className="py-2.5 px-2 text-right whitespace-nowrap">Pago</th>
+                <th className="py-2.5 px-2.5 text-right whitespace-nowrap">Saldo</th>
+                <th className="py-2.5 px-2 text-center whitespace-nowrap">Status</th>
+                <th className="py-2.5 px-2.5 text-right whitespace-nowrap">Ações</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-[#ECEAE4]">
               {filteredContas.length === 0 ? (
                 <tr>
-                  <td colSpan={10} className="py-12 text-center text-gray-400">
+                  <td colSpan={9} className="py-12 text-center text-gray-400">
                     Nenhuma conta a pagar encontrada para os filtros atuais.
                   </td>
                 </tr>
@@ -710,6 +709,7 @@ export default function ContasPagar() {
                   const displayStatus = getContaStatusReal(c)
                   const jaPago = getValorPagoEfetivo(c)
                   const saldoRestante = getSaldoRestante(c)
+                  const nomeFornecedor = c.expand?.fornecedor_id?.nome || ''
 
                   return (
                     <tr
@@ -717,36 +717,79 @@ export default function ContasPagar() {
                       onClick={() => setDetailItem(c)}
                       className="hover:bg-teal-50/20 cursor-pointer transition-colors"
                     >
-                      <td className="py-3.5 px-4 font-mono font-medium text-gray-700">
+                      {/* Vencimento */}
+                      <td className="py-2 px-2.5 font-mono font-medium text-gray-800 whitespace-nowrap text-xs">
                         {formatDate(c.vencimento)}
                       </td>
-                      <td className="py-3.5 px-4 font-semibold text-gray-900">{c.descricao}</td>
-                      <td className="py-3.5 px-4 text-gray-600 font-medium">
-                        {c.expand?.fornecedor_id?.nome || c.descricao || '—'}
-                      </td>
-                      <td className="py-3.5 px-4 text-gray-600">
-                        {c.expand?.centro_custo_id ? (
-                          <span className="inline-flex items-center gap-1 font-mono text-[11px] font-semibold text-gray-700 bg-gray-100 px-1.5 py-0.5 rounded">
+
+                      {/* Descrição / Fornecedor */}
+                      <td className="py-2 px-2.5 max-w-[260px]">
+                        <div className="flex flex-col">
+                          <span
+                            className="font-semibold text-gray-900 truncate text-xs"
+                            title={c.descricao}
+                          >
+                            {c.descricao}
+                          </span>
+                          {nomeFornecedor && nomeFornecedor !== c.descricao && (
                             <span
-                              className="w-2 h-2 rounded-full"
+                              className="text-[11px] text-gray-500 truncate"
+                              title={nomeFornecedor}
+                            >
+                              {nomeFornecedor}
+                            </span>
+                          )}
+                        </div>
+                      </td>
+
+                      {/* Centro de Custo */}
+                      <td className="py-2 px-2 text-gray-600 whitespace-nowrap">
+                        {c.expand?.centro_custo_id ? (
+                          <span
+                            className="inline-flex items-center gap-1 font-mono text-[11px] font-semibold text-gray-700 bg-gray-100 px-1.5 py-0.5 rounded"
+                            title={`${c.expand.centro_custo_id.codigo} - ${c.expand.centro_custo_id.nome}`}
+                          >
+                            <span
+                              className="w-1.5 h-1.5 rounded-full"
                               style={{ backgroundColor: c.expand.centro_custo_id.cor || '#0F766E' }}
                             />
                             {c.expand.centro_custo_id.codigo}
                           </span>
                         ) : (
-                          '—'
+                          <span className="text-gray-300">—</span>
                         )}
                       </td>
-                      <td className="py-3.5 px-4 text-gray-500">
-                        {c.expand?.categoria_id?.nome || '—'}
+
+                      {/* Categoria */}
+                      <td className="py-2 px-2 text-gray-500 whitespace-nowrap text-xs">
+                        {c.expand?.categoria_id?.nome ? (
+                          <span
+                            className="truncate max-w-[120px] inline-block"
+                            title={c.expand.categoria_id.nome}
+                          >
+                            {c.expand.categoria_id.nome}
+                          </span>
+                        ) : (
+                          <span className="text-gray-300">—</span>
+                        )}
                       </td>
-                      <td className="py-3.5 px-4 text-right font-medium text-gray-800 tabular-nums">
+
+                      {/* Valor Total */}
+                      <td className="py-2 px-2.5 text-right font-medium text-gray-800 tabular-nums whitespace-nowrap text-xs">
                         {formatCurrency(c.valor)}
                       </td>
-                      <td className="py-3.5 px-4 text-right font-mono font-semibold text-emerald-700 tabular-nums">
-                        {jaPago > 0 ? formatCurrency(jaPago) : '—'}
+
+                      {/* Já Pago */}
+                      <td className="py-2 px-2 text-right font-mono font-semibold text-emerald-700 tabular-nums whitespace-nowrap text-xs">
+                        {jaPago > 0 ? (
+                          formatCurrency(jaPago)
+                        ) : (
+                          <span className="text-gray-300">—</span>
+                        )}
                       </td>
-                      <td className="py-3.5 px-4 text-right font-mono font-bold tabular-nums">
+
+                      {/* Saldo Restante */}
+                      <td className="py-2 px-2.5 text-right font-mono font-bold tabular-nums whitespace-nowrap text-xs">
                         {saldoRestante > 0 ? (
                           <span
                             className={
@@ -756,13 +799,15 @@ export default function ContasPagar() {
                             {formatCurrency(saldoRestante)}
                           </span>
                         ) : (
-                          <span className="text-gray-400 font-normal">Quitado</span>
+                          <span className="text-emerald-600 font-medium text-[11px]">Quitado</span>
                         )}
                       </td>
-                      <td className="py-3.5 px-4 text-center">
+
+                      {/* Status */}
+                      <td className="py-2 px-2 text-center whitespace-nowrap">
                         <Badge
                           variant="outline"
-                          className={
+                          className={`text-[11px] px-1.5 py-0 leading-tight font-medium ${
                             displayStatus === 'Paga'
                               ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
                               : displayStatus === 'Parcial'
@@ -770,21 +815,26 @@ export default function ContasPagar() {
                                 : displayStatus === 'Vencida'
                                   ? 'bg-red-50 text-red-700 border-red-200'
                                   : 'bg-blue-50 text-blue-700 border-blue-200'
-                          }
+                          }`}
                         >
                           {displayStatus}
                         </Badge>
                       </td>
-                      <td className="py-3.5 px-4 text-right" onClick={(e) => e.stopPropagation()}>
-                        <div className="flex items-center justify-end gap-1.5">
+
+                      {/* Ações */}
+                      <td
+                        className="py-2 px-2.5 text-right whitespace-nowrap"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <div className="flex items-center justify-end gap-1">
                           {canEdit && displayStatus !== 'Paga' && (
                             <Button
                               size="sm"
                               variant="outline"
                               onClick={() => handleOpenSettle(c)}
-                              className="h-7 text-xs border-emerald-200 text-emerald-700 hover:bg-emerald-50"
+                              className="h-6 px-2 text-[11px] border-emerald-200 text-emerald-700 hover:bg-emerald-50"
                             >
-                              <CheckCircle className="w-3.5 h-3.5 mr-1" />
+                              <CheckCircle className="w-3 h-3 mr-1" />
                               {c.status === 'Parcial' ? 'Amortizar' : 'Baixar'}
                             </Button>
                           )}
@@ -793,9 +843,10 @@ export default function ContasPagar() {
                               size="sm"
                               variant="ghost"
                               onClick={() => handleEdit(c)}
-                              className="h-7 w-7 p-0 text-gray-500 hover:text-gray-900"
+                              className="h-6 w-6 p-0 text-gray-500 hover:text-gray-900"
+                              title="Editar"
                             >
-                              <Edit2 className="w-3.5 h-3.5" />
+                              <Edit2 className="w-3 h-3" />
                             </Button>
                           )}
                           {canEdit && (
@@ -803,9 +854,10 @@ export default function ContasPagar() {
                               size="sm"
                               variant="ghost"
                               onClick={() => handleDelete(c.id)}
-                              className="h-7 w-7 p-0 text-red-500 hover:bg-red-50"
+                              className="h-6 w-6 p-0 text-red-500 hover:bg-red-50"
+                              title="Excluir"
                             >
-                              <Trash2 className="w-3.5 h-3.5" />
+                              <Trash2 className="w-3 h-3" />
                             </Button>
                           )}
                         </div>
