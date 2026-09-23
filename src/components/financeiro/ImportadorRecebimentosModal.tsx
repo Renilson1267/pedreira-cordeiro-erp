@@ -620,6 +620,9 @@ export function ImportadorRecebimentosModal({
       for (const sheetCfg of sheetsToImport) {
         setProgressMsg(`Processando aba: ${sheetCfg.name}...`)
         const ws = workbook.Sheets[sheetCfg.name]
+        if (ws) {
+          desdobrarCelulasMescladas(ws)
+        }
         if (!ws) {
           resultSummary.detalhesPorAba.push({
             aba: sheetCfg.name,
@@ -1273,6 +1276,9 @@ export function ImportadorRecebimentosModal({
               const m = sheetCfg.mes || 1
               dataVencimentoISO = `${y}-${String(m).padStart(2, '0')}-01T12:00:00.000Z`
             }
+          } else if (rawDataStr && !teveDataPropriaNaLinha && isValidaSanitaria(rawData)) {
+            ultimaDataValida = rawData
+            teveDataPropriaNaLinha = true
           }
 
           // Se for aba genérica como Planilha7 e não tiver cliente resolvível (nem cliente nem descrição válidos)
