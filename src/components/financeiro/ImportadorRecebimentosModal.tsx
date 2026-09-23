@@ -719,7 +719,14 @@ export function ImportadorRecebimentosModal({
           findColInSheet(REGEX_COL_VALOR_RECEBIDO),
         )
 
+        const docCol = matchColWithFallback(
+          mapping.documento,
+          REGEX_COL_DOCUMENTO,
+          findColInSheet(REGEX_COL_DOCUMENTO),
+        )
+
         // Validação de densidade de números decimais válidos na coluna de valor mapeada.
+        // Evita selecionar colunas de documento, telefone, datas ou código como coluna de valor.
         const contarValoresPositivosNaColuna = (colName: string): number => {
           if (!colName) return 0
           const cIdx = currentSheetHeaders.indexOf(colName)
@@ -739,7 +746,18 @@ export function ImportadorRecebimentosModal({
 
           for (let cIdx = 0; cIdx < currentSheetHeaders.length; cIdx++) {
             const h = currentSheetHeaders[cIdx]
-            if (h === dataCol || h === valRecCol) continue
+            const hNorm = normalizarNomeColuna(h)
+            if (
+              h === dataCol ||
+              h === valRecCol ||
+              h === docCol ||
+              hNorm.includes('DOC') ||
+              hNorm.includes('NOTA') ||
+              hNorm.includes('TEL') ||
+              hNorm.includes('FONE')
+            ) {
+              continue
+            }
             const dens = contarValoresPositivosNaColuna(h)
             if (dens > maiorDensidade) {
               maiorDensidade = dens
@@ -780,12 +798,6 @@ export function ImportadorRecebimentosModal({
           mapping.categoria,
           REGEX_COL_CATEGORIA,
           findColInSheet(REGEX_COL_CATEGORIA),
-        )
-
-        const docCol = matchColWithFallback(
-          mapping.documento,
-          REGEX_COL_DOCUMENTO,
-          findColInSheet(REGEX_COL_DOCUMENTO),
         )
 
         // Estado mutável de colunas ativas para suporte a múltiplos blocos ou subtotais na mesma aba
@@ -1194,36 +1206,25 @@ export function ImportadorRecebimentosModal({
             continue
           }
 
-          // Data com barreira sanitária estrita, herança de bloco e busca segura
-          let dataParaVenc = rawData
-          const rawDataStr = String(rawData ?? '').trim()
+          // Leitura estrita de data linha a linha:
+          // 1º: A célula da coluna mapeada de data da linha atual
+          // 2º: Outras colunas da linha atual que contenham data sanitária
+          // 3º: Células mescladas já foram desdobradas (desdobrarCelulasMescladas).
+          // Se a linha ainda assim não tiver data própria, herdamos APENAS dentro do bloco contíguo imediato
+          // (se houver lançamento anterior recente válido sem corte de separador/cabeçalho).
+          // NUNCA herdar data global do primeiro dia do mês se houver data na linha.
           let teveDataPropriaNaLinha = false
+          let dataVencimentoISO = ''
 
-          // Se a célula de data da linha atual tiver conteúdo
+          const rawDataStr = String(rawData ?? '').trim()
           if (rawDataStr && isValidaSanitaria(rawData)) {
             teveDataPropriaNaLinha = true
+            dataVencimentoISO = parseDataReceber(rawData, sheetCfg.ano, sheetCfg.mes)
             ultimaDataValida = rawData
-          } else if (rawDataStr && !isValidaSanitaria(rawData)) {
-            sheetErrosCount += 1
-            resultSummary.erros.push({
-              aba: sheetCfg.name,
-              linha: numLinha,
-              motivo: `Data na linha ("${rawDataStr.slice(0, 30)}") fora do intervalo sanitário plausível (2024-2028). Aplicada data herdada da competência.`,
-            })
           }
 
-          if (!teveDataPropriaNaLinha && ultimaDataValida && isValidaSanitaria(ultimaDataValida)) {
-            dataParaVenc = ultimaDataValida
-          }
-
-          let dataVencimentoISO = parseDataReceber(dataParaVenc, sheetCfg.ano, sheetCfg.mes)
-
-          if (
-            !dataVencimentoISO ||
-            dataVencimentoISO.startsWith('1970') ||
-            !isValidaSanitaria(dataVencimentoISO)
-          ) {
-            // Buscar apenas em colunas que NÃO sejam doc, cliente ou valores
+          // Se a coluna de data mapeada não continha data válida, inspecionar colunas alternativas na PRÓPRIA linha
+          if (!teveDataPropriaNaLinha) {
             for (let colIdx = 0; colIdx < row.length; colIdx++) {
               if (colIdx === activeDocColIdx) continue
               const colHeader = normalizarNomeColuna(activeHeaders[colIdx] || '')
@@ -1232,7 +1233,9 @@ export function ImportadorRecebimentosModal({
                 colHeader.includes('CLIENTE') ||
                 colHeader.includes('SACADO') ||
                 colHeader.includes('DOC') ||
-                colHeader.includes('NOTA')
+                colHeader.includes('NOTA') ||
+                colHeader.includes('TEL') ||
+                colHeader.includes('FONE')
               ) {
                 continue
               }
@@ -1249,19 +1252,11 @@ export function ImportadorRecebimentosModal({
             }
           }
 
-          if (
-            !dataVencimentoISO ||
-            dataVencimentoISO.startsWith('1970') ||
-            !isValidaSanitaria(dataVencimentoISO)
-          ) {
+          // Se ainda não tiver data própria na linha mas houver última data válida do bloco contíguo
+          if (!teveDataPropriaNaLinha) {
             if (ultimaDataValida && isValidaSanitaria(ultimaDataValida)) {
               dataVencimentoISO = parseDataReceber(ultimaDataValida, sheetCfg.ano, sheetCfg.mes)
-            }
-            if (
-              !dataVencimentoISO ||
-              dataVencimentoISO.startsWith('1970') ||
-              !isValidaSanitaria(dataVencimentoISO)
-            ) {
+            } else {
               // Se for Planilha7 ou aba genérica sem mês plausível definido e sem data válida,
               // NUNCA inventar 31/12 nem primeiro do mês: deve virar erro visível e descartar
               if (isAbaGenericaPlanilha) {
@@ -1278,9 +1273,6 @@ export function ImportadorRecebimentosModal({
               const m = sheetCfg.mes || 1
               dataVencimentoISO = `${y}-${String(m).padStart(2, '0')}-01T12:00:00.000Z`
             }
-          } else if (rawDataStr && !teveDataPropriaNaLinha && isValidaSanitaria(rawData)) {
-            ultimaDataValida = rawData
-            teveDataPropriaNaLinha = true
           }
 
           // Se for aba genérica como Planilha7 e não tiver cliente resolvível (nem cliente nem descrição válidos)
