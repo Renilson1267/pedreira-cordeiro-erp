@@ -514,6 +514,7 @@ export function ImportadorRecebimentosModal({
             aba: sheetCfg.name,
             linhasLidas: 0,
             importados: 0,
+            atualizados: 0,
             duplicados: 0,
             errosCount: 0,
             vaziaOuSemCabecalho: true,
@@ -533,6 +534,7 @@ export function ImportadorRecebimentosModal({
             aba: sheetCfg.name,
             linhasLidas: 0,
             importados: 0,
+            atualizados: 0,
             duplicados: 0,
             errosCount: 0,
             vaziaOuSemCabecalho: true,
@@ -697,6 +699,7 @@ export function ImportadorRecebimentosModal({
 
         let sheetLidos = 0
         let sheetImportados = 0
+        let sheetAtualizados = 0
         let sheetDuplicados = 0
         let sheetErrosCount = 0
 
@@ -1209,7 +1212,7 @@ export function ImportadorRecebimentosModal({
                 existingFlexRecords.delete(`desc_${clienteId || ''}_${valorStr}_${descNorm}`)
 
                 resultSummary.atualizados += 1
-                sheetImportados += 1
+                sheetAtualizados += 1
                 continue
               } else {
                 // Se até a data coincidir exatamente, é duplicado
@@ -1430,7 +1433,7 @@ export function ImportadorRecebimentosModal({
               }
             }
 
-            existingKeys.add(dedupeKey)
+            existingExactKeys.add(exactKey)
             resultSummary.importados += 1
             sheetImportados += 1
 
@@ -1456,6 +1459,7 @@ export function ImportadorRecebimentosModal({
           aba: sheetCfg.name,
           linhasLidas: sheetLidos,
           importados: sheetImportados,
+          atualizados: sheetAtualizados,
           duplicados: sheetDuplicados,
           errosCount: sheetErrosCount,
           vaziaOuSemCabecalho: isVazia,
@@ -2207,7 +2211,7 @@ export function ImportadorRecebimentosModal({
               </div>
 
               {/* Cards de Métricas */}
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+              <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
                 <div className="p-3 bg-white border border-[#ECEAE4] rounded-xl text-center">
                   <span className="text-[10px] text-gray-400 font-bold uppercase block">Lidos</span>
                   <span className="text-lg font-bold text-gray-800 font-mono">
@@ -2216,15 +2220,23 @@ export function ImportadorRecebimentosModal({
                 </div>
                 <div className="p-3 bg-white border border-[#ECEAE4] rounded-xl text-center">
                   <span className="text-[10px] text-emerald-600 font-bold uppercase block">
-                    Importados
+                    Novos
                   </span>
                   <span className="text-lg font-bold text-emerald-700 font-mono">
                     {summary.importados}
                   </span>
                 </div>
                 <div className="p-3 bg-white border border-[#ECEAE4] rounded-xl text-center">
+                  <span className="text-[10px] text-blue-600 font-bold uppercase block">
+                    Atualizados
+                  </span>
+                  <span className="text-lg font-bold text-blue-700 font-mono">
+                    {summary.atualizados}
+                  </span>
+                </div>
+                <div className="p-3 bg-white border border-[#ECEAE4] rounded-xl text-center">
                   <span className="text-[10px] text-teal-600 font-bold uppercase block">
-                    Recebidas (Baixadas)
+                    Baixados
                   </span>
                   <span className="text-lg font-bold text-teal-700 font-mono">
                     {summary.recebidasBaixadas}
@@ -2232,7 +2244,7 @@ export function ImportadorRecebimentosModal({
                 </div>
                 <div className="p-3 bg-white border border-[#ECEAE4] rounded-xl text-center">
                   <span className="text-[10px] text-amber-600 font-bold uppercase block">
-                    Duplicados Pulados
+                    Duplicados
                   </span>
                   <span className="text-lg font-bold text-amber-700 font-mono">
                     {summary.duplicadosPulados}
@@ -2269,7 +2281,8 @@ export function ImportadorRecebimentosModal({
                             </Badge>
                           ) : (
                             <span className="text-[11px] text-gray-500">
-                              {item.linhasLidas} lidas • {item.importados} importadas •{' '}
+                              {item.linhasLidas} lidas • {item.importados} novos •{' '}
+                              {item.atualizados > 0 && `${item.atualizados} atualizados • `}
                               {item.duplicados} duplicadas
                             </span>
                           )}
