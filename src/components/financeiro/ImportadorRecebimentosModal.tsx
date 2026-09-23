@@ -44,6 +44,7 @@ import {
   normalizarNomeColuna,
   inferirMesPorDatasDaPlanilha,
   extrairCidadeENota,
+  classificarStatusRecebimento,
   REGEX_COL_DATA,
   REGEX_COL_CLIENTE,
   REGEX_COL_DESCRICAO,
@@ -1135,7 +1136,7 @@ export function ImportadorRecebimentosModal({
 
           const rawDataRec = getVal(row, activeDataRecCol)
           const rawForma = String(getVal(row, activeFormaCol) || '').trim()
-          const rawStatus = String(getVal(row, activeStatusCol) || '').toLowerCase()
+          const rawStatus = String(getVal(row, activeStatusCol) || '').trim()
           const rawCentro = String(getVal(row, activeCentroCol) || '').trim()
           const rawCat = String(getVal(row, activeCatCol) || '').trim()
           const rawDoc = String(getVal(row, activeDocCol) || '').trim()
@@ -1456,93 +1457,29 @@ export function ImportadorRecebimentosModal({
               }
 
               // 5. Determinar Situação (Recebida, Aberta, Parcial, Recebimento Antecipado)
-              let finalStatus: 'Recebida' | 'Aberta' | 'Parcial' | 'Recebimento Antecipado' =
-                'Aberta'
+              // Utiliza a função unificada classificarStatusRecebimento que prioriza a coluna SITUAÇÃO
+              // antes de qualquer heurística por valor pago, tratando acentos, maiúsculas/minúsculas e espaços.
+              const classificacaoResult = classificarStatusRecebimento({
+                rawStatus: item.rawStatus,
+                descFinal: item.descFinal,
+                valorPrevisto: item.valorFinal,
+                valorRecebido: item.rawValorRec,
+                temColunaValorRecebido: Boolean(activeValRecCol),
+                temColunaDataRecebimento: Boolean(activeDataRecCol),
+                rawDataRecebimentoValida: isValidaSanitaria(item.rawDataRec),
+                classificacaoPadrao,
+              })
 
-              if (classificacaoPadrao === 'Recebida') {
-                finalStatus = 'Recebida'
-              } else if (classificacaoPadrao === 'Aberta') {
-                finalStatus = 'Aberta'
-              } else if (classificacaoPadrao === 'Recebimento Antecipado') {
-                finalStatus = 'Recebimento Antecipado'
-              } else {
-                // Modo 'auto':
-                // a) Detecção explícita de adiantamento/recebimento antecipado
-                if (
-                  item.rawStatus.includes('antecip') ||
-                  item.rawStatus.includes('adiant') ||
-                  item.descFinal.toLowerCase().includes('antecip') ||
-                  item.descFinal.toLowerCase().includes('deposito') ||
-                  item.descFinal.toLowerCase().includes('crédito') ||
-                  item.descFinal.toLowerCase().includes('credito')
-                ) {
-                  finalStatus = 'Recebimento Antecipado'
-                } else if (
-                  item.rawStatus.includes('parcial') ||
-                  (item.rawValorRec > 0 &&
-                    item.valorFinal > 0 &&
-                    item.rawValorRec < item.valorFinal - 0.009)
-                ) {
-                  // b) Baixa parcial quando valor_recebido > 0 e menor que o valor previsto
-                  finalStatus = 'Parcial'
-                } else if (
-                  item.rawStatus.includes('abert') ||
-                  item.rawStatus.includes('pend') ||
-                  item.rawStatus.includes('a vencer') ||
-                  item.rawStatus.includes('venc')
-                ) {
-                  // c) Status explícito de em aberto
-                  finalStatus = 'Aberta'
-                } else if (
-                  item.rawStatus.includes('receb') ||
-                  item.rawStatus.includes('liquid') ||
-                  item.rawStatus.includes('baix') ||
-                  item.rawStatus.includes('quit') ||
-                  item.rawStatus.includes('pago')
-                ) {
-                  // d) Status textual indicando recebimento explícito
-                  finalStatus = 'Recebida'
-                } else if (activeValRecCol) {
-                  // e) Quando existe coluna de valor realizado/recebido mapeada:
-                  // Se o valor recebido for nulo, zero ou menor que 0.01, o título está EM ABERTO.
-                  // Se o valor recebido for integral (>= valorFinal - 0.009), está Recebida.
-                  // Se for menor que o valor, entra como Parcial.
-                  if (item.rawValorRec <= 0.009) {
-                    finalStatus = 'Aberta'
-                  } else if (item.rawValorRec >= item.valorFinal - 0.009) {
-                    finalStatus = 'Recebida'
-                  } else {
-                    finalStatus = 'Parcial'
-                  }
-                } else if (
-                  activeDataRecCol &&
-                  item.rawDataRec &&
-                  isValidaSanitaria(item.rawDataRec)
-                ) {
-                  // f) Não tem coluna de valor realizado, mas tem coluna de data de recebimento preenchida com data sanitária
-                  finalStatus = 'Recebida'
-                } else {
-                  // g) Planilha com apenas uma coluna de valor previsto e sem confirmação de liquidação:
-                  // Títulos previstos entram como 'Aberta' para aparecerem no contas a receber da empresa
-                  finalStatus = 'Aberta'
-                }
-              }
+              const finalStatus: 'Recebida' | 'Aberta' | 'Parcial' | 'Recebimento Antecipado' =
+                classificacaoResult.status
 
-              const valorEfetivoRecebido =
-                finalStatus === 'Recebida'
-                  ? item.rawValorRec > 0
-                    ? item.rawValorRec
-                    : item.valorFinal
-                  : finalStatus === 'Parcial'
-                    ? item.rawValorRec
-                    : finalStatus === 'Recebimento Antecipado'
-                      ? item.valorFinal
-                      : 0
+              const valorEfetivoRecebido = classificacaoResult.valorEfetivoRecebido
 
               const rawRecebimentoParaParse = isValidaSanitaria(item.rawDataRec)
                 ? item.rawDataRec
                 : item.dataVencimentoISO
 
+              // Situação "Aberta" / "Vencida" / "Pendente" etc. NUNCA deve ter data_recebimento preenchida nem movimento de caixa
               const dataRecebimentoISO =
                 finalStatus !== 'Aberta'
                   ? parseDataReceber(rawRecebimentoParaParse, sheetCfg.ano, sheetCfg.mes)

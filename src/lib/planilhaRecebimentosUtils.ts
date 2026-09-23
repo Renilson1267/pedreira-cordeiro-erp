@@ -767,6 +767,229 @@ export function inferirMesPorDatasDaPlanilha(
  * Extrai cidade/endereço e número de nota/documento a partir de descrições típicas da planilha de recebimentos,
  * como "Recebimento [cliente] - [cidade] Doc [num]", "Recebimento [cliente] - [cidade] [Doc: num]" etc.
  */
+/**
+ * Normaliza string removendo acentos, pontuação e convertendo para maiúsculas
+ */
+export function normalizarTextoStatus(str: any): string {
+  if (str === null || str === undefined) return ''
+  return String(str)
+    .replace(/\u00A0/g, ' ')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toUpperCase()
+    .replace(/[^A-Z0-9]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
+/**
+ * Classifica a linha de recebimento conforme a coluna de situação/status e valores:
+ * - Se a linha da planilha tiver situação explícita de "ABERTA", "VENCIDA", "PROXIMO DE VENCER", "A RECEBER", "PENDENTE" etc.:
+ *   priorizar 'Aberta', SEM gerar movimento de caixa e SEM data_recebimento, mesmo que haja valor pago preenchido.
+ * - Se a situação indicar quitação explícita ("PAGO", "PAGA", "RECEBIDO", "RECEBIDA", "QUITADO", "LIQUIDADO", "BAIXADO"):
+ *   classificar como 'Recebida'.
+ * - Se a situação indicar adiantamento ("ANTECIPADO", "ADIANTAMENTO", "CREDITO", "DEPOSITO"):
+ *   classificar como 'Recebimento Antecipado'.
+ * - Se a situação indicar parcial ("PARCIAL"):
+ *   classificar como 'Parcial'.
+ * - Se a situação estiver vazia / sem coluna de situação:
+ *   aplica a heurística de valores (vazio/zero -> Aberta; < previsto -> Parcial; >= previsto -> Recebida).
+ */
+export function classificarStatusRecebimento(params: {
+  rawStatus?: string | null
+  descFinal?: string | null
+  valorPrevisto: number
+  valorRecebido: number
+  temColunaValorRecebido: boolean
+  temColunaDataRecebimento: boolean
+  rawDataRecebimentoValida: boolean
+  classificacaoPadrao?: 'auto' | 'Recebida' | 'Aberta' | 'Recebimento Antecipado'
+}): {
+  status: 'Recebida' | 'Aberta' | 'Parcial' | 'Recebimento Antecipado'
+  valorEfetivoRecebido: number
+  situacaoExplicitamenteAberta: boolean
+} {
+  const {
+    rawStatus,
+    descFinal = '',
+    valorPrevisto,
+    valorRecebido,
+    temColunaValorRecebido,
+    temColunaDataRecebimento,
+    rawDataRecebimentoValida,
+    classificacaoPadrao = 'auto',
+  } = params
+
+  if (classificacaoPadrao === 'Recebida') {
+    const valEfetivo = valorRecebido > 0 ? valorRecebido : valorPrevisto
+    return {
+      status: 'Recebida',
+      valorEfetivoRecebido: valEfetivo,
+      situacaoExplicitamenteAberta: false,
+    }
+  }
+  if (classificacaoPadrao === 'Aberta') {
+    return { status: 'Aberta', valorEfetivoRecebido: 0, situacaoExplicitamenteAberta: true }
+  }
+  if (classificacaoPadrao === 'Recebimento Antecipado') {
+    return {
+      status: 'Recebimento Antecipado',
+      valorEfetivoRecebido: valorPrevisto,
+      situacaoExplicitamenteAberta: false,
+    }
+  }
+
+  const normStatus = normalizarTextoStatus(rawStatus)
+  const normDesc = normalizarTextoStatus(descFinal)
+
+  // REGRAS DE SITUAÇÃO DA PLANILHA (QUANDO HOUVER VALOR DE SITUAÇÃO):
+  // Devem ser avaliadas ANTES de qualquer heurística por valor pago.
+  // A comparação normaliza acentos, caixa alta/baixa e espaços extras.
+
+  // 1. Situações em Aberto / Não pagas:
+  // "Vencida", "Vencido", "Aberta", "Em aberto", "Próximo de vencer", "Proximo de vencer", "A receber", "Pendente", etc.
+  // -> Status "Aberta", SEM gerar movimento de caixa, data_recebimento = null e valor_recebido = 0.
+  const isStatusAbertaOuVencida =
+    normStatus === 'VENCIDA' ||
+    normStatus === 'VENCIDO' ||
+    normStatus === 'ABERTA' ||
+    normStatus === 'ABERTO' ||
+    normStatus === 'EM ABERTO' ||
+    normStatus === 'PROXIMO DE VENCER' ||
+    normStatus === 'PROXIMO A VENCER' ||
+    normStatus === 'PROXIMA DE VENCER' ||
+    normStatus === 'PROXIMA A VENCER' ||
+    normStatus === 'A VENCER' ||
+    normStatus === 'A RECEBER' ||
+    normStatus === 'PENDENTE' ||
+    normStatus === 'PENDENTES' ||
+    normStatus === 'NAO PAGO' ||
+    normStatus === 'NAO PAGA' ||
+    normStatus === 'NAO RECEBIDO' ||
+    normStatus === 'NAO RECEBIDA' ||
+    normStatus.includes('ABERT') ||
+    normStatus.includes('VENC') ||
+    normStatus.includes('PEND') ||
+    normStatus.includes('A VENCER') ||
+    normStatus.includes('A RECEBER')
+
+  if (isStatusAbertaOuVencida) {
+    return {
+      status: 'Aberta',
+      valorEfetivoRecebido: 0,
+      situacaoExplicitamenteAberta: true,
+    }
+  }
+
+  // 2. Situações Parciais:
+  // "Parcial", "Pago parcial", "Parcialmente pago" -> status "Parcial" com valor pago gravado.
+  const isStatusParcial =
+    normStatus === 'PARCIAL' ||
+    normStatus === 'PAGO PARCIAL' ||
+    normStatus === 'PAGA PARCIAL' ||
+    normStatus === 'PARCIALMENTE PAGO' ||
+    normStatus === 'PARCIALMENTE PAGA' ||
+    normStatus === 'RECEBIDO PARCIAL' ||
+    normStatus === 'RECEBIDA PARCIAL' ||
+    normStatus.includes('PARCIAL')
+
+  if (isStatusParcial) {
+    const valEfetivo = valorRecebido > 0 ? valorRecebido : 0
+    return {
+      status: 'Parcial',
+      valorEfetivoRecebido: valEfetivo,
+      situacaoExplicitamenteAberta: false,
+    }
+  }
+
+  // 3. Situações Recebidas / Pagas:
+  // "Recebida", "Recebido", "Pago", "Quitada", "Baixada", "Liquidada", etc. -> status "Recebida" com movimento de caixa.
+  const isStatusQuitada =
+    normStatus === 'RECEBIDA' ||
+    normStatus === 'RECEBIDO' ||
+    normStatus === 'PAGO' ||
+    normStatus === 'PAGA' ||
+    normStatus === 'QUITADA' ||
+    normStatus === 'QUITADO' ||
+    normStatus === 'BAIXADA' ||
+    normStatus === 'BAIXADO' ||
+    normStatus === 'LIQUIDADA' ||
+    normStatus === 'LIQUIDADO' ||
+    normStatus.includes('RECEB') ||
+    normStatus.includes('LIQUID') ||
+    normStatus.includes('BAIX') ||
+    normStatus.includes('QUIT') ||
+    normStatus.includes('PAGO') ||
+    normStatus.includes('PAGA')
+
+  if (isStatusQuitada) {
+    const valEfetivo = valorRecebido > 0 ? valorRecebido : valorPrevisto
+    return {
+      status: 'Recebida',
+      valorEfetivoRecebido: valEfetivo,
+      situacaoExplicitamenteAberta: false,
+    }
+  }
+
+  // 4. Checagem de Adiantamento / Recebimento Antecipado no status ou na descrição
+  const isAntecipado =
+    normStatus.includes('ANTECIP') ||
+    normStatus.includes('ADIANT') ||
+    normDesc.includes('ANTECIP') ||
+    normDesc.includes('ADIANT') ||
+    normDesc.includes('DEPOSITO') ||
+    normDesc.includes('CREDITO')
+
+  if (isAntecipado) {
+    return {
+      status: 'Recebimento Antecipado',
+      valorEfetivoRecebido: valorPrevisto,
+      situacaoExplicitamenteAberta: false,
+    }
+  }
+
+  // 5. Sem coluna de situação ou situação não reconhecida / vazia:
+  // Aplicar heurística de valores
+  if (temColunaValorRecebido) {
+    if (valorRecebido <= 0.009) {
+      return {
+        status: 'Aberta',
+        valorEfetivoRecebido: 0,
+        situacaoExplicitamenteAberta: false,
+      }
+    }
+    if (valorRecebido >= valorPrevisto - 0.009) {
+      return {
+        status: 'Recebida',
+        valorEfetivoRecebido: valorRecebido,
+        situacaoExplicitamenteAberta: false,
+      }
+    }
+    // Recebimento parcial com situação vazia
+    return {
+      status: 'Parcial',
+      valorEfetivoRecebido: valorRecebido,
+      situacaoExplicitamenteAberta: false,
+    }
+  }
+
+  if (temColunaDataRecebimento && rawDataRecebimentoValida) {
+    const valEfetivo = valorRecebido > 0 ? valorRecebido : valorPrevisto
+    return {
+      status: 'Recebida',
+      valorEfetivoRecebido: valEfetivo,
+      situacaoExplicitamenteAberta: false,
+    }
+  }
+
+  // Título previsto entra como 'Aberta'
+  return {
+    status: 'Aberta',
+    valorEfetivoRecebido: 0,
+    situacaoExplicitamenteAberta: false,
+  }
+}
+
 export function extrairCidadeENota(descricao: string | null | undefined): {
   cidade: string
   nota: string
