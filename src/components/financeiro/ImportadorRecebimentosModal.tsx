@@ -39,6 +39,7 @@ import {
   desdobrarCelulasMescladas,
   detectarLinhaCabecalho,
   parseValorReceber,
+  parseValorReceberDetalhado,
   parseDataReceber,
   normalizarNomeColuna,
   inferirMesPorDatasDaPlanilha,
@@ -249,18 +250,25 @@ export function ImportadorRecebimentosModal({
         let mesInferido = comp.mes
         let anoInferido = comp.ano
 
-        // Para Planilha7 ou abas sem nome de mês no título, tentar inferir pelas datas internas
-        if (/planilha\s*\d+/i.test(sName)) {
+        // Para Planilha7 ou abas sem nome de mês no título, tentar inferir pelas datas internas.
+        // Se for Planilha7 ou aba genérica sem mês claro no nome, iniciar desmarcada por segurança.
+        const isAbaGenericaPlanilha = /planilha\s*\d+/i.test(sName)
+        let selecionadaPorPadrao = true
+
+        if (isAbaGenericaPlanilha) {
           const dateComp = inferirMesPorDatasDaPlanilha(matrix, headerRow, comp.ano)
           if (dateComp) {
             mesInferido = dateComp.mes
             anoInferido = dateComp.ano
+          } else {
+            // Se não conseguiu inferir mês plausível com datas reais, vem desmarcada
+            selecionadaPorPadrao = false
           }
         }
 
         return {
           name: sName,
-          selected: true,
+          selected: selecionadaPorPadrao,
           ano: anoInferido,
           mes: mesInferido,
           sufixo: comp.sufixo,
@@ -659,6 +667,7 @@ export function ImportadorRecebimentosModal({
           (c, i) => String(c || '').trim() || `Coluna_${i + 1}`,
         )
         const dataRows = matrix.slice(headerIdx)
+        const isAbaGenericaPlanilha = /planilha\s*\d+/i.test(sheetCfg.name)
 
         // Resolução dinâmica e tolerante de colunas para esta aba específica (normalização avançada)
         const findColInSheet = (pattern: RegExp) =>
@@ -1026,23 +1035,30 @@ export function ImportadorRecebimentosModal({
           if (isTotalRow) {
             // Ao atingir um subtotal/total de bloco, a data do bloco terminou
             ultimaDataValida = null
-            if (r + 1 < dataRows.length) {
-              const nextRow = dataRows[r + 1]
-              const nextRowJoin = nextRow
+            // Varre as próximas linhas para reidentificar um novo cabeçalho de bloco se houver
+            for (let ahead = 1; ahead <= 3 && r + ahead < dataRows.length; ahead++) {
+              const candRow = dataRows[r + ahead]
+              const candRowJoin = candRow
                 .map((c) => normalizarNomeColuna(c))
                 .filter(Boolean)
                 .join(' ')
-              const nextHasData =
-                nextRowJoin.includes('DATA') ||
-                nextRowJoin.includes('VENC') ||
-                nextRowJoin.includes('DT')
-              const nextHasVal =
-                nextRowJoin.includes('VALOR') ||
-                nextRowJoin.includes('RECEB') ||
-                nextRowJoin.includes('TOTAL') ||
-                nextRowJoin.includes('CREDIT')
-              if (nextHasData || nextHasVal) {
-                recalcularMapeamentoBloco(nextRow)
+              const candHasData =
+                candRowJoin.includes('DATA') ||
+                candRowJoin.includes('VENC') ||
+                candRowJoin.includes('DT')
+              const candHasVal =
+                candRowJoin.includes('VALOR') ||
+                candRowJoin.includes('RECEB') ||
+                candRowJoin.includes('TOTAL') ||
+                candRowJoin.includes('CREDIT')
+              const candHasCli =
+                candRowJoin.includes('CLIENTE') ||
+                candRowJoin.includes('SACAD') ||
+                candRowJoin.includes('HIST') ||
+                candRowJoin.includes('DESC')
+              if ((candHasData && candHasVal) || (candHasData && candHasCli)) {
+                recalcularMapeamentoBloco(candRow)
+                break
               }
             }
             continue
@@ -1087,8 +1103,36 @@ export function ImportadorRecebimentosModal({
             rawCli = rawDesc
           }
 
-          const rawValor = parseValorReceber(getVal(row, activeValCol))
-          const rawValorRec = activeValRecCol ? parseValorReceber(getVal(row, activeValRecCol)) : 0
+          // Parsing detalhado de valor para rejeitar números implausíveis (telefone/doc lido como valor)
+          const rawValCell = getVal(row, activeValCol)
+          const valParsed = parseValorReceberDetalhado(rawValCell)
+          if (valParsed.invalidoOuAbsurdo) {
+            sheetErrosCount += 1
+            resultSummary.erros.push({
+              aba: sheetCfg.name,
+              linha: numLinha,
+              motivo: `Coluna de valor contém número inválido/implausível: ${valParsed.motivo || String(rawValCell)}. Linha não importada.`,
+            })
+            continue
+          }
+
+          let rawValor = valParsed.valor
+          let rawValorRec = 0
+          if (activeValRecCol) {
+            const rawRecCell = getVal(row, activeValRecCol)
+            const recParsed = parseValorReceberDetalhado(rawRecCell)
+            if (recParsed.invalidoOuAbsurdo) {
+              sheetErrosCount += 1
+              resultSummary.erros.push({
+                aba: sheetCfg.name,
+                linha: numLinha,
+                motivo: `Coluna de valor recebido contém número implausível: ${recParsed.motivo || String(rawRecCell)}. Linha não importada.`,
+              })
+              continue
+            }
+            rawValorRec = recParsed.valor
+          }
+
           const rawDataRec = getVal(row, activeDataRecCol)
           const rawForma = String(getVal(row, activeFormaCol) || '').trim()
           const rawStatus = String(getVal(row, activeStatusCol) || '').toLowerCase()
@@ -1119,7 +1163,9 @@ export function ImportadorRecebimentosModal({
                 continue
               if (cellRaw instanceof Date) continue
 
-              const cellVal = parseValorReceber(cellRaw)
+              const cellDet = parseValorReceberDetalhado(cellRaw)
+              if (cellDet.invalidoOuAbsurdo) continue // ignora telefones/docs na varredura
+              const cellVal = cellDet.valor
               if (cellVal > 0) {
                 const hName = normalizarNomeColuna(activeHeaders[colIdx] || '')
                 if (
@@ -1215,6 +1261,18 @@ export function ImportadorRecebimentosModal({
               dataVencimentoISO.startsWith('1970') ||
               !isValidaSanitaria(dataVencimentoISO)
             ) {
+              // Se for Planilha7 ou aba genérica sem mês plausível definido e sem data válida,
+              // NUNCA inventar 31/12 nem primeiro do mês: deve virar erro visível e descartar
+              if (isAbaGenericaPlanilha) {
+                sheetErrosCount += 1
+                resultSummary.erros.push({
+                  aba: sheetCfg.name,
+                  linha: numLinha,
+                  motivo: `Aba ${sheetCfg.name}: Linha sem data plausível (2024–2028). Registro não importado.`,
+                })
+                continue
+              }
+
               const y = sheetCfg.ano || 2026
               const m = sheetCfg.mes || 1
               dataVencimentoISO = `${y}-${String(m).padStart(2, '0')}-01T12:00:00.000Z`
@@ -1222,6 +1280,17 @@ export function ImportadorRecebimentosModal({
           } else if (rawDataStr && !teveDataPropriaNaLinha && isValidaSanitaria(rawData)) {
             ultimaDataValida = rawData
             teveDataPropriaNaLinha = true
+          }
+
+          // Se for aba genérica como Planilha7 e não tiver cliente resolvível (nem cliente nem descrição válidos)
+          if (isAbaGenericaPlanilha && !rawCli && !rawDesc) {
+            sheetErrosCount += 1
+            resultSummary.erros.push({
+              aba: sheetCfg.name,
+              linha: numLinha,
+              motivo: `Aba ${sheetCfg.name}: Linha sem cliente resolvível nem descrição válida. Registro não importado.`,
+            })
+            continue
           }
 
           // 3. Descrição e extração de cidade e nota

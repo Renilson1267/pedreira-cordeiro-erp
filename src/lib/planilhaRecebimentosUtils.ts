@@ -222,6 +222,8 @@ export const REGEX_COL_STATUS = /STATUS|SITUACAO|CONDICAO|ESTADO/i
 export const REGEX_COL_CENTRO_CUSTO = /CENTRO|CC|CUSTO|FRENTE|SETOR/i
 export const REGEX_COL_CATEGORIA = /CATEG|PLANO|CONTA|NATUREZA/i
 export const REGEX_COL_DOCUMENTO = /DOC|NF|NOTA|DUPLICATA|FATURA|PEDIDO|RECIBO/i
+export const REGEX_COL_TELEFONE_OU_DOC =
+  /TEL|TELEFONE|FONE|CELULAR|WHATS|CONTATO|CPF|CNPJ|INSCRIC|CHAVE/i
 
 /**
  * Detecta a linha de cabeçalho na matriz até ~50 linhas usando pontuação e heurística.
@@ -391,17 +393,91 @@ export function detectarLinhaCabecalho(
   return 1
 }
 
+export const VALOR_MAXIMO_RECEBIMENTO = 50_000_000 // R$ 50 milhões
+
 /**
- * Converte valores monetários aceitando R$, pontuação brasileira/americana, parênteses contábeis etc.
+ * Valida se um número representa um valor monetário plausível no ERP da pedreira.
+ * Rejeita valores acima de 50.000.000 ou NaN/Infinity.
  */
-export function parseValorReceber(val: any): number {
-  if (typeof val === 'number') return isNaN(val) ? 0 : Math.abs(val)
-  if (val === null || val === undefined || val === '') return 0
+export function isValorPlausivel(num: number | null | undefined): boolean {
+  if (num === null || num === undefined || typeof num !== 'number') return false
+  if (isNaN(num) || !isFinite(num)) return false
+  if (num <= 0 || num > VALOR_MAXIMO_RECEBIMENTO) return false
+  return true
+}
+
+export interface ParseValorResult {
+  valor: number
+  invalidoOuAbsurdo: boolean
+  motivo?: string
+}
+
+/**
+ * Converte e valida valores monetários aceitando R$, pontuação brasileira/americana,
+ * parênteses contábeis etc.
+ * Rejeita explicitamente:
+ * 1) Números inteiros sem separador decimal com 10 ou mais dígitos (típicos números de telefone/celular com DDD, CNPJs, códigos de barras/boletos)
+ * 2) Valores que ultrapassam R$ 50.000.000 (valores absurdos como 101 bilhões)
+ */
+export function parseValorReceberDetalhado(val: any): ParseValorResult {
+  if (val === null || val === undefined || val === '') {
+    return { valor: 0, invalidoOuAbsurdo: false }
+  }
+
+  // Se já for número
+  if (typeof val === 'number') {
+    if (isNaN(val) || !isFinite(val)) {
+      return { valor: 0, invalidoOuAbsurdo: false }
+    }
+    const absVal = Math.abs(val)
+    if (absVal === 0) return { valor: 0, invalidoOuAbsurdo: false }
+
+    // Números inteiros enormes (ex: 101454102275) sem casas decimais são telefones ou documentos
+    if (absVal > VALOR_MAXIMO_RECEBIMENTO) {
+      return {
+        valor: 0,
+        invalidoOuAbsurdo: true,
+        motivo: `Valor implausível (> R$ 50M) detectado como telefone/documento (${absVal})`,
+      }
+    }
+
+    // Se tiver 10+ dígitos inteiros
+    if (Number.isInteger(absVal) && absVal >= 10_000_000_000) {
+      return {
+        valor: 0,
+        invalidoOuAbsurdo: true,
+        motivo: `Número de 11+ dígitos lido como valor monetário (${absVal})`,
+      }
+    }
+
+    return { valor: absVal, invalidoOuAbsurdo: false }
+  }
 
   const raw = String(val)
     .replace(/\u00A0/g, ' ')
     .trim()
-  if (!raw) return 0
+  if (!raw) return { valor: 0, invalidoOuAbsurdo: false }
+
+  // Rejeitar strings puramente de telefone (ex: (83) 99999-9999, 83999999999, 99999-9999)
+  const apenasDigitosStr = raw.replace(/\D/g, '')
+  const temParentesesDDD = /\(\d{2}\)/.test(raw)
+  const temTracoTelefone = /\d{4,5}-\d{4}/.test(raw)
+  if (temParentesesDDD || temTracoTelefone) {
+    return {
+      valor: 0,
+      invalidoOuAbsurdo: true,
+      motivo: `Telefone/celular ("${raw}") não é um valor monetário válido`,
+    }
+  }
+
+  // Se for apenas dígitos sem separador e tiver 10 ou mais dígitos (ex: 101454102275, 9303494463)
+  if (/^\d{10,}$/.test(raw.replace(/\s+/g, ''))) {
+    return {
+      valor: 0,
+      invalidoOuAbsurdo: true,
+      motivo: `Número de ${apenasDigitosStr.length} dígitos contínuos sem separador decimal ("${raw}") tratado como telefone/documento`,
+    }
+  }
 
   let str = raw
     .replace(/R\$/gi, '')
@@ -409,7 +485,7 @@ export function parseValorReceber(val: any): number {
     .replace(/[^\d.,+-]/g, '')
     .trim()
 
-  if (!str) return 0
+  if (!str) return { valor: 0, invalidoOuAbsurdo: false }
 
   if (str.includes(',') && str.includes('.')) {
     const lastComma = str.lastIndexOf(',')
@@ -424,8 +500,30 @@ export function parseValorReceber(val: any): number {
   }
 
   const num = parseFloat(str)
-  if (isNaN(num)) return 0
-  return Math.abs(num)
+  if (isNaN(num)) return { valor: 0, invalidoOuAbsurdo: false }
+
+  const absNum = Math.abs(num)
+  if (absNum === 0) return { valor: 0, invalidoOuAbsurdo: false }
+
+  if (absNum > VALOR_MAXIMO_RECEBIMENTO) {
+    return {
+      valor: 0,
+      invalidoOuAbsurdo: true,
+      motivo: `Valor R$ ${absNum.toLocaleString('pt-BR')} excede o limite máximo plausível de R$ 50.000.000`,
+    }
+  }
+
+  // Arredondar para no máximo 2 casas decimais
+  const rounded = Math.round(absNum * 100) / 100
+  return { valor: rounded, invalidoOuAbsurdo: false }
+}
+
+/**
+ * Converte valores monetários aceitando R$, pontuação brasileira/americana, parênteses contábeis etc.
+ * Retorna 0 se o valor for nulo ou se for detectado número implausível (> 50M ou telefone).
+ */
+export function parseValorReceber(val: any): number {
+  return parseValorReceberDetalhado(val).valor
 }
 
 /**
