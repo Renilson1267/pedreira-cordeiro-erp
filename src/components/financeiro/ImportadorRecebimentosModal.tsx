@@ -1276,9 +1276,8 @@ export function ImportadorRecebimentosModal({
               const m = sheetCfg.mes || 1
               dataVencimentoISO = `${y}-${String(m).padStart(2, '0')}-01T12:00:00.000Z`
             }
-          } else if (rawDataStr && !teveDataPropriaNaLinha && isValidaSanitaria(rawData)) {
+          } else if (rawData && isValidaSanitaria(rawData)) {
             ultimaDataValida = rawData
-            teveDataPropriaNaLinha = true
           }
 
           // Se for aba genérica como Planilha7 e não tiver cliente resolvível (nem cliente nem descrição válidos)
