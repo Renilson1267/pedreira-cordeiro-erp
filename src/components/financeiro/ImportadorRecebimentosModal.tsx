@@ -164,7 +164,7 @@ export function ImportadorRecebimentosModal({
   const [criarClientesNaoEncontrados, setCriarClientesNaoEncontrados] = useState(true)
   const [classificacaoPadrao, setClassificacaoPadrao] = useState<
     'auto' | 'Recebida' | 'Aberta' | 'Recebimento Antecipado'
-  >('Recebida')
+  >('auto')
   const [categoriaPadraoId, setCategoriaPadraoId] = useState<string>(categorias[0]?.id || '')
   const [centroCustoPadraoId, setCentroCustoPadraoId] = useState<string>('none')
   const [detectarDuplicados, setDetectarDuplicados] = useState(true)
@@ -255,14 +255,13 @@ export function ImportadorRecebimentosModal({
         const isAbaGenericaPlanilha = /planilha\s*\d+/i.test(sName)
         let selecionadaPorPadrao = true
 
+        // Abas genéricas como Planilha7 iniciam SEMPRE desmarcadas por segurança (exigem seleção explícita do usuário)
         if (isAbaGenericaPlanilha) {
+          selecionadaPorPadrao = false
           const dateComp = inferirMesPorDatasDaPlanilha(matrix, headerRow, comp.ano)
           if (dateComp) {
             mesInferido = dateComp.mes
             anoInferido = dateComp.ano
-          } else {
-            // Se não conseguiu inferir mês plausível com datas reais, vem desmarcada
-            selecionadaPorPadrao = false
           }
         }
 
@@ -739,7 +738,7 @@ export function ImportadorRecebimentosModal({
 
           for (let cIdx = 0; cIdx < currentSheetHeaders.length; cIdx++) {
             const h = currentSheetHeaders[cIdx]
-            if (h === dataCol) continue
+            if (h === dataCol || h === valRecCol) continue
             const dens = contarValoresPositivosNaColuna(h)
             if (dens > maiorDensidade) {
               maiorDensidade = dens
@@ -1458,7 +1457,7 @@ export function ImportadorRecebimentosModal({
 
               // 5. Determinar Situação (Recebida, Aberta, Parcial, Recebimento Antecipado)
               let finalStatus: 'Recebida' | 'Aberta' | 'Parcial' | 'Recebimento Antecipado' =
-                'Recebida'
+                'Aberta'
 
               if (classificacaoPadrao === 'Recebida') {
                 finalStatus = 'Recebida'
@@ -1467,6 +1466,8 @@ export function ImportadorRecebimentosModal({
               } else if (classificacaoPadrao === 'Recebimento Antecipado') {
                 finalStatus = 'Recebimento Antecipado'
               } else {
+                // Modo 'auto':
+                // a) Detecção explícita de adiantamento/recebimento antecipado
                 if (
                   item.rawStatus.includes('antecip') ||
                   item.rawStatus.includes('adiant') ||
@@ -1482,15 +1483,48 @@ export function ImportadorRecebimentosModal({
                     item.valorFinal > 0 &&
                     item.rawValorRec < item.valorFinal - 0.009)
                 ) {
+                  // b) Baixa parcial quando valor_recebido > 0 e menor que o valor previsto
                   finalStatus = 'Parcial'
                 } else if (
                   item.rawStatus.includes('abert') ||
                   item.rawStatus.includes('pend') ||
-                  item.rawStatus.includes('a vencer')
+                  item.rawStatus.includes('a vencer') ||
+                  item.rawStatus.includes('venc')
                 ) {
+                  // c) Status explícito de em aberto
                   finalStatus = 'Aberta'
-                } else {
+                } else if (
+                  item.rawStatus.includes('receb') ||
+                  item.rawStatus.includes('liquid') ||
+                  item.rawStatus.includes('baix') ||
+                  item.rawStatus.includes('quit') ||
+                  item.rawStatus.includes('pago')
+                ) {
+                  // d) Status textual indicando recebimento explícito
                   finalStatus = 'Recebida'
+                } else if (activeValRecCol) {
+                  // e) Quando existe coluna de valor realizado/recebido mapeada:
+                  // Se o valor recebido for nulo, zero ou menor que 0.01, o título está EM ABERTO.
+                  // Se o valor recebido for integral (>= valorFinal - 0.009), está Recebida.
+                  // Se for menor que o valor, entra como Parcial.
+                  if (item.rawValorRec <= 0.009) {
+                    finalStatus = 'Aberta'
+                  } else if (item.rawValorRec >= item.valorFinal - 0.009) {
+                    finalStatus = 'Recebida'
+                  } else {
+                    finalStatus = 'Parcial'
+                  }
+                } else if (
+                  activeDataRecCol &&
+                  item.rawDataRec &&
+                  isValidaSanitaria(item.rawDataRec)
+                ) {
+                  // f) Não tem coluna de valor realizado, mas tem coluna de data de recebimento preenchida com data sanitária
+                  finalStatus = 'Recebida'
+                } else {
+                  // g) Planilha com apenas uma coluna de valor previsto e sem confirmação de liquidação:
+                  // Títulos previstos entram como 'Aberta' para aparecerem no contas a receber da empresa
+                  finalStatus = 'Aberta'
                 }
               }
 
