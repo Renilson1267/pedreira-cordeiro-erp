@@ -277,7 +277,7 @@ export function desdobrarCelulasMescladas(ws: XLSX.WorkSheet): void {
 export const REGEX_COL_VENCIMENTO =
   /^(?:DT\s*VENC|DATA\s*VENC|VENCIMENTO|VENC|DATA|DT|DIA|PREVISAO|PREV)\b|VENC|DT\s*VENC|DATA\s*VENC|PREVISAO/i
 export const REGEX_COL_VALOR =
-  /VALOR\s*TOTAL|VALOR\s*R\$?|A\s*PAGAR|PREVISTO|VALOR|TOTAL|LIQUIDO|BRUTO|R\$|DEBITO|DESPESA|CUSTO/i
+  /VALOR\s*REALIZADO|VALOR\s*TOTAL|VALOR\s*A\s*PAGAR|VALOR\s*R\$?|A\s*PAGAR|REALIZADO|PREVISTO|VALOR|TOTAL|LIQUIDO|BRUTO|R\$|DEBITO|DESPESA|CUSTO/i
 export const REGEX_COL_VALOR_PAGO = /VALOR\s*PAGO|PAGO|PG|LIQUID/i
 export const REGEX_COL_DATA_PAGAMENTO = /DT\s*PAG|DATA\s*PAG|BAIXA|DATA\s*BAIXA|LIQUID|QUITAC/i
 export const REGEX_COL_FORNECEDOR =
@@ -285,16 +285,22 @@ export const REGEX_COL_FORNECEDOR =
 export const REGEX_COL_DESCRICAO =
   /HISTORICO|DESCRICAO|DESC|SERV|PROD|REFERENCIA|ITEM|DISCRIM|DETALHE/i
 
-export function detectarLinhaCabecalho(matrix: any[][]): number {
+export function detectarLinhaCabecalho(
+  matrix: any[][],
+  startRow: number = 0,
+  maxScanCount: number = 50,
+): number {
   if (!matrix || matrix.length === 0) return 1
 
-  // Buscar dinamicamente até a linha 50
-  const maxScan = Math.min(matrix.length, 50)
+  const sRow = Math.max(0, startRow)
+  // Buscar dinamicamente a partir de startRow
+  const maxScan = Math.min(matrix.length, sRow + maxScanCount)
 
   let bestRow = -1
   let bestScore = 0
+  let bestHeaderCount = 0
 
-  for (let r = 0; r < maxScan; r++) {
+  for (let r = sRow; r < maxScan; r++) {
     const row = matrix[r] || []
     if (!Array.isArray(row) || row.length === 0) continue
 
@@ -348,6 +354,8 @@ export function detectarLinhaCabecalho(matrix: any[][]): number {
         t === 'VALOR R' ||
         t === 'VALOR TOTAL' ||
         t === 'VALOR PAGO' ||
+        t === 'VALOR REALIZADO' ||
+        t === 'REALIZADO' ||
         t === 'A PAGAR' ||
         t === 'PREVISTO' ||
         t === 'LIQUIDO' ||
@@ -358,6 +366,7 @@ export function detectarLinhaCabecalho(matrix: any[][]): number {
         t === 'CUSTO' ||
         t.includes('VALOR') ||
         t.includes('PAGAR') ||
+        t.includes('REALIZAD') ||
         t.includes('PREVIST') ||
         t.includes('TOTAL') ||
         t.includes('PAGO') ||
@@ -387,12 +396,31 @@ export function detectarLinhaCabecalho(matrix: any[][]): number {
     )
 
     let score = 0
-    if (hasVenc) score += 4
-    if (hasVal) score += 4
-    if (hasForn) score += 3
-    if (hasDesc) score += 2
-    if (hasDoc) score += 1
-    if (hasStatus) score += 1
+    let validHeaderCount = 0
+    if (hasVenc) {
+      score += 4
+      validHeaderCount++
+    }
+    if (hasVal) {
+      score += 4
+      validHeaderCount++
+    }
+    if (hasForn) {
+      score += 3
+      validHeaderCount++
+    }
+    if (hasDesc) {
+      score += 2
+      validHeaderCount++
+    }
+    if (hasDoc) {
+      score += 1
+      validHeaderCount++
+    }
+    if (hasStatus) {
+      score += 1
+      validHeaderCount++
+    }
 
     if (
       rowJoin.startsWith('TOTAL') ||
@@ -402,9 +430,21 @@ export function detectarLinhaCabecalho(matrix: any[][]): number {
       score -= 5
     }
 
-    if (score >= 4 && score > bestScore) {
-      bestScore = score
-      bestRow = r + 1
+    // Regra B1: score >= 4 com desempate por número de termos válidos e número de colunas
+    // garantindo que cabeçalhos tabulares reais vençam banners genéricos
+    if (score >= 4) {
+      const isBetter =
+        score > bestScore ||
+        (score === bestScore &&
+          (validHeaderCount > bestHeaderCount ||
+            (validHeaderCount === bestHeaderCount &&
+              texts.length > (matrix[bestRow - 1]?.length || 0))))
+
+      if (isBetter) {
+        bestScore = score
+        bestHeaderCount = validHeaderCount
+        bestRow = r + 1
+      }
     }
   }
 
@@ -426,8 +466,15 @@ export function parseValorPagar(val: any): number {
   if (typeof val === 'number') return isNaN(val) ? 0 : Math.abs(val)
   if (val === null || val === undefined || val === '') return 0
 
-  let str = String(val)
+  let raw = String(val)
     .replace(/\u00A0/g, ' ')
+    .trim()
+  if (!raw) return 0
+
+  // Detectar formato contábil entre parênteses: ex. "(R$ 1.500,00)" ou "(1500)"
+  const isAccountingNegative = /^\s*\(.+\)\s*$/.test(raw)
+
+  let str = raw
     .replace(/R\$/gi, '')
     .replace(/\s+/g, '')
     .replace(/[^\d.,+-]/g, '')
@@ -454,7 +501,9 @@ export function parseValorPagar(val: any): number {
   }
 
   const num = parseFloat(str)
-  return isNaN(num) ? 0 : Math.abs(num)
+  if (isNaN(num)) return 0
+  // Valores negativos ou formato contábil convertidos para positivo
+  return Math.abs(num)
 }
 
 const MESES_INGLES_MAP: Record<string, number> = {
@@ -1086,7 +1135,7 @@ export function ImportadorContasPagarModal({
         )
 
         // Candidatos de coluna de valor para a aba (com ampla gama de sinônimos: A PAGAR, PREVISTO, LIQUIDO, BRUTO, etc.)
-        const valCol = matchColWithFallback(
+        let valCol = matchColWithFallback(
           mapping.valor,
           REGEX_COL_VALOR,
           findColInSheet(REGEX_COL_VALOR),
@@ -1097,6 +1146,43 @@ export function ImportadorContasPagarModal({
           REGEX_COL_VALOR_PAGO,
           findColInSheet(REGEX_COL_VALOR_PAGO),
         )
+
+        // B2: Validação de densidade de números decimais válidos na coluna de valor mapeada.
+        // Se a coluna de valor mapeada (herdada da primeira aba ou default) não tiver números positivos nas linhas de dados,
+        // reescolher automaticamente a coluna com maior densidade de números decimais válidos daquela aba.
+        const contarValoresPositivosNaColuna = (colName: string): number => {
+          if (!colName) return 0
+          const cIdx = currentSheetHeaders.indexOf(colName)
+          if (cIdx === -1) return 0
+          let count = 0
+          for (let r = 0; r < Math.min(dataRows.length, 60); r++) {
+            const v = parseValorPagar(dataRows[r]?.[cIdx])
+            if (v > 0) count++
+          }
+          return count
+        }
+
+        const densidadeAtual = contarValoresPositivosNaColuna(valCol)
+        if (densidadeAtual === 0 && dataRows.length > 0) {
+          // Procurar entre as colunas a que tiver maior contagem de números decimais/monetários positivos
+          let melhorCol = valCol
+          let maiorDensidade = 0
+
+          for (let cIdx = 0; cIdx < currentSheetHeaders.length; cIdx++) {
+            const h = currentSheetHeaders[cIdx]
+            // Evitar coluna de vencimento
+            if (h === vencCol) continue
+            const dens = contarValoresPositivosNaColuna(h)
+            if (dens > maiorDensidade) {
+              maiorDensidade = dens
+              melhorCol = h
+            }
+          }
+
+          if (maiorDensidade > 0) {
+            valCol = melhorCol
+          }
+        }
 
         const dataPagCol = matchColWithFallback(
           mapping.dataPagamento,
@@ -1116,15 +1202,27 @@ export function ImportadorContasPagarModal({
 
         const cnpjCol = matchColWithFallback(mapping.cnpj, /CNPJ|CPF|INSC/i)
 
+        // Estado mutável de colunas ativas para suporte a múltiplos blocos/quinzenas na mesma aba
+        let activeHeaders = [...currentSheetHeaders]
+        let activeVencCol = vencCol
+        let activeFornCol = fornCol
+        let activeDescCol = descCol
+        let activeValCol = valCol
+        let activeValPagoCol = valPagoCol
+        let activeDataPagCol = dataPagCol
+        let activeFormaCol = formaCol
+        let activeStatusCol = statusCol
+        let activeCentroCol = centroCol
+        let activeCatCol = catCol
+        let activeDocCol = docCol
+        let activeCnpjCol = cnpjCol
+
         const getVal = (row: any[], headerName: string): any => {
           if (!headerName) return ''
-          const colIdx = currentSheetHeaders.indexOf(headerName)
+          const colIdx = activeHeaders.indexOf(headerName)
           if (colIdx === -1) return ''
           return row[colIdx] ?? ''
         }
-
-        const vencColIdx = vencCol ? currentSheetHeaders.indexOf(vencCol) : -1
-        const docColIdx = docCol ? currentSheetHeaders.indexOf(docCol) : -1
 
         let sheetLidos = 0
         let sheetImportados = 0
@@ -1135,6 +1233,66 @@ export function ImportadorContasPagarModal({
         // herdar a data do lançamento anterior válido da mesma aba
         let ultimaDataValida: any = null
 
+        // Função para recalcular mapeamento de colunas em um novo bloco/quinzena
+        const recalcularMapeamentoBloco = (novoHeaderRow: any[]) => {
+          const newHeaders = novoHeaderRow.map(
+            (c, i) => String(c || '').trim() || `Coluna_${i + 1}`,
+          )
+          if (newHeaders.filter((h) => !h.startsWith('Coluna_')).length >= 2) {
+            activeHeaders = newHeaders
+            const findColInBlock = (pattern: RegExp) =>
+              activeHeaders.find((h) => pattern.test(normalizarNomeColuna(h)) || pattern.test(h)) ||
+              ''
+
+            const matchColInBlock = (userCol: string, pattern: RegExp, fallback: string = '') => {
+              if (userCol && activeHeaders.includes(userCol)) return userCol
+              if (userCol) {
+                const uNorm = normalizarNomeColuna(userCol)
+                const m = activeHeaders.find((h) => normalizarNomeColuna(h) === uNorm)
+                if (m) return m
+              }
+              return findColInBlock(pattern) || fallback
+            }
+
+            activeVencCol = matchColInBlock(
+              mapping.vencimento,
+              REGEX_COL_VENCIMENTO,
+              findColInBlock(REGEX_COL_VENCIMENTO) || activeHeaders[0] || '',
+            )
+            activeFornCol = matchColInBlock(
+              mapping.fornecedor,
+              REGEX_COL_FORNECEDOR,
+              findColInBlock(REGEX_COL_FORNECEDOR),
+            )
+            activeDescCol = matchColInBlock(
+              mapping.descricao,
+              REGEX_COL_DESCRICAO,
+              findColInBlock(REGEX_COL_DESCRICAO),
+            )
+            activeValCol = matchColInBlock(
+              mapping.valor,
+              REGEX_COL_VALOR,
+              findColInBlock(REGEX_COL_VALOR),
+            )
+            activeValPagoCol = matchColInBlock(
+              mapping.valorPago,
+              REGEX_COL_VALOR_PAGO,
+              findColInBlock(REGEX_COL_VALOR_PAGO),
+            )
+            activeDataPagCol = matchColInBlock(
+              mapping.dataPagamento,
+              REGEX_COL_DATA_PAGAMENTO,
+              findColInBlock(REGEX_COL_DATA_PAGAMENTO),
+            )
+            activeFormaCol = matchColInBlock(mapping.formaPagamento, /FORMA|MEIO|TIPO PAG/i)
+            activeStatusCol = matchColInBlock(mapping.status, /STATUS|SITUACAO|COND/i)
+            activeCentroCol = matchColInBlock(mapping.centroCusto, /CENTRO|CC|CUSTO|FRENTE|SETOR/i)
+            activeCatCol = matchColInBlock(mapping.categoria, /CATEG|PLANO|CONTA/i)
+            activeDocCol = matchColInBlock(mapping.documento, /DOC|NF|NOTA|DUPLICATA|FATURA/i)
+            activeCnpjCol = matchColInBlock(mapping.cnpj, /CNPJ|CPF|INSC/i)
+          }
+        }
+
         for (let r = 0; r < dataRows.length; r++) {
           const row = dataRows[r]
           const numLinha = r + headerIdx + 1
@@ -1143,13 +1301,55 @@ export function ImportadorContasPagarModal({
           const temConteudo = row.some((c) => String(c ?? '').trim().length > 0)
           if (!temConteudo) continue
 
-          // Normalizar todas as células como texto para checagem de totais/subtotais semanais e cabeçalhos repetidos
+          // Normalizar todas as células como texto para checagem de blocos, subtotais semanais e cabeçalhos repetidos
           const rowTextJoined = row
             .map((c) => normalizarNomeColuna(c))
             .filter(Boolean)
             .join(' ')
 
-          // Pular linhas puramente de total, subtotal, saldo, semana ou cabeçalhos repetidos no meio da planilha com continue (NUNCA break)
+          // Detectar separador ou fechamento de quinzena/bloco
+          const isQuinzenaSeparator =
+            rowTextJoined.includes('QUINZENA') ||
+            rowTextJoined.includes('2A QUINZENA') ||
+            rowTextJoined.includes('2 QUINZENA') ||
+            rowTextJoined.includes('1A QUINZENA') ||
+            rowTextJoined.includes('1 QUINZENA') ||
+            rowTextJoined.includes('SEGUNDA QUINZENA') ||
+            rowTextJoined.includes('PRIMEIRA QUINZENA')
+
+          // Detectar cabeçalho repetido no meio da aba
+          const isRepeatedHeader =
+            (rowTextJoined.includes('VENC') || rowTextJoined.includes('DATA')) &&
+            (rowTextJoined.includes('VALOR') ||
+              rowTextJoined.includes('PAGAR') ||
+              rowTextJoined.includes('REALIZAD')) &&
+            (rowTextJoined.includes('FORNEC') ||
+              rowTextJoined.includes('FAVOREC') ||
+              rowTextJoined.includes('HIST'))
+
+          if (isQuinzenaSeparator || isRepeatedHeader) {
+            // Se for cabeçalho repetido ou a próxima linha for cabeçalho, reexecutar detecção de colunas
+            if (isRepeatedHeader) {
+              recalcularMapeamentoBloco(row)
+            } else if (r + 1 < dataRows.length) {
+              const nextRow = dataRows[r + 1]
+              const nextRowJoin = nextRow
+                .map((c) => normalizarNomeColuna(c))
+                .filter(Boolean)
+                .join(' ')
+              if (
+                (nextRowJoin.includes('VENC') || nextRowJoin.includes('DATA')) &&
+                (nextRowJoin.includes('VALOR') ||
+                  nextRowJoin.includes('PAGAR') ||
+                  nextRowJoin.includes('REALIZAD'))
+              ) {
+                recalcularMapeamentoBloco(nextRow)
+              }
+            }
+            continue
+          }
+
+          // Pular linhas puramente de total, subtotal, saldo ou semana com continue (NUNCA descartar as linhas seguintes)
           const isTotalRow =
             rowTextJoined.startsWith('TOTAL') ||
             rowTextJoined.startsWith('SUBTOTAL') ||
@@ -1157,19 +1357,26 @@ export function ImportadorContasPagarModal({
             rowTextJoined.startsWith('SALDO') ||
             rowTextJoined.startsWith('SEMANA') ||
             rowTextJoined.includes('TOTAL SEMANA') ||
-            rowTextJoined.includes('SUBTOTAL SEMANA')
+            rowTextJoined.includes('SUBTOTAL SEMANA') ||
+            rowTextJoined.includes('SUBTOTAL 1') ||
+            rowTextJoined.includes('SUBTOTAL 2')
           if (isTotalRow) {
-            continue
-          }
-
-          // Se for linha de cabeçalho repetida no meio da aba (ex: "VENCIMENTO HISTORICO VALOR"), pular com continue
-          if (
-            (rowTextJoined.includes('VENC') || rowTextJoined.includes('DATA')) &&
-            (rowTextJoined.includes('VALOR') || rowTextJoined.includes('PAGAR')) &&
-            (rowTextJoined.includes('FORNEC') ||
-              rowTextJoined.includes('FAVOREC') ||
-              rowTextJoined.includes('HIST'))
-          ) {
+            // Se tiver indício de cabeçalho na linha seguinte após subtotal, tentar re-detectar colunas
+            if (r + 1 < dataRows.length) {
+              const nextRow = dataRows[r + 1]
+              const nextRowJoin = nextRow
+                .map((c) => normalizarNomeColuna(c))
+                .filter(Boolean)
+                .join(' ')
+              if (
+                (nextRowJoin.includes('VENC') || nextRowJoin.includes('DATA')) &&
+                (nextRowJoin.includes('VALOR') ||
+                  nextRowJoin.includes('PAGAR') ||
+                  nextRowJoin.includes('REALIZAD'))
+              ) {
+                recalcularMapeamentoBloco(nextRow)
+              }
+            }
             continue
           }
 
@@ -1177,14 +1384,17 @@ export function ImportadorContasPagarModal({
           resultSummary.totalLidos += 1
 
           try {
-            let rawVenc = getVal(row, vencCol)
-            let rawForn = String(getVal(row, fornCol) || '').trim()
-            let rawDesc = String(getVal(row, descCol) || '').trim()
+            const activeVencColIdx = activeVencCol ? activeHeaders.indexOf(activeVencCol) : -1
+            const activeDocColIdx = activeDocCol ? activeHeaders.indexOf(activeDocCol) : -1
+
+            let rawVenc = getVal(row, activeVencCol)
+            let rawForn = String(getVal(row, activeFornCol) || '').trim()
+            let rawDesc = String(getVal(row, activeDescCol) || '').trim()
 
             // Se fornecedor e descrição vieram vazios, procurar na linha a primeira célula textual representativa
             if (!rawForn && !rawDesc) {
               for (let cIdx = 0; cIdx < row.length; cIdx++) {
-                if (cIdx === vencColIdx || cIdx === docColIdx) continue
+                if (cIdx === activeVencColIdx || cIdx === activeDocColIdx) continue
                 const cv = row[cIdx]
                 if (
                   cv &&
@@ -1209,15 +1419,17 @@ export function ImportadorContasPagarModal({
               rawForn = rawDesc
             }
 
-            const rawValor = parseValorPagar(getVal(row, valCol))
-            const rawValorPago = valPagoCol ? parseValorPagar(getVal(row, valPagoCol)) : 0
-            const rawDataPag = getVal(row, dataPagCol)
-            const rawForma = String(getVal(row, formaCol) || '').trim()
-            const rawStatus = String(getVal(row, statusCol) || '').toLowerCase()
-            const rawCentro = String(getVal(row, centroCol) || '').trim()
-            const rawCat = String(getVal(row, catCol) || '').trim()
-            const rawDoc = String(getVal(row, docCol) || '').trim()
-            const rawCnpj = String(getVal(row, cnpjCol) || '').trim()
+            const rawValor = parseValorPagar(getVal(row, activeValCol))
+            const rawValorPago = activeValPagoCol
+              ? parseValorPagar(getVal(row, activeValPagoCol))
+              : 0
+            const rawDataPag = getVal(row, activeDataPagCol)
+            const rawForma = String(getVal(row, activeFormaCol) || '').trim()
+            const rawStatus = String(getVal(row, activeStatusCol) || '').toLowerCase()
+            const rawCentro = String(getVal(row, activeCentroCol) || '').trim()
+            const rawCat = String(getVal(row, activeCatCol) || '').trim()
+            const rawDoc = String(getVal(row, activeDocCol) || '').trim()
+            const rawCnpj = String(getVal(row, activeCnpjCol) || '').trim()
 
             // Ignorar se a descrição ou favorecido for totalizador
             const lowerDesc = (rawDesc || rawForn).toLowerCase()
@@ -1240,7 +1452,7 @@ export function ImportadorContasPagarModal({
               let maiorValorEncontrado = 0
               for (let colIdx = 0; colIdx < row.length; colIdx++) {
                 // Pular coluna de vencimento e coluna de documento
-                if (colIdx === vencColIdx || colIdx === docColIdx) continue
+                if (colIdx === activeVencColIdx || colIdx === activeDocColIdx) continue
 
                 const cellRaw = row[colIdx]
                 // Se a célula contiver formato evidente de documento/NF ou data, não considerar
@@ -1250,11 +1462,12 @@ export function ImportadorContasPagarModal({
 
                 const cellVal = parseValorPagar(cellRaw)
                 if (cellVal > 0) {
-                  const hName = normalizarNomeColuna(currentSheetHeaders[colIdx])
+                  const hName = normalizarNomeColuna(activeHeaders[colIdx] || '')
                   // Se o cabeçalho tiver indício explícito de valor, prioriza imediatamente
                   if (
                     hName.includes('VALOR') ||
                     hName.includes('PAGAR') ||
+                    hName.includes('REALIZAD') ||
                     hName.includes('PREVIST') ||
                     hName.includes('TOTAL') ||
                     hName.includes('LIQUID') ||
@@ -1342,7 +1555,7 @@ export function ImportadorContasPagarModal({
             // Se ainda não obteve data válida com vencCol, tentar varrer as colunas da linha
             if (!dataVencimentoISO || dataVencimentoISO.startsWith('1970')) {
               for (let colIdx = 0; colIdx < row.length; colIdx++) {
-                if (colIdx === docColIdx) continue
+                if (colIdx === activeDocColIdx) continue
                 const candVal = row[colIdx]
                 if (candVal !== null && candVal !== undefined && String(candVal).trim() !== '') {
                   const parsed = parseDataPagar(candVal, sheetCfg.ano, sheetCfg.mes)
