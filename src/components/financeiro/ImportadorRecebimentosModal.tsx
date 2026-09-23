@@ -140,6 +140,8 @@ export function ImportadorRecebimentosModal({
   const [file, setFile] = useState<File | null>(null)
   const [workbook, setWorkbook] = useState<XLSX.WorkBook | null>(null)
   const [sheetsConfig, setSheetsConfig] = useState<SheetCompetenciaReceber[]>([])
+  // Filtro de mês: 'todos' ou '1'..'12'
+  const [selectedMesFilter, setSelectedMesFilter] = useState<string>('todos')
 
   // Raw preview
   const [activeSheetPreview, setActiveSheetPreview] = useState<string>('')
@@ -182,6 +184,7 @@ export function ImportadorRecebimentosModal({
     setFile(null)
     setWorkbook(null)
     setSheetsConfig([])
+    setSelectedMesFilter('todos')
     setActiveSheetPreview('')
     setSheetHeaders([])
     setPreviewRows([])
@@ -279,11 +282,14 @@ export function ImportadorRecebimentosModal({
       })
 
       setSheetsConfig(configs)
+      setSelectedMesFilter('todos')
 
       // Primeira aba como prévia inicial
       const firstConfig = configs[0]
-      setActiveSheetPreview(firstConfig.name)
-      carregarPreviaAba(wb, firstConfig)
+      setActiveSheetPreview(firstConfig?.name || '')
+      if (firstConfig) {
+        carregarPreviaAba(wb, firstConfig)
+      }
 
       setStep(2)
     } catch (err: any) {
@@ -432,6 +438,33 @@ export function ImportadorRecebimentosModal({
 
   const selectAllSheets = (selected: boolean) => {
     setSheetsConfig((prev) => prev.map((s) => ({ ...s, selected })))
+  }
+
+  // Handler de mudança de filtro de mês
+  const handleMesFilterChange = (filtro: string) => {
+    setSelectedMesFilter(filtro)
+
+    if (filtro === 'todos') {
+      // Volta a listar todas as abas, mantendo a regra padrão (Planilha7 desmarcada por padrão)
+      setSheetsConfig((prev) =>
+        prev.map((s) => {
+          const isAbaGenericaPlanilha = /planilha\s*\d+/i.test(s.name)
+          return {
+            ...s,
+            selected: !isAbaGenericaPlanilha,
+          }
+        }),
+      )
+    } else {
+      const numMes = parseInt(filtro, 10)
+      // Marca automaticamente abas daquele mês e desmarca as demais
+      setSheetsConfig((prev) =>
+        prev.map((s) => ({
+          ...s,
+          selected: s.mes === numMes,
+        })),
+      )
+    }
   }
 
   const updateSheetCompetencia = (sheetName: string, mes: number, ano: number) => {
@@ -1795,14 +1828,92 @@ export function ImportadorRecebimentosModal({
           {/* STEP 2: Seleção e Competência das Abas */}
           {step === 2 && (
             <div className="space-y-4">
+              {/* Seletor de Mês e Controles do Topo */}
+              <div className="p-3.5 bg-gradient-to-r from-teal-50/70 via-emerald-50/40 to-transparent rounded-2xl border border-teal-200/80 space-y-2.5">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                  <div>
+                    <Label className="text-xs font-bold text-teal-950 flex items-center gap-1.5">
+                      <span>Escolher Mês para Importação:</span>
+                    </Label>
+                    <p className="text-[11px] text-teal-900/80 mt-0.5">
+                      Filtre e selecione diretamente o mês desejado sem precisar marcar/desmarcar
+                      abas manualmente.
+                    </p>
+                  </div>
+
+                  <div className="w-full sm:w-72 shrink-0">
+                    <Select value={selectedMesFilter} onValueChange={handleMesFilterChange}>
+                      <SelectTrigger className="h-8 text-xs bg-white border-teal-300 font-medium text-teal-950 shadow-xs focus:ring-teal-500">
+                        <SelectValue placeholder="Selecione o mês..." />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="todos" className="font-semibold text-teal-900">
+                          Todos os meses (automático)
+                        </SelectItem>
+                        <SelectItem value="1">01 - Janeiro (2026)</SelectItem>
+                        <SelectItem value="2">02 - Fevereiro (2026)</SelectItem>
+                        <SelectItem value="3">03 - Março (2026)</SelectItem>
+                        <SelectItem value="4">04 - Abril (2026)</SelectItem>
+                        <SelectItem value="5">05 - Maio (2026)</SelectItem>
+                        <SelectItem value="6">06 - Junho (2026)</SelectItem>
+                        <SelectItem value="7">07 - Julho (2026)</SelectItem>
+                        <SelectItem value="8">08 - Agosto (2026)</SelectItem>
+                        <SelectItem value="9">09 - Setembro (2026)</SelectItem>
+                        <SelectItem value="10">10 - Outubro (2026)</SelectItem>
+                        <SelectItem value="11">11 - Novembro (2026)</SelectItem>
+                        <SelectItem value="12">12 - Dezembro (2026)</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+
+                {selectedMesFilter !== 'todos' && (
+                  <div className="flex items-center justify-between text-[11px] text-teal-900 bg-white/70 px-2.5 py-1.5 rounded-lg border border-teal-200">
+                    <span>
+                      Filtrando abas de{' '}
+                      <strong>
+                        {
+                          [
+                            '',
+                            'Janeiro',
+                            'Fevereiro',
+                            'Março',
+                            'Abril',
+                            'Maio',
+                            'Junho',
+                            'Julho',
+                            'Agosto',
+                            'Setembro',
+                            'Outubro',
+                            'Novembro',
+                            'Dezembro',
+                          ][parseInt(selectedMesFilter, 10)]
+                        }
+                      </strong>{' '}
+                      — apenas as abas deste mês serão processadas.
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => handleMesFilterChange('todos')}
+                      className="text-teal-700 hover:text-teal-900 font-semibold underline underline-offset-2 ml-2 cursor-pointer"
+                    >
+                      Ver todas as abas
+                    </button>
+                  </div>
+                )}
+              </div>
+
               <div className="flex items-center justify-between pb-2 border-b border-[#ECEAE4]">
                 <div>
                   <h3 className="font-bold text-gray-900 text-sm">
-                    Abas Identificadas ({sheetsConfig.length})
+                    {selectedMesFilter === 'todos'
+                      ? `Abas Identificadas (${sheetsConfig.length})`
+                      : `Abas Filtradas (${sheetsConfig.filter((s) => s.mes === parseInt(selectedMesFilter, 10)).length} de ${sheetsConfig.length})`}
                   </h3>
                   <p className="text-gray-500 text-xs">
-                    Confira a competência inferida para 2026 e desmarque abas que não deseja
-                    processar:
+                    {selectedMesFilter === 'todos'
+                      ? 'Confira a competência inferida para 2026 e desmarque abas que não deseja processar:'
+                      : 'Abas selecionadas automaticamente para a competência escolhida:'}
                   </p>
                 </div>
                 <div className="flex items-center gap-2">
@@ -1810,7 +1921,16 @@ export function ImportadorRecebimentosModal({
                     type="button"
                     size="sm"
                     variant="outline"
-                    onClick={() => selectAllSheets(true)}
+                    onClick={() => {
+                      if (selectedMesFilter === 'todos') {
+                        selectAllSheets(true)
+                      } else {
+                        const m = parseInt(selectedMesFilter, 10)
+                        setSheetsConfig((prev) =>
+                          prev.map((s) => (s.mes === m ? { ...s, selected: true } : s)),
+                        )
+                      }
+                    }}
                     className="h-7 text-xs border-[#ECEAE4]"
                   >
                     Marcar Todas
@@ -1819,7 +1939,16 @@ export function ImportadorRecebimentosModal({
                     type="button"
                     size="sm"
                     variant="outline"
-                    onClick={() => selectAllSheets(false)}
+                    onClick={() => {
+                      if (selectedMesFilter === 'todos') {
+                        selectAllSheets(false)
+                      } else {
+                        const m = parseInt(selectedMesFilter, 10)
+                        setSheetsConfig((prev) =>
+                          prev.map((s) => (s.mes === m ? { ...s, selected: false } : s)),
+                        )
+                      }
+                    }}
                     className="h-7 text-xs border-[#ECEAE4]"
                   >
                     Desmarcar
@@ -1828,102 +1957,130 @@ export function ImportadorRecebimentosModal({
               </div>
 
               {/* Lista de abas com mês/ano ajustável */}
-              <div className="space-y-2 max-h-72 overflow-y-auto pr-1">
-                {sheetsConfig.map((cfg) => (
-                  <div
-                    key={cfg.name}
-                    className={`flex flex-col sm:flex-row sm:items-center justify-between gap-2 p-2.5 rounded-xl border text-xs transition-colors ${
-                      cfg.selected
-                        ? 'border-teal-400 bg-teal-50/40 text-gray-900'
-                        : 'border-[#ECEAE4] bg-[#FAF9F7]/50 text-gray-400'
-                    }`}
-                  >
-                    <div
-                      className="flex items-center gap-2.5 cursor-pointer flex-1"
-                      onClick={() => toggleSheetSelected(cfg.name)}
-                    >
-                      <Checkbox checked={cfg.selected} />
-                      <div>
-                        <span className="font-semibold text-gray-900 block truncate max-w-[240px]">
-                          {cfg.name}
-                        </span>
-                        <span className="text-[10px] text-gray-500">
-                          {cfg.totalRows} linha(s) de dados
-                          {cfg.sufixo && ` • (${cfg.sufixo})`}
-                        </span>
-                      </div>
+              {(() => {
+                const abasExibidas =
+                  selectedMesFilter === 'todos'
+                    ? sheetsConfig
+                    : sheetsConfig.filter((s) => s.mes === parseInt(selectedMesFilter, 10))
+
+                if (abasExibidas.length === 0) {
+                  return (
+                    <div className="p-6 text-center rounded-xl border border-dashed border-[#ECEAE4] bg-[#FAF9F7] space-y-2">
+                      <p className="text-xs text-gray-600 font-medium">
+                        Nenhuma aba identificada para o mês selecionado.
+                      </p>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        onClick={() => handleMesFilterChange('todos')}
+                        className="text-xs"
+                      >
+                        Voltar para todos os meses
+                      </Button>
                     </div>
+                  )
+                }
 
-                    <div
-                      className="flex flex-wrap items-center gap-2"
-                      onClick={(e) => e.stopPropagation()}
-                    >
-                      <div className="flex items-center gap-1">
-                        <Label className="text-[10px] text-gray-500 whitespace-nowrap">
-                          Linha Cab.:
-                        </Label>
-                        <Input
-                          type="number"
-                          min={1}
-                          max={100}
-                          value={cfg.headerRowIndex}
-                          onChange={(e) => {
-                            const val = parseInt(e.target.value, 10)
-                            if (!isNaN(val) && val >= 1) {
-                              updateSheetHeaderRow(cfg.name, val)
-                            }
-                          }}
-                          disabled={!cfg.selected}
-                          className="h-7 w-16 text-xs bg-white font-mono text-center"
-                          title="Linha da planilha onde estão os títulos das colunas"
-                        />
-                      </div>
-
-                      <div className="flex items-center gap-1">
-                        <Label className="text-[10px] text-gray-500">Mês:</Label>
-                        <Select
-                          value={String(cfg.mes)}
-                          onValueChange={(val) =>
-                            updateSheetCompetencia(cfg.name, parseInt(val, 10), cfg.ano)
-                          }
-                          disabled={!cfg.selected}
+                return (
+                  <div className="space-y-2 max-h-72 overflow-y-auto pr-1">
+                    {abasExibidas.map((cfg) => (
+                      <div
+                        key={cfg.name}
+                        className={`flex flex-col sm:flex-row sm:items-center justify-between gap-2 p-2.5 rounded-xl border text-xs transition-colors ${
+                          cfg.selected
+                            ? 'border-teal-400 bg-teal-50/40 text-gray-900'
+                            : 'border-[#ECEAE4] bg-[#FAF9F7]/50 text-gray-400'
+                        }`}
+                      >
+                        <div
+                          className="flex items-center gap-2.5 cursor-pointer flex-1"
+                          onClick={() => toggleSheetSelected(cfg.name)}
                         >
-                          <SelectTrigger className="h-7 w-28 text-xs bg-white">
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {Object.entries(MESES_MAP)
-                              .filter(([k]) => k.length > 3)
-                              .slice(0, 12)
-                              .map(([nomeMes, numMes]) => (
-                                <SelectItem key={numMes} value={String(numMes)}>
-                                  {numMes.toString().padStart(2, '0')} - {nomeMes}
-                                </SelectItem>
-                              ))}
-                          </SelectContent>
-                        </Select>
-                      </div>
+                          <Checkbox checked={cfg.selected} />
+                          <div>
+                            <span className="font-semibold text-gray-900 block truncate max-w-[240px]">
+                              {cfg.name}
+                            </span>
+                            <span className="text-[10px] text-gray-500">
+                              {cfg.totalRows} linha(s) de dados
+                              {cfg.sufixo && ` • (${cfg.sufixo})`}
+                            </span>
+                          </div>
+                        </div>
 
-                      <div className="flex items-center gap-1">
-                        <Label className="text-[10px] text-gray-500">Ano:</Label>
-                        <Input
-                          type="number"
-                          value={cfg.ano}
-                          onChange={(e) =>
-                            updateSheetCompetencia(
-                              cfg.name,
-                              cfg.mes,
-                              parseInt(e.target.value, 10) || cfg.ano,
-                            )
-                          }
-                          disabled={!cfg.selected}
-                          className="h-7 w-20 text-xs bg-white font-mono"
-                        />
+                        <div
+                          className="flex flex-wrap items-center gap-2"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <div className="flex items-center gap-1">
+                            <Label className="text-[10px] text-gray-500 whitespace-nowrap">
+                              Linha Cab.:
+                            </Label>
+                            <Input
+                              type="number"
+                              min={1}
+                              max={100}
+                              value={cfg.headerRowIndex}
+                              onChange={(e) => {
+                                const val = parseInt(e.target.value, 10)
+                                if (!isNaN(val) && val >= 1) {
+                                  updateSheetHeaderRow(cfg.name, val)
+                                }
+                              }}
+                              disabled={!cfg.selected}
+                              className="h-7 w-16 text-xs bg-white font-mono text-center"
+                              title="Linha da planilha onde estão os títulos das colunas"
+                            />
+                          </div>
+
+                          <div className="flex items-center gap-1">
+                            <Label className="text-[10px] text-gray-500">Mês:</Label>
+                            <Select
+                              value={String(cfg.mes)}
+                              onValueChange={(val) =>
+                                updateSheetCompetencia(cfg.name, parseInt(val, 10), cfg.ano)
+                              }
+                              disabled={!cfg.selected}
+                            >
+                              <SelectTrigger className="h-7 w-28 text-xs bg-white">
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {Object.entries(MESES_MAP)
+                                  .filter(([k]) => k.length > 3)
+                                  .slice(0, 12)
+                                  .map(([nomeMes, numMes]) => (
+                                    <SelectItem key={numMes} value={String(numMes)}>
+                                      {numMes.toString().padStart(2, '0')} - {nomeMes}
+                                    </SelectItem>
+                                  ))}
+                              </SelectContent>
+                            </Select>
+                          </div>
+
+                          <div className="flex items-center gap-1">
+                            <Label className="text-[10px] text-gray-500">Ano:</Label>
+                            <Input
+                              type="number"
+                              value={cfg.ano}
+                              onChange={(e) =>
+                                updateSheetCompetencia(
+                                  cfg.name,
+                                  cfg.mes,
+                                  parseInt(e.target.value, 10) || cfg.ano,
+                                )
+                              }
+                              disabled={!cfg.selected}
+                              className="h-7 w-20 text-xs bg-white font-mono"
+                            />
+                          </div>
+                        </div>
                       </div>
-                    </div>
+                    ))}
                   </div>
-                ))}
-              </div>
+                )
+              })()}
 
               <div className="text-[11px] text-gray-500 pt-1 flex items-center justify-between">
                 <span>
