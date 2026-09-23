@@ -3,6 +3,7 @@ import * as XLSX from 'xlsx'
 import pb from '@/lib/pocketbase/client'
 import { formatCurrency, formatDate } from '@/lib/formatters'
 import { apenasDigitos, formatarCnpj, buscarCnpj } from '@/lib/brasilApi'
+import { withRateLimitRetry, sleep } from '@/lib/pocketbase/rateLimit'
 import type { Fornecedor, PlanoConta, CentroCusto, ContaPagar } from '@/types/erp'
 import {
   Dialog,
@@ -1515,19 +1516,32 @@ export function ImportadorContasPagarModal({
                     }
                   }
 
-                  const novoFornecedor = await pb.collection('fornecedores').create<Fornecedor>({
-                    empresa_id: empresaId,
-                    nome:
-                      cnpjConsultaInfo?.nomeFantasia || cnpjConsultaInfo?.razaoSocial || rawForn,
-                    cnpj_cpf: cnpjLimpo ? formatarCnpj(cnpjLimpo) : undefined,
-                    telefone: cnpjConsultaInfo?.telefone || undefined,
-                    email: cnpjConsultaInfo?.email || undefined,
-                    endereco: cnpjConsultaInfo?.enderecoCompleto || undefined,
-                    cidade: cnpjConsultaInfo?.cidade || undefined,
-                    uf: cnpjConsultaInfo?.uf || undefined,
-                    cep: cnpjConsultaInfo?.cep || undefined,
-                    observacoes: `Criado automaticamente na importação da planilha (aba ${sheetCfg.name})`,
-                  })
+                  await sleep(100)
+                  const novoFornecedor = await withRateLimitRetry(
+                    () =>
+                      pb.collection('fornecedores').create<Fornecedor>({
+                        empresa_id: empresaId,
+                        nome:
+                          cnpjConsultaInfo?.nomeFantasia ||
+                          cnpjConsultaInfo?.razaoSocial ||
+                          rawForn,
+                        cnpj_cpf: cnpjLimpo ? formatarCnpj(cnpjLimpo) : undefined,
+                        telefone: cnpjConsultaInfo?.telefone || undefined,
+                        email: cnpjConsultaInfo?.email || undefined,
+                        endereco: cnpjConsultaInfo?.enderecoCompleto || undefined,
+                        cidade: cnpjConsultaInfo?.cidade || undefined,
+                        uf: cnpjConsultaInfo?.uf || undefined,
+                        cep: cnpjConsultaInfo?.cep || undefined,
+                        observacoes: `Criado automaticamente na importação da planilha (aba ${sheetCfg.name})`,
+                      }),
+                    {
+                      onRetry: (tentativa, delayMs) => {
+                        setProgressMsg(
+                          `Aguardando servidor... limite temporário (429) no fornecedor "${rawForn}". Tentativa ${tentativa} em ${(delayMs / 1000).toFixed(1)}s`,
+                        )
+                      },
+                    },
+                  )
 
                   fornecedoresCache.set(keyForn, novoFornecedor)
                   if (cnpjLimpo) {
@@ -1690,37 +1704,59 @@ export function ImportadorContasPagarModal({
             // 9. Gravar Conta a Pagar
             const statusFinalGravado = isPaga ? 'Paga' : isParcial ? 'Parcial' : 'Aberta'
 
-            const createdConta = await pb.collection('contas_pagar').create<ContaPagar>({
-              empresa_id: empresaId,
-              fornecedor_id: fornecedorId || null,
-              descricao: descFinal,
-              categoria_id: finalCategoriaId,
-              centro_custo_id: finalCentroCustoId,
-              valor: valorFinal,
-              valor_pago: valorEfetivoPago,
-              vencimento: dataVencimentoISO,
-              parcelas: 1,
-              status: statusFinalGravado,
-              data_pagamento: dataPagamentoISO,
-              forma_pagamento: isPaga || isParcial ? finalForma : null,
-              observacoes: `Importado de planilha [Aba: ${sheetCfg.name}]${rawDoc ? ` | Doc: ${rawDoc}` : ''}${isParcial ? ` | Pagamento parcial importado: ${valorEfetivoPago}` : ''}`,
-            })
+            await sleep(100)
+            const createdConta = await withRateLimitRetry(
+              () =>
+                pb.collection('contas_pagar').create<ContaPagar>({
+                  empresa_id: empresaId,
+                  fornecedor_id: fornecedorId || null,
+                  descricao: descFinal,
+                  categoria_id: finalCategoriaId,
+                  centro_custo_id: finalCentroCustoId,
+                  valor: valorFinal,
+                  valor_pago: valorEfetivoPago,
+                  vencimento: dataVencimentoISO,
+                  parcelas: 1,
+                  status: statusFinalGravado,
+                  data_pagamento: dataPagamentoISO,
+                  forma_pagamento: isPaga || isParcial ? finalForma : null,
+                  observacoes: `Importado de planilha [Aba: ${sheetCfg.name}]${rawDoc ? ` | Doc: ${rawDoc}` : ''}${isParcial ? ` | Pagamento parcial importado: ${valorEfetivoPago}` : ''}`,
+                }),
+              {
+                onRetry: (tentativa, delayMs) => {
+                  setProgressMsg(
+                    `Aguardando servidor... limite temporário (429) no lançamento "${descFinal.slice(0, 25)}...". Tentativa ${tentativa} em ${(delayMs / 1000).toFixed(1)}s`,
+                  )
+                },
+              },
+            )
 
             // 10. Se houve pagamento (total ou parcial), gerar movimento financeiro pelo valor efetivo
             if ((isPaga || isParcial) && valorEfetivoPago > 0 && dataPagamentoISO) {
               try {
-                await pb.collection('movimentos_financeiros').create({
-                  empresa_id: empresaId,
-                  tipo: 'Saida',
-                  descricao: `Pagamento${isParcial ? ' parcial' : ''}: ${createdConta.descricao}${rawForn ? ` [${rawForn}]` : ''}`,
-                  valor: valorEfetivoPago,
-                  data: dataPagamentoISO,
-                  categoria_id: finalCategoriaId,
-                  centro_custo_id: finalCentroCustoId,
-                  origem: 'ContaPagar',
-                  referencia_id: createdConta.id,
-                  conciliado: false,
-                })
+                await sleep(100)
+                await withRateLimitRetry(
+                  () =>
+                    pb.collection('movimentos_financeiros').create({
+                      empresa_id: empresaId,
+                      tipo: 'Saida',
+                      descricao: `Pagamento${isParcial ? ' parcial' : ''}: ${createdConta.descricao}${rawForn ? ` [${rawForn}]` : ''}`,
+                      valor: valorEfetivoPago,
+                      data: dataPagamentoISO,
+                      categoria_id: finalCategoriaId,
+                      centro_custo_id: finalCentroCustoId,
+                      origem: 'ContaPagar',
+                      referencia_id: createdConta.id,
+                      conciliado: false,
+                    }),
+                  {
+                    onRetry: (tentativa, delayMs) => {
+                      setProgressMsg(
+                        `Aguardando servidor... limite temporário (429) no movimento financeiro. Tentativa ${tentativa} em ${(delayMs / 1000).toFixed(1)}s`,
+                      )
+                    },
+                  },
+                )
               } catch (eMov) {
                 console.warn('Erro ao criar movimento financeiro correspondente:', eMov)
               }

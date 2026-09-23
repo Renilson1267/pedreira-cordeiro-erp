@@ -55,6 +55,7 @@ import {
   REGEX_COL_CATEGORIA,
   REGEX_COL_DOCUMENTO,
 } from '@/lib/planilhaRecebimentosUtils'
+import { withRateLimitRetry, sleep } from '@/lib/pocketbase/rateLimit'
 export interface ImportadorRecebimentosModalProps {
   open: boolean
   onOpenChange: (open: boolean) => void
@@ -993,11 +994,22 @@ export function ImportadorRecebimentosModal({
                 clienteId = clientesCache.get(keyCli)!.id
               } else if (criarClientesNaoEncontrados) {
                 try {
-                  const novoCliente = await pb.collection('clientes').create<Cliente>({
-                    empresa_id: empresaId,
-                    nome: rawCli,
-                    observacoes: `Criado automaticamente na importação da planilha (aba ${sheetCfg.name})`,
-                  })
+                  await sleep(100)
+                  const novoCliente = await withRateLimitRetry(
+                    () =>
+                      pb.collection('clientes').create<Cliente>({
+                        empresa_id: empresaId,
+                        nome: rawCli,
+                        observacoes: `Criado automaticamente na importação da planilha (aba ${sheetCfg.name})`,
+                      }),
+                    {
+                      onRetry: (tentativa, delayMs) => {
+                        setProgressMsg(
+                          `Aguardando servidor... limite temporário (429) no cliente "${rawCli}". Tentativa ${tentativa} em ${(delayMs / 1000).toFixed(1)}s`,
+                        )
+                      },
+                    },
+                  )
                   clientesCache.set(keyCli, novoCliente)
                   clienteId = novoCliente.id
                   if (!resultSummary.clientesCriados.includes(novoCliente.nome)) {
@@ -1195,38 +1207,61 @@ export function ImportadorRecebimentosModal({
             }
 
             // 9. Gravar Conta a Receber no PocketBase com endereco e nota extraídos
-            const createdConta = await pb.collection('contas_receber').create<ContaReceber>({
-              empresa_id: empresaId,
-              cliente_id: clienteId || null,
-              descricao: descFinal,
-              categoria_id: finalCategoriaId,
-              centro_custo_id: finalCentroCustoId,
-              valor: valorFinal,
-              valor_recebido: valorEfetivoRecebido,
-              vencimento: dataVencimentoISO,
-              parcelas: 1,
-              status: finalStatus,
-              data_recebimento: dataRecebimentoISO,
-              forma_recebimento: finalStatus !== 'Aberta' ? finalForma : null,
-              endereco: enderecoFinal || undefined,
-              nota: notaFinal || undefined,
-              observacoes: `Importado de planilha [Aba: ${sheetCfg.name}]${notaFinal ? ` | Doc: ${notaFinal}` : ''}${finalStatus === 'Parcial' ? ` | Recebimento parcial importado: ${valorEfetivoRecebido}` : ''}`,
-            })
+            // Espaçamento preventivo e retry com backoff exponencial para evitar 429
+            await sleep(100)
+            const createdConta = await withRateLimitRetry(
+              () =>
+                pb.collection('contas_receber').create<ContaReceber>({
+                  empresa_id: empresaId,
+                  cliente_id: clienteId || null,
+                  descricao: descFinal,
+                  categoria_id: finalCategoriaId,
+                  centro_custo_id: finalCentroCustoId,
+                  valor: valorFinal,
+                  valor_recebido: valorEfetivoRecebido,
+                  vencimento: dataVencimentoISO,
+                  parcelas: 1,
+                  status: finalStatus,
+                  data_recebimento: dataRecebimentoISO,
+                  forma_recebimento: finalStatus !== 'Aberta' ? finalForma : null,
+                  endereco: enderecoFinal || undefined,
+                  nota: notaFinal || undefined,
+                  observacoes: `Importado de planilha [Aba: ${sheetCfg.name}]${notaFinal ? ` | Doc: ${notaFinal}` : ''}${finalStatus === 'Parcial' ? ` | Recebimento parcial importado: ${valorEfetivoRecebido}` : ''}`,
+                }),
+              {
+                onRetry: (tentativa, delayMs) => {
+                  setProgressMsg(
+                    `Aguardando servidor... limite temporário (429) no título "${descFinal.slice(0, 25)}...". Tentativa ${tentativa} em ${(delayMs / 1000).toFixed(1)}s`,
+                  )
+                },
+              },
+            )
 
             // 10. Se for Recebimento Antecipado, gera crédito correspondente para o cliente
             if (finalStatus === 'Recebimento Antecipado' && clienteId) {
               try {
-                await pb.collection('creditos_clientes').create({
-                  empresa_id: empresaId,
-                  cliente_id: clienteId,
-                  valor: valorFinal,
-                  saldo_restante: valorFinal,
-                  origem: `Recebimento Antecipado (${sheetCfg.name})`,
-                  descricao: `Depósito/Adiantamento ref. ${descFinal} [Conta ${createdConta.id}]`,
-                  data: dataRecebimentoISO || dataVencimentoISO,
-                  status: 'disponivel',
-                  referencia_conta_id: createdConta.id,
-                })
+                await sleep(100)
+                await withRateLimitRetry(
+                  () =>
+                    pb.collection('creditos_clientes').create({
+                      empresa_id: empresaId,
+                      cliente_id: clienteId,
+                      valor: valorFinal,
+                      saldo_restante: valorFinal,
+                      origem: `Recebimento Antecipado (${sheetCfg.name})`,
+                      descricao: `Depósito/Adiantamento ref. ${descFinal} [Conta ${createdConta.id}]`,
+                      data: dataRecebimentoISO || dataVencimentoISO,
+                      status: 'disponivel',
+                      referencia_conta_id: createdConta.id,
+                    }),
+                  {
+                    onRetry: (tentativa, delayMs) => {
+                      setProgressMsg(
+                        `Aguardando servidor... limite temporário (429) gerando crédito. Tentativa ${tentativa} em ${(delayMs / 1000).toFixed(1)}s`,
+                      )
+                    },
+                  },
+                )
                 resultSummary.creditosGerados += 1
               } catch (credErr) {
                 console.warn('Erro ao criar crédito do cliente:', credErr)
@@ -1242,18 +1277,29 @@ export function ImportadorRecebimentosModal({
               dataRecebimentoISO
             ) {
               try {
-                await pb.collection('movimentos_financeiros').create({
-                  empresa_id: empresaId,
-                  tipo: 'Entrada',
-                  descricao: `Recebimento${finalStatus === 'Parcial' ? ' parcial' : ''}: ${createdConta.descricao}${rawCli ? ` [${rawCli}]` : ''}`,
-                  valor: valorEfetivoRecebido,
-                  data: dataRecebimentoISO,
-                  categoria_id: finalCategoriaId,
-                  centro_custo_id: finalCentroCustoId,
-                  origem: 'ContaReceber',
-                  referencia_id: createdConta.id,
-                  conciliado: false,
-                })
+                await sleep(100)
+                await withRateLimitRetry(
+                  () =>
+                    pb.collection('movimentos_financeiros').create({
+                      empresa_id: empresaId,
+                      tipo: 'Entrada',
+                      descricao: `Recebimento${finalStatus === 'Parcial' ? ' parcial' : ''}: ${createdConta.descricao}${rawCli ? ` [${rawCli}]` : ''}`,
+                      valor: valorEfetivoRecebido,
+                      data: dataRecebimentoISO,
+                      categoria_id: finalCategoriaId,
+                      centro_custo_id: finalCentroCustoId,
+                      origem: 'ContaReceber',
+                      referencia_id: createdConta.id,
+                      conciliado: false,
+                    }),
+                  {
+                    onRetry: (tentativa, delayMs) => {
+                      setProgressMsg(
+                        `Aguardando servidor... limite temporário (429) no movimento financeiro. Tentativa ${tentativa} em ${(delayMs / 1000).toFixed(1)}s`,
+                      )
+                    },
+                  },
+                )
               } catch (movErr) {
                 console.warn('Erro ao criar movimento financeiro correspondente:', movErr)
               }
