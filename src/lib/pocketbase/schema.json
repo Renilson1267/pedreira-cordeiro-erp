@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-09-23T01:18:55.111Z",
+  "generatedAt": "2026-09-23T02:22:31.404Z",
   "collections": [
     {
       "name": "users",
@@ -744,6 +744,18 @@
         {
           "name": "valor_recebido",
           "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "endereco",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "nota",
+          "type": "text",
           "required": false,
           "system": false
         }

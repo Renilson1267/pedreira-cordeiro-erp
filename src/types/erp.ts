@@ -171,6 +171,8 @@ export interface ContaReceber {
   status: StatusContaReceber
   data_recebimento?: string
   forma_recebimento?: 'Dinheiro' | 'Pix' | 'Cartão' | 'Boleto' | 'Transferência'
+  endereco?: string
+  nota?: string
   observacoes?: string
   created: string
   updated: string

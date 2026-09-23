@@ -213,7 +213,7 @@ export const REGEX_COL_CLIENTE =
 export const REGEX_COL_DESCRICAO =
   /HISTORICO|DESCRICAO|DESC|SERV|PROD|REFERENCIA|ITEM|DISCRIM|DETALHE|OBS/i
 export const REGEX_COL_VALOR =
-  /VALOR\s*RECEBIDO|VALOR\s*TOTAL|VALOR\s*A\s*RECEBER|VALOR\s*LIQUIDO|VALOR\s*BRUTO|VALOR\s*R\$?|RECEBIDO|REALIZADO|PREVISTO|VALOR|TOTAL|LIQUIDO|BRUTO|R\$|CREDITO|RECEITA/i
+  /VALOR\s*RECEBIDO|VALOR\s*TOTAL|VALOR\s*A\s*RECEBER|VALOR\s*LIQUIDO|VALOR\s*BRUTO|VALOR\s*R\$?|VALOR\s*R|RECEBIDO|REALIZADO|PREVISTO|VALOR|TOTAL|LIQUIDO|BRUTO|R\$|CREDITO|CREDITOS|RECEITA|RECEITAS|ENTRADA|ENTRADAS/i
 export const REGEX_COL_VALOR_RECEBIDO = /VALOR\s*RECEBIDO|RECEBIDO|REC|LIQUID|PAGO|VALOR\s*PAGO/i
 export const REGEX_COL_DATA_RECEBIMENTO =
   /DT\s*REC|DATA\s*REC|RECEB|BAIXA|DATA\s*BAIXA|LIQUID|QUITAC/i
@@ -284,15 +284,24 @@ export function detectarLinhaCabecalho(
       (t) =>
         t === 'VALOR' ||
         t === 'VALOR R' ||
+        t === 'VALOR R$' ||
         t === 'VALOR TOTAL' ||
         t === 'VALOR RECEBIDO' ||
         t === 'TOTAL' ||
         t === 'LIQUIDO' ||
         t === 'BRUTO' ||
+        t === 'CREDITO' ||
+        t === 'CREDITOS' ||
+        t === 'RECEITA' ||
+        t === 'RECEITAS' ||
+        t === 'ENTRADA' ||
+        t === 'ENTRADAS' ||
         t.includes('VALOR') ||
         t.includes('RECEB') ||
         t.includes('TOTAL') ||
-        t.includes('CREDIT'),
+        t.includes('CREDIT') ||
+        t.includes('RECEIT') ||
+        t.includes('ENTRAD'),
     )
     const hasDesc = texts.some(
       (t) =>
@@ -607,4 +616,105 @@ export function inferirMesPorDatasDaPlanilha(
   }
 
   return null
+}
+
+/**
+ * Extrai cidade/endereço e número de nota/documento a partir de descrições típicas da planilha de recebimentos,
+ * como "Recebimento [cliente] - [cidade] Doc [num]", "Recebimento [cliente] - [cidade] [Doc: num]" etc.
+ */
+export function extrairCidadeENota(descricao: string | null | undefined): {
+  cidade: string
+  nota: string
+} {
+  if (!descricao || typeof descricao !== 'string') {
+    return { cidade: '', nota: '' }
+  }
+
+  const desc = descricao.trim()
+  if (!desc) {
+    return { cidade: '', nota: '' }
+  }
+
+  let nota = ''
+  let cidade = ''
+
+  // 1. Extração da Nota / Documento
+  // Padrões com colchetes: [Doc: 90566], [Doc: NF9436/91679 A 92219], [NF: 1234]
+  const bracketDocMatch = desc.match(/\[(?:Doc|NF|NF-e|NFe|Nota|Duplicata|Fatura)[\s:]*([^\]]+)\]/i)
+  if (bracketDocMatch && bracketDocMatch[1].trim()) {
+    nota = bracketDocMatch[1].trim()
+  } else {
+    // Padrão inline com "Doc" / "NF" / "NF-e" seguido pelo número até o fim ou antes de colchetes
+    const inlineDocMatch = desc.match(
+      /\b(?:Doc|NF|NF-e|NFe|Nota|Duplicata)[\s.:#-]+([A-Z0-9/\s\-–]+)$/i,
+    )
+    if (inlineDocMatch && inlineDocMatch[1].trim()) {
+      nota = inlineDocMatch[1].trim().replace(/\s+$/, '')
+    } else {
+      // Padrão com dígitos no final após traço ou "Doc": ex "... - 90566" ou "... Doc 90566"
+      const endDigitsMatch = desc.match(/(?:Doc|NF|\s[-–])\s*(\d{3,8}(?:\s*[/\-A]\s*\d{3,8})*)$/i)
+      if (endDigitsMatch && endDigitsMatch[1].trim()) {
+        nota = endDigitsMatch[1].trim()
+      }
+    }
+  }
+
+  // 2. Extração da Cidade / Endereço
+  // Remove a parte do documento para isolar o trecho do cliente e cidade
+  let textWithoutDoc = desc
+    .replace(/\[(?:Doc|NF|NF-e|NFe|Nota|Duplicata|Fatura)[\s:]*[^\]]+\]/gi, '')
+    .replace(/\b(?:Doc|NF|NF-e|NFe|Nota|Duplicata)[\s.:#-]+.*$/i, '')
+    .trim()
+
+  // Se houver " - " separando partes:
+  // ex: "Recebimento ELDORADO PRE MOLDADO - PATOS - SANTANDER"
+  // ex: "Recebimento ADRIANO HELIO DE BRITO - SJE - BRADESCO"
+  // ex: "Recebimento WALBER DE ALMEIDA - DESTERRO"
+  // ex: "Recebimento KERLY CONSTRUÇÕES/ADRIANO - VISTA SERRANA- SANTADER"
+  // ex: "Recebimento ECO FORTE - SÃO JOSE DO BONFIM - SANTANDER"
+  if (textWithoutDoc.includes('-') || textWithoutDoc.includes('–')) {
+    // Normalizar separadores com espaço ao redor para facilitar split
+    const parts = textWithoutDoc
+      .replace(/[-–]/g, ' - ')
+      .split(/\s+-\s+/)
+      .map((p) => p.trim())
+      .filter(Boolean)
+
+    if (parts.length >= 2) {
+      // Remover termos de banco/forma do final se houver (ex: SANTANDER, BRADESCO, BANCO, PIX, BOLETO)
+      const bancosOuFormas =
+        /^(?:SANTANDER|SANTADER|BRADESCO|BANCO|ITAU|BB|BRASIL|CAIXA|SICOOB|SICREDI|NUBANK|INTER|PIX|BOLETO|TED|DOC|CHEQUE)$/i
+
+      // A cidade normalmente é a parte entre o cliente e o banco, ou a última parte após o cliente
+      let candidateParts = parts.slice(1) // ignora a primeira parte que contém "Recebimento [cliente]"
+      // Se a última parte for banco, retira
+      if (
+        candidateParts.length > 1 &&
+        bancosOuFormas.test(candidateParts[candidateParts.length - 1])
+      ) {
+        candidateParts.pop()
+      }
+
+      if (candidateParts.length > 0) {
+        let cand = candidateParts[candidateParts.length - 1]
+        // Se ainda tiver um banco grudado no final (ex "VISTA SERRANA- SANTADER" que foi splitado)
+        cand = cand
+          .replace(
+            /\b(?:SANTANDER|SANTADER|BRADESCO|BANCO|ITAU|BB|BRASIL|CAIXA|SICOOB|SICREDI|PIX|BOLETO)\b/gi,
+            '',
+          )
+          .trim()
+        if (cand && cand.length >= 2 && !/^\d+$/.test(cand)) {
+          cidade = cand
+        }
+      }
+    }
+  }
+
+  // Normalizar nota removendo prefixo "Doc: " redundante se existir
+  if (nota) {
+    nota = nota.replace(/^(?:Doc|NF|NF-e|NFe|Nota)[\s.:#-]+/i, '').trim()
+  }
+
+  return { cidade, nota }
 }

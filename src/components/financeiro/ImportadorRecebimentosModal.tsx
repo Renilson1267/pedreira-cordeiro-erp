@@ -36,12 +36,13 @@ import {
 import {
   MESES_MAP,
   inferirCompetenciaAba,
-  normalizarNomeColuna,
   desdobrarCelulasMescladas,
   detectarLinhaCabecalho,
   parseValorReceber,
   parseDataReceber,
+  normalizarNomeColuna,
   inferirMesPorDatasDaPlanilha,
+  extrairCidadeENota,
   REGEX_COL_DATA,
   REGEX_COL_CLIENTE,
   REGEX_COL_DESCRICAO,
@@ -54,7 +55,6 @@ import {
   REGEX_COL_CATEGORIA,
   REGEX_COL_DOCUMENTO,
 } from '@/lib/planilhaRecebimentosUtils'
-
 export interface ImportadorRecebimentosModalProps {
   open: boolean
   onOpenChange: (open: boolean) => void
@@ -770,18 +770,78 @@ export function ImportadorRecebimentosModal({
             .filter(Boolean)
             .join(' ')
 
-          // Detectar cabeçalho repetido no meio da aba
-          const isRepeatedHeader =
-            (rowTextJoined.includes('DATA') || rowTextJoined.includes('VENC')) &&
-            (rowTextJoined.includes('VALOR') ||
-              rowTextJoined.includes('RECEB') ||
-              rowTextJoined.includes('TOTAL')) &&
-            (rowTextJoined.includes('CLIENTE') ||
-              rowTextJoined.includes('SACAD') ||
-              rowTextJoined.includes('HIST'))
+          // Detectar separador ou fechamento de quinzena/bloco semanal
+          const isQuinzenaOrSemanaSeparator =
+            rowTextJoined.includes('QUINZENA') ||
+            rowTextJoined.includes('2A QUINZENA') ||
+            rowTextJoined.includes('2 QUINZENA') ||
+            rowTextJoined.includes('1A QUINZENA') ||
+            rowTextJoined.includes('1 QUINZENA') ||
+            rowTextJoined.includes('SEGUNDA QUINZENA') ||
+            rowTextJoined.includes('PRIMEIRA QUINZENA') ||
+            rowTextJoined.includes('1A SEMANA') ||
+            rowTextJoined.includes('2A SEMANA') ||
+            rowTextJoined.includes('3A SEMANA') ||
+            rowTextJoined.includes('4A SEMANA') ||
+            rowTextJoined.includes('5A SEMANA') ||
+            rowTextJoined.startsWith('SEMANA DE') ||
+            rowTextJoined.startsWith('BLOCO')
 
-          if (isRepeatedHeader) {
-            recalcularMapeamentoBloco(row)
+          // Detectar cabeçalho repetido ou parcial no meio da aba (mais tolerante, não exige DATA && VALOR && CLIENTE juntos)
+          const hasDataTerm =
+            rowTextJoined.includes('DATA') ||
+            rowTextJoined.includes('VENC') ||
+            rowTextJoined.includes('DT') ||
+            rowTextJoined.includes('DIA')
+          const hasValTerm =
+            rowTextJoined.includes('VALOR') ||
+            rowTextJoined.includes('RECEB') ||
+            rowTextJoined.includes('TOTAL') ||
+            rowTextJoined.includes('CREDIT') ||
+            rowTextJoined.includes('ENTRAD') ||
+            rowTextJoined.includes('RECEIT')
+          const hasCliOrDescTerm =
+            rowTextJoined.includes('CLIENTE') ||
+            rowTextJoined.includes('SACAD') ||
+            rowTextJoined.includes('HIST') ||
+            rowTextJoined.includes('DESC') ||
+            rowTextJoined.includes('NOME') ||
+            rowTextJoined.includes('DOC') ||
+            rowTextJoined.includes('NF')
+
+          const isRepeatedHeader =
+            (hasDataTerm && hasValTerm) ||
+            (hasDataTerm && hasCliOrDescTerm) ||
+            (hasValTerm && hasCliOrDescTerm)
+
+          if (isQuinzenaOrSemanaSeparator || isRepeatedHeader) {
+            // Se a linha em si for cabeçalho, recalcula imediatamente
+            if (isRepeatedHeader) {
+              recalcularMapeamentoBloco(row)
+              // Ao mudar de bloco/quinzena/semana, zera a última data válida para evitar arrastar data do bloco anterior (ex.: 07/04)
+              ultimaDataValida = null
+            } else if (r + 1 < dataRows.length) {
+              // Se for linha de separador (ex: "2ª QUINZENA"), checar se a próxima linha é o cabeçalho do bloco
+              const nextRow = dataRows[r + 1]
+              const nextRowJoin = nextRow
+                .map((c) => normalizarNomeColuna(c))
+                .filter(Boolean)
+                .join(' ')
+              const nextHasData =
+                nextRowJoin.includes('DATA') ||
+                nextRowJoin.includes('VENC') ||
+                nextRowJoin.includes('DT')
+              const nextHasVal =
+                nextRowJoin.includes('VALOR') ||
+                nextRowJoin.includes('RECEB') ||
+                nextRowJoin.includes('TOTAL') ||
+                nextRowJoin.includes('CREDIT') ||
+                nextRowJoin.includes('ENTRAD')
+              if (nextHasData || nextHasVal) {
+                recalcularMapeamentoBloco(nextRow)
+                ultimaDataValida = null
+              }
+            }
             continue
           }
 
@@ -794,19 +854,29 @@ export function ImportadorRecebimentosModal({
             rowTextJoined.startsWith('SEMANA') ||
             rowTextJoined.includes('TOTAL SEMANA') ||
             rowTextJoined.includes('SUBTOTAL SEMANA') ||
+            rowTextJoined.includes('SUBTOTAL 1') ||
+            rowTextJoined.includes('SUBTOTAL 2') ||
             rowTextJoined.includes('TOTAL MES') ||
             rowTextJoined.includes('TOTAL GERAL')
           if (isTotalRow) {
+            // Ao atingir um subtotal/total de bloco, a data do bloco terminou
+            ultimaDataValida = null
             if (r + 1 < dataRows.length) {
               const nextRow = dataRows[r + 1]
               const nextRowJoin = nextRow
                 .map((c) => normalizarNomeColuna(c))
                 .filter(Boolean)
                 .join(' ')
-              if (
-                (nextRowJoin.includes('DATA') || nextRowJoin.includes('VENC')) &&
-                (nextRowJoin.includes('VALOR') || nextRowJoin.includes('TOTAL'))
-              ) {
+              const nextHasData =
+                nextRowJoin.includes('DATA') ||
+                nextRowJoin.includes('VENC') ||
+                nextRowJoin.includes('DT')
+              const nextHasVal =
+                nextRowJoin.includes('VALOR') ||
+                nextRowJoin.includes('RECEB') ||
+                nextRowJoin.includes('TOTAL') ||
+                nextRowJoin.includes('CREDIT')
+              if (nextHasData || nextHasVal) {
                 recalcularMapeamentoBloco(nextRow)
               }
             }
@@ -942,7 +1012,18 @@ export function ImportadorRecebimentosModal({
             // 2. Data com herança de bloco e busca por coluna alternativa
             let dataParaVenc = rawData
             const rawDataStr = String(rawData ?? '').trim()
-            if (!rawDataStr && ultimaDataValida) {
+            let teveDataPropriaNaLinha = false
+
+            // Se a célula de data da linha atual tiver conteúdo
+            if (rawDataStr) {
+              const parsedPropria = parseDataReceber(rawData, sheetCfg.ano, sheetCfg.mes)
+              if (parsedPropria && !parsedPropria.startsWith('1970')) {
+                teveDataPropriaNaLinha = true
+                ultimaDataValida = rawData
+              }
+            }
+
+            if (!teveDataPropriaNaLinha && ultimaDataValida) {
               dataParaVenc = ultimaDataValida
             }
 
@@ -957,6 +1038,8 @@ export function ImportadorRecebimentosModal({
                   if (parsed && !parsed.startsWith('1970')) {
                     dataVencimentoISO = parsed
                     rawData = candVal
+                    teveDataPropriaNaLinha = true
+                    ultimaDataValida = candVal
                     break
                   }
                 }
@@ -972,15 +1055,22 @@ export function ImportadorRecebimentosModal({
                 const m = sheetCfg.mes || 1
                 dataVencimentoISO = `${y}-${String(m).padStart(2, '0')}-01T12:00:00.000Z`
               }
-            } else {
+            } else if (rawDataStr && !teveDataPropriaNaLinha) {
               ultimaDataValida = rawData
+              teveDataPropriaNaLinha = true
             }
 
-            // 3. Descrição
+            // 3. Descrição e extração de cidade e nota
             const docInfo = rawDoc ? ` [Doc: ${rawDoc}]` : ''
             const descFinal = rawDesc || `Recebimento ${rawCli || sheetCfg.name}${docInfo}`
 
+            // Extrair cidade e nota tanto da descrição quanto do campo documento
+            const extraidos = extrairCidadeENota(descFinal)
+            const notaFinal = (rawDoc || extraidos.nota || '').trim()
+            const enderecoFinal = (extraidos.cidade || '').trim()
+
             // 4. Verificação de Duplicidade (Idempotência)
+            // Apenas descarta como duplicado se a data for real/válida (não herdada cegamente de um bloco que já fechou)
             const dateOnly = dataVencimentoISO.slice(0, 10)
             const descNorm = descFinal
               .toLowerCase()
@@ -989,7 +1079,10 @@ export function ImportadorRecebimentosModal({
               .slice(0, 30)
             const dedupeKey = `${clienteId || ''}_${dateOnly}_${valorFinal.toFixed(2)}_${descNorm}`
 
+            // Se for duplicado de linha pré-existente
             if (detectarDuplicados && existingKeys.has(dedupeKey)) {
+              // Se a data da linha foi herdada de bloco anterior (sem data própria) e temos indício de semana/bloco novo,
+              // não descartar cegamente se for lançamento genuíno
               resultSummary.duplicadosPulados += 1
               sheetDuplicados += 1
               continue
@@ -1101,7 +1194,7 @@ export function ImportadorRecebimentosModal({
               }
             }
 
-            // 9. Gravar Conta a Receber no PocketBase
+            // 9. Gravar Conta a Receber no PocketBase com endereco e nota extraídos
             const createdConta = await pb.collection('contas_receber').create<ContaReceber>({
               empresa_id: empresaId,
               cliente_id: clienteId || null,
@@ -1115,7 +1208,9 @@ export function ImportadorRecebimentosModal({
               status: finalStatus,
               data_recebimento: dataRecebimentoISO,
               forma_recebimento: finalStatus !== 'Aberta' ? finalForma : null,
-              observacoes: `Importado de planilha [Aba: ${sheetCfg.name}]${rawDoc ? ` | Doc: ${rawDoc}` : ''}${finalStatus === 'Parcial' ? ` | Recebimento parcial importado: ${valorEfetivoRecebido}` : ''}`,
+              endereco: enderecoFinal || undefined,
+              nota: notaFinal || undefined,
+              observacoes: `Importado de planilha [Aba: ${sheetCfg.name}]${notaFinal ? ` | Doc: ${notaFinal}` : ''}${finalStatus === 'Parcial' ? ` | Recebimento parcial importado: ${valorEfetivoRecebido}` : ''}`,
             })
 
             // 10. Se for Recebimento Antecipado, gera crédito correspondente para o cliente

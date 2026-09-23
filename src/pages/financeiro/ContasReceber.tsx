@@ -90,6 +90,8 @@ export default function ContasReceber() {
   const [prazoSelecionado, setPrazoSelecionado] = useState<TipoPrazo>('mensal')
   const [gradeParcelas, setGradeParcelas] = useState<ItemParcela[]>([])
   const [datasCustomizadasManuais, setDatasCustomizadasManuais] = useState(false)
+  const [endereco, setEndereco] = useState('')
+  const [nota, setNota] = useState('')
   const [status, setStatus] = useState<
     'Aberta' | 'Recebida' | 'Vencida' | 'Recebimento Antecipado'
   >('Aberta')
@@ -193,6 +195,8 @@ export default function ContasReceber() {
     setPrazoSelecionado('mensal')
     setDatasCustomizadasManuais(false)
     setGradeParcelas(gerarGradeParcelas(hoje, 1, 'mensal', 0))
+    setEndereco('')
+    setNota('')
     setStatus('Aberta')
     setObservacoes('')
     setIsDrawerOpen(true)
@@ -212,6 +216,8 @@ export default function ContasReceber() {
     setPrazoSelecionado('mensal')
     setDatasCustomizadasManuais(false)
     setGradeParcelas(gerarGradeParcelas(venc, numP, 'mensal', c.valor))
+    setEndereco(c.endereco || '')
+    setNota(c.nota || '')
     setStatus(c.status === 'Recebida' ? 'Recebida' : 'Aberta')
     setObservacoes(c.observacoes || '')
     setIsDrawerOpen(true)
@@ -293,6 +299,8 @@ export default function ContasReceber() {
           vencimento: new Date(vencimento).toISOString(),
           parcelas: Number(parcelas),
           status: status,
+          endereco: endereco.trim(),
+          nota: nota.trim(),
           observacoes: observacoes.trim(),
         })
         toast({ title: 'Conta a receber atualizada!' })
@@ -325,6 +333,8 @@ export default function ContasReceber() {
             vencimento: dataVencIso,
             parcelas: numParcelas,
             status: status,
+            endereco: endereco.trim(),
+            nota: nota.trim(),
             observacoes: observacoes.trim(),
             data_recebimento: status === 'Recebimento Antecipado' ? dataVencIso : undefined,
           })
@@ -559,7 +569,9 @@ export default function ContasReceber() {
         const clienteNome = c.expand?.cliente_id?.nome?.toLowerCase() || ''
         const matchDesc = c.descricao.toLowerCase().includes(q)
         const matchCli = clienteNome.includes(q)
-        if (!matchDesc && !matchCli) return false
+        const matchEnd = (c.endereco || '').toLowerCase().includes(q)
+        const matchNota = (c.nota || '').toLowerCase().includes(q)
+        if (!matchDesc && !matchCli && !matchEnd && !matchNota) return false
       }
       return true
     })
@@ -721,6 +733,8 @@ export default function ContasReceber() {
               <tr className="bg-[#FAF9F7] border-b border-[#ECEAE4] text-gray-500 uppercase font-semibold">
                 <th className="py-3 px-4">Vencimento</th>
                 <th className="py-3 px-4">Descrição</th>
+                <th className="py-3 px-4">Nota / Doc</th>
+                <th className="py-3 px-4">Cidade / Endereço</th>
                 <th className="py-3 px-4">Cliente</th>
                 <th className="py-3 px-4">Centro Custo</th>
                 <th className="py-3 px-4">Categoria</th>
@@ -734,7 +748,7 @@ export default function ContasReceber() {
             <tbody className="divide-y divide-[#ECEAE4]">
               {filteredContas.length === 0 ? (
                 <tr>
-                  <td colSpan={10} className="py-12 text-center text-gray-400">
+                  <td colSpan={12} className="py-12 text-center text-gray-400">
                     Nenhuma conta a receber encontrada para os filtros atuais.
                   </td>
                 </tr>
@@ -750,14 +764,31 @@ export default function ContasReceber() {
                       onClick={() => setDetailItem(c)}
                       className="hover:bg-teal-50/20 cursor-pointer transition-colors"
                     >
-                      <td className="py-3.5 px-4 font-mono font-medium text-gray-700">
+                      <td className="py-3.5 px-4 font-mono font-medium text-gray-700 whitespace-nowrap">
                         {formatDate(c.vencimento)}
                       </td>
-                      <td className="py-3.5 px-4 font-semibold text-gray-900">{c.descricao}</td>
+                      <td
+                        className="py-3.5 px-4 font-semibold text-gray-900 max-w-[260px] truncate"
+                        title={c.descricao}
+                      >
+                        {c.descricao}
+                      </td>
+                      <td className="py-3.5 px-4 font-mono text-gray-700 whitespace-nowrap">
+                        {c.nota ? (
+                          <span className="inline-flex items-center px-1.5 py-0.5 rounded bg-gray-100 text-gray-800 text-[11px] font-semibold">
+                            {c.nota}
+                          </span>
+                        ) : (
+                          '—'
+                        )}
+                      </td>
+                      <td className="py-3.5 px-4 text-gray-600 whitespace-nowrap">
+                        {c.endereco || '—'}
+                      </td>
                       <td className="py-3.5 px-4 text-gray-600">
                         {c.expand?.cliente_id?.nome || '—'}
                       </td>
-                      <td className="py-3.5 px-4 text-gray-600">
+                      <td className="py-3.5 px-4 text-gray-600 whitespace-nowrap">
                         {c.expand?.centro_custo_id ? (
                           <span className="inline-flex items-center gap-1 font-mono text-[11px] font-semibold text-gray-700 bg-gray-100 px-1.5 py-0.5 rounded">
                             <span
@@ -770,16 +801,16 @@ export default function ContasReceber() {
                           '—'
                         )}
                       </td>
-                      <td className="py-3.5 px-4 text-gray-500">
+                      <td className="py-3.5 px-4 text-gray-500 whitespace-nowrap">
                         {c.expand?.categoria_id?.nome || '—'}
                       </td>
-                      <td className="py-3.5 px-4 text-right font-medium text-gray-800 tabular-nums">
+                      <td className="py-3.5 px-4 text-right font-medium text-gray-800 tabular-nums whitespace-nowrap">
                         {formatCurrency(c.valor)}
                       </td>
-                      <td className="py-3.5 px-4 text-right font-mono font-semibold text-emerald-700 tabular-nums">
+                      <td className="py-3.5 px-4 text-right font-mono font-semibold text-emerald-700 tabular-nums whitespace-nowrap">
                         {jaRecebido > 0 ? formatCurrency(jaRecebido) : '—'}
                       </td>
-                      <td className="py-3.5 px-4 text-right font-mono font-bold tabular-nums">
+                      <td className="py-3.5 px-4 text-right font-mono font-bold tabular-nums whitespace-nowrap">
                         {saldoRestante > 0 ? (
                           <span
                             className={
@@ -873,6 +904,28 @@ export default function ContasReceber() {
                 placeholder="Ex: Fatura Mensalidade de Serviços"
                 className="mt-1"
               />
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <Label className="text-xs font-semibold text-gray-700">Nota / Documento</Label>
+                <Input
+                  value={nota}
+                  onChange={(e) => setNota(e.target.value)}
+                  placeholder="Ex: NF 90566 ou Doc 91721"
+                  className="mt-1 font-mono"
+                />
+              </div>
+
+              <div>
+                <Label className="text-xs font-semibold text-gray-700">Cidade / Endereço</Label>
+                <Input
+                  value={endereco}
+                  onChange={(e) => setEndereco(e.target.value)}
+                  placeholder="Ex: PATOS ou SJE"
+                  className="mt-1"
+                />
+              </div>
             </div>
 
             <div>
@@ -1258,6 +1311,18 @@ export default function ContasReceber() {
                   <span className="text-gray-500">Descrição:</span>
                   <span className="font-semibold text-gray-900">{detailItem.descricao}</span>
                 </div>
+                {detailItem.nota && (
+                  <div className="flex justify-between py-1">
+                    <span className="text-gray-500">Nota / Documento:</span>
+                    <span className="font-mono font-semibold text-gray-800">{detailItem.nota}</span>
+                  </div>
+                )}
+                {detailItem.endereco && (
+                  <div className="flex justify-between py-1">
+                    <span className="text-gray-500">Cidade / Endereço:</span>
+                    <span className="font-medium text-gray-800">{detailItem.endereco}</span>
+                  </div>
+                )}
                 <div className="flex justify-between py-1">
                   <span className="text-gray-500">Cliente:</span>
                   <span className="font-medium text-gray-800">
