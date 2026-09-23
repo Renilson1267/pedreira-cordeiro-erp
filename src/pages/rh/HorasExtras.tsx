@@ -20,6 +20,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
+import { ComboboxPesquisavel } from '@/components/ui/ComboboxPesquisavel'
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetFooter } from '@/components/ui/sheet'
 import { toast } from '@/hooks/use-toast'
 import {
@@ -782,18 +783,20 @@ export default function HorasExtras() {
               <Label className="text-xs font-semibold text-gray-700">
                 Colaborador / Funcionário *
               </Label>
-              <Select value={selectedFuncionarioId} onValueChange={handleFuncionarioSelectChange}>
-                <SelectTrigger className="mt-1">
-                  <SelectValue placeholder="Selecione o funcionário..." />
-                </SelectTrigger>
-                <SelectContent className="max-h-64">
-                  {funcionarios.map((f) => (
-                    <SelectItem key={f.id} value={f.id}>
-                      {f.nome} — {f.cargo} ({f.setor})
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <ComboboxPesquisavel
+                value={selectedFuncionarioId}
+                onChange={handleFuncionarioSelectChange}
+                placeholder="Pesquisar funcionário..."
+                searchPlaceholder="Digitar nome, cargo ou setor..."
+                emptyText="Nenhum funcionário encontrado."
+                triggerClassName="mt-1"
+                options={funcionarios.map((f) => ({
+                  id: f.id,
+                  label: f.nome,
+                  sublabel: `${f.cargo || 'Geral'} • ${f.setor || 'Geral'}`,
+                  keywords: [f.nome, f.cargo || '', f.setor || '', f.cpf || ''],
+                }))}
+              />
             </div>
 
             {/* 2. SALÁRIO E PERÍODO */}

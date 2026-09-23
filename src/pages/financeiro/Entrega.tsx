@@ -19,6 +19,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
+import { ComboboxPesquisavel } from '@/components/ui/ComboboxPesquisavel'
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetFooter } from '@/components/ui/sheet'
 import {
   Dialog,
@@ -669,21 +670,23 @@ export default function EntregaPage() {
                 <LinkIcon className="w-3.5 h-3.5 text-teal-700" />
                 Venda Vinculada (Puxe os dados da venda)
               </Label>
-              <Select value={vendaId} onValueChange={handleVendaSelect}>
-                <SelectTrigger className="bg-white border-[#ECEAE4] text-xs h-9">
-                  <SelectValue placeholder="Selecione a venda para vincular" />
-                </SelectTrigger>
-                <SelectContent className="max-h-60">
-                  <SelectItem value="nenhuma">Nenhuma (Entrega avulsa)</SelectItem>
-                  {vendas.map((v) => (
-                    <SelectItem key={v.id} value={v.id}>
-                      #{v.id.slice(0, 6)} • {v.expand?.cliente_id?.nome || 'Cliente'} —{' '}
-                      {v.produto_nome} ({v.quantidade} {v.unidade}) -{' '}
-                      {formatCurrency(v.valor_total)}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <ComboboxPesquisavel
+                value={vendaId}
+                onChange={handleVendaSelect}
+                placeholder="Pesquisar venda para vincular..."
+                searchPlaceholder="Buscar por cliente, produto ou #ID..."
+                emptyText="Nenhuma venda encontrada."
+                triggerClassName="bg-white border-[#ECEAE4]"
+                options={[
+                  { id: 'nenhuma', label: 'Nenhuma (Entrega avulsa)' },
+                  ...vendas.map((v) => ({
+                    id: v.id,
+                    label: `#${v.id.slice(0, 6)} • ${v.expand?.cliente_id?.nome || 'Cliente'} — ${v.produto_nome}`,
+                    sublabel: `${v.quantidade} ${v.unidade} - ${formatCurrency(v.valor_total)}`,
+                    keywords: [v.expand?.cliente_id?.nome || '', v.produto_nome || '', v.id],
+                  })),
+                ]}
+              />
               <p className="text-[11px] text-teal-700">
                 Ao selecionar a venda, cliente, produto, quantidade e valor são preenchidos
                 automaticamente.
@@ -694,18 +697,20 @@ export default function EntregaPage() {
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
                 <Label className="text-gray-700 font-medium">Equipamento / Placa da Frota *</Label>
-                <Select value={veiculoId} onValueChange={setVeiculoId}>
-                  <SelectTrigger className="bg-[#FAF9F7] border-[#ECEAE4] text-xs h-9 font-mono">
-                    <SelectValue placeholder="Selecione o veículo" />
-                  </SelectTrigger>
-                  <SelectContent className="max-h-60">
-                    {veiculos.map((v) => (
-                      <SelectItem key={v.id} value={v.id}>
-                        {v.codigo_interno} • {v.placa ? `${v.placa} (${v.modelo})` : v.modelo}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <ComboboxPesquisavel
+                  value={veiculoId}
+                  onChange={setVeiculoId}
+                  placeholder="Pesquisar veículo..."
+                  searchPlaceholder="Buscar por código, placa ou modelo..."
+                  emptyText="Nenhum veículo encontrado."
+                  triggerClassName="bg-[#FAF9F7] border-[#ECEAE4] font-mono"
+                  options={veiculos.map((v) => ({
+                    id: v.id,
+                    label: `${v.codigo_interno} • ${v.placa ? `${v.placa} (${v.modelo})` : v.modelo}`,
+                    sublabel: v.setor || undefined,
+                    keywords: [v.codigo_interno, v.placa || '', v.modelo],
+                  }))}
+                />
               </div>
 
               <div className="space-y-1.5">
@@ -714,8 +719,16 @@ export default function EntregaPage() {
                   placeholder="Nome do motorista"
                   value={motorista}
                   onChange={(e) => setMotorista(e.target.value)}
+                  list="funcionarios-motoristas-list"
                   className="bg-[#FAF9F7] border-[#ECEAE4] text-xs h-9"
                 />
+                <datalist id="funcionarios-motoristas-list">
+                  {funcionarios.map((f) => (
+                    <option key={f.id} value={f.nome}>
+                      {f.cargo ? `${f.cargo} - ${f.setor}` : f.setor}
+                    </option>
+                  ))}
+                </datalist>
               </div>
             </div>
 

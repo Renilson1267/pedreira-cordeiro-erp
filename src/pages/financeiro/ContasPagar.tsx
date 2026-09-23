@@ -26,6 +26,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
+import { ComboboxPesquisavel } from '@/components/ui/ComboboxPesquisavel'
 import { toast } from '@/hooks/use-toast'
 import {
   Plus,
@@ -925,66 +926,72 @@ export default function ContasPagar() {
                   </span>
                 )}
               </div>
-              <Select value={fornecedorId} onValueChange={setFornecedorId}>
-                <SelectTrigger className="mt-1">
-                  <SelectValue
-                    placeholder={
-                      descricao.trim()
-                        ? `Usar descrição: "${descricao.trim()}"`
-                        : 'Selecione ou deixe em branco para usar a descrição'
-                    }
-                  />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="none">
-                    {descricao.trim()
+              <ComboboxPesquisavel
+                value={fornecedorId}
+                onChange={setFornecedorId}
+                placeholder={
+                  descricao.trim()
+                    ? `Usar descrição: "${descricao.trim()}"`
+                    : 'Pesquisar ou selecionar fornecedor...'
+                }
+                searchPlaceholder="Digitar nome do fornecedor..."
+                emptyText="Nenhum fornecedor encontrado."
+                className="mt-1"
+                options={[
+                  {
+                    id: 'none',
+                    label: descricao.trim()
                       ? `Usar a Descrição ("${descricao.trim()}")`
-                      : 'Mesmo da Descrição (Automático)'}
-                  </SelectItem>
-                  {fornecedores.map((f) => (
-                    <SelectItem key={f.id} value={f.id}>
-                      {f.nome}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+                      : 'Mesmo da Descrição (Automático)',
+                  },
+                  ...fornecedores.map((f) => ({
+                    id: f.id,
+                    label: f.nome,
+                    sublabel: f.cnpj_cpf || f.cidade || undefined,
+                  })),
+                ]}
+              />
               <p className="text-[10px] text-gray-400 mt-1">
-                Se não selecionado, o fornecedor receberá automaticamente o texto da Descrição.
+                Digite para buscar por nome ou CNPJ. Se não selecionado, receberá o texto da
+                Descrição.
               </p>
             </div>
 
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <Label className="text-xs font-semibold text-gray-700">Centro de Custo</Label>
-                <Select value={centroCustoId} onValueChange={setCentroCustoId}>
-                  <SelectTrigger className="mt-1">
-                    <SelectValue placeholder="Selecione o centro..." />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="none">Nenhum / Não alocado</SelectItem>
-                    {centrosCusto.map((cc) => (
-                      <SelectItem key={cc.id} value={cc.id}>
-                        {cc.codigo} - {cc.nome}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <ComboboxPesquisavel
+                  value={centroCustoId}
+                  onChange={setCentroCustoId}
+                  placeholder="Selecione o centro..."
+                  searchPlaceholder="Buscar centro de custo..."
+                  emptyText="Nenhum centro de custo encontrado."
+                  className="mt-1"
+                  options={[
+                    { id: 'none', label: 'Nenhum / Não alocado' },
+                    ...centrosCusto.map((cc) => ({
+                      id: cc.id,
+                      label: `${cc.codigo} - ${cc.nome}`,
+                    })),
+                  ]}
+                />
               </div>
 
               <div>
                 <Label className="text-xs font-semibold text-gray-700">Categoria Contábil</Label>
-                <Select value={categoriaId} onValueChange={setCategoriaId}>
-                  <SelectTrigger className="mt-1">
-                    <SelectValue placeholder="Selecione a categoria..." />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {categorias.map((cat) => (
-                      <SelectItem key={cat.id} value={cat.id}>
-                        {cat.codigo} - {cat.nome} ({cat.tipo})
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <ComboboxPesquisavel
+                  value={categoriaId}
+                  onChange={setCategoriaId}
+                  placeholder="Selecione a categoria..."
+                  searchPlaceholder="Buscar categoria contábil..."
+                  emptyText="Nenhuma categoria encontrada."
+                  className="mt-1"
+                  options={categorias.map((cat) => ({
+                    id: cat.id,
+                    label: `${cat.codigo} - ${cat.nome}`,
+                    sublabel: cat.tipo,
+                  }))}
+                />
               </div>
             </div>
 

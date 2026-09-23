@@ -17,6 +17,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
+import { ComboboxPesquisavel } from '@/components/ui/ComboboxPesquisavel'
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetFooter } from '@/components/ui/sheet'
 import { toast } from '@/hooks/use-toast'
 import {
@@ -708,18 +709,20 @@ export default function Manutencoes() {
           <form onSubmit={handleSave} className="space-y-4 py-4 text-xs">
             <div>
               <Label className="text-xs font-semibold text-gray-700">Veículo / Equipamento *</Label>
-              <Select value={veiculoId} onValueChange={handleVeiculoChange}>
-                <SelectTrigger className="mt-1 font-medium">
-                  <SelectValue placeholder="Selecione o equipamento" />
-                </SelectTrigger>
-                <SelectContent>
-                  {veiculos.map((v) => (
-                    <SelectItem key={v.id} value={v.id}>
-                      {v.codigo_interno} • {v.modelo} ({v.setor || 'Geral'})
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <ComboboxPesquisavel
+                value={veiculoId}
+                onChange={handleVeiculoChange}
+                placeholder="Pesquisar veículo / equipamento..."
+                searchPlaceholder="Buscar por código ou modelo..."
+                emptyText="Nenhum equipamento encontrado."
+                triggerClassName="mt-1 font-medium"
+                options={veiculos.map((v) => ({
+                  id: v.id,
+                  label: `${v.codigo_interno} • ${v.modelo}`,
+                  sublabel: `${v.setor || 'Geral'}${v.placa ? ` • Placa: ${v.placa}` : ''}`,
+                  keywords: [v.codigo_interno, v.modelo, v.placa || ''],
+                }))}
+              />
             </div>
 
             <div className="grid grid-cols-2 gap-3">
@@ -830,18 +833,22 @@ export default function Manutencoes() {
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <Label className="text-xs font-semibold text-gray-700">Fornecedor Vinculado</Label>
-                <Select value={fornecedorId} onValueChange={setFornecedorId}>
-                  <SelectTrigger className="mt-1">
-                    <SelectValue placeholder="Selecione o fornecedor" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {fornecedores.map((f) => (
-                      <SelectItem key={f.id} value={f.id}>
-                        {f.nome}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <ComboboxPesquisavel
+                  value={fornecedorId}
+                  onChange={setFornecedorId}
+                  placeholder="Selecione o fornecedor..."
+                  searchPlaceholder="Buscar fornecedor..."
+                  emptyText="Nenhum fornecedor encontrado."
+                  triggerClassName="mt-1"
+                  options={[
+                    { id: '', label: 'Nenhum / Oficina Própria' },
+                    ...fornecedores.map((f) => ({
+                      id: f.id,
+                      label: f.nome,
+                      sublabel: f.cpf_cnpj || f.cidade || undefined,
+                    })),
+                  ]}
+                />
               </div>
 
               <div>

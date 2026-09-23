@@ -32,6 +32,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
+import { ComboboxPesquisavel } from '@/components/ui/ComboboxPesquisavel'
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetFooter } from '@/components/ui/sheet'
 import {
   Dialog,
@@ -1666,21 +1667,23 @@ export default function Entregas() {
                 <LinkIcon className="w-3.5 h-3.5 text-teal-700" />
                 Vincular a uma Venda (Opcional)
               </Label>
-              <Select value={vendaId} onValueChange={handleVendaSelect}>
-                <SelectTrigger className="bg-white border-teal-200 text-xs h-9">
-                  <SelectValue placeholder="Selecione a venda para puxar cliente, produto e valor..." />
-                </SelectTrigger>
-                <SelectContent className="max-h-64">
-                  <SelectItem value="nenhuma">Nenhuma (Entrega avulsa de frotas)</SelectItem>
-                  {vendas.map((v) => (
-                    <SelectItem key={v.id} value={v.id}>
-                      #{v.id.slice(0, 6)} • {v.expand?.cliente_id?.nome || 'Cliente'} —{' '}
-                      {v.produto_nome || 'Produto'} ({v.quantidade} {v.unidade}) •{' '}
-                      {formatCurrency(v.valor_total)}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <ComboboxPesquisavel
+                value={vendaId}
+                onChange={handleVendaSelect}
+                placeholder="Pesquisar venda para vincular..."
+                searchPlaceholder="Buscar por cliente, produto ou #ID..."
+                emptyText="Nenhuma venda encontrada."
+                triggerClassName="bg-white border-teal-200"
+                options={[
+                  { id: 'nenhuma', label: 'Nenhuma (Entrega avulsa de frotas)' },
+                  ...vendas.map((v) => ({
+                    id: v.id,
+                    label: `#${v.id.slice(0, 6)} • ${v.expand?.cliente_id?.nome || 'Cliente'} — ${v.produto_nome || 'Produto'}`,
+                    sublabel: `${v.quantidade} ${v.unidade} • ${formatCurrency(v.valor_total)}`,
+                    keywords: [v.expand?.cliente_id?.nome || '', v.produto_nome || '', v.id],
+                  })),
+                ]}
+              />
               <p className="text-[11px] text-teal-700">
                 Ao selecionar a venda, os dados de cliente, produto, quantidade e valor são
                 preenchidos automaticamente.
@@ -1692,42 +1695,20 @@ export default function Entregas() {
               <Label className="text-xs font-semibold text-gray-700">
                 Veículo / Caçamba de Entrega *
               </Label>
-              <Select value={veiculoId} onValueChange={handleVeiculoChange}>
-                <SelectTrigger className="mt-1 font-medium bg-white">
-                  <SelectValue placeholder="Selecione o veículo" />
-                </SelectTrigger>
-                <SelectContent className="max-h-72">
-                  <SelectItem
-                    value="group-header"
-                    disabled
-                    className="text-[10px] font-bold uppercase text-teal-800"
-                  >
-                    ── Setor de Entrega / Caçambas ──
-                  </SelectItem>
-                  {veiculos
-                    .filter((v) => normalizarSetorFrota(v.setor) === 'Entrega')
-                    .map((v) => (
-                      <SelectItem key={v.id} value={v.id}>
-                        {v.codigo_interno} • {v.modelo} (Km atual:{' '}
-                        {Number(v.km_atual || 0).toLocaleString('pt-BR')})
-                      </SelectItem>
-                    ))}
-                  <SelectItem
-                    value="group-header-all"
-                    disabled
-                    className="text-[10px] font-bold uppercase text-gray-400"
-                  >
-                    ── Outros Veículos da Frota ──
-                  </SelectItem>
-                  {veiculos
-                    .filter((v) => normalizarSetorFrota(v.setor) !== 'Entrega')
-                    .map((v) => (
-                      <SelectItem key={v.id} value={v.id}>
-                        {v.codigo_interno} • {v.modelo} ({v.setor || 'Geral'})
-                      </SelectItem>
-                    ))}
-                </SelectContent>
-              </Select>
+              <ComboboxPesquisavel
+                value={veiculoId}
+                onChange={handleVeiculoChange}
+                placeholder="Pesquisar veículo / caçamba..."
+                searchPlaceholder="Buscar por código interno, modelo ou placa..."
+                emptyText="Nenhum veículo encontrado."
+                triggerClassName="mt-1 font-medium bg-white"
+                options={veiculos.map((v) => ({
+                  id: v.id,
+                  label: `${v.codigo_interno} • ${v.modelo}${v.placa ? ` (${v.placa})` : ''}`,
+                  sublabel: `${v.setor || 'Geral'} • Km atual: ${Number(v.km_atual || 0).toLocaleString('pt-BR')}`,
+                  keywords: [v.codigo_interno, v.modelo, v.placa || '', v.setor || ''],
+                }))}
+              />
             </div>
 
             {/* Data e Status */}
@@ -2025,19 +2006,22 @@ export default function Entregas() {
               {/* Motorista */}
               <div>
                 <Label className="text-xs font-semibold text-gray-700">Motorista</Label>
-                <Select value={funcionarioId || 'nenhum'} onValueChange={handleFuncionarioChange}>
-                  <SelectTrigger className="mt-1 bg-white">
-                    <SelectValue placeholder="Selecione o motorista" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="nenhum">Digitar motorista avulso...</SelectItem>
-                    {motoristasFrota.map((m) => (
-                      <SelectItem key={m.id} value={m.id}>
-                        {m.nome} ({m.cargo})
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <ComboboxPesquisavel
+                  value={funcionarioId || 'nenhum'}
+                  onChange={handleFuncionarioChange}
+                  placeholder="Pesquisar motorista..."
+                  searchPlaceholder="Digitar nome do motorista..."
+                  emptyText="Nenhum motorista encontrado."
+                  triggerClassName="mt-1 bg-white"
+                  options={[
+                    { id: 'nenhum', label: 'Digitar motorista avulso...' },
+                    ...motoristasFrota.map((m) => ({
+                      id: m.id,
+                      label: m.nome,
+                      sublabel: m.cargo || m.setor || undefined,
+                    })),
+                  ]}
+                />
                 {(!funcionarioId || funcionarioId === 'nenhum') && (
                   <Input
                     value={motoristaNome}
@@ -2051,19 +2035,22 @@ export default function Entregas() {
               {/* Produto */}
               <div>
                 <Label className="text-xs font-semibold text-gray-700">Produto da Pedreira</Label>
-                <Select value={produtoId || 'nenhum'} onValueChange={handleProdutoChange}>
-                  <SelectTrigger className="mt-1 bg-white">
-                    <SelectValue placeholder="Selecione o produto" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="nenhum">Outro / Avulso...</SelectItem>
-                    {produtos.map((p) => (
-                      <SelectItem key={p.id} value={p.id}>
-                        {p.nome} (Preço: {formatCurrency(p.preco_venda || 0)}/{p.unidade || 'm³'})
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <ComboboxPesquisavel
+                  value={produtoId || 'nenhum'}
+                  onChange={handleProdutoChange}
+                  placeholder="Pesquisar produto..."
+                  searchPlaceholder="Digitar nome do produto..."
+                  emptyText="Nenhum produto encontrado."
+                  triggerClassName="mt-1 bg-white"
+                  options={[
+                    { id: 'nenhum', label: 'Outro / Avulso...' },
+                    ...produtos.map((p) => ({
+                      id: p.id,
+                      label: p.nome,
+                      sublabel: `Preço: ${formatCurrency(p.preco_venda || 0)}/${p.unidade || 'm³'}`,
+                    })),
+                  ]}
+                />
                 {(!produtoId || produtoId === 'nenhum') && (
                   <Input
                     value={produtoNome}

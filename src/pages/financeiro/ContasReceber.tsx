@@ -40,6 +40,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
+import { ComboboxPesquisavel } from '@/components/ui/ComboboxPesquisavel'
 import { toast } from '@/hooks/use-toast'
 import {
   Plus,
@@ -1360,19 +1361,22 @@ export default function ContasReceber() {
 
             <div>
               <Label className="text-xs font-semibold text-gray-700">Cliente</Label>
-              <Select value={clienteId} onValueChange={setClienteId}>
-                <SelectTrigger className="mt-1">
-                  <SelectValue placeholder="Selecione o cliente..." />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="none">Nenhum / Não informado</SelectItem>
-                  {clientes.map((cli) => (
-                    <SelectItem key={cli.id} value={cli.id}>
-                      {cli.nome}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <ComboboxPesquisavel
+                value={clienteId}
+                onChange={setClienteId}
+                placeholder="Pesquisar ou selecionar cliente..."
+                searchPlaceholder="Digitar nome do cliente..."
+                emptyText="Nenhum cliente encontrado."
+                className="mt-1"
+                options={[
+                  { id: 'none', label: 'Nenhum / Não informado' },
+                  ...clientes.map((cli) => ({
+                    id: cli.id,
+                    label: cli.nome,
+                    sublabel: cli.cnpj_cpf || cli.cidade || undefined,
+                  })),
+                ]}
+              />
             </div>
 
             <div>
@@ -1400,35 +1404,38 @@ export default function ContasReceber() {
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <Label className="text-xs font-semibold text-gray-700">Centro de Custo</Label>
-                <Select value={centroCustoId} onValueChange={setCentroCustoId}>
-                  <SelectTrigger className="mt-1">
-                    <SelectValue placeholder="Selecione o centro..." />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="none">Nenhum / Não alocado</SelectItem>
-                    {centrosCusto.map((cc) => (
-                      <SelectItem key={cc.id} value={cc.id}>
-                        {cc.codigo} - {cc.nome}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <ComboboxPesquisavel
+                  value={centroCustoId}
+                  onChange={setCentroCustoId}
+                  placeholder="Selecione o centro..."
+                  searchPlaceholder="Buscar centro de custo..."
+                  emptyText="Nenhum centro de custo encontrado."
+                  className="mt-1"
+                  options={[
+                    { id: 'none', label: 'Nenhum / Não alocado' },
+                    ...centrosCusto.map((cc) => ({
+                      id: cc.id,
+                      label: `${cc.codigo} - ${cc.nome}`,
+                    })),
+                  ]}
+                />
               </div>
 
               <div>
                 <Label className="text-xs font-semibold text-gray-700">Categoria Contábil</Label>
-                <Select value={categoriaId} onValueChange={setCategoriaId}>
-                  <SelectTrigger className="mt-1">
-                    <SelectValue placeholder="Selecione a categoria..." />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {categorias.map((cat) => (
-                      <SelectItem key={cat.id} value={cat.id}>
-                        {cat.codigo} - {cat.nome}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <ComboboxPesquisavel
+                  value={categoriaId}
+                  onChange={setCategoriaId}
+                  placeholder="Selecione a categoria..."
+                  searchPlaceholder="Buscar categoria..."
+                  emptyText="Nenhuma categoria encontrada."
+                  className="mt-1"
+                  options={categorias.map((cat) => ({
+                    id: cat.id,
+                    label: `${cat.codigo} - ${cat.nome}`,
+                    sublabel: cat.tipo,
+                  }))}
+                />
               </div>
             </div>
 

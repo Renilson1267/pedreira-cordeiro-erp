@@ -27,6 +27,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
+import { ComboboxPesquisavel } from '@/components/ui/ComboboxPesquisavel'
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetFooter } from '@/components/ui/sheet'
 import {
   Dialog,
@@ -770,36 +771,39 @@ export default function Vendas() {
             {/* Cliente */}
             <div className="space-y-1.5">
               <Label className="text-gray-700 font-medium">Cliente *</Label>
-              <Select value={clienteId} onValueChange={setClienteId}>
-                <SelectTrigger className="bg-[#FAF9F7] border-[#ECEAE4] text-xs h-9">
-                  <SelectValue placeholder="Selecione o cliente" />
-                </SelectTrigger>
-                <SelectContent className="max-h-60">
-                  {clientes.map((c) => (
-                    <SelectItem key={c.id} value={c.id}>
-                      {c.nome} {c.cidade ? `(${c.cidade})` : ''}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <ComboboxPesquisavel
+                value={clienteId}
+                onChange={setClienteId}
+                placeholder="Pesquisar ou selecionar cliente..."
+                searchPlaceholder="Digitar nome do cliente..."
+                emptyText="Nenhum cliente encontrado."
+                triggerClassName="bg-[#FAF9F7] border-[#ECEAE4]"
+                options={clientes.map((c) => ({
+                  id: c.id,
+                  label: c.nome,
+                  sublabel: c.cidade || c.cnpj_cpf || undefined,
+                }))}
+              />
             </div>
 
             {/* Produto da Pedreira */}
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
                 <Label className="text-gray-700 font-medium">Produto da Pedreira *</Label>
-                <Select value={produtoId} onValueChange={handleProdutoChange}>
-                  <SelectTrigger className="bg-[#FAF9F7] border-[#ECEAE4] text-xs h-9">
-                    <SelectValue placeholder="Selecione o produto" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {produtos.map((p) => (
-                      <SelectItem key={p.id} value={p.id}>
-                        {p.nome}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <ComboboxPesquisavel
+                  value={produtoId}
+                  onChange={handleProdutoChange}
+                  placeholder="Pesquisar ou selecionar produto..."
+                  searchPlaceholder="Digitar produto..."
+                  emptyText="Nenhum produto encontrado."
+                  triggerClassName="bg-[#FAF9F7] border-[#ECEAE4]"
+                  options={produtos.map((p) => ({
+                    id: p.id,
+                    label: p.nome,
+                    sublabel:
+                      p.categoria || (p.preco_venda ? formatCurrency(p.preco_venda) : undefined),
+                  }))}
+                />
               </div>
 
               <div className="space-y-1.5">

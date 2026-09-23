@@ -18,6 +18,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
+import { ComboboxPesquisavel } from '@/components/ui/ComboboxPesquisavel'
 import { Card } from '@/components/ui/card'
 import { formatCurrency, formatDate, toInputDate } from '@/lib/formatters'
 import type {
@@ -338,19 +339,22 @@ export const DespesasVeiculoModal: React.FC<DespesasVeiculoModalProps> = ({
 
               <div>
                 <Label className="text-gray-700 font-medium">Fornecedor / Oficina</Label>
-                <Select value={fornecedorId} onValueChange={setFornecedorId}>
-                  <SelectTrigger className="bg-white border-[#ECEAE4] text-xs h-9">
-                    <SelectValue placeholder="Selecione" />
-                  </SelectTrigger>
-                  <SelectContent className="max-h-52">
-                    <SelectItem value="nenhum">Nenhum / Não informado</SelectItem>
-                    {fornecedores.map((f) => (
-                      <SelectItem key={f.id} value={f.id}>
-                        {f.nome}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <ComboboxPesquisavel
+                  value={fornecedorId}
+                  onChange={setFornecedorId}
+                  placeholder="Selecione ou busque..."
+                  searchPlaceholder="Buscar fornecedor..."
+                  emptyText="Nenhum fornecedor encontrado."
+                  triggerClassName="bg-white border-[#ECEAE4]"
+                  options={[
+                    { id: 'nenhum', label: 'Nenhum / Não informado' },
+                    ...fornecedores.map((f) => ({
+                      id: f.id,
+                      label: f.nome,
+                      sublabel: f.cidade || f.cnpj_cpf || undefined,
+                    })),
+                  ]}
+                />
               </div>
             </div>
 
