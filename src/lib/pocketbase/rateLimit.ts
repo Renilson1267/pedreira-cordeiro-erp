@@ -40,7 +40,7 @@ export async function withRateLimitRetry<T>(
   fn: () => Promise<T>,
   options: RetryOptions = {},
 ): Promise<T> {
-  const { maxRetries = 5, initialDelayMs = 350, maxDelayMs = 4000, onRetry } = options
+  const { maxRetries = 8, initialDelayMs = 400, maxDelayMs = 8000, onRetry } = options
 
   let attempt = 0
   let currentDelay = initialDelayMs
@@ -51,9 +51,9 @@ export async function withRateLimitRetry<T>(
     } catch (err: unknown) {
       if (isRateLimitError(err) && attempt < maxRetries) {
         attempt += 1
-        // Jitter leve (+/- 15%) para evitar thundering herd em chamadas paralelas
-        const jitter = (Math.random() * 0.3 - 0.15) * currentDelay
-        const actualDelay = Math.min(maxDelayMs, Math.max(200, Math.round(currentDelay + jitter)))
+        // Jitter leve (+/- 20%) para evitar thundering herd em chamadas paralelas
+        const jitter = (Math.random() * 0.4 - 0.2) * currentDelay
+        const actualDelay = Math.min(maxDelayMs, Math.max(250, Math.round(currentDelay + jitter)))
 
         if (onRetry) {
           onRetry(attempt, actualDelay, err)
@@ -65,8 +65,7 @@ export async function withRateLimitRetry<T>(
       }
 
       if (isRateLimitError(err) && attempt >= maxRetries) {
-        const errorMsg =
-          'Limite de requisições do servidor atingido (429 Too Many Requests). O número máximo de tentativas foi excedido; tente novamente mais tarde.'
+        const errorMsg = `Limite de requisições do servidor atingido (429 Too Many Requests). O número máximo de ${maxRetries} tentativas foi excedido.`
         throw new Error(errorMsg)
       }
 
@@ -81,6 +80,12 @@ export interface ParallelPoolOptions {
    */
   concurrency?: number
   /**
+   * Se true (default: true), exceções lançadas dentro do worker de um item não
+   * abortam os demais itens do pool — a Promise rejeitada é capturada e
+   * o erro é retornado no array de resultados ou processado individualmente.
+   */
+  continueOnError?: boolean
+  /**
    * Delay adaptativo compartilhado: se um worker receber 429, todos os workers
    * pausam brevemente por este tempo antes da próxima requisição.
    */
@@ -88,8 +93,9 @@ export interface ParallelPoolOptions {
 }
 
 /**
- * Executa tarefas em lote com pool de concorrência limitada (ex: 3-4 requisições em paralelo),
+ * Executa tarefas em lote com pool de concorrência limitada (ex: 3 requisições em paralelo),
  * preservando a ordem ou despachando por disponibilidade de worker.
+ * Garante que nenhum erro de item individual derrube o pool inteiro quando continueOnError = true.
  */
 export async function runParallelPool<T, R>(
   items: T[],
@@ -97,6 +103,7 @@ export async function runParallelPool<T, R>(
   options: ParallelPoolOptions = {},
 ): Promise<R[]> {
   const concurrency = Math.max(1, options.concurrency ?? 3)
+  const continueOnError = options.continueOnError ?? true
   const results = new Array<R>(items.length)
   let nextIndex = 0
 
@@ -106,7 +113,15 @@ export async function runParallelPool<T, R>(
       if (current >= items.length) {
         return
       }
-      results[current] = await worker(items[current], current)
+      try {
+        results[current] = await worker(items[current], current)
+      } catch (err) {
+        if (!continueOnError) {
+          throw err
+        }
+        // Se continueOnError está ativo, registra como erro mas não quebra a execução dos outros itens
+        results[current] = undefined as unknown as R
+      }
     }
   }
 

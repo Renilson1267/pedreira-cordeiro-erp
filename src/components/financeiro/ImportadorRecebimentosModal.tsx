@@ -512,13 +512,12 @@ export function ImportadorRecebimentosModal({
       // Mapa de promessas de criação em voo para evitar criar o mesmo cliente 2x em paralelo
       const clientesCreationInFlight = new Map<string, Promise<Cliente | null>>()
 
-      // Resolver cliente de forma segura e cacheada em memória
-      const getOrCreateCliente = async (
-        nomeCli: string,
-        sheetName: string,
-      ): Promise<string | null> => {
+      // Resolver cliente de forma segura e cacheada em memória com retentativas e reuso de promessa
+      const getOrCreateCliente = async (nomeCli: string, sheetName: string): Promise<string> => {
         const rawTrim = (nomeCli || '').trim()
-        if (!rawTrim) return null
+        if (!rawTrim) {
+          throw new Error('Nome do cliente vazio ou não informado')
+        }
         const keyCli = rawTrim.toLowerCase()
 
         if (clientesCache.has(keyCli)) {
@@ -526,27 +525,35 @@ export function ImportadorRecebimentosModal({
         }
 
         if (!criarClientesNaoEncontrados) {
-          return null
+          throw new Error(
+            `Cliente "${rawTrim}" não encontrado no cadastro e a opção de criar novos clientes está desativada`,
+          )
         }
 
         // Se já houver uma criação em andamento para este cliente, aguardar a mesma promessa
         if (clientesCreationInFlight.has(keyCli)) {
           const res = await clientesCreationInFlight.get(keyCli)
-          return res ? res.id : null
+          if (res && res.id) return res.id
         }
 
-        const createPromise = (async () => {
+        const createPromise = (async (): Promise<Cliente> => {
           try {
             const novoCliente = await withRateLimitRetry(
-              () =>
-                pb.collection('clientes').create<Cliente>({
+              async () => {
+                // Checar novamente no cache antes de criar
+                if (clientesCache.has(keyCli)) {
+                  return clientesCache.get(keyCli)!
+                }
+                return await pb.collection('clientes').create<Cliente>({
                   empresa_id: empresaId,
                   nome: rawTrim,
                   observacoes: `Criado automaticamente na importação da planilha (aba ${sheetName})`,
-                }),
+                })
+              },
               {
-                maxRetries: 5,
-                initialDelayMs: 350,
+                maxRetries: 8,
+                initialDelayMs: 400,
+                maxDelayMs: 8000,
                 onRetry: (tentativa, delayMs) => {
                   setProgressMsg(
                     `Aguardando servidor... limite temporário (429) no cliente "${rawTrim}". Tentativa ${tentativa} em ${(delayMs / 1000).toFixed(1)}s`,
@@ -559,9 +566,15 @@ export function ImportadorRecebimentosModal({
               resultSummary.clientesCriados.push(novoCliente.nome)
             }
             return novoCliente
-          } catch (createCliErr) {
+          } catch (createCliErr: any) {
             console.warn('Erro ao criar cliente automaticamente:', rawTrim, createCliErr)
-            return null
+            // Se falhou por conflito ou rede, verificar se o cliente foi criado em outra thread
+            if (clientesCache.has(keyCli)) {
+              return clientesCache.get(keyCli)!
+            }
+            throw new Error(
+              `Falha ao cadastrar cliente "${rawTrim}": ${createCliErr?.message || 'Erro no servidor'}`,
+            )
           } finally {
             clientesCreationInFlight.delete(keyCli)
           }
@@ -569,7 +582,7 @@ export function ImportadorRecebimentosModal({
 
         clientesCreationInFlight.set(keyCli, createPromise)
         const clienteCriado = await createPromise
-        return clienteCriado ? clienteCriado.id : null
+        return clienteCriado.id
       }
 
       const sheetsToImport = sheetsConfig.filter((s) => s.selected)
@@ -1245,23 +1258,58 @@ export function ImportadorRecebimentosModal({
           })
         }
 
-        // FASE 2: Processamento concorrente com pool de 3 a 4 requisições em paralelo
+        // FASE 1.5: Pré-deduplicação interna dos itens da própria planilha
+        // Se a planilha contiver duas ou mais linhas idênticas na mesma aba (mesma data, cliente/desc, nota e valor),
+        // mantemos apenas a primeira e contabilizamos as subsequentes como duplicadas antes de despachar para o pool.
+        const itensUnicosParaGravar: PreparedItemReceber[] = []
+        if (detectarDuplicados) {
+          const preBatchKeys = new Set<string>()
+          for (const item of preparedItems) {
+            const batchKey = `${item.dateOnly}_${item.valorStr}_${item.descNorm}_${item.notaNorm}`
+            if (preBatchKeys.has(batchKey)) {
+              sheetDuplicados += 1
+              resultSummary.duplicadosPulados += 1
+            } else {
+              preBatchKeys.add(batchKey)
+              itensUnicosParaGravar.push(item)
+            }
+          }
+        } else {
+          itensUnicosParaGravar.push(...preparedItems)
+        }
+
+        // FASE 2: Processamento concorrente com pool de 3 requisições em paralelo
         await runParallelPool(
-          preparedItems,
+          itensUnicosParaGravar,
           async (item) => {
             try {
               // 1. Resolver cliente com cache rápido em memória
-              const clienteId = item.rawCli
-                ? await getOrCreateCliente(item.rawCli, sheetCfg.name)
+              // Se item.rawCli existir, exige resolução sem retornar vazio (lança erro se falhar)
+              let clienteId: string | null = null
+              if (item.rawCli) {
+                clienteId = await getOrCreateCliente(item.rawCli, sheetCfg.name)
+              }
+
+              // Chave exata primária e chave secundária por nota para evitar duplicação simultânea no pool
+              const exactKey = `${clienteId || ''}_${item.dateOnly}_${item.valorStr}_${item.descNorm}`
+              const docLockKey = item.notaNorm
+                ? `lock_doc_${clienteId || ''}_${item.valorStr}_${item.notaNorm}`
                 : null
 
-              const exactKey = `${clienteId || ''}_${item.dateOnly}_${item.valorStr}_${item.descNorm}`
-
               // Se existir EXATAMENTE com mesma data, cliente, valor e descrição => duplicata real, pular
-              if (detectarDuplicados && existingExactKeys.has(exactKey)) {
-                resultSummary.duplicadosPulados += 1
-                sheetDuplicados += 1
-                return
+              if (detectarDuplicados) {
+                if (
+                  existingExactKeys.has(exactKey) ||
+                  (docLockKey && existingExactKeys.has(docLockKey))
+                ) {
+                  resultSummary.duplicadosPulados += 1
+                  sheetDuplicados += 1
+                  return
+                }
+                // RESERVA ATÔMICA DA CHAVE ANTES DE GRAVAR NO BANCO:
+                // Garante que se outra promise em voo do mesmo lote tentar a mesma linha, ela já encontra a chave reservada
+                existingExactKeys.add(exactKey)
+                if (docLockKey) existingExactKeys.add(docLockKey)
               }
 
               // Se existir registro prévio com mesma nota/doc ou mesma desc + cliente + valor,
@@ -1304,8 +1352,9 @@ export function ImportadorRecebimentosModal({
                         observacoes: `Atualizado via reimportação de planilha [Aba: ${sheetCfg.name}]${item.notaFinal ? ` | Doc: ${item.notaFinal}` : ''}`,
                       }),
                     {
-                      maxRetries: 5,
-                      initialDelayMs: 350,
+                      maxRetries: 8,
+                      initialDelayMs: 400,
+                      maxDelayMs: 8000,
                       onRetry: (tentativa, delayMs) => {
                         setProgressMsg(
                           `Aguardando servidor... limite temporário (429) na atualização do título "${item.descFinal.slice(0, 25)}...". Tentativa ${tentativa} em ${(delayMs / 1000).toFixed(1)}s`,
@@ -1314,7 +1363,6 @@ export function ImportadorRecebimentosModal({
                     },
                   )
 
-                  existingExactKeys.add(exactKey)
                   existingFlexRecords.delete(
                     `doc_${clienteId || ''}_${item.valorStr}_${item.notaNorm}`,
                   )
@@ -1327,7 +1375,6 @@ export function ImportadorRecebimentosModal({
                   return
                 } else {
                   // Se não houve divergência, considerar duplicado idêntico
-                  existingExactKeys.add(exactKey)
                   resultSummary.duplicadosPulados += 1
                   sheetDuplicados += 1
                   return
@@ -1465,8 +1512,9 @@ export function ImportadorRecebimentosModal({
                     observacoes: `Importado de planilha [Aba: ${sheetCfg.name}]${item.notaFinal ? ` | Doc: ${item.notaFinal}` : ''}${finalStatus === 'Parcial' ? ` | Recebimento parcial importado: ${valorEfetivoRecebido}` : ''}`,
                   }),
                 {
-                  maxRetries: 5,
-                  initialDelayMs: 350,
+                  maxRetries: 8,
+                  initialDelayMs: 400,
+                  maxDelayMs: 8000,
                   onRetry: (tentativa, delayMs) => {
                     setProgressMsg(
                       `Aguardando servidor... limite temporário (429) no título "${item.descFinal.slice(0, 25)}...". Tentativa ${tentativa} em ${(delayMs / 1000).toFixed(1)}s`,
@@ -1492,8 +1540,9 @@ export function ImportadorRecebimentosModal({
                         referencia_conta_id: createdConta.id,
                       }),
                     {
-                      maxRetries: 5,
-                      initialDelayMs: 350,
+                      maxRetries: 8,
+                      initialDelayMs: 400,
+                      maxDelayMs: 8000,
                     },
                   )
                   resultSummary.creditosGerados += 1
@@ -1526,8 +1575,9 @@ export function ImportadorRecebimentosModal({
                         conciliado: false,
                       }),
                     {
-                      maxRetries: 5,
-                      initialDelayMs: 350,
+                      maxRetries: 8,
+                      initialDelayMs: 400,
+                      maxDelayMs: 8000,
                     },
                   )
                 } catch (movErr) {
@@ -1535,7 +1585,6 @@ export function ImportadorRecebimentosModal({
                 }
               }
 
-              existingExactKeys.add(exactKey)
               resultSummary.importados += 1
               sheetImportados += 1
 
