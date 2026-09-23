@@ -38,6 +38,7 @@ import Manutencoes from '@/pages/frotas/Manutencoes'
 import Entregas from '@/pages/frotas/Entregas'
 import Funcionarios from '@/pages/rh/Funcionarios'
 import HorasExtras from '@/pages/rh/HorasExtras'
+import ManualPage from '@/pages/Manual'
 
 export default function App() {
   return (
@@ -61,6 +62,7 @@ export default function App() {
               }
             >
               <Route path="/" element={<Index />} />
+              <Route path="/manual" element={<ManualPage />} />
 
               {/* Financeiro */}
               <Route path="/financeiro/vendas" element={<Vendas />} />

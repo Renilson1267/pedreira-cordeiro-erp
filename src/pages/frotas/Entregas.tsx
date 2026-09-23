@@ -13,9 +13,12 @@ import type {
   StatusEntrega,
   UnidadeMedidaCarga,
   Abastecimento,
+  Venda,
+  Cliente,
 } from '@/types/erp'
 import { normalizarSetorFrota } from '@/lib/frota'
 import { entregasService } from '@/services/entregas'
+import { vendasService } from '@/services/vendas'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -60,6 +63,7 @@ import {
   Printer,
   DollarSign,
   AlertCircle,
+  Link as LinkIcon,
 } from 'lucide-react'
 import { CidadeInputAutocomplete } from '@/components/frotas/CidadeInputAutocomplete'
 import { BlocoKmRota } from '@/components/frotas/BlocoKmRota'
@@ -97,6 +101,8 @@ export default function Entregas() {
   const { currentEmpresa, canEdit } = useCompany()
 
   const [entregas, setEntregas] = useState<Entrega[]>([])
+  const [vendas, setVendas] = useState<Venda[]>([])
+  const [clientes, setClientes] = useState<Cliente[]>([])
   const [veiculos, setVeiculos] = useState<Veiculo[]>([])
   const [abastecimentos, setAbastecimentos] = useState<Abastecimento[]>([])
   const [funcionarios, setFuncionarios] = useState<Funcionario[]>([])
@@ -124,6 +130,9 @@ export default function Entregas() {
   // Drawer Form State
   const [isDrawerOpen, setIsDrawerOpen] = useState(false)
   const [editingEntregaId, setEditingEntregaId] = useState<string | null>(null)
+  const [vendaId, setVendaId] = useState<string>('nenhuma')
+  const [clienteId, setClienteId] = useState<string>('')
+  const [clienteNome, setClienteNome] = useState<string>('')
   const [veiculoId, setVeiculoId] = useState('')
   const [dataEntrega, setDataEntrega] = useState(() => new Date().toISOString().slice(0, 10))
   const [origem, setOrigem] = useState(ORIGENS_SUGERIDAS[0])
@@ -175,38 +184,47 @@ export default function Entregas() {
   useRealtime('entregas', () => loadData())
   useRealtime('veiculos', () => loadData())
   useRealtime('abastecimentos', () => loadData())
+  useRealtime('vendas', () => loadData())
 
   const loadData = async () => {
     if (!currentEmpresa) return
     try {
       setLoading(true)
-      const [entList, veList, abList, fnList, prList, pcList, ccList] = await Promise.all([
-        entregasService.listar(currentEmpresa.id),
-        pb.collection('veiculos').getFullList<Veiculo>({
-          filter: `empresa_id = '${currentEmpresa.id}'`,
-          sort: 'codigo_interno',
-        }),
-        pb.collection('abastecimentos').getFullList<Abastecimento>({
-          filter: `empresa_id = '${currentEmpresa.id}'`,
-          sort: '-data',
-        }),
-        pb.collection('funcionarios').getFullList<Funcionario>({
-          filter: `empresa_id = '${currentEmpresa.id}' && status = 'ativo'`,
-          sort: 'nome',
-        }),
-        pb.collection('produtos').getFullList<Produto>({
-          filter: `empresa_id = '${currentEmpresa.id}'`,
-          sort: 'nome',
-        }),
-        pb.collection('plano_contas').getFullList<PlanoConta>({
-          filter: `empresa_id = '${currentEmpresa.id}'`,
-        }),
-        pb.collection('centros_custos').getFullList<CentroCusto>({
-          filter: `empresa_id = '${currentEmpresa.id}'`,
-        }),
-      ])
+      const [entList, vList, cList, veList, abList, fnList, prList, pcList, ccList] =
+        await Promise.all([
+          entregasService.listar(currentEmpresa.id),
+          vendasService.listar(currentEmpresa.id),
+          pb.collection('clientes').getFullList<Cliente>({
+            filter: `empresa_id = '${currentEmpresa.id}'`,
+            sort: 'nome',
+          }),
+          pb.collection('veiculos').getFullList<Veiculo>({
+            filter: `empresa_id = '${currentEmpresa.id}'`,
+            sort: 'codigo_interno',
+          }),
+          pb.collection('abastecimentos').getFullList<Abastecimento>({
+            filter: `empresa_id = '${currentEmpresa.id}'`,
+            sort: '-data',
+          }),
+          pb.collection('funcionarios').getFullList<Funcionario>({
+            filter: `empresa_id = '${currentEmpresa.id}' && status = 'ativo'`,
+            sort: 'nome',
+          }),
+          pb.collection('produtos').getFullList<Produto>({
+            filter: `empresa_id = '${currentEmpresa.id}'`,
+            sort: 'nome',
+          }),
+          pb.collection('plano_contas').getFullList<PlanoConta>({
+            filter: `empresa_id = '${currentEmpresa.id}'`,
+          }),
+          pb.collection('centros_custos').getFullList<CentroCusto>({
+            filter: `empresa_id = '${currentEmpresa.id}'`,
+          }),
+        ])
 
       setEntregas(entList)
+      setVendas(vList)
+      setClientes(cList)
       setVeiculos(veList)
       setAbastecimentos(abList)
       setFuncionarios(fnList)
@@ -538,9 +556,56 @@ export default function Entregas() {
     })
   }
 
+  // Manipular seleção de venda vinculada
+  const handleVendaSelect = (vId: string) => {
+    setVendaId(vId)
+    if (vId === 'nenhuma') {
+      return
+    }
+    const venda = vendas.find((v) => v.id === vId)
+    if (venda) {
+      setClienteId(venda.cliente_id || '')
+      const cli = clientes.find((c) => c.id === venda.cliente_id)
+      const nomeCli = cli?.nome || venda.expand?.cliente_id?.nome || ''
+      setClienteNome(nomeCli)
+
+      // Se cliente tiver cidade, sugere no destino
+      if (cli?.cidade) {
+        setDestino(`${cli.cidade} (${nomeCli})`)
+      } else if (nomeCli) {
+        setDestino(nomeCli)
+      }
+
+      if (venda.produto_id) {
+        setProdutoId(venda.produto_id)
+      }
+      if (venda.produto_nome) {
+        setProdutoNome(venda.produto_nome)
+      }
+      if (venda.quantidade) {
+        setQuantidade(venda.quantidade)
+      }
+      if (venda.unidade === 'm³' || venda.unidade === 'ton' || venda.unidade === 'viagem') {
+        setUnidadeMedida(venda.unidade)
+      }
+      if (venda.preco_unitario) {
+        setPrecoUnitarioVenda(venda.preco_unitario)
+      }
+      if (venda.valor_total) {
+        setValorVendaManual(venda.valor_total)
+      }
+      if (venda.data_venda) {
+        setDataEntrega(venda.data_venda.slice(0, 10))
+      }
+    }
+  }
+
   // Prepara criação de nova entrega
   const openCreateModal = () => {
     setEditingEntregaId(null)
+    setVendaId('nenhuma')
+    setClienteId('')
+    setClienteNome('')
 
     // Prioriza caçambas do setor "Entrega"
     const veiculosEntrega = veiculos.filter(
@@ -591,6 +656,9 @@ export default function Entregas() {
 
   const openEditModal = (ent: Entrega) => {
     setEditingEntregaId(ent.id)
+    setVendaId(ent.venda_id || 'nenhuma')
+    setClienteId(ent.cliente_id || '')
+    setClienteNome(ent.cliente_nome || ent.expand?.cliente_id?.nome || '')
     setVeiculoId(ent.veiculo_id)
     setDataEntrega(ent.data ? ent.data.slice(0, 10) : new Date().toISOString().slice(0, 10))
     setOrigem(ent.origem)
@@ -747,9 +815,15 @@ export default function Entregas() {
       const kmCalculadoFinal =
         modoKm === 'odometro' ? kmFinal : (v?.km_atual || v?.medidor_atual || 0) + Number(kmEfetivo)
 
+      const vSelected =
+        vendaId && vendaId !== 'nenhuma' ? vendas.find((item) => item.id === vendaId) : null
+
       const payload = {
         empresa_id: currentEmpresa.id,
         veiculo_id: veiculoId,
+        venda_id: vSelected ? vSelected.id : null,
+        cliente_id: vSelected?.cliente_id || clienteId || null,
+        cliente_nome: clienteNome.trim() || vSelected?.expand?.cliente_id?.nome || destino.trim(),
         data: new Date(dataEntrega).toISOString(),
         origem: origem.trim(),
         destino: destino.trim(),
@@ -1311,8 +1385,9 @@ export default function Entregas() {
             <thead>
               <tr className="bg-[#FAF9F7] border-b border-[#ECEAE4] text-gray-500 uppercase font-semibold">
                 <th className="py-3 px-4">Data</th>
+                <th className="py-3 px-4">Venda Vinculada</th>
                 <th className="py-3 px-4">Veículo</th>
-                <th className="py-3 px-4">Rota (Origem ➔ Destino)</th>
+                <th className="py-3 px-4">Rota / Cliente</th>
                 <th className="py-3 px-4 text-right">Km Lançado</th>
                 <th className="py-3 px-4 text-center">Km Rota × Motorista</th>
                 <th className="py-3 px-4">Produto & Carga</th>
@@ -1326,7 +1401,7 @@ export default function Entregas() {
             <tbody className="divide-y divide-[#ECEAE4]">
               {filteredEntregas.length === 0 ? (
                 <tr>
-                  <td colSpan={11} className="py-12 text-center text-gray-400">
+                  <td colSpan={12} className="py-12 text-center text-gray-400">
                     <div className="flex flex-col items-center justify-center gap-2">
                       <Truck className="w-8 h-8 text-gray-300" />
                       <p>Nenhuma entrega encontrada para os critérios selecionados.</p>
@@ -1351,10 +1426,49 @@ export default function Entregas() {
                   const cViagem = Number(ent.custo_estimado) || 0
                   const margem = vVenda - cViagem
 
+                  const venda = ent.expand?.venda_id
+                  const clienteExibicao =
+                    ent.cliente_nome ||
+                    ent.expand?.cliente_id?.nome ||
+                    venda?.expand?.cliente_id?.nome
+
                   return (
                     <tr key={ent.id} className="hover:bg-teal-50/20 transition-colors">
                       <td className="py-3 px-4 font-mono text-gray-700 whitespace-nowrap">
                         {formatDate(ent.data)}
+                      </td>
+                      <td className="py-3 px-4">
+                        {venda ? (
+                          <div className="space-y-0.5">
+                            <Badge
+                              variant="outline"
+                              className="bg-teal-50 text-teal-800 border-teal-300 text-[10px] font-mono flex items-center gap-1 w-fit"
+                            >
+                              <LinkIcon className="w-2.5 h-2.5" />
+                              Venda #{venda.id.slice(0, 6)}
+                            </Badge>
+                            <span className="text-[10px] text-gray-500 block truncate max-w-[150px]">
+                              {venda.expand?.cliente_id?.nome || clienteExibicao || 'Cliente'}
+                            </span>
+                            {venda.status && (
+                              <span className="text-[9px] font-semibold text-teal-700 block uppercase">
+                                {venda.status}
+                              </span>
+                            )}
+                          </div>
+                        ) : ent.venda_id ? (
+                          <Badge
+                            variant="outline"
+                            className="bg-teal-50 text-teal-800 border-teal-300 text-[10px] font-mono flex items-center gap-1 w-fit"
+                          >
+                            <LinkIcon className="w-2.5 h-2.5" />
+                            Venda #{ent.venda_id.slice(0, 6)}
+                          </Badge>
+                        ) : (
+                          <span className="text-[10px] text-gray-400 italic">
+                            Avulsa / Sem venda
+                          </span>
+                        )}
                       </td>
                       <td className="py-3 px-4">
                         <div className="font-semibold text-gray-900 flex items-center gap-1.5">
@@ -1378,6 +1492,11 @@ export default function Entregas() {
                             {ent.destino}
                           </span>
                         </div>
+                        {clienteExibicao && (
+                          <div className="text-[10px] text-teal-700 font-semibold truncate mt-0.5">
+                            Cliente: {clienteExibicao}
+                          </div>
+                        )}
                         <div className="text-[10px] text-gray-400 truncate mt-0.5">
                           Motorista: {ent.motorista || ent.expand?.funcionario_id?.nome || '—'}
                         </div>
@@ -1541,6 +1660,33 @@ export default function Entregas() {
           </SheetHeader>
 
           <form onSubmit={handleSave} className="space-y-4 py-4 text-xs">
+            {/* SELETOR DE VENDA VINCULADA (OPCIONAL) */}
+            <div className="p-3 bg-teal-50/70 rounded-xl border border-teal-200 space-y-1.5">
+              <Label className="text-xs font-bold text-teal-950 flex items-center gap-1.5">
+                <LinkIcon className="w-3.5 h-3.5 text-teal-700" />
+                Vincular a uma Venda (Opcional)
+              </Label>
+              <Select value={vendaId} onValueChange={handleVendaSelect}>
+                <SelectTrigger className="bg-white border-teal-200 text-xs h-9">
+                  <SelectValue placeholder="Selecione a venda para puxar cliente, produto e valor..." />
+                </SelectTrigger>
+                <SelectContent className="max-h-64">
+                  <SelectItem value="nenhuma">Nenhuma (Entrega avulsa de frotas)</SelectItem>
+                  {vendas.map((v) => (
+                    <SelectItem key={v.id} value={v.id}>
+                      #{v.id.slice(0, 6)} • {v.expand?.cliente_id?.nome || 'Cliente'} —{' '}
+                      {v.produto_nome || 'Produto'} ({v.quantidade} {v.unidade}) •{' '}
+                      {formatCurrency(v.valor_total)}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-[11px] text-teal-700">
+                Ao selecionar a venda, os dados de cliente, produto, quantidade e valor são
+                preenchidos automaticamente.
+              </p>
+            </div>
+
             {/* Veículo */}
             <div>
               <Label className="text-xs font-semibold text-gray-700">
@@ -2204,6 +2350,36 @@ export default function Entregas() {
 
           {selectedEntregaDetalhe && (
             <div className="space-y-3.5 py-2 text-xs">
+              {/* Venda Vinculada e Cliente */}
+              {(selectedEntregaDetalhe.venda_id || selectedEntregaDetalhe.expand?.venda_id) && (
+                <div className="p-3 bg-teal-50/70 rounded-xl border border-teal-200 space-y-1">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] uppercase font-bold text-teal-900 flex items-center gap-1">
+                      <LinkIcon className="w-3 h-3 text-teal-700" />
+                      Venda Vinculada ao Financeiro
+                    </span>
+                    <Badge className="bg-teal-700 text-white text-[10px] font-mono">
+                      #{selectedEntregaDetalhe.venda_id?.slice(0, 8)}
+                    </Badge>
+                  </div>
+                  <div className="text-xs text-gray-800 font-semibold mt-1">
+                    Cliente:{' '}
+                    <span className="text-teal-950 font-bold">
+                      {selectedEntregaDetalhe.cliente_nome ||
+                        selectedEntregaDetalhe.expand?.cliente_id?.nome ||
+                        selectedEntregaDetalhe.expand?.venda_id?.expand?.cliente_id?.nome ||
+                        '—'}
+                    </span>
+                  </div>
+                  {selectedEntregaDetalhe.expand?.venda_id?.status && (
+                    <div className="text-[10px] text-gray-500">
+                      Status da Venda:{' '}
+                      <strong>{selectedEntregaDetalhe.expand.venda_id.status}</strong>
+                    </div>
+                  )}
+                </div>
+              )}
+
               {/* Rota */}
               <div className="p-3 bg-[#FAF9F7] rounded-xl border border-[#ECEAE4] space-y-1.5">
                 <span className="text-[10px] uppercase font-semibold text-gray-500 block">

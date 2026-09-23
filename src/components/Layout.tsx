@@ -40,6 +40,7 @@ import {
   PieChart,
   Clock,
   ShoppingCart,
+  BookOpen,
 } from 'lucide-react'
 
 export default function Layout() {
@@ -59,7 +60,10 @@ export default function Layout() {
   const navGroups = [
     {
       group: 'Visão Geral',
-      items: [{ label: 'Dashboard', path: '/', icon: LayoutDashboard }],
+      items: [
+        { label: 'Dashboard', path: '/', icon: LayoutDashboard },
+        { label: 'Manual do Sistema', path: '/manual', icon: BookOpen },
+      ],
     },
     {
       group: 'Financeiro',

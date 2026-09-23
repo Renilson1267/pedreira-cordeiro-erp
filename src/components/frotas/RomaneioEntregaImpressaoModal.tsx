@@ -110,6 +110,11 @@ export const RomaneioEntregaImpressaoModal: React.FC<RomaneioEntregaImpressaoMod
                 <div className="inline-block px-3 py-1 bg-teal-50 border border-teal-300 text-teal-900 font-bold text-xs uppercase tracking-wider rounded">
                   Romaneio de Entrega
                 </div>
+                {entrega.venda_id && (
+                  <div className="mt-1 inline-block px-2.5 py-0.5 bg-emerald-50 border border-emerald-300 text-emerald-900 font-bold text-[11px] rounded font-mono">
+                    Venda Vinculada #{entrega.venda_id.slice(0, 8).toUpperCase()}
+                  </div>
+                )}
                 <div className="text-xs text-gray-600 mt-1">
                   Data da Carga: <strong>{formatDate(entrega.data)}</strong>
                 </div>
