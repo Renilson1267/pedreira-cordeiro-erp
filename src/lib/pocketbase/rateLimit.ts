@@ -32,14 +32,15 @@ export function isRateLimitError(err: unknown): boolean {
 }
 
 /**
- * Executa uma operação assíncrona com retry e backoff exponencial em caso de erro 429 (Too Many Requests).
+ * Executa uma operação assíncrona com retry e backoff adaptativo em caso de erro 429 (Too Many Requests).
+ * Começa com espera curta (ex: 350ms) e só cresce se o erro 429 persistir.
  * Se esgotar as tentativas ou for outro tipo de erro irrecuperável, repassa a exceção.
  */
 export async function withRateLimitRetry<T>(
   fn: () => Promise<T>,
   options: RetryOptions = {},
 ): Promise<T> {
-  const { maxRetries = 6, initialDelayMs = 800, maxDelayMs = 8000, onRetry } = options
+  const { maxRetries = 5, initialDelayMs = 350, maxDelayMs = 4000, onRetry } = options
 
   let attempt = 0
   let currentDelay = initialDelayMs
@@ -50,16 +51,16 @@ export async function withRateLimitRetry<T>(
     } catch (err: unknown) {
       if (isRateLimitError(err) && attempt < maxRetries) {
         attempt += 1
-        // Jitter leve (+/- 10%) para evitar rajadas simultâneas de clientes sincronizados
-        const jitter = (Math.random() * 0.2 - 0.1) * currentDelay
-        const actualDelay = Math.min(maxDelayMs, Math.max(300, Math.round(currentDelay + jitter)))
+        // Jitter leve (+/- 15%) para evitar thundering herd em chamadas paralelas
+        const jitter = (Math.random() * 0.3 - 0.15) * currentDelay
+        const actualDelay = Math.min(maxDelayMs, Math.max(200, Math.round(currentDelay + jitter)))
 
         if (onRetry) {
           onRetry(attempt, actualDelay, err)
         }
 
         await sleep(actualDelay)
-        currentDelay = Math.min(maxDelayMs, currentDelay * 2)
+        currentDelay = Math.min(maxDelayMs, Math.round(currentDelay * 1.8))
         continue
       }
 
@@ -72,4 +73,49 @@ export async function withRateLimitRetry<T>(
       throw err
     }
   }
+}
+
+export interface ParallelPoolOptions {
+  /**
+   * Concorrência máxima (default: 3).
+   */
+  concurrency?: number
+  /**
+   * Delay adaptativo compartilhado: se um worker receber 429, todos os workers
+   * pausam brevemente por este tempo antes da próxima requisição.
+   */
+  onRateLimitSharedPause?: (delayMs: number) => void
+}
+
+/**
+ * Executa tarefas em lote com pool de concorrência limitada (ex: 3-4 requisições em paralelo),
+ * preservando a ordem ou despachando por disponibilidade de worker.
+ */
+export async function runParallelPool<T, R>(
+  items: T[],
+  worker: (item: T, index: number) => Promise<R>,
+  options: ParallelPoolOptions = {},
+): Promise<R[]> {
+  const concurrency = Math.max(1, options.concurrency ?? 3)
+  const results = new Array<R>(items.length)
+  let nextIndex = 0
+
+  async function runner(): Promise<void> {
+    while (true) {
+      const current = nextIndex++
+      if (current >= items.length) {
+        return
+      }
+      results[current] = await worker(items[current], current)
+    }
+  }
+
+  const workerPromises: Promise<void>[] = []
+  const activeCount = Math.min(concurrency, items.length)
+  for (let i = 0; i < activeCount; i++) {
+    workerPromises.push(runner())
+  }
+
+  await Promise.all(workerPromises)
+  return results
 }

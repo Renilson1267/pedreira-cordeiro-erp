@@ -3,7 +3,8 @@ import * as XLSX from 'xlsx'
 import pb from '@/lib/pocketbase/client'
 import { formatCurrency, formatDate } from '@/lib/formatters'
 import { apenasDigitos, formatarCnpj, buscarCnpj } from '@/lib/brasilApi'
-import { withRateLimitRetry, sleep } from '@/lib/pocketbase/rateLimit'
+import { withRateLimitRetry, sleep, runParallelPool } from '@/lib/pocketbase/rateLimit'
+import { Progress } from '@/components/ui/progress'
 import type { Fornecedor, PlanoConta, CentroCusto, ContaPagar } from '@/types/erp'
 import {
   Dialog,
@@ -752,6 +753,8 @@ export function ImportadorContasPagarModal({
   // Execution
   const [isProcessing, setIsProcessing] = useState(false)
   const [progressMsg, setProgressMsg] = useState('')
+  const [progressPercent, setProgressPercent] = useState(0)
+  const [estimatedTimeLeft, setEstimatedTimeLeft] = useState('')
   const [summary, setSummary] = useState<ContasPagarImportSummary | null>(null)
 
   const handleReset = () => {
@@ -765,6 +768,8 @@ export function ImportadorContasPagarModal({
     setSummary(null)
     setIsProcessing(false)
     setProgressMsg('')
+    setProgressPercent(0)
+    setEstimatedTimeLeft('')
     setMapping({
       vencimento: '',
       fornecedor: '',
@@ -1058,7 +1063,116 @@ export function ImportadorContasPagarModal({
         existingKeys.add(key)
       })
 
+      // Mapa de promessas de criação em voo para evitar criar o mesmo fornecedor 2x em paralelo
+      const fornecedoresCreationInFlight = new Map<string, Promise<Fornecedor | null>>()
+
+      const getOrCreateFornecedor = async (
+        rawForn: string,
+        cnpjLimpo: string,
+        sheetName: string,
+      ): Promise<string | null> => {
+        if (cnpjLimpo.length === 14 && fornecedoresCnpjCache.has(cnpjLimpo)) {
+          return fornecedoresCnpjCache.get(cnpjLimpo)!.id
+        }
+
+        const rawTrim = (rawForn || '').trim()
+        if (!rawTrim) return null
+        const keyForn = rawTrim.toLowerCase()
+
+        if (fornecedoresCache.has(keyForn)) {
+          return fornecedoresCache.get(keyForn)!.id
+        }
+
+        if (!criarFornecedoresNaoEncontrados) {
+          return null
+        }
+
+        const inFlightKey = cnpjLimpo.length === 14 ? cnpjLimpo : keyForn
+        if (fornecedoresCreationInFlight.has(inFlightKey)) {
+          const res = await fornecedoresCreationInFlight.get(inFlightKey)
+          return res ? res.id : null
+        }
+
+        const createPromise = (async () => {
+          try {
+            let cnpjConsultaInfo: any = null
+            if (cnpjLimpo.length === 14 && buscarCnpjBrasilApi) {
+              try {
+                cnpjConsultaInfo = await buscarCnpj(cnpjLimpo)
+              } catch {
+                // Silently fall back to manual creation
+              }
+            }
+
+            const novoFornecedor = await withRateLimitRetry(
+              () =>
+                pb.collection('fornecedores').create<Fornecedor>({
+                  empresa_id: empresaId,
+                  nome: cnpjConsultaInfo?.nomeFantasia || cnpjConsultaInfo?.razaoSocial || rawTrim,
+                  cnpj_cpf: cnpjLimpo ? formatarCnpj(cnpjLimpo) : undefined,
+                  telefone: cnpjConsultaInfo?.telefone || undefined,
+                  email: cnpjConsultaInfo?.email || undefined,
+                  endereco: cnpjConsultaInfo?.enderecoCompleto || undefined,
+                  cidade: cnpjConsultaInfo?.cidade || undefined,
+                  uf: cnpjConsultaInfo?.uf || undefined,
+                  cep: cnpjConsultaInfo?.cep || undefined,
+                  observacoes: `Criado automaticamente na importação da planilha (aba ${sheetName})`,
+                }),
+              {
+                maxRetries: 5,
+                initialDelayMs: 350,
+                onRetry: (tentativa, delayMs) => {
+                  setProgressMsg(
+                    `Aguardando servidor... limite temporário (429) no fornecedor "${rawTrim}". Tentativa ${tentativa} em ${(delayMs / 1000).toFixed(1)}s`,
+                  )
+                },
+              },
+            )
+
+            fornecedoresCache.set(keyForn, novoFornecedor)
+            if (cnpjLimpo) {
+              fornecedoresCnpjCache.set(cnpjLimpo, novoFornecedor)
+            }
+            if (!resultSummary.fornecedoresCriados.includes(novoFornecedor.nome)) {
+              resultSummary.fornecedoresCriados.push(novoFornecedor.nome)
+            }
+            return novoFornecedor
+          } catch (createFornErr) {
+            console.warn('Erro ao criar fornecedor:', rawTrim, createFornErr)
+            return null
+          } finally {
+            fornecedoresCreationInFlight.delete(inFlightKey)
+          }
+        })()
+
+        fornecedoresCreationInFlight.set(inFlightKey, createPromise)
+        const fornCriado = await createPromise
+        return fornCriado ? fornCriado.id : null
+      }
+
       const sheetsToImport = sheetsConfig.filter((s) => s.selected)
+
+      // Cálculo de linhas totais estimadas para barra de progresso com tempo restante
+      let totalLinhasGerais = 0
+      sheetsToImport.forEach((s) => {
+        const ws = workbook.Sheets[s.name]
+        if (ws && ws['!ref']) {
+          const range = XLSX.utils.decode_range(ws['!ref'])
+          totalLinhasGerais += Math.max(0, range.e.r - (s.headerRowIndex || 1) + 1)
+        }
+      })
+      if (totalLinhasGerais === 0) totalLinhasGerais = 1
+      let linhasProcessadasGlobal = 0
+      const startTime = Date.now()
+
+      const formatTimeEstimate = (ms: number): string => {
+        if (!isFinite(ms) || ms <= 0) return ''
+        const seg = Math.ceil(ms / 1000)
+        if (seg < 60) return `${seg}s`
+        const min = Math.floor(seg / 60)
+        const restSec = seg % 60
+        return `${min}m ${restSec}s`
+      }
 
       for (const sheetCfg of sheetsToImport) {
         setProgressMsg(`Processando aba: ${sheetCfg.name}...`)
@@ -1306,6 +1420,37 @@ export function ImportadorContasPagarModal({
           }
         }
 
+        const isValidaSanitariaPagar = (val: any) => {
+          if (val === null || val === undefined || String(val).trim() === '') return false
+          const parsed = parseDataPagar(val, sheetCfg.ano, sheetCfg.mes)
+          if (!parsed || parsed.startsWith('1970')) return false
+          const yMatch = parsed.match(/^(\d{4})/)
+          if (!yMatch) return false
+          const y = parseInt(yMatch[1], 10)
+          return y >= 2024 && y <= 2028
+        }
+
+        // FASE 1: Varredura sequencial da planilha para herança correta de blocos/datas e preparo dos itens
+        interface PreparedItemPagar {
+          numLinha: number
+          rawForn: string
+          rawCnpj: string
+          descFinal: string
+          dataVencimentoISO: string
+          valorFinal: number
+          rawValorPago: number
+          rawDataPag: any
+          rawForma: string
+          rawStatus: string
+          rawCentro: string
+          rawCat: string
+          rawDoc: string
+          dateOnly: string
+          descNorm: string
+        }
+
+        const preparedItems: PreparedItemPagar[] = []
+
         for (let r = 0; r < dataRows.length; r++) {
           const row = dataRows[r]
           const numLinha = r + headerIdx + 1
@@ -1344,6 +1489,7 @@ export function ImportadorContasPagarModal({
             // Se for cabeçalho repetido ou a próxima linha for cabeçalho, reexecutar detecção de colunas
             if (isRepeatedHeader) {
               recalcularMapeamentoBloco(row)
+              ultimaDataValida = null
             } else if (r + 1 < dataRows.length) {
               const nextRow = dataRows[r + 1]
               const nextRowJoin = nextRow
@@ -1357,6 +1503,7 @@ export function ImportadorContasPagarModal({
                   nextRowJoin.includes('REALIZAD'))
               ) {
                 recalcularMapeamentoBloco(nextRow)
+                ultimaDataValida = null
               }
             }
             continue
@@ -1374,6 +1521,7 @@ export function ImportadorContasPagarModal({
             rowTextJoined.includes('SUBTOTAL 1') ||
             rowTextJoined.includes('SUBTOTAL 2')
           if (isTotalRow) {
+            ultimaDataValida = null
             // Se tiver indício de cabeçalho na linha seguinte após subtotal, tentar re-detectar colunas
             if (r + 1 < dataRows.length) {
               const nextRow = dataRows[r + 1]
@@ -1396,462 +1544,423 @@ export function ImportadorContasPagarModal({
           sheetLidos += 1
           resultSummary.totalLidos += 1
 
-          try {
-            const activeVencColIdx = activeVencCol ? activeHeaders.indexOf(activeVencCol) : -1
-            const activeDocColIdx = activeDocCol ? activeHeaders.indexOf(activeDocCol) : -1
+          const activeVencColIdx = activeVencCol ? activeHeaders.indexOf(activeVencCol) : -1
+          const activeDocColIdx = activeDocCol ? activeHeaders.indexOf(activeDocCol) : -1
 
-            let rawVenc = getVal(row, activeVencCol)
-            let rawForn = String(getVal(row, activeFornCol) || '').trim()
-            let rawDesc = String(getVal(row, activeDescCol) || '').trim()
+          let rawVenc = getVal(row, activeVencCol)
+          let rawForn = String(getVal(row, activeFornCol) || '').trim()
+          let rawDesc = String(getVal(row, activeDescCol) || '').trim()
 
-            // Se fornecedor e descrição vieram vazios, procurar na linha a primeira célula textual representativa
-            if (!rawForn && !rawDesc) {
-              for (let cIdx = 0; cIdx < row.length; cIdx++) {
-                if (cIdx === activeVencColIdx || cIdx === activeDocColIdx) continue
-                const cv = row[cIdx]
-                if (
-                  cv &&
-                  typeof cv === 'string' &&
-                  cv.trim().length > 1 &&
-                  !/^\d+([.,]\d+)?$/.test(cv.trim())
-                ) {
-                  const cNorm = normalizarNomeColuna(cv)
-                  if (
-                    !cNorm.startsWith('TOTAL') &&
-                    !cNorm.startsWith('SUBTOTAL') &&
-                    !cNorm.startsWith('SALDO')
-                  ) {
-                    rawDesc = cv.trim()
-                    break
-                  }
-                }
-              }
-            }
-
-            if (!rawForn && rawDesc) {
-              rawForn = rawDesc
-            }
-
-            const rawValor = parseValorPagar(getVal(row, activeValCol))
-            const rawValorPago = activeValPagoCol
-              ? parseValorPagar(getVal(row, activeValPagoCol))
-              : 0
-            const rawDataPag = getVal(row, activeDataPagCol)
-            const rawForma = String(getVal(row, activeFormaCol) || '').trim()
-            const rawStatus = String(getVal(row, activeStatusCol) || '').toLowerCase()
-            const rawCentro = String(getVal(row, activeCentroCol) || '').trim()
-            const rawCat = String(getVal(row, activeCatCol) || '').trim()
-            const rawDoc = String(getVal(row, activeDocCol) || '').trim()
-            const rawCnpj = String(getVal(row, activeCnpjCol) || '').trim()
-
-            // Ignorar se a descrição ou favorecido for totalizador
-            const lowerDesc = (rawDesc || rawForn).toLowerCase()
-            if (
-              lowerDesc.startsWith('total') ||
-              lowerDesc.startsWith('subtotal') ||
-              lowerDesc.startsWith('saldo') ||
-              lowerDesc.startsWith('semana') ||
-              lowerDesc.includes('total semanal')
-            ) {
-              continue
-            }
-
-            // Descobrir valor final:
-            // 1) Testar coluna mapeada de valor ou valorPago
-            // 2) Se não produzir número > 0, varrer as células da linha (pulando a coluna de vencimento e a de documento)
-            //    e usar o maior valor monetário positivo encontrado como valor do lançamento
-            let valorFinal = rawValor > 0 ? rawValor : rawValorPago
-            if (valorFinal <= 0) {
-              let maiorValorEncontrado = 0
-              for (let colIdx = 0; colIdx < row.length; colIdx++) {
-                // Pular coluna de vencimento e coluna de documento
-                if (colIdx === activeVencColIdx || colIdx === activeDocColIdx) continue
-
-                const cellRaw = row[colIdx]
-                // Se a célula contiver formato evidente de documento/NF ou data, não considerar
-                if (typeof cellRaw === 'string' && /^(?:NF|DOC|NOTA|DUPL)/i.test(cellRaw.trim()))
-                  continue
-                if (cellRaw instanceof Date) continue
-
-                const cellVal = parseValorPagar(cellRaw)
-                if (cellVal > 0) {
-                  const hName = normalizarNomeColuna(activeHeaders[colIdx] || '')
-                  // Se o cabeçalho tiver indício explícito de valor, prioriza imediatamente
-                  if (
-                    hName.includes('VALOR') ||
-                    hName.includes('PAGAR') ||
-                    hName.includes('REALIZAD') ||
-                    hName.includes('PREVIST') ||
-                    hName.includes('TOTAL') ||
-                    hName.includes('LIQUID') ||
-                    hName.includes('BRUTO') ||
-                    hName.includes('PAGO') ||
-                    hName.includes('DEBIT') ||
-                    hName.includes('DESPES')
-                  ) {
-                    if (cellVal > valorFinal) {
-                      valorFinal = cellVal
-                    }
-                  } else if (cellVal > maiorValorEncontrado) {
-                    maiorValorEncontrado = cellVal
-                  }
-                }
-              }
-              if (valorFinal <= 0 && maiorValorEncontrado > 0) {
-                valorFinal = maiorValorEncontrado
-              }
-            }
-
-            if (valorFinal <= 0) {
-              // Se há descrição ou favorecido mas o valor foi 0, continuar sem abortar
-              continue
-            }
-
-            // 1. Resolver Fornecedor
-            let fornecedorId: string | null = null
-            const cnpjLimpo = apenasDigitos(rawCnpj)
-
-            if (cnpjLimpo.length === 14 && fornecedoresCnpjCache.has(cnpjLimpo)) {
-              fornecedorId = fornecedoresCnpjCache.get(cnpjLimpo)!.id
-            } else if (rawForn) {
-              const keyForn = rawForn.toLowerCase()
-              if (fornecedoresCache.has(keyForn)) {
-                fornecedorId = fornecedoresCache.get(keyForn)!.id
-              } else if (criarFornecedoresNaoEncontrados) {
-                try {
-                  let cnpjConsultaInfo: any = null
-                  if (cnpjLimpo.length === 14 && buscarCnpjBrasilApi) {
-                    try {
-                      cnpjConsultaInfo = await buscarCnpj(cnpjLimpo)
-                    } catch {
-                      // Silently fall back to manual creation
-                    }
-                  }
-
-                  await sleep(100)
-                  const novoFornecedor = await withRateLimitRetry(
-                    () =>
-                      pb.collection('fornecedores').create<Fornecedor>({
-                        empresa_id: empresaId,
-                        nome:
-                          cnpjConsultaInfo?.nomeFantasia ||
-                          cnpjConsultaInfo?.razaoSocial ||
-                          rawForn,
-                        cnpj_cpf: cnpjLimpo ? formatarCnpj(cnpjLimpo) : undefined,
-                        telefone: cnpjConsultaInfo?.telefone || undefined,
-                        email: cnpjConsultaInfo?.email || undefined,
-                        endereco: cnpjConsultaInfo?.enderecoCompleto || undefined,
-                        cidade: cnpjConsultaInfo?.cidade || undefined,
-                        uf: cnpjConsultaInfo?.uf || undefined,
-                        cep: cnpjConsultaInfo?.cep || undefined,
-                        observacoes: `Criado automaticamente na importação da planilha (aba ${sheetCfg.name})`,
-                      }),
-                    {
-                      onRetry: (tentativa, delayMs) => {
-                        setProgressMsg(
-                          `Aguardando servidor... limite temporário (429) no fornecedor "${rawForn}". Tentativa ${tentativa} em ${(delayMs / 1000).toFixed(1)}s`,
-                        )
-                      },
-                    },
-                  )
-
-                  fornecedoresCache.set(keyForn, novoFornecedor)
-                  if (cnpjLimpo) {
-                    fornecedoresCnpjCache.set(cnpjLimpo, novoFornecedor)
-                  }
-                  fornecedorId = novoFornecedor.id
-                  if (!resultSummary.fornecedoresCriados.includes(novoFornecedor.nome)) {
-                    resultSummary.fornecedoresCriados.push(novoFornecedor.nome)
-                  }
-                } catch (createFornErr) {
-                  console.warn('Erro ao criar fornecedor:', rawForn, createFornErr)
-                }
-              }
-            }
-
-            // 2. Data de Vencimento com barreira sanitária estrita (2024-2028), herança e busca segura
-            let dataParaVenc = rawVenc
-            const rawVencStr = String(rawVenc ?? '').trim()
-
-            const isValidaSanitariaPagar = (val: any) => {
-              if (val === null || val === undefined || String(val).trim() === '') return false
-              const parsed = parseDataPagar(val, sheetCfg.ano, sheetCfg.mes)
-              if (!parsed || parsed.startsWith('1970')) return false
-              const yMatch = parsed.match(/^(\d{4})/)
-              if (!yMatch) return false
-              const y = parseInt(yMatch[1], 10)
-              return y >= 2024 && y <= 2028
-            }
-
-            let teveDataPropriaPagar = false
-            if (rawVencStr && isValidaSanitariaPagar(rawVenc)) {
-              teveDataPropriaPagar = true
-              ultimaDataValida = rawVenc
-            } else if (rawVencStr && !isValidaSanitariaPagar(rawVenc)) {
-              sheetErrosCount += 1
-              resultSummary.erros.push({
-                aba: sheetCfg.name,
-                linha: numLinha,
-                motivo: `Data de vencimento na linha ("${rawVencStr.slice(0, 30)}") fora do intervalo plausível (2024-2028). Aplicada data da competência.`,
-              })
-            }
-
-            if (
-              !teveDataPropriaPagar &&
-              ultimaDataValida &&
-              isValidaSanitariaPagar(ultimaDataValida)
-            ) {
-              dataParaVenc = ultimaDataValida
-            }
-
-            let dataVencimentoISO = parseDataPagar(dataParaVenc, sheetCfg.ano, sheetCfg.mes)
-
-            // Se ainda não obteve data válida com vencCol, tentar varrer as colunas da linha excluindo colunas proibidas
-            if (
-              !dataVencimentoISO ||
-              dataVencimentoISO.startsWith('1970') ||
-              !isValidaSanitariaPagar(dataVencimentoISO)
-            ) {
-              for (let colIdx = 0; colIdx < row.length; colIdx++) {
-                if (colIdx === activeDocColIdx) continue
-                const colHeader = normalizarNomeColuna(activeHeaders[colIdx] || '')
-                if (
-                  colHeader.includes('VALOR') ||
-                  colHeader.includes('FORNEC') ||
-                  colHeader.includes('FAVOREC') ||
-                  colHeader.includes('DOC') ||
-                  colHeader.includes('NOTA')
-                ) {
-                  continue
-                }
-                const candVal = row[colIdx]
-                if (candVal !== null && candVal !== undefined && String(candVal).trim() !== '') {
-                  if (isValidaSanitariaPagar(candVal)) {
-                    dataVencimentoISO = parseDataPagar(candVal, sheetCfg.ano, sheetCfg.mes)
-                    rawVenc = candVal
-                    teveDataPropriaPagar = true
-                    ultimaDataValida = candVal
-                    break
-                  }
-                }
-              }
-            }
-
-            // Fallback resiliente: se a linha tem descrição e valor válidos, herdar data anterior ou dia 01 da competência
-            if (
-              !dataVencimentoISO ||
-              dataVencimentoISO.startsWith('1970') ||
-              !isValidaSanitariaPagar(dataVencimentoISO)
-            ) {
-              if (ultimaDataValida && isValidaSanitariaPagar(ultimaDataValida)) {
-                dataVencimentoISO = parseDataPagar(ultimaDataValida, sheetCfg.ano, sheetCfg.mes)
-              }
+          // Se fornecedor e descrição vierem vazios, procurar na linha a primeira célula textual representativa
+          if (!rawForn && !rawDesc) {
+            for (let cIdx = 0; cIdx < row.length; cIdx++) {
+              if (cIdx === activeVencColIdx || cIdx === activeDocColIdx) continue
+              const cv = row[cIdx]
               if (
-                !dataVencimentoISO ||
-                dataVencimentoISO.startsWith('1970') ||
-                !isValidaSanitariaPagar(dataVencimentoISO)
+                cv &&
+                typeof cv === 'string' &&
+                cv.trim().length > 1 &&
+                !/^\d+([.,]\d+)?$/.test(cv.trim())
               ) {
-                const y = sheetCfg.ano || 2026
-                const m = sheetCfg.mes || 1
-                dataVencimentoISO = `${y}-${String(m).padStart(2, '0')}-01T12:00:00.000Z`
-              }
-            } else if (rawVencStr && !teveDataPropriaPagar && isValidaSanitariaPagar(rawVenc)) {
-              ultimaDataValida = rawVenc
-              teveDataPropriaPagar = true
-            }
-
-            // 3. Descrição
-            const docInfo = rawDoc ? ` [NF/Doc: ${rawDoc}]` : ''
-            const descFinal = rawDesc || `Despesa ${rawForn || sheetCfg.name}${docInfo}`
-
-            // 4. Verificação de Duplicidade
-            const dateOnly = dataVencimentoISO.slice(0, 10)
-            const descNorm = descFinal
-              .toLowerCase()
-              .replace(/[\s\-_]+/g, ' ')
-              .trim()
-              .slice(0, 30)
-            const dedupeKey = `${fornecedorId || ''}_${dateOnly}_${valorFinal.toFixed(2)}_${descNorm}`
-
-            if (detectarDuplicados && existingKeys.has(dedupeKey)) {
-              resultSummary.duplicadosPulados += 1
-              sheetDuplicados += 1
-              continue
-            }
-
-            // 5. Determinar Situação (Paga, Parcial ou Aberta)
-            let isPaga = false
-            let isParcial = false
-
-            if (classificacaoPadrao === 'Paga') {
-              isPaga = true
-            } else if (classificacaoPadrao === 'Aberta') {
-              isPaga = false
-            } else {
-              if (
-                rawStatus.includes('parcial') ||
-                (rawValorPago > 0 && valorFinal > 0 && rawValorPago < valorFinal - 0.009)
-              ) {
-                isParcial = true
-              } else if (
-                (rawValorPago > 0 && rawValorPago >= valorFinal - 0.009) ||
-                rawDataPag ||
-                rawStatus.includes('pag') ||
-                rawStatus.includes('liquid') ||
-                rawStatus.includes('baix') ||
-                rawStatus.includes('quit')
-              ) {
-                isPaga = true
-              } else if (
-                rawStatus.includes('abert') ||
-                rawStatus.includes('pend') ||
-                rawStatus.includes('venc')
-              ) {
-                isPaga = false
-              } else {
-                isPaga = rawValorPago >= valorFinal && rawValorPago > 0
+                const cNorm = normalizarNomeColuna(cv)
+                if (
+                  !cNorm.startsWith('TOTAL') &&
+                  !cNorm.startsWith('SUBTOTAL') &&
+                  !cNorm.startsWith('SALDO')
+                ) {
+                  rawDesc = cv.trim()
+                  break
+                }
               }
             }
+          }
 
-            const valorEfetivoPago = isPaga
-              ? rawValorPago > 0
-                ? rawValorPago
-                : valorFinal
-              : isParcial
-                ? rawValorPago
-                : 0
+          if (!rawForn && rawDesc) {
+            rawForn = rawDesc
+          }
 
-            const rawPagParaParse = isValidaSanitariaPagar(rawDataPag)
-              ? rawDataPag
-              : isValidaSanitariaPagar(rawVenc)
-                ? rawVenc
-                : dataVencimentoISO
+          const rawValor = parseValorPagar(getVal(row, activeValCol))
+          const rawValorPago = activeValPagoCol ? parseValorPagar(getVal(row, activeValPagoCol)) : 0
+          const rawDataPag = getVal(row, activeDataPagCol)
+          const rawForma = String(getVal(row, activeFormaCol) || '').trim()
+          const rawStatus = String(getVal(row, activeStatusCol) || '').toLowerCase()
+          const rawCentro = String(getVal(row, activeCentroCol) || '').trim()
+          const rawCat = String(getVal(row, activeCatCol) || '').trim()
+          const rawDoc = String(getVal(row, activeDocCol) || '').trim()
+          const rawCnpj = String(getVal(row, activeCnpjCol) || '').trim()
 
-            const dataPagamentoISO =
-              isPaga || (isParcial && rawValorPago > 0)
-                ? parseDataPagar(rawPagParaParse, sheetCfg.ano, sheetCfg.mes)
-                : null
+          // Ignorar se a descrição ou favorecido for totalizador
+          const lowerDesc = (rawDesc || rawForn).toLowerCase()
+          if (
+            lowerDesc.startsWith('total') ||
+            lowerDesc.startsWith('subtotal') ||
+            lowerDesc.startsWith('saldo') ||
+            lowerDesc.startsWith('semana') ||
+            lowerDesc.includes('total semanal')
+          ) {
+            continue
+          }
 
-            // 6. Forma de Pagamento
-            let finalForma: 'Dinheiro' | 'Pix' | 'Cartão' | 'Boleto' | 'Transferência' = 'Pix'
-            const lowerForma = (rawForma || '').toLowerCase()
-            if (lowerForma.includes('bol')) finalForma = 'Boleto'
-            else if (
-              lowerForma.includes('ted') ||
-              lowerForma.includes('doc') ||
-              lowerForma.includes('transf')
-            )
-              finalForma = 'Transferência'
-            else if (
-              lowerForma.includes('cart') ||
-              lowerForma.includes('deb') ||
-              lowerForma.includes('cred')
-            )
-              finalForma = 'Cartão'
-            else if (lowerForma.includes('dinh') || lowerForma.includes('espec'))
-              finalForma = 'Dinheiro'
+          let valorFinal = rawValor > 0 ? rawValor : rawValorPago
+          if (valorFinal <= 0) {
+            let maiorValorEncontrado = 0
+            for (let colIdx = 0; colIdx < row.length; colIdx++) {
+              if (colIdx === activeVencColIdx || colIdx === activeDocColIdx) continue
 
-            // 7. Centro de Custo
-            let finalCentroCustoId: string | null =
-              centroCustoPadraoId !== 'none' && centroCustoPadraoId ? centroCustoPadraoId : null
+              const cellRaw = row[colIdx]
+              if (typeof cellRaw === 'string' && /^(?:NF|DOC|NOTA|DUPL)/i.test(cellRaw.trim()))
+                continue
+              if (cellRaw instanceof Date) continue
 
-            if (rawCentro) {
-              const k = rawCentro.toLowerCase()
-              if (centrosCache.has(k)) {
-                finalCentroCustoId = centrosCache.get(k)!.id
+              const cellVal = parseValorPagar(cellRaw)
+              if (cellVal > 0) {
+                const hName = normalizarNomeColuna(activeHeaders[colIdx] || '')
+                if (
+                  hName.includes('VALOR') ||
+                  hName.includes('PAGAR') ||
+                  hName.includes('REALIZAD') ||
+                  hName.includes('PREVIST') ||
+                  hName.includes('TOTAL') ||
+                  hName.includes('LIQUID') ||
+                  hName.includes('BRUTO') ||
+                  hName.includes('PAGO') ||
+                  hName.includes('DEBIT') ||
+                  hName.includes('DESPES')
+                ) {
+                  if (cellVal > valorFinal) {
+                    valorFinal = cellVal
+                  }
+                } else if (cellVal > maiorValorEncontrado) {
+                  maiorValorEncontrado = cellVal
+                }
               }
             }
-
-            // 8. Categoria / Plano de Contas
-            let finalCategoriaId: string | null = categoriaPadraoId || null
-            if (rawCat) {
-              const k = rawCat.toLowerCase()
-              if (categoriasCache.has(k)) {
-                finalCategoriaId = categoriasCache.get(k)!.id
-              }
+            if (valorFinal <= 0 && maiorValorEncontrado > 0) {
+              valorFinal = maiorValorEncontrado
             }
+          }
 
-            // 9. Gravar Conta a Pagar
-            const statusFinalGravado = isPaga ? 'Paga' : isParcial ? 'Parcial' : 'Aberta'
+          if (valorFinal <= 0) {
+            continue
+          }
 
-            await sleep(100)
-            const createdConta = await withRateLimitRetry(
-              () =>
-                pb.collection('contas_pagar').create<ContaPagar>({
-                  empresa_id: empresaId,
-                  fornecedor_id: fornecedorId || null,
-                  descricao: descFinal,
-                  categoria_id: finalCategoriaId,
-                  centro_custo_id: finalCentroCustoId,
-                  valor: valorFinal,
-                  valor_pago: valorEfetivoPago,
-                  vencimento: dataVencimentoISO,
-                  parcelas: 1,
-                  status: statusFinalGravado,
-                  data_pagamento: dataPagamentoISO,
-                  forma_pagamento: isPaga || isParcial ? finalForma : null,
-                  observacoes: `Importado de planilha [Aba: ${sheetCfg.name}]${rawDoc ? ` | Doc: ${rawDoc}` : ''}${isParcial ? ` | Pagamento parcial importado: ${valorEfetivoPago}` : ''}`,
-                }),
-              {
-                onRetry: (tentativa, delayMs) => {
-                  setProgressMsg(
-                    `Aguardando servidor... limite temporário (429) no lançamento "${descFinal.slice(0, 25)}...". Tentativa ${tentativa} em ${(delayMs / 1000).toFixed(1)}s`,
-                  )
-                },
-              },
-            )
+          // 2. Data de Vencimento com barreira sanitária estrita (2024-2028), herança e busca segura
+          let dataParaVenc = rawVenc
+          const rawVencStr = String(rawVenc ?? '').trim()
 
-            // 10. Se houve pagamento (total ou parcial), gerar movimento financeiro pelo valor efetivo
-            if ((isPaga || isParcial) && valorEfetivoPago > 0 && dataPagamentoISO) {
-              try {
-                await sleep(100)
-                await withRateLimitRetry(
-                  () =>
-                    pb.collection('movimentos_financeiros').create({
-                      empresa_id: empresaId,
-                      tipo: 'Saida',
-                      descricao: `Pagamento${isParcial ? ' parcial' : ''}: ${createdConta.descricao}${rawForn ? ` [${rawForn}]` : ''}`,
-                      valor: valorEfetivoPago,
-                      data: dataPagamentoISO,
-                      categoria_id: finalCategoriaId,
-                      centro_custo_id: finalCentroCustoId,
-                      origem: 'ContaPagar',
-                      referencia_id: createdConta.id,
-                      conciliado: false,
-                    }),
-                  {
-                    onRetry: (tentativa, delayMs) => {
-                      setProgressMsg(
-                        `Aguardando servidor... limite temporário (429) no movimento financeiro. Tentativa ${tentativa} em ${(delayMs / 1000).toFixed(1)}s`,
-                      )
-                    },
-                  },
-                )
-              } catch (eMov) {
-                console.warn('Erro ao criar movimento financeiro correspondente:', eMov)
-              }
-            }
-
-            existingKeys.add(dedupeKey)
-            resultSummary.importados += 1
-            sheetImportados += 1
-            if (isPaga) {
-              resultSummary.pagasBaixadas += 1
-            } else if (isParcial) {
-              resultSummary.emAberto += 1
-            } else {
-              resultSummary.emAberto += 1
-            }
-          } catch (rowErr: any) {
+          let teveDataPropriaPagar = false
+          if (rawVencStr && isValidaSanitariaPagar(rawVenc)) {
+            teveDataPropriaPagar = true
+            ultimaDataValida = rawVenc
+          } else if (rawVencStr && !isValidaSanitariaPagar(rawVenc)) {
             sheetErrosCount += 1
             resultSummary.erros.push({
               aba: sheetCfg.name,
               linha: numLinha,
-              motivo: rowErr.message || 'Falha ao processar linha',
+              motivo: `Data de vencimento na linha ("${rawVencStr.slice(0, 30)}") fora do intervalo plausível (2024-2028). Aplicada data da competência.`,
             })
           }
+
+          if (
+            !teveDataPropriaPagar &&
+            ultimaDataValida &&
+            isValidaSanitariaPagar(ultimaDataValida)
+          ) {
+            dataParaVenc = ultimaDataValida
+          }
+
+          let dataVencimentoISO = parseDataPagar(dataParaVenc, sheetCfg.ano, sheetCfg.mes)
+
+          if (
+            !dataVencimentoISO ||
+            dataVencimentoISO.startsWith('1970') ||
+            !isValidaSanitariaPagar(dataVencimentoISO)
+          ) {
+            for (let colIdx = 0; colIdx < row.length; colIdx++) {
+              if (colIdx === activeDocColIdx) continue
+              const colHeader = normalizarNomeColuna(activeHeaders[colIdx] || '')
+              if (
+                colHeader.includes('VALOR') ||
+                colHeader.includes('FORNEC') ||
+                colHeader.includes('FAVOREC') ||
+                colHeader.includes('DOC') ||
+                colHeader.includes('NOTA')
+              ) {
+                continue
+              }
+              const candVal = row[colIdx]
+              if (candVal !== null && candVal !== undefined && String(candVal).trim() !== '') {
+                if (isValidaSanitariaPagar(candVal)) {
+                  dataVencimentoISO = parseDataPagar(candVal, sheetCfg.ano, sheetCfg.mes)
+                  rawVenc = candVal
+                  teveDataPropriaPagar = true
+                  ultimaDataValida = candVal
+                  break
+                }
+              }
+            }
+          }
+
+          if (
+            !dataVencimentoISO ||
+            dataVencimentoISO.startsWith('1970') ||
+            !isValidaSanitariaPagar(dataVencimentoISO)
+          ) {
+            if (ultimaDataValida && isValidaSanitariaPagar(ultimaDataValida)) {
+              dataVencimentoISO = parseDataPagar(ultimaDataValida, sheetCfg.ano, sheetCfg.mes)
+            }
+            if (
+              !dataVencimentoISO ||
+              dataVencimentoISO.startsWith('1970') ||
+              !isValidaSanitariaPagar(dataVencimentoISO)
+            ) {
+              const y = sheetCfg.ano || 2026
+              const m = sheetCfg.mes || 1
+              dataVencimentoISO = `${y}-${String(m).padStart(2, '0')}-01T12:00:00.000Z`
+            }
+          } else if (rawVencStr && !teveDataPropriaPagar && isValidaSanitariaPagar(rawVenc)) {
+            ultimaDataValida = rawVenc
+            teveDataPropriaPagar = true
+          }
+
+          // 3. Descrição
+          const docInfo = rawDoc ? ` [NF/Doc: ${rawDoc}]` : ''
+          const descFinal = rawDesc || `Despesa ${rawForn || sheetCfg.name}${docInfo}`
+          const dateOnly = dataVencimentoISO.slice(0, 10)
+          const descNorm = descFinal
+            .toLowerCase()
+            .replace(/[\s\-_]+/g, ' ')
+            .trim()
+            .slice(0, 30)
+
+          preparedItems.push({
+            numLinha,
+            rawForn,
+            rawCnpj,
+            descFinal,
+            dataVencimentoISO,
+            valorFinal,
+            rawValorPago,
+            rawDataPag,
+            rawForma,
+            rawStatus,
+            rawCentro,
+            rawCat,
+            rawDoc,
+            dateOnly,
+            descNorm,
+          })
         }
 
+        // FASE 2: Processamento concorrente com pool de 3 a 4 requisições em paralelo
+        await runParallelPool(
+          preparedItems,
+          async (item) => {
+            try {
+              // 1. Resolver Fornecedor
+              const cnpjLimpo = apenasDigitos(item.rawCnpj)
+              const fornecedorId = await getOrCreateFornecedor(
+                item.rawForn,
+                cnpjLimpo,
+                sheetCfg.name,
+              )
+
+              // 4. Verificação de Duplicidade
+              const dedupeKey = `${fornecedorId || ''}_${item.dateOnly}_${item.valorFinal.toFixed(2)}_${item.descNorm}`
+
+              if (detectarDuplicados && existingKeys.has(dedupeKey)) {
+                resultSummary.duplicadosPulados += 1
+                sheetDuplicados += 1
+                return
+              }
+
+              // 5. Determinar Situação (Paga, Parcial ou Aberta)
+              let isPaga = false
+              let isParcial = false
+
+              if (classificacaoPadrao === 'Paga') {
+                isPaga = true
+              } else if (classificacaoPadrao === 'Aberta') {
+                isPaga = false
+              } else {
+                if (
+                  item.rawStatus.includes('parcial') ||
+                  (item.rawValorPago > 0 &&
+                    item.valorFinal > 0 &&
+                    item.rawValorPago < item.valorFinal - 0.009)
+                ) {
+                  isParcial = true
+                } else if (
+                  (item.rawValorPago > 0 && item.rawValorPago >= item.valorFinal - 0.009) ||
+                  item.rawDataPag ||
+                  item.rawStatus.includes('pag') ||
+                  item.rawStatus.includes('liquid') ||
+                  item.rawStatus.includes('baix') ||
+                  item.rawStatus.includes('quit')
+                ) {
+                  isPaga = true
+                } else if (
+                  item.rawStatus.includes('abert') ||
+                  item.rawStatus.includes('pend') ||
+                  item.rawStatus.includes('venc')
+                ) {
+                  isPaga = false
+                } else {
+                  isPaga = item.rawValorPago >= item.valorFinal && item.rawValorPago > 0
+                }
+              }
+
+              const valorEfetivoPago = isPaga
+                ? item.rawValorPago > 0
+                  ? item.rawValorPago
+                  : item.valorFinal
+                : isParcial
+                  ? item.rawValorPago
+                  : 0
+
+              const rawPagParaParse = isValidaSanitariaPagar(item.rawDataPag)
+                ? item.rawDataPag
+                : isValidaSanitariaPagar(item.dataVencimentoISO)
+                  ? item.dataVencimentoISO
+                  : item.dataVencimentoISO
+
+              const dataPagamentoISO =
+                isPaga || (isParcial && item.rawValorPago > 0)
+                  ? parseDataPagar(rawPagParaParse, sheetCfg.ano, sheetCfg.mes)
+                  : null
+
+              // 6. Forma de Pagamento
+              let finalForma: 'Dinheiro' | 'Pix' | 'Cartão' | 'Boleto' | 'Transferência' = 'Pix'
+              const lowerForma = item.rawForma.toLowerCase()
+              if (lowerForma.includes('bol')) finalForma = 'Boleto'
+              else if (
+                lowerForma.includes('ted') ||
+                lowerForma.includes('doc') ||
+                lowerForma.includes('transf')
+              )
+                finalForma = 'Transferência'
+              else if (
+                lowerForma.includes('cart') ||
+                lowerForma.includes('deb') ||
+                lowerForma.includes('cred')
+              )
+                finalForma = 'Cartão'
+              else if (lowerForma.includes('dinh') || lowerForma.includes('espec'))
+                finalForma = 'Dinheiro'
+
+              // 7. Centro de Custo
+              let finalCentroCustoId: string | null =
+                centroCustoPadraoId !== 'none' && centroCustoPadraoId ? centroCustoPadraoId : null
+
+              if (item.rawCentro) {
+                const k = item.rawCentro.toLowerCase()
+                if (centrosCache.has(k)) {
+                  finalCentroCustoId = centrosCache.get(k)!.id
+                }
+              }
+
+              // 8. Categoria / Plano de Contas
+              let finalCategoriaId: string | null = categoriaPadraoId || null
+              if (item.rawCat) {
+                const k = item.rawCat.toLowerCase()
+                if (categoriasCache.has(k)) {
+                  finalCategoriaId = categoriasCache.get(k)!.id
+                }
+              }
+
+              // 9. Gravar Conta a Pagar
+              const statusFinalGravado = isPaga ? 'Paga' : isParcial ? 'Parcial' : 'Aberta'
+
+              const createdConta = await withRateLimitRetry(
+                () =>
+                  pb.collection('contas_pagar').create<ContaPagar>({
+                    empresa_id: empresaId,
+                    fornecedor_id: fornecedorId || null,
+                    descricao: item.descFinal,
+                    categoria_id: finalCategoriaId,
+                    centro_custo_id: finalCentroCustoId,
+                    valor: item.valorFinal,
+                    valor_pago: valorEfetivoPago,
+                    vencimento: item.dataVencimentoISO,
+                    parcelas: 1,
+                    status: statusFinalGravado,
+                    data_pagamento: dataPagamentoISO,
+                    forma_pagamento: isPaga || isParcial ? finalForma : null,
+                    observacoes: `Importado de planilha [Aba: ${sheetCfg.name}]${item.rawDoc ? ` | Doc: ${item.rawDoc}` : ''}${isParcial ? ` | Pagamento parcial importado: ${valorEfetivoPago}` : ''}`,
+                  }),
+                {
+                  maxRetries: 5,
+                  initialDelayMs: 350,
+                  onRetry: (tentativa, delayMs) => {
+                    setProgressMsg(
+                      `Aguardando servidor... limite temporário (429) no lançamento "${item.descFinal.slice(0, 25)}...". Tentativa ${tentativa} em ${(delayMs / 1000).toFixed(1)}s`,
+                    )
+                  },
+                },
+              )
+
+              // 10. Se houve pagamento (total ou parcial), gerar movimento financeiro pelo valor efetivo
+              if ((isPaga || isParcial) && valorEfetivoPago > 0 && dataPagamentoISO) {
+                try {
+                  await withRateLimitRetry(
+                    () =>
+                      pb.collection('movimentos_financeiros').create({
+                        empresa_id: empresaId,
+                        tipo: 'Saida',
+                        descricao: `Pagamento${isParcial ? ' parcial' : ''}: ${createdConta.descricao}${item.rawForn ? ` [${item.rawForn}]` : ''}`,
+                        valor: valorEfetivoPago,
+                        data: dataPagamentoISO,
+                        categoria_id: finalCategoriaId,
+                        centro_custo_id: finalCentroCustoId,
+                        origem: 'ContaPagar',
+                        referencia_id: createdConta.id,
+                        conciliado: false,
+                      }),
+                    {
+                      maxRetries: 5,
+                      initialDelayMs: 350,
+                    },
+                  )
+                } catch (eMov) {
+                  console.warn('Erro ao criar movimento financeiro correspondente:', eMov)
+                }
+              }
+
+              existingKeys.add(dedupeKey)
+              resultSummary.importados += 1
+              sheetImportados += 1
+              if (isPaga) {
+                resultSummary.pagasBaixadas += 1
+              } else if (isParcial) {
+                resultSummary.emAberto += 1
+              } else {
+                resultSummary.emAberto += 1
+              }
+            } catch (rowErr: any) {
+              sheetErrosCount += 1
+              resultSummary.erros.push({
+                aba: sheetCfg.name,
+                linha: item.numLinha,
+                motivo: rowErr.message || 'Falha ao processar linha',
+              })
+            } finally {
+              linhasProcessadasGlobal += 1
+              const percent = Math.min(
+                99,
+                Math.round((linhasProcessadasGlobal / totalLinhasGerais) * 100),
+              )
+              setProgressPercent(percent)
+              const elapsed = Date.now() - startTime
+              const msPerItem = elapsed / Math.max(1, linhasProcessadasGlobal)
+              const remainingMs = msPerItem * (totalLinhasGerais - linhasProcessadasGlobal)
+              setEstimatedTimeLeft(formatTimeEstimate(remainingMs))
+              setProgressMsg(
+                `Aba ${sheetCfg.name}: linha ${item.numLinha} (${linhasProcessadasGlobal}/${totalLinhasGerais} linhas processadas)`,
+              )
+            }
+          },
+          { concurrency: 3 },
+        )
         const isVazia = sheetLidos === 0
         resultSummary.detalhesPorAba.push({
           aba: sheetCfg.name,
@@ -2602,19 +2711,35 @@ export function ImportadorContasPagarModal({
 
           {/* STEP 4: Processando */}
           {step === 4 && (
-            <div className="py-12 text-center space-y-4">
-              <Loader2 className="w-10 h-10 animate-spin mx-auto text-teal-700" />
-              <div>
+            <div className="py-10 max-w-md mx-auto text-center space-y-5">
+              <Loader2 className="w-10 h-10 animate-spin mx-auto text-primary" />
+              <div className="space-y-1">
                 <h3 className="font-bold text-gray-900 text-sm">
-                  Processando e gravando despesas no banco...
+                  Processando e gravando contas a pagar no banco...
                 </h3>
-                <p className="text-gray-500 text-xs mt-1">
+                <p className="text-gray-500 text-xs min-h-[20px]">
                   {progressMsg || 'Consolidando abas mensais e fornecedores...'}
                 </p>
               </div>
+
+              {/* Barra de Progresso com Percentual e Tempo Restante */}
+              <div className="space-y-2 bg-[#FAF9F7] p-3.5 rounded-xl border border-[#ECEAE4] text-left">
+                <div className="flex items-center justify-between text-[11px] font-medium text-gray-700">
+                  <span>Progresso geral</span>
+                  <span className="font-mono text-primary font-bold">{progressPercent}%</span>
+                </div>
+                <Progress value={progressPercent} className="h-2 bg-gray-200" />
+                <div className="flex items-center justify-between text-[10px] text-gray-500 pt-0.5">
+                  <span>Pool paralelo de requisições ativo</span>
+                  {estimatedTimeLeft && (
+                    <span className="text-primary font-medium">
+                      Restante aprox.: {estimatedTimeLeft}
+                    </span>
+                  )}
+                </div>
+              </div>
             </div>
           )}
-
           {/* STEP 5: Relatório Final */}
           {step === 5 && summary && (
             <div className="space-y-5">

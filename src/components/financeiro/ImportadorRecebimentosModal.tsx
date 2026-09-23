@@ -55,7 +55,8 @@ import {
   REGEX_COL_CATEGORIA,
   REGEX_COL_DOCUMENTO,
 } from '@/lib/planilhaRecebimentosUtils'
-import { withRateLimitRetry, sleep } from '@/lib/pocketbase/rateLimit'
+import { withRateLimitRetry, sleep, runParallelPool } from '@/lib/pocketbase/rateLimit'
+import { Progress } from '@/components/ui/progress'
 export interface ImportadorRecebimentosModalProps {
   open: boolean
   onOpenChange: (open: boolean) => void
@@ -170,6 +171,8 @@ export function ImportadorRecebimentosModal({
   // Execution
   const [isProcessing, setIsProcessing] = useState(false)
   const [progressMsg, setProgressMsg] = useState('')
+  const [progressPercent, setProgressPercent] = useState(0)
+  const [estimatedTimeLeft, setEstimatedTimeLeft] = useState<string>('')
   const [summary, setSummary] = useState<RecebimentosImportSummary | null>(null)
 
   const handleReset = () => {
@@ -183,6 +186,8 @@ export function ImportadorRecebimentosModal({
     setSummary(null)
     setIsProcessing(false)
     setProgressMsg('')
+    setProgressPercent(0)
+    setEstimatedTimeLeft('')
     setMapping({
       data: '',
       cliente: '',
@@ -504,7 +509,92 @@ export function ImportadorRecebimentosModal({
         }
       })
 
+      // Mapa de promessas de criação em voo para evitar criar o mesmo cliente 2x em paralelo
+      const clientesCreationInFlight = new Map<string, Promise<Cliente | null>>()
+
+      // Resolver cliente de forma segura e cacheada em memória
+      const getOrCreateCliente = async (
+        nomeCli: string,
+        sheetName: string,
+      ): Promise<string | null> => {
+        const rawTrim = (nomeCli || '').trim()
+        if (!rawTrim) return null
+        const keyCli = rawTrim.toLowerCase()
+
+        if (clientesCache.has(keyCli)) {
+          return clientesCache.get(keyCli)!.id
+        }
+
+        if (!criarClientesNaoEncontrados) {
+          return null
+        }
+
+        // Se já houver uma criação em andamento para este cliente, aguardar a mesma promessa
+        if (clientesCreationInFlight.has(keyCli)) {
+          const res = await clientesCreationInFlight.get(keyCli)
+          return res ? res.id : null
+        }
+
+        const createPromise = (async () => {
+          try {
+            const novoCliente = await withRateLimitRetry(
+              () =>
+                pb.collection('clientes').create<Cliente>({
+                  empresa_id: empresaId,
+                  nome: rawTrim,
+                  observacoes: `Criado automaticamente na importação da planilha (aba ${sheetName})`,
+                }),
+              {
+                maxRetries: 5,
+                initialDelayMs: 350,
+                onRetry: (tentativa, delayMs) => {
+                  setProgressMsg(
+                    `Aguardando servidor... limite temporário (429) no cliente "${rawTrim}". Tentativa ${tentativa} em ${(delayMs / 1000).toFixed(1)}s`,
+                  )
+                },
+              },
+            )
+            clientesCache.set(keyCli, novoCliente)
+            if (!resultSummary.clientesCriados.includes(novoCliente.nome)) {
+              resultSummary.clientesCriados.push(novoCliente.nome)
+            }
+            return novoCliente
+          } catch (createCliErr) {
+            console.warn('Erro ao criar cliente automaticamente:', rawTrim, createCliErr)
+            return null
+          } finally {
+            clientesCreationInFlight.delete(keyCli)
+          }
+        })()
+
+        clientesCreationInFlight.set(keyCli, createPromise)
+        const clienteCriado = await createPromise
+        return clienteCriado ? clienteCriado.id : null
+      }
+
       const sheetsToImport = sheetsConfig.filter((s) => s.selected)
+
+      // Cálculo de linhas totais estimadas para barra de progresso com tempo restante
+      let totalLinhasGerais = 0
+      sheetsToImport.forEach((s) => {
+        const ws = workbook.Sheets[s.name]
+        if (ws && ws['!ref']) {
+          const range = XLSX.utils.decode_range(ws['!ref'])
+          totalLinhasGerais += Math.max(0, range.e.r - (s.headerRowIndex || 1) + 1)
+        }
+      })
+      if (totalLinhasGerais === 0) totalLinhasGerais = 1
+      let linhasProcessadasGlobal = 0
+      const startTime = Date.now()
+
+      const formatTimeEstimate = (ms: number): string => {
+        if (!isFinite(ms) || ms <= 0) return ''
+        const seg = Math.ceil(ms / 1000)
+        if (seg < 60) return `${seg}s`
+        const min = Math.floor(seg / 60)
+        const restSec = seg % 60
+        return `${min}m ${restSec}s`
+      }
 
       for (const sheetCfg of sheetsToImport) {
         setProgressMsg(`Processando aba: ${sheetCfg.name}...`)
@@ -786,6 +876,40 @@ export function ImportadorRecebimentosModal({
           }
         }
 
+        // Helper de checagem sanitária para aceitar célula como data
+        const isValidaSanitaria = (val: any) => {
+          if (val === null || val === undefined || String(val).trim() === '') return false
+          const parsed = parseDataReceber(val, sheetCfg.ano, sheetCfg.mes)
+          if (!parsed || parsed.startsWith('1970')) return false
+          const yMatch = parsed.match(/^(\d{4})/)
+          if (!yMatch) return false
+          const y = parseInt(yMatch[1], 10)
+          return y >= 2024 && y <= 2028
+        }
+
+        // FASE 1: Varredura sequencial da planilha para herança correta de blocos/datas e preparo dos itens a gravar
+        interface PreparedItemReceber {
+          numLinha: number
+          rawCli: string
+          descFinal: string
+          dataVencimentoISO: string
+          notaFinal: string
+          enderecoFinal: string
+          valorFinal: number
+          rawValorRec: number
+          rawDataRec: any
+          rawForma: string
+          rawStatus: string
+          rawCentro: string
+          rawCat: string
+          notaNorm: string
+          descNorm: string
+          valorStr: string
+          dateOnly: string
+        }
+
+        const preparedItems: PreparedItemReceber[] = []
+
         for (let r = 0; r < dataRows.length; r++) {
           const row = dataRows[r]
           const numLinha = r + headerIdx + 1
@@ -914,545 +1038,539 @@ export function ImportadorRecebimentosModal({
           sheetLidos += 1
           resultSummary.totalLidos += 1
 
-          try {
-            const activeDataColIdx = activeDataCol ? activeHeaders.indexOf(activeDataCol) : -1
-            const activeDocColIdx = activeDocCol ? activeHeaders.indexOf(activeDocCol) : -1
+          const activeDataColIdx = activeDataCol ? activeHeaders.indexOf(activeDataCol) : -1
+          const activeDocColIdx = activeDocCol ? activeHeaders.indexOf(activeDocCol) : -1
 
-            let rawData = getVal(row, activeDataCol)
-            let rawCli = String(getVal(row, activeCliCol) || '').trim()
-            let rawDesc = String(getVal(row, activeDescCol) || '').trim()
+          let rawData = getVal(row, activeDataCol)
+          let rawCli = String(getVal(row, activeCliCol) || '').trim()
+          let rawDesc = String(getVal(row, activeDescCol) || '').trim()
 
-            // Se cliente e descrição vierem vazios, procurar na linha a primeira célula textual representativa
-            if (!rawCli && !rawDesc) {
-              for (let cIdx = 0; cIdx < row.length; cIdx++) {
-                if (cIdx === activeDataColIdx || cIdx === activeDocColIdx) continue
-                const cv = row[cIdx]
-                if (
-                  cv &&
-                  typeof cv === 'string' &&
-                  cv.trim().length > 1 &&
-                  !/^\d+([.,]\d+)?$/.test(cv.trim())
-                ) {
-                  const cNorm = normalizarNomeColuna(cv)
-                  if (
-                    !cNorm.startsWith('TOTAL') &&
-                    !cNorm.startsWith('SUBTOTAL') &&
-                    !cNorm.startsWith('SALDO')
-                  ) {
-                    rawDesc = cv.trim()
-                    break
-                  }
-                }
-              }
-            }
-
-            // Fornecedor aqui vira CLIENTE: se a linha não tiver cliente, usar a descrição para localizar/criar o cliente
-            if (!rawCli && rawDesc) {
-              rawCli = rawDesc
-            }
-
-            const rawValor = parseValorReceber(getVal(row, activeValCol))
-            const rawValorRec = activeValRecCol
-              ? parseValorReceber(getVal(row, activeValRecCol))
-              : 0
-            const rawDataRec = getVal(row, activeDataRecCol)
-            const rawForma = String(getVal(row, activeFormaCol) || '').trim()
-            const rawStatus = String(getVal(row, activeStatusCol) || '').toLowerCase()
-            const rawCentro = String(getVal(row, activeCentroCol) || '').trim()
-            const rawCat = String(getVal(row, activeCatCol) || '').trim()
-            const rawDoc = String(getVal(row, activeDocCol) || '').trim()
-
-            const lowerDesc = (rawDesc || rawCli).toLowerCase()
-            if (
-              lowerDesc.startsWith('total') ||
-              lowerDesc.startsWith('subtotal') ||
-              lowerDesc.startsWith('saldo') ||
-              lowerDesc.startsWith('semana') ||
-              lowerDesc.includes('total semanal')
-            ) {
-              continue
-            }
-
-            // Descobrir valor final: coluna mapeada de valor ou valorRecebido ou varredura de linha
-            let valorFinal = rawValor > 0 ? rawValor : rawValorRec
-            if (valorFinal <= 0) {
-              let maiorValorEncontrado = 0
-              for (let colIdx = 0; colIdx < row.length; colIdx++) {
-                if (colIdx === activeDataColIdx || colIdx === activeDocColIdx) continue
-
-                const cellRaw = row[colIdx]
-                if (typeof cellRaw === 'string' && /^(?:NF|DOC|NOTA|DUPL)/i.test(cellRaw.trim()))
-                  continue
-                if (cellRaw instanceof Date) continue
-
-                const cellVal = parseValorReceber(cellRaw)
-                if (cellVal > 0) {
-                  const hName = normalizarNomeColuna(activeHeaders[colIdx] || '')
-                  if (
-                    hName.includes('VALOR') ||
-                    hName.includes('RECEB') ||
-                    hName.includes('TOTAL') ||
-                    hName.includes('CREDIT') ||
-                    hName.includes('LIQUID') ||
-                    hName.includes('BRUTO')
-                  ) {
-                    if (cellVal > valorFinal) {
-                      valorFinal = cellVal
-                    }
-                  } else if (cellVal > maiorValorEncontrado) {
-                    maiorValorEncontrado = cellVal
-                  }
-                }
-              }
-              if (valorFinal <= 0 && maiorValorEncontrado > 0) {
-                valorFinal = maiorValorEncontrado
-              }
-            }
-
-            if (valorFinal <= 0) {
-              continue
-            }
-
-            // 1. Resolver Cliente (ou cadastrar automaticamente com a descrição/nome sacado)
-            let clienteId: string | null = null
-            if (rawCli) {
-              const keyCli = rawCli.toLowerCase()
-              if (clientesCache.has(keyCli)) {
-                clienteId = clientesCache.get(keyCli)!.id
-              } else if (criarClientesNaoEncontrados) {
-                try {
-                  await sleep(100)
-                  const novoCliente = await withRateLimitRetry(
-                    () =>
-                      pb.collection('clientes').create<Cliente>({
-                        empresa_id: empresaId,
-                        nome: rawCli,
-                        observacoes: `Criado automaticamente na importação da planilha (aba ${sheetCfg.name})`,
-                      }),
-                    {
-                      onRetry: (tentativa, delayMs) => {
-                        setProgressMsg(
-                          `Aguardando servidor... limite temporário (429) no cliente "${rawCli}". Tentativa ${tentativa} em ${(delayMs / 1000).toFixed(1)}s`,
-                        )
-                      },
-                    },
-                  )
-                  clientesCache.set(keyCli, novoCliente)
-                  clienteId = novoCliente.id
-                  if (!resultSummary.clientesCriados.includes(novoCliente.nome)) {
-                    resultSummary.clientesCriados.push(novoCliente.nome)
-                  }
-                } catch (createCliErr) {
-                  console.warn('Erro ao criar cliente automaticamente:', rawCli, createCliErr)
-                }
-              }
-            }
-
-            // 2. Data com barreira sanitária estrita, herança de bloco e busca segura
-            let dataParaVenc = rawData
-            const rawDataStr = String(rawData ?? '').trim()
-            let teveDataPropriaNaLinha = false
-
-            // Helper de checagem sanitária para aceitar célula como data
-            const isValidaSanitaria = (val: any) => {
-              if (val === null || val === undefined || String(val).trim() === '') return false
-              const parsed = parseDataReceber(val, sheetCfg.ano, sheetCfg.mes)
-              if (!parsed || parsed.startsWith('1970')) return false
-              const yMatch = parsed.match(/^(\d{4})/)
-              if (!yMatch) return false
-              const y = parseInt(yMatch[1], 10)
-              return y >= 2024 && y <= 2028
-            }
-
-            // Se a célula de data da linha atual tiver conteúdo
-            if (rawDataStr && isValidaSanitaria(rawData)) {
-              teveDataPropriaNaLinha = true
-              ultimaDataValida = rawData
-            } else if (rawDataStr && !isValidaSanitaria(rawData)) {
-              // Data absurda ou fora de faixa (ex.: número de nota/telefone na coluna de data)
-              // Registrar divergência na aba e descartar como data própria
-              sheetErrosCount += 1
-              resultSummary.erros.push({
-                aba: sheetCfg.name,
-                linha: numLinha,
-                motivo: `Data na linha ("${rawDataStr.slice(0, 30)}") fora do intervalo sanitário plausível (2024-2028). Aplicada data herdada da competência.`,
-              })
-            }
-
-            if (
-              !teveDataPropriaNaLinha &&
-              ultimaDataValida &&
-              isValidaSanitaria(ultimaDataValida)
-            ) {
-              dataParaVenc = ultimaDataValida
-            }
-
-            let dataVencimentoISO = parseDataReceber(dataParaVenc, sheetCfg.ano, sheetCfg.mes)
-
-            if (
-              !dataVencimentoISO ||
-              dataVencimentoISO.startsWith('1970') ||
-              !isValidaSanitaria(dataVencimentoISO)
-            ) {
-              // Buscar apenas em colunas que NÃO sejam doc, cliente ou valores
-              for (let colIdx = 0; colIdx < row.length; colIdx++) {
-                if (colIdx === activeDocColIdx) continue
-                const colHeader = normalizarNomeColuna(activeHeaders[colIdx] || '')
-                if (
-                  colHeader.includes('VALOR') ||
-                  colHeader.includes('CLIENTE') ||
-                  colHeader.includes('SACADO') ||
-                  colHeader.includes('DOC') ||
-                  colHeader.includes('NOTA')
-                ) {
-                  continue
-                }
-                const candVal = row[colIdx]
-                if (candVal !== null && candVal !== undefined && String(candVal).trim() !== '') {
-                  if (isValidaSanitaria(candVal)) {
-                    dataVencimentoISO = parseDataReceber(candVal, sheetCfg.ano, sheetCfg.mes)
-                    rawData = candVal
-                    teveDataPropriaNaLinha = true
-                    ultimaDataValida = candVal
-                    break
-                  }
-                }
-              }
-            }
-
-            if (
-              !dataVencimentoISO ||
-              dataVencimentoISO.startsWith('1970') ||
-              !isValidaSanitaria(dataVencimentoISO)
-            ) {
-              if (ultimaDataValida && isValidaSanitaria(ultimaDataValida)) {
-                dataVencimentoISO = parseDataReceber(ultimaDataValida, sheetCfg.ano, sheetCfg.mes)
-              }
+          // Se cliente e descrição vierem vazios, procurar na linha a primeira célula textual representativa
+          if (!rawCli && !rawDesc) {
+            for (let cIdx = 0; cIdx < row.length; cIdx++) {
+              if (cIdx === activeDataColIdx || cIdx === activeDocColIdx) continue
+              const cv = row[cIdx]
               if (
-                !dataVencimentoISO ||
-                dataVencimentoISO.startsWith('1970') ||
-                !isValidaSanitaria(dataVencimentoISO)
+                cv &&
+                typeof cv === 'string' &&
+                cv.trim().length > 1 &&
+                !/^\d+([.,]\d+)?$/.test(cv.trim())
               ) {
-                const y = sheetCfg.ano || 2026
-                const m = sheetCfg.mes || 1
-                dataVencimentoISO = `${y}-${String(m).padStart(2, '0')}-01T12:00:00.000Z`
-              }
-            } else if (rawDataStr && !teveDataPropriaNaLinha && isValidaSanitaria(rawData)) {
-              ultimaDataValida = rawData
-              teveDataPropriaNaLinha = true
-            }
-
-            // 3. Descrição e extração de cidade e nota
-            const docInfo = rawDoc ? ` [Doc: ${rawDoc}]` : ''
-            const descFinal = rawDesc || `Recebimento ${rawCli || sheetCfg.name}${docInfo}`
-
-            // Extrair cidade e nota tanto da descrição quanto do campo documento
-            const extraidos = extrairCidadeENota(descFinal)
-            const notaFinal = (rawDoc || extraidos.nota || '').trim()
-            const enderecoFinal = (extraidos.cidade || '').trim()
-
-            // 4. Verificação de Duplicidade e Atualização Inteligente (Vencimento)
-            const dateOnly = dataVencimentoISO.slice(0, 10)
-            const descNorm = normalizarTextoComparacao(descFinal).slice(0, 30)
-            const notaNorm = normalizarTextoComparacao(notaFinal || '')
-            const valorStr = valorFinal.toFixed(2)
-
-            const exactKey = `${clienteId || ''}_${dateOnly}_${valorStr}_${descNorm}`
-
-            // Se existir EXATAMENTE com mesma data, cliente, valor e descrição => duplicata real, pular
-            if (detectarDuplicados && existingExactKeys.has(exactKey)) {
-              resultSummary.duplicadosPulados += 1
-              sheetDuplicados += 1
-              continue
-            }
-
-            // Se existir registro prévio com mesma nota/doc (ou mesma desc) + cliente + valor,
-            // mas com DATA DIFERENTE (ex: data saneada genericamente em 07/04), ATUALIZAR a data correta no banco
-            let existingRecordToUpdate: ContaReceber | null = null
-            if (detectarDuplicados) {
-              if (notaNorm) {
-                const flexKeyDoc = `doc_${clienteId || ''}_${valorStr}_${notaNorm}`
-                if (existingFlexRecords.has(flexKeyDoc)) {
-                  existingRecordToUpdate = existingFlexRecords.get(flexKeyDoc)!
-                }
-              }
-              if (!existingRecordToUpdate) {
-                const flexKeyDesc = `desc_${clienteId || ''}_${valorStr}_${descNorm}`
-                if (existingFlexRecords.has(flexKeyDesc)) {
-                  existingRecordToUpdate = existingFlexRecords.get(flexKeyDesc)!
+                const cNorm = normalizarNomeColuna(cv)
+                if (
+                  !cNorm.startsWith('TOTAL') &&
+                  !cNorm.startsWith('SUBTOTAL') &&
+                  !cNorm.startsWith('SALDO')
+                ) {
+                  rawDesc = cv.trim()
+                  break
                 }
               }
             }
+          }
 
-            if (existingRecordToUpdate) {
-              const prevDateOnly = existingRecordToUpdate.vencimento.slice(0, 10)
-              // Se a data existente for diferente da nova data da planilha, atualizamos o registro com os dados corretos!
-              if (prevDateOnly !== dateOnly) {
-                await sleep(100)
-                await withRateLimitRetry(
-                  () =>
-                    pb.collection('contas_receber').update(existingRecordToUpdate!.id, {
-                      vencimento: dataVencimentoISO,
-                      nota: notaFinal || existingRecordToUpdate!.nota || undefined,
-                      endereco: enderecoFinal || existingRecordToUpdate!.endereco || undefined,
-                      observacoes: `Atualizado via reimportação de planilha [Aba: ${sheetCfg.name}]${notaFinal ? ` | Doc: ${notaFinal}` : ''}`,
-                    }),
-                  {
-                    onRetry: (tentativa, delayMs) => {
-                      setProgressMsg(
-                        `Aguardando servidor... limite temporário (429) na atualização do título "${descFinal.slice(0, 25)}...". Tentativa ${tentativa} em ${(delayMs / 1000).toFixed(1)}s`,
-                      )
-                    },
-                  },
-                )
+          // Fornecedor aqui vira CLIENTE: se a linha não tiver cliente, usar a descrição para localizar/criar o cliente
+          if (!rawCli && rawDesc) {
+            rawCli = rawDesc
+          }
 
-                // Atualiza chaves do cache para não atualizar/duplicar novamente
-                existingExactKeys.add(exactKey)
-                existingFlexRecords.delete(`doc_${clienteId || ''}_${valorStr}_${notaNorm}`)
-                existingFlexRecords.delete(`desc_${clienteId || ''}_${valorStr}_${descNorm}`)
+          const rawValor = parseValorReceber(getVal(row, activeValCol))
+          const rawValorRec = activeValRecCol ? parseValorReceber(getVal(row, activeValRecCol)) : 0
+          const rawDataRec = getVal(row, activeDataRecCol)
+          const rawForma = String(getVal(row, activeFormaCol) || '').trim()
+          const rawStatus = String(getVal(row, activeStatusCol) || '').toLowerCase()
+          const rawCentro = String(getVal(row, activeCentroCol) || '').trim()
+          const rawCat = String(getVal(row, activeCatCol) || '').trim()
+          const rawDoc = String(getVal(row, activeDocCol) || '').trim()
 
-                resultSummary.atualizados += 1
-                sheetAtualizados += 1
+          const lowerDesc = (rawDesc || rawCli).toLowerCase()
+          if (
+            lowerDesc.startsWith('total') ||
+            lowerDesc.startsWith('subtotal') ||
+            lowerDesc.startsWith('saldo') ||
+            lowerDesc.startsWith('semana') ||
+            lowerDesc.includes('total semanal')
+          ) {
+            continue
+          }
+
+          // Descobrir valor final: coluna mapeada de valor ou valorRecebido ou varredura de linha
+          let valorFinal = rawValor > 0 ? rawValor : rawValorRec
+          if (valorFinal <= 0) {
+            let maiorValorEncontrado = 0
+            for (let colIdx = 0; colIdx < row.length; colIdx++) {
+              if (colIdx === activeDataColIdx || colIdx === activeDocColIdx) continue
+
+              const cellRaw = row[colIdx]
+              if (typeof cellRaw === 'string' && /^(?:NF|DOC|NOTA|DUPL)/i.test(cellRaw.trim()))
                 continue
-              } else {
-                // Se até a data coincidir exatamente, é duplicado
-                resultSummary.duplicadosPulados += 1
-                sheetDuplicados += 1
-                continue
+              if (cellRaw instanceof Date) continue
+
+              const cellVal = parseValorReceber(cellRaw)
+              if (cellVal > 0) {
+                const hName = normalizarNomeColuna(activeHeaders[colIdx] || '')
+                if (
+                  hName.includes('VALOR') ||
+                  hName.includes('RECEB') ||
+                  hName.includes('TOTAL') ||
+                  hName.includes('CREDIT') ||
+                  hName.includes('LIQUID') ||
+                  hName.includes('BRUTO')
+                ) {
+                  if (cellVal > valorFinal) {
+                    valorFinal = cellVal
+                  }
+                } else if (cellVal > maiorValorEncontrado) {
+                  maiorValorEncontrado = cellVal
+                }
               }
             }
-
-            // 5. Determinar Situação (Recebida, Aberta, Parcial, Recebimento Antecipado)
-            let finalStatus: 'Recebida' | 'Aberta' | 'Parcial' | 'Recebimento Antecipado' =
-              'Recebida'
-
-            if (classificacaoPadrao === 'Recebida') {
-              finalStatus = 'Recebida'
-            } else if (classificacaoPadrao === 'Aberta') {
-              finalStatus = 'Aberta'
-            } else if (classificacaoPadrao === 'Recebimento Antecipado') {
-              finalStatus = 'Recebimento Antecipado'
-            } else {
-              // auto
-              if (
-                rawStatus.includes('antecip') ||
-                rawStatus.includes('adiant') ||
-                lowerDesc.includes('antecip') ||
-                lowerDesc.includes('deposito') ||
-                lowerDesc.includes('crédito') ||
-                lowerDesc.includes('credito')
-              ) {
-                finalStatus = 'Recebimento Antecipado'
-              } else if (
-                rawStatus.includes('parcial') ||
-                (rawValorRec > 0 && valorFinal > 0 && rawValorRec < valorFinal - 0.009)
-              ) {
-                finalStatus = 'Parcial'
-              } else if (
-                rawStatus.includes('abert') ||
-                rawStatus.includes('pend') ||
-                rawStatus.includes('a vencer')
-              ) {
-                finalStatus = 'Aberta'
-              } else {
-                finalStatus = 'Recebida'
-              }
+            if (valorFinal <= 0 && maiorValorEncontrado > 0) {
+              valorFinal = maiorValorEncontrado
             }
+          }
 
-            const valorEfetivoRecebido =
-              finalStatus === 'Recebida'
-                ? rawValorRec > 0
-                  ? rawValorRec
-                  : valorFinal
-                : finalStatus === 'Parcial'
-                  ? rawValorRec
-                  : finalStatus === 'Recebimento Antecipado'
-                    ? valorFinal
-                    : 0
+          if (valorFinal <= 0) {
+            continue
+          }
 
-            const rawRecebimentoParaParse = isValidaSanitaria(rawDataRec)
-              ? rawDataRec
-              : isValidaSanitaria(rawData)
-                ? rawData
-                : dataVencimentoISO
+          // Data com barreira sanitária estrita, herança de bloco e busca segura
+          let dataParaVenc = rawData
+          const rawDataStr = String(rawData ?? '').trim()
+          let teveDataPropriaNaLinha = false
 
-            const dataRecebimentoISO =
-              finalStatus !== 'Aberta'
-                ? parseDataReceber(rawRecebimentoParaParse, sheetCfg.ano, sheetCfg.mes)
-                : null
-
-            // 6. Forma de Pagamento / Recebimento
-            let finalForma: 'Dinheiro' | 'Pix' | 'Cartão' | 'Boleto' | 'Transferência' = 'Pix'
-            const lowerForma = (rawForma || '').toLowerCase()
-            const lowerDescricaoGeral = descFinal.toLowerCase()
-            if (lowerForma.includes('bol') || lowerDescricaoGeral.includes('boleto')) {
-              finalForma = 'Boleto'
-            } else if (
-              lowerForma.includes('ted') ||
-              lowerForma.includes('doc') ||
-              lowerForma.includes('transf') ||
-              lowerDescricaoGeral.includes('ted') ||
-              lowerDescricaoGeral.includes('transf')
-            ) {
-              finalForma = 'Transferência'
-            } else if (
-              lowerForma.includes('cart') ||
-              lowerForma.includes('deb') ||
-              lowerForma.includes('cred')
-            ) {
-              finalForma = 'Cartão'
-            } else if (lowerForma.includes('dinh') || lowerForma.includes('espec')) {
-              finalForma = 'Dinheiro'
-            } else if (
-              lowerForma.includes('santander') ||
-              lowerForma.includes('bradesco') ||
-              lowerDescricaoGeral.includes('santander') ||
-              lowerDescricaoGeral.includes('bradesco') ||
-              lowerDescricaoGeral.includes('banco')
-            ) {
-              // Menções bancárias na descrição da planilha sem outra especificação padrão boleto/transferência
-              finalForma = 'Boleto'
-            }
-
-            // 7. Centro de Custo
-            let finalCentroCustoId: string | null =
-              centroCustoPadraoId !== 'none' && centroCustoPadraoId ? centroCustoPadraoId : null
-
-            if (rawCentro) {
-              const k = rawCentro.toLowerCase()
-              if (centrosCache.has(k)) {
-                finalCentroCustoId = centrosCache.get(k)!.id
-              }
-            }
-
-            // 8. Categoria / Plano de Contas
-            let finalCategoriaId: string | null = categoriaPadraoId || null
-            if (rawCat) {
-              const k = rawCat.toLowerCase()
-              if (categoriasCache.has(k)) {
-                finalCategoriaId = categoriasCache.get(k)!.id
-              }
-            }
-
-            // 9. Gravar Conta a Receber no PocketBase com endereco e nota extraídos
-            // Espaçamento preventivo e retry com backoff exponencial para evitar 429
-            await sleep(100)
-            const createdConta = await withRateLimitRetry(
-              () =>
-                pb.collection('contas_receber').create<ContaReceber>({
-                  empresa_id: empresaId,
-                  cliente_id: clienteId || null,
-                  descricao: descFinal,
-                  categoria_id: finalCategoriaId,
-                  centro_custo_id: finalCentroCustoId,
-                  valor: valorFinal,
-                  valor_recebido: valorEfetivoRecebido,
-                  vencimento: dataVencimentoISO,
-                  parcelas: 1,
-                  status: finalStatus,
-                  data_recebimento: dataRecebimentoISO,
-                  forma_recebimento: finalStatus !== 'Aberta' ? finalForma : null,
-                  endereco: enderecoFinal || undefined,
-                  nota: notaFinal || undefined,
-                  observacoes: `Importado de planilha [Aba: ${sheetCfg.name}]${notaFinal ? ` | Doc: ${notaFinal}` : ''}${finalStatus === 'Parcial' ? ` | Recebimento parcial importado: ${valorEfetivoRecebido}` : ''}`,
-                }),
-              {
-                onRetry: (tentativa, delayMs) => {
-                  setProgressMsg(
-                    `Aguardando servidor... limite temporário (429) no título "${descFinal.slice(0, 25)}...". Tentativa ${tentativa} em ${(delayMs / 1000).toFixed(1)}s`,
-                  )
-                },
-              },
-            )
-
-            // 10. Se for Recebimento Antecipado, gera crédito correspondente para o cliente
-            if (finalStatus === 'Recebimento Antecipado' && clienteId) {
-              try {
-                await sleep(100)
-                await withRateLimitRetry(
-                  () =>
-                    pb.collection('creditos_clientes').create({
-                      empresa_id: empresaId,
-                      cliente_id: clienteId,
-                      valor: valorFinal,
-                      saldo_restante: valorFinal,
-                      origem: `Recebimento Antecipado (${sheetCfg.name})`,
-                      descricao: `Depósito/Adiantamento ref. ${descFinal} [Conta ${createdConta.id}]`,
-                      data: dataRecebimentoISO || dataVencimentoISO,
-                      status: 'disponivel',
-                      referencia_conta_id: createdConta.id,
-                    }),
-                  {
-                    onRetry: (tentativa, delayMs) => {
-                      setProgressMsg(
-                        `Aguardando servidor... limite temporário (429) gerando crédito. Tentativa ${tentativa} em ${(delayMs / 1000).toFixed(1)}s`,
-                      )
-                    },
-                  },
-                )
-                resultSummary.creditosGerados += 1
-              } catch (credErr) {
-                console.warn('Erro ao criar crédito do cliente:', credErr)
-              }
-            }
-
-            // 11. Se for Recebida, Parcial ou Recebimento Antecipado, gera movimento financeiro de entrada
-            if (
-              (finalStatus === 'Recebida' ||
-                finalStatus === 'Recebimento Antecipado' ||
-                finalStatus === 'Parcial') &&
-              valorEfetivoRecebido > 0 &&
-              dataRecebimentoISO
-            ) {
-              try {
-                await sleep(100)
-                await withRateLimitRetry(
-                  () =>
-                    pb.collection('movimentos_financeiros').create({
-                      empresa_id: empresaId,
-                      tipo: 'Entrada',
-                      descricao: `Recebimento${finalStatus === 'Parcial' ? ' parcial' : ''}: ${createdConta.descricao}${rawCli ? ` [${rawCli}]` : ''}`,
-                      valor: valorEfetivoRecebido,
-                      data: dataRecebimentoISO,
-                      categoria_id: finalCategoriaId,
-                      centro_custo_id: finalCentroCustoId,
-                      origem: 'ContaReceber',
-                      referencia_id: createdConta.id,
-                      conciliado: false,
-                    }),
-                  {
-                    onRetry: (tentativa, delayMs) => {
-                      setProgressMsg(
-                        `Aguardando servidor... limite temporário (429) no movimento financeiro. Tentativa ${tentativa} em ${(delayMs / 1000).toFixed(1)}s`,
-                      )
-                    },
-                  },
-                )
-              } catch (movErr) {
-                console.warn('Erro ao criar movimento financeiro correspondente:', movErr)
-              }
-            }
-
-            existingExactKeys.add(exactKey)
-            resultSummary.importados += 1
-            sheetImportados += 1
-
-            if (finalStatus === 'Recebida') {
-              resultSummary.recebidasBaixadas += 1
-            } else if (finalStatus === 'Recebimento Antecipado') {
-              resultSummary.antecipados += 1
-            } else {
-              resultSummary.emAberto += 1
-            }
-          } catch (rowErr: any) {
+          // Se a célula de data da linha atual tiver conteúdo
+          if (rawDataStr && isValidaSanitaria(rawData)) {
+            teveDataPropriaNaLinha = true
+            ultimaDataValida = rawData
+          } else if (rawDataStr && !isValidaSanitaria(rawData)) {
             sheetErrosCount += 1
             resultSummary.erros.push({
               aba: sheetCfg.name,
               linha: numLinha,
-              motivo: rowErr.message || 'Falha ao processar linha',
+              motivo: `Data na linha ("${rawDataStr.slice(0, 30)}") fora do intervalo sanitário plausível (2024-2028). Aplicada data herdada da competência.`,
             })
           }
+
+          if (!teveDataPropriaNaLinha && ultimaDataValida && isValidaSanitaria(ultimaDataValida)) {
+            dataParaVenc = ultimaDataValida
+          }
+
+          let dataVencimentoISO = parseDataReceber(dataParaVenc, sheetCfg.ano, sheetCfg.mes)
+
+          if (
+            !dataVencimentoISO ||
+            dataVencimentoISO.startsWith('1970') ||
+            !isValidaSanitaria(dataVencimentoISO)
+          ) {
+            // Buscar apenas em colunas que NÃO sejam doc, cliente ou valores
+            for (let colIdx = 0; colIdx < row.length; colIdx++) {
+              if (colIdx === activeDocColIdx) continue
+              const colHeader = normalizarNomeColuna(activeHeaders[colIdx] || '')
+              if (
+                colHeader.includes('VALOR') ||
+                colHeader.includes('CLIENTE') ||
+                colHeader.includes('SACADO') ||
+                colHeader.includes('DOC') ||
+                colHeader.includes('NOTA')
+              ) {
+                continue
+              }
+              const candVal = row[colIdx]
+              if (candVal !== null && candVal !== undefined && String(candVal).trim() !== '') {
+                if (isValidaSanitaria(candVal)) {
+                  dataVencimentoISO = parseDataReceber(candVal, sheetCfg.ano, sheetCfg.mes)
+                  rawData = candVal
+                  teveDataPropriaNaLinha = true
+                  ultimaDataValida = candVal
+                  break
+                }
+              }
+            }
+          }
+
+          if (
+            !dataVencimentoISO ||
+            dataVencimentoISO.startsWith('1970') ||
+            !isValidaSanitaria(dataVencimentoISO)
+          ) {
+            if (ultimaDataValida && isValidaSanitaria(ultimaDataValida)) {
+              dataVencimentoISO = parseDataReceber(ultimaDataValida, sheetCfg.ano, sheetCfg.mes)
+            }
+            if (
+              !dataVencimentoISO ||
+              dataVencimentoISO.startsWith('1970') ||
+              !isValidaSanitaria(dataVencimentoISO)
+            ) {
+              const y = sheetCfg.ano || 2026
+              const m = sheetCfg.mes || 1
+              dataVencimentoISO = `${y}-${String(m).padStart(2, '0')}-01T12:00:00.000Z`
+            }
+          } else if (rawDataStr && !teveDataPropriaNaLinha && isValidaSanitaria(rawData)) {
+            ultimaDataValida = rawData
+            teveDataPropriaNaLinha = true
+          }
+
+          // 3. Descrição e extração de cidade e nota
+          const docInfo = rawDoc ? ` [Doc: ${rawDoc}]` : ''
+          const descFinal = rawDesc || `Recebimento ${rawCli || sheetCfg.name}${docInfo}`
+
+          const extraidos = extrairCidadeENota(descFinal)
+          const notaFinal = (rawDoc || extraidos.nota || '').trim()
+          const enderecoFinal = (extraidos.cidade || '').trim()
+
+          const dateOnly = dataVencimentoISO.slice(0, 10)
+          const descNorm = normalizarTextoComparacao(descFinal).slice(0, 30)
+          const notaNorm = normalizarTextoComparacao(notaFinal || '')
+          const valorStr = valorFinal.toFixed(2)
+
+          preparedItems.push({
+            numLinha,
+            rawCli,
+            descFinal,
+            dataVencimentoISO,
+            notaFinal,
+            enderecoFinal,
+            valorFinal,
+            rawValorRec,
+            rawDataRec,
+            rawForma,
+            rawStatus,
+            rawCentro,
+            rawCat,
+            notaNorm,
+            descNorm,
+            valorStr,
+            dateOnly,
+          })
         }
+
+        // FASE 2: Processamento concorrente com pool de 3 a 4 requisições em paralelo
+        await runParallelPool(
+          preparedItems,
+          async (item) => {
+            try {
+              // 1. Resolver cliente com cache rápido em memória
+              const clienteId = item.rawCli
+                ? await getOrCreateCliente(item.rawCli, sheetCfg.name)
+                : null
+
+              const exactKey = `${clienteId || ''}_${item.dateOnly}_${item.valorStr}_${item.descNorm}`
+
+              // Se existir EXATAMENTE com mesma data, cliente, valor e descrição => duplicata real, pular
+              if (detectarDuplicados && existingExactKeys.has(exactKey)) {
+                resultSummary.duplicadosPulados += 1
+                sheetDuplicados += 1
+                return
+              }
+
+              // Se existir registro prévio com mesma nota/doc ou mesma desc + cliente + valor,
+              // mas com DATA DIFERENTE (ex: data saneada genericamente em 07/04), ATUALIZAR a data correta no banco
+              let existingRecordToUpdate: ContaReceber | null = null
+              if (detectarDuplicados) {
+                if (item.notaNorm) {
+                  const flexKeyDoc = `doc_${clienteId || ''}_${item.valorStr}_${item.notaNorm}`
+                  if (existingFlexRecords.has(flexKeyDoc)) {
+                    existingRecordToUpdate = existingFlexRecords.get(flexKeyDoc)!
+                  }
+                }
+                if (!existingRecordToUpdate) {
+                  const flexKeyDesc = `desc_${clienteId || ''}_${item.valorStr}_${item.descNorm}`
+                  if (existingFlexRecords.has(flexKeyDesc)) {
+                    existingRecordToUpdate = existingFlexRecords.get(flexKeyDesc)!
+                  }
+                }
+              }
+
+              if (existingRecordToUpdate) {
+                const prevDateOnly = existingRecordToUpdate.vencimento.slice(0, 10)
+                const dataMudou = prevDateOnly !== item.dateOnly
+                const notaDiverge = Boolean(
+                  item.notaFinal && item.notaFinal !== (existingRecordToUpdate.nota || ''),
+                )
+                const enderecoDiverge = Boolean(
+                  item.enderecoFinal &&
+                  item.enderecoFinal !== (existingRecordToUpdate.endereco || ''),
+                )
+
+                // Evitar update desnecessário se data, nota e endereço forem idênticos ao registro existente
+                if (dataMudou || notaDiverge || enderecoDiverge) {
+                  await withRateLimitRetry(
+                    () =>
+                      pb.collection('contas_receber').update(existingRecordToUpdate!.id, {
+                        ...(dataMudou ? { vencimento: item.dataVencimentoISO } : {}),
+                        ...(notaDiverge ? { nota: item.notaFinal } : {}),
+                        ...(enderecoDiverge ? { endereco: item.enderecoFinal } : {}),
+                        observacoes: `Atualizado via reimportação de planilha [Aba: ${sheetCfg.name}]${item.notaFinal ? ` | Doc: ${item.notaFinal}` : ''}`,
+                      }),
+                    {
+                      maxRetries: 5,
+                      initialDelayMs: 350,
+                      onRetry: (tentativa, delayMs) => {
+                        setProgressMsg(
+                          `Aguardando servidor... limite temporário (429) na atualização do título "${item.descFinal.slice(0, 25)}...". Tentativa ${tentativa} em ${(delayMs / 1000).toFixed(1)}s`,
+                        )
+                      },
+                    },
+                  )
+
+                  existingExactKeys.add(exactKey)
+                  existingFlexRecords.delete(
+                    `doc_${clienteId || ''}_${item.valorStr}_${item.notaNorm}`,
+                  )
+                  existingFlexRecords.delete(
+                    `desc_${clienteId || ''}_${item.valorStr}_${item.descNorm}`,
+                  )
+
+                  resultSummary.atualizados += 1
+                  sheetAtualizados += 1
+                  return
+                } else {
+                  // Se não houve divergência, considerar duplicado idêntico
+                  existingExactKeys.add(exactKey)
+                  resultSummary.duplicadosPulados += 1
+                  sheetDuplicados += 1
+                  return
+                }
+              }
+
+              // 5. Determinar Situação (Recebida, Aberta, Parcial, Recebimento Antecipado)
+              let finalStatus: 'Recebida' | 'Aberta' | 'Parcial' | 'Recebimento Antecipado' =
+                'Recebida'
+
+              if (classificacaoPadrao === 'Recebida') {
+                finalStatus = 'Recebida'
+              } else if (classificacaoPadrao === 'Aberta') {
+                finalStatus = 'Aberta'
+              } else if (classificacaoPadrao === 'Recebimento Antecipado') {
+                finalStatus = 'Recebimento Antecipado'
+              } else {
+                if (
+                  item.rawStatus.includes('antecip') ||
+                  item.rawStatus.includes('adiant') ||
+                  item.descFinal.toLowerCase().includes('antecip') ||
+                  item.descFinal.toLowerCase().includes('deposito') ||
+                  item.descFinal.toLowerCase().includes('crédito') ||
+                  item.descFinal.toLowerCase().includes('credito')
+                ) {
+                  finalStatus = 'Recebimento Antecipado'
+                } else if (
+                  item.rawStatus.includes('parcial') ||
+                  (item.rawValorRec > 0 &&
+                    item.valorFinal > 0 &&
+                    item.rawValorRec < item.valorFinal - 0.009)
+                ) {
+                  finalStatus = 'Parcial'
+                } else if (
+                  item.rawStatus.includes('abert') ||
+                  item.rawStatus.includes('pend') ||
+                  item.rawStatus.includes('a vencer')
+                ) {
+                  finalStatus = 'Aberta'
+                } else {
+                  finalStatus = 'Recebida'
+                }
+              }
+
+              const valorEfetivoRecebido =
+                finalStatus === 'Recebida'
+                  ? item.rawValorRec > 0
+                    ? item.rawValorRec
+                    : item.valorFinal
+                  : finalStatus === 'Parcial'
+                    ? item.rawValorRec
+                    : finalStatus === 'Recebimento Antecipado'
+                      ? item.valorFinal
+                      : 0
+
+              const rawRecebimentoParaParse = isValidaSanitaria(item.rawDataRec)
+                ? item.rawDataRec
+                : item.dataVencimentoISO
+
+              const dataRecebimentoISO =
+                finalStatus !== 'Aberta'
+                  ? parseDataReceber(rawRecebimentoParaParse, sheetCfg.ano, sheetCfg.mes)
+                  : null
+
+              // 6. Forma de Pagamento / Recebimento
+              let finalForma: 'Dinheiro' | 'Pix' | 'Cartão' | 'Boleto' | 'Transferência' = 'Pix'
+              const lowerForma = item.rawForma.toLowerCase()
+              const lowerDescricaoGeral = item.descFinal.toLowerCase()
+              if (lowerForma.includes('bol') || lowerDescricaoGeral.includes('boleto')) {
+                finalForma = 'Boleto'
+              } else if (
+                lowerForma.includes('ted') ||
+                lowerForma.includes('doc') ||
+                lowerForma.includes('transf') ||
+                lowerDescricaoGeral.includes('ted') ||
+                lowerDescricaoGeral.includes('transf')
+              ) {
+                finalForma = 'Transferência'
+              } else if (
+                lowerForma.includes('cart') ||
+                lowerForma.includes('deb') ||
+                lowerForma.includes('cred')
+              ) {
+                finalForma = 'Cartão'
+              } else if (lowerForma.includes('dinh') || lowerForma.includes('espec')) {
+                finalForma = 'Dinheiro'
+              } else if (
+                lowerForma.includes('santander') ||
+                lowerForma.includes('bradesco') ||
+                lowerDescricaoGeral.includes('santander') ||
+                lowerDescricaoGeral.includes('bradesco') ||
+                lowerDescricaoGeral.includes('banco')
+              ) {
+                finalForma = 'Boleto'
+              }
+
+              // 7. Centro de Custo
+              let finalCentroCustoId: string | null =
+                centroCustoPadraoId !== 'none' && centroCustoPadraoId ? centroCustoPadraoId : null
+
+              if (item.rawCentro) {
+                const k = item.rawCentro.toLowerCase()
+                if (centrosCache.has(k)) {
+                  finalCentroCustoId = centrosCache.get(k)!.id
+                }
+              }
+
+              // 8. Categoria / Plano de Contas
+              let finalCategoriaId: string | null = categoriaPadraoId || null
+              if (item.rawCat) {
+                const k = item.rawCat.toLowerCase()
+                if (categoriasCache.has(k)) {
+                  finalCategoriaId = categoriasCache.get(k)!.id
+                }
+              }
+
+              // 9. Gravar Conta a Receber no PocketBase
+              const createdConta = await withRateLimitRetry(
+                () =>
+                  pb.collection('contas_receber').create<ContaReceber>({
+                    empresa_id: empresaId,
+                    cliente_id: clienteId || null,
+                    descricao: item.descFinal,
+                    categoria_id: finalCategoriaId,
+                    centro_custo_id: finalCentroCustoId,
+                    valor: item.valorFinal,
+                    valor_recebido: valorEfetivoRecebido,
+                    vencimento: item.dataVencimentoISO,
+                    parcelas: 1,
+                    status: finalStatus,
+                    data_recebimento: dataRecebimentoISO,
+                    forma_recebimento: finalStatus !== 'Aberta' ? finalForma : null,
+                    endereco: item.enderecoFinal || undefined,
+                    nota: item.notaFinal || undefined,
+                    observacoes: `Importado de planilha [Aba: ${sheetCfg.name}]${item.notaFinal ? ` | Doc: ${item.notaFinal}` : ''}${finalStatus === 'Parcial' ? ` | Recebimento parcial importado: ${valorEfetivoRecebido}` : ''}`,
+                  }),
+                {
+                  maxRetries: 5,
+                  initialDelayMs: 350,
+                  onRetry: (tentativa, delayMs) => {
+                    setProgressMsg(
+                      `Aguardando servidor... limite temporário (429) no título "${item.descFinal.slice(0, 25)}...". Tentativa ${tentativa} em ${(delayMs / 1000).toFixed(1)}s`,
+                    )
+                  },
+                },
+              )
+
+              // 10. Se for Recebimento Antecipado, gera crédito correspondente para o cliente
+              if (finalStatus === 'Recebimento Antecipado' && clienteId) {
+                try {
+                  await withRateLimitRetry(
+                    () =>
+                      pb.collection('creditos_clientes').create({
+                        empresa_id: empresaId,
+                        cliente_id: clienteId,
+                        valor: item.valorFinal,
+                        saldo_restante: item.valorFinal,
+                        origem: `Recebimento Antecipado (${sheetCfg.name})`,
+                        descricao: `Depósito/Adiantamento ref. ${item.descFinal} [Conta ${createdConta.id}]`,
+                        data: dataRecebimentoISO || item.dataVencimentoISO,
+                        status: 'disponivel',
+                        referencia_conta_id: createdConta.id,
+                      }),
+                    {
+                      maxRetries: 5,
+                      initialDelayMs: 350,
+                    },
+                  )
+                  resultSummary.creditosGerados += 1
+                } catch (credErr) {
+                  console.warn('Erro ao criar crédito do cliente:', credErr)
+                }
+              }
+
+              // 11. Se for Recebida, Parcial ou Recebimento Antecipado, gera movimento financeiro
+              if (
+                (finalStatus === 'Recebida' ||
+                  finalStatus === 'Recebimento Antecipado' ||
+                  finalStatus === 'Parcial') &&
+                valorEfetivoRecebido > 0 &&
+                dataRecebimentoISO
+              ) {
+                try {
+                  await withRateLimitRetry(
+                    () =>
+                      pb.collection('movimentos_financeiros').create({
+                        empresa_id: empresaId,
+                        tipo: 'Entrada',
+                        descricao: `Recebimento${finalStatus === 'Parcial' ? ' parcial' : ''}: ${createdConta.descricao}${item.rawCli ? ` [${item.rawCli}]` : ''}`,
+                        valor: valorEfetivoRecebido,
+                        data: dataRecebimentoISO,
+                        categoria_id: finalCategoriaId,
+                        centro_custo_id: finalCentroCustoId,
+                        origem: 'ContaReceber',
+                        referencia_id: createdConta.id,
+                        conciliado: false,
+                      }),
+                    {
+                      maxRetries: 5,
+                      initialDelayMs: 350,
+                    },
+                  )
+                } catch (movErr) {
+                  console.warn('Erro ao criar movimento financeiro correspondente:', movErr)
+                }
+              }
+
+              existingExactKeys.add(exactKey)
+              resultSummary.importados += 1
+              sheetImportados += 1
+
+              if (finalStatus === 'Recebida') {
+                resultSummary.recebidasBaixadas += 1
+              } else if (finalStatus === 'Recebimento Antecipado') {
+                resultSummary.antecipados += 1
+              } else {
+                resultSummary.emAberto += 1
+              }
+            } catch (rowErr: any) {
+              sheetErrosCount += 1
+              resultSummary.erros.push({
+                aba: sheetCfg.name,
+                linha: item.numLinha,
+                motivo: rowErr.message || 'Falha ao processar linha',
+              })
+            } finally {
+              linhasProcessadasGlobal += 1
+              const percent = Math.min(
+                99,
+                Math.round((linhasProcessadasGlobal / totalLinhasGerais) * 100),
+              )
+              setProgressPercent(percent)
+              const elapsed = Date.now() - startTime
+              const msPerItem = elapsed / Math.max(1, linhasProcessadasGlobal)
+              const remainingMs = msPerItem * (totalLinhasGerais - linhasProcessadasGlobal)
+              setEstimatedTimeLeft(formatTimeEstimate(remainingMs))
+              setProgressMsg(
+                `Aba ${sheetCfg.name}: linha ${item.numLinha} (${linhasProcessadasGlobal}/${totalLinhasGerais} linhas processadas)`,
+              )
+            }
+          },
+          { concurrency: 3 },
+        )
 
         const isVazia = sheetLidos === 0
         resultSummary.detalhesPorAba.push({
@@ -2182,15 +2300,32 @@ export function ImportadorRecebimentosModal({
 
           {/* STEP 4: Processando */}
           {step === 4 && (
-            <div className="py-12 text-center space-y-4">
+            <div className="py-10 max-w-md mx-auto text-center space-y-5">
               <Loader2 className="w-10 h-10 animate-spin mx-auto text-teal-700" />
-              <div>
+              <div className="space-y-1">
                 <h3 className="font-bold text-gray-900 text-sm">
                   Processando e gravando recebimentos no banco...
                 </h3>
-                <p className="text-gray-500 text-xs mt-1">
+                <p className="text-gray-500 text-xs min-h-[20px]">
                   {progressMsg || 'Consolidando abas mensais e clientes...'}
                 </p>
+              </div>
+
+              {/* Barra de Progresso com Percentual e Tempo Restante */}
+              <div className="space-y-2 bg-[#FAF9F7] p-3.5 rounded-xl border border-[#ECEAE4] text-left">
+                <div className="flex items-center justify-between text-[11px] font-medium text-gray-700">
+                  <span>Progresso geral</span>
+                  <span className="font-mono text-teal-800 font-bold">{progressPercent}%</span>
+                </div>
+                <Progress value={progressPercent} className="h-2 bg-gray-200" />
+                <div className="flex items-center justify-between text-[10px] text-gray-500 pt-0.5">
+                  <span>Pool paralelo de requisições ativo</span>
+                  {estimatedTimeLeft && (
+                    <span className="text-teal-700 font-medium">
+                      Restante aprox.: {estimatedTimeLeft}
+                    </span>
+                  )}
+                </div>
               </div>
             </div>
           )}
