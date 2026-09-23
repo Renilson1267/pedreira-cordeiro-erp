@@ -771,7 +771,7 @@ export default function Abastecimentos() {
                   options={fornecedores.map((f) => ({
                     id: f.id,
                     label: f.nome,
-                    sublabel: f.cpf_cnpj || f.cidade || undefined,
+                    sublabel: f.cnpj_cpf || f.cidade || undefined,
                   }))}
                 />
               </div>
