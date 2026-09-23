@@ -53,6 +53,7 @@ import {
   AlertCircle,
   ArrowDownLeft,
   FileSpreadsheet,
+  Printer,
 } from 'lucide-react'
 
 export default function ContasReceber() {
@@ -82,6 +83,7 @@ export default function ContasReceber() {
 
   // Form State
   const [clienteId, setClienteId] = useState('')
+  const [clienteDepositante, setClienteDepositante] = useState('')
   const [descricao, setDescricao] = useState('')
   const [categoriaId, setCategoriaId] = useState('')
   const [valor, setValor] = useState<number>(0)
@@ -186,6 +188,7 @@ export default function ContasReceber() {
     const hoje = toInputDate(new Date().toISOString())
     setEditingId(null)
     setClienteId('')
+    setClienteDepositante('')
     setCentroCustoId('')
     setDescricao('')
     setCategoriaId(categorias[0]?.id || '')
@@ -207,6 +210,7 @@ export default function ContasReceber() {
     const numP = c.parcelas || 1
     setEditingId(c.id)
     setClienteId(c.cliente_id || '')
+    setClienteDepositante(c.cliente_depositante || '')
     setCentroCustoId(c.centro_custo_id || '')
     setDescricao(c.descricao)
     setCategoriaId(c.categoria_id || '')
@@ -293,6 +297,7 @@ export default function ContasReceber() {
         await pb.collection('contas_receber').update(editingId, {
           descricao: descricao.trim(),
           cliente_id: clienteId === 'none' || !clienteId ? null : clienteId,
+          cliente_depositante: clienteDepositante.trim() || '',
           categoria_id: categoriaId === 'none' || !categoriaId ? null : categoriaId,
           centro_custo_id: centroCustoId === 'none' || !centroCustoId ? null : centroCustoId,
           valor: Number(valor),
@@ -327,6 +332,7 @@ export default function ContasReceber() {
             empresa_id: currentEmpresa!.id,
             descricao: desc,
             cliente_id: clienteId === 'none' || !clienteId ? null : clienteId,
+            cliente_depositante: clienteDepositante.trim() || '',
             categoria_id: categoriaId === 'none' || !categoriaId ? null : categoriaId,
             centro_custo_id: centroCustoId === 'none' || !centroCustoId ? null : centroCustoId,
             valor: parcelValue,
@@ -398,6 +404,351 @@ export default function ContasReceber() {
     if (c.status === 'Recebida') return 0
     const jaRecebido = getValorRecebidoEfetivo(c)
     return Math.max(0, (c.valor || 0) - jaRecebido)
+  }
+
+  const handleImprimirComprovante = (c: ContaReceber) => {
+    const printWindow = window.open('', '_blank', 'width=850,height=900')
+    if (!printWindow) {
+      toast({
+        title: 'Bloqueador de popups ativo',
+        description: 'Permita popups para imprimir o comprovante.',
+        variant: 'destructive',
+      })
+      return
+    }
+
+    const clienteComprador = c.expand?.cliente_id?.nome || c.descricao || 'Não informado'
+    const clienteDepositanteTexto = c.cliente_depositante?.trim() || ''
+    const documento = c.nota?.trim() || '—'
+    const vencimentoFormatado = formatDate(c.vencimento)
+    const valorTotalFormatado = formatCurrency(c.valor)
+    const displayStatus = getContaStatusReal(c)
+    const recebimentoFormatado = c.data_recebimento ? formatDate(c.data_recebimento) : '—'
+    const formaRecebimentoTexto = c.forma_recebimento || '—'
+    const centroCustoTexto = c.expand?.centro_custo_id
+      ? `${c.expand.centro_custo_id.codigo} - ${c.expand.centro_custo_id.nome}`
+      : '—'
+    const categoriaTexto = c.expand?.categoria_id?.nome || '—'
+    const observacoesTexto = c.observacoes?.trim() || 'Sem observações registradas.'
+    const dataEmissao = new Date().toLocaleDateString('pt-BR')
+    const horaEmissao = new Date().toLocaleTimeString('pt-BR', {
+      hour: '2-digit',
+      minute: '2-digit',
+    })
+
+    const html = `<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <title>Comprovante de Conta a Receber - ${documento !== '—' ? documento : c.id}</title>
+  <style>
+    @page {
+      size: A4 portrait;
+      margin: 15mm 18mm;
+    }
+    * {
+      box-sizing: border-box;
+      -webkit-print-color-adjust: exact !important;
+      print-color-adjust: exact !important;
+    }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      color: #111827;
+      background: #fff;
+      margin: 0;
+      padding: 24px;
+      font-size: 13px;
+      line-height: 1.5;
+    }
+    .header {
+      border-bottom: 2px solid #0f766e;
+      padding-bottom: 12px;
+      margin-bottom: 20px;
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-end;
+    }
+    .header h1 {
+      margin: 0;
+      font-size: 17px;
+      color: #0f766e;
+      font-weight: 800;
+      letter-spacing: -0.02em;
+    }
+    .header .subtitle {
+      margin: 2px 0 0 0;
+      font-size: 12px;
+      color: #4b5563;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+    .header .meta {
+      font-size: 11px;
+      color: #6b7280;
+      text-align: right;
+    }
+    .badge-status {
+      display: inline-block;
+      padding: 3px 10px;
+      border-radius: 9999px;
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      border: 1px solid #d1d5db;
+    }
+    .badge-recebida {
+      background: #ecfdf5;
+      color: #047857;
+      border-color: #a7f3d0;
+    }
+    .badge-aberta {
+      background: #eff6ff;
+      color: #1d4ed8;
+      border-color: #bfdbfe;
+    }
+    .badge-vencida {
+      background: #fef2f2;
+      color: #b91c1c;
+      border-color: #fecaca;
+    }
+    .badge-parcial {
+      background: #fffbeb;
+      color: #b45309;
+      border-color: #fde68a;
+    }
+    .badge-antecipado {
+      background: #f0fdfa;
+      color: #0f766e;
+      border-color: #99f6e4;
+    }
+    .card-destaque-teal {
+      background: #f0fdfa;
+      border: 1.5px solid #0d9488;
+      border-radius: 8px;
+      padding: 12px 14px;
+      margin-bottom: 16px;
+    }
+    .card-destaque-teal .titulo-label {
+      font-size: 10px;
+      text-transform: uppercase;
+      font-weight: 800;
+      letter-spacing: 0.08em;
+      color: #0f766e;
+      margin-bottom: 2px;
+    }
+    .card-destaque-teal .nome-depositante {
+      font-size: 15px;
+      font-weight: 700;
+      color: #115e59;
+    }
+    .card-destaque-teal .aviso {
+      font-size: 11px;
+      color: #0f766e;
+      margin-top: 2px;
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px 20px;
+      margin-bottom: 18px;
+    }
+    .field {
+      border-bottom: 1px solid #f3f4f6;
+      padding-bottom: 6px;
+    }
+    .field-full {
+      grid-column: span 2;
+    }
+    .field-label {
+      font-size: 10px;
+      text-transform: uppercase;
+      font-weight: 700;
+      letter-spacing: 0.05em;
+      color: #6b7280;
+      margin-bottom: 2px;
+    }
+    .field-value {
+      font-size: 13px;
+      font-weight: 600;
+      color: #111827;
+    }
+    .field-value.mono {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    }
+    .field-value.destaque {
+      font-size: 17px;
+      color: #0f766e;
+      font-weight: 800;
+    }
+    .box-obs {
+      background: #fafaf9;
+      border: 1px solid #e7e5e4;
+      border-radius: 6px;
+      padding: 10px 12px;
+      margin-top: 14px;
+    }
+    .box-obs .label {
+      font-size: 10px;
+      font-weight: 700;
+      text-transform: uppercase;
+      color: #78716c;
+      margin-bottom: 4px;
+    }
+    .box-obs .content {
+      font-size: 12px;
+      color: #44403c;
+      white-space: pre-wrap;
+    }
+    .footer {
+      margin-top: 36px;
+      padding-top: 14px;
+      border-top: 1px dashed #d1d5db;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 10px;
+      color: #9ca3af;
+    }
+    .assinatura-block {
+      margin-top: 48px;
+      display: flex;
+      justify-content: space-around;
+      gap: 30px;
+    }
+    .linha-assinatura {
+      width: 220px;
+      border-top: 1px solid #9ca3af;
+      padding-top: 4px;
+      text-align: center;
+      font-size: 11px;
+      color: #4b5563;
+      font-weight: 600;
+    }
+    @media print {
+      body {
+        padding: 0;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <div>
+      <h1>GRUPO PEDREIRA CORDEIRO</h1>
+      <div class="subtitle">Comprovante de Conta a Receber / Antecipação</div>
+    </div>
+    <div class="meta">
+      <div>Emissão: ${dataEmissao} às ${horaEmissao}</div>
+      <div style="margin-top: 4px;">ID Título: <span style="font-family: monospace;">${c.id}</span></div>
+    </div>
+  </div>
+
+  ${
+    clienteDepositanteTexto
+      ? `<div class="card-destaque-teal">
+          <div class="titulo-label">Cliente Depositante (Terceiro Pagador Identificado)</div>
+          <div class="nome-depositante">${clienteDepositanteTexto}</div>
+          <div class="aviso">Depósito/Transferência bancária efetuada por depositante terceiro em favor do cliente comprador.</div>
+        </div>`
+      : ''
+  }
+
+  <div class="grid">
+    <div class="field">
+      <div class="field-label">Cliente Comprador</div>
+      <div class="field-value">${clienteComprador}</div>
+    </div>
+
+    <div class="field">
+      <div class="field-label">Documento / NF</div>
+      <div class="field-value mono">${documento}</div>
+    </div>
+
+    <div class="field">
+      <div class="field-label">Situação / Status</div>
+      <div class="field-value">
+        <span class="badge-status ${
+          displayStatus === 'Recebida'
+            ? 'badge-recebida'
+            : displayStatus === 'Vencida'
+              ? 'badge-vencida'
+              : displayStatus === 'Parcial'
+                ? 'badge-parcial'
+                : displayStatus === 'Recebimento Antecipado'
+                  ? 'badge-antecipado'
+                  : 'badge-aberta'
+        }">${displayStatus}</span>
+      </div>
+    </div>
+
+    <div class="field">
+      <div class="field-label">Data de Vencimento</div>
+      <div class="field-value mono">${vencimentoFormatado}</div>
+    </div>
+
+    <div class="field">
+      <div class="field-label">Valor Total do Título</div>
+      <div class="field-value destaque mono">${valorTotalFormatado}</div>
+    </div>
+
+    <div class="field">
+      <div class="field-label">Data de Recebimento / Baixa</div>
+      <div class="field-value mono">${recebimentoFormatado}</div>
+    </div>
+
+    <div class="field">
+      <div class="field-label">Forma de Recebimento</div>
+      <div class="field-value">${formaRecebimentoTexto}</div>
+    </div>
+
+    <div class="field">
+      <div class="field-label">Centro de Custo</div>
+      <div class="field-value">${centroCustoTexto}</div>
+    </div>
+
+    ${
+      c.endereco
+        ? `<div class="field field-full">
+            <div class="field-label">Cidade / Endereço</div>
+            <div class="field-value">${c.endereco}</div>
+          </div>`
+        : ''
+    }
+
+    <div class="field field-full">
+      <div class="field-label">Categoria Contábil</div>
+      <div class="field-value">${categoriaTexto}</div>
+    </div>
+  </div>
+
+  <div class="box-obs">
+    <div class="label">Observações / Detalhes</div>
+    <div class="content">${observacoesTexto}</div>
+  </div>
+
+  <div class="assinatura-block">
+    <div class="linha-assinatura">Responsável Financeiro</div>
+    <div class="linha-assinatura">Cliente / Depositante</div>
+  </div>
+
+  <div class="footer">
+    <div>Grupo Pedreira Cordeiro — Sistema ERP de Gestão Integrada</div>
+    <div>Página 1 de 1</div>
+  </div>
+
+  <script>
+    window.onload = function() {
+      window.print();
+    };
+  </script>
+</body>
+</html>`
+
+    printWindow.document.open()
+    printWindow.document.write(html)
+    printWindow.document.close()
   }
 
   const handleOpenSettle = (conta: ContaReceber) => {
@@ -738,7 +1089,6 @@ export default function ContasReceber() {
               <tr className="bg-[#FAF9F7] border-b border-[#ECEAE4] text-gray-500 uppercase font-semibold text-[11px] tracking-wider">
                 <th className="py-2.5 px-2.5 whitespace-nowrap">Vencimento</th>
                 <th className="py-2.5 px-2.5 min-w-[140px]">Cliente / Pagador</th>
-                <th className="py-2.5 px-2 whitespace-nowrap">Doc / NF</th>
                 <th className="py-2.5 px-2 whitespace-nowrap">Cidade</th>
                 <th className="py-2.5 px-2 whitespace-nowrap">Forma</th>
                 <th className="py-2.5 px-2 whitespace-nowrap">C. Custo</th>
@@ -746,6 +1096,7 @@ export default function ContasReceber() {
                 <th className="py-2.5 px-2 text-right whitespace-nowrap">Recebido</th>
                 <th className="py-2.5 px-2.5 text-right whitespace-nowrap">Saldo</th>
                 <th className="py-2.5 px-2 text-center whitespace-nowrap">Status</th>
+                <th className="py-2.5 px-2 text-center whitespace-nowrap w-32">Doc / NF</th>
                 <th className="py-2.5 px-2.5 text-right whitespace-nowrap">Ações</th>
               </tr>
             </thead>
@@ -784,26 +1135,23 @@ export default function ContasReceber() {
                           >
                             {nomeCliente || (temDescricao ? c.descricao : '—')}
                           </span>
+                          {c.cliente_depositante && (
+                            <span
+                              className="inline-block mt-0.5 max-w-[200px] truncate text-[10px] text-teal-800 bg-teal-50 px-1.5 py-0.2 rounded font-medium border border-teal-100"
+                              title={`Depositante: ${c.cliente_depositante}`}
+                            >
+                              Depositante: {c.cliente_depositante}
+                            </span>
+                          )}
                           {temDescricao && nomeCliente && (
                             <span
-                              className="text-[11px] text-gray-500 truncate"
+                              className="text-[11px] text-gray-500 truncate mt-0.5"
                               title={c.descricao}
                             >
                               {c.descricao}
                             </span>
                           )}
                         </div>
-                      </td>
-
-                      {/* Doc / Nota */}
-                      <td className="py-2 px-2 font-mono text-gray-700 whitespace-nowrap text-[11px]">
-                        {c.nota ? (
-                          <span className="inline-flex items-center px-1.5 py-0.5 rounded bg-gray-100 text-gray-800 font-semibold font-mono">
-                            {c.nota}
-                          </span>
-                        ) : (
-                          <span className="text-gray-300">—</span>
-                        )}
                       </td>
 
                       {/* Cidade / Endereço */}
@@ -893,6 +1241,22 @@ export default function ContasReceber() {
                         </Badge>
                       </td>
 
+                      {/* Doc / Nota */}
+                      <td className="py-2 px-2 text-center whitespace-nowrap">
+                        {c.nota ? (
+                          <span
+                            className="inline-flex items-center justify-center w-28 px-2 py-0.5 rounded bg-gray-100 text-gray-800 font-semibold font-mono text-[11px] border border-gray-200/80 whitespace-nowrap text-center"
+                            title={c.nota}
+                          >
+                            {c.nota}
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center justify-center w-28 text-gray-300 text-center font-mono">
+                            —
+                          </span>
+                        )}
+                      </td>
+
                       {/* Ações */}
                       <td
                         className="py-2 px-2.5 text-right whitespace-nowrap"
@@ -910,6 +1274,15 @@ export default function ContasReceber() {
                               {c.status === 'Parcial' ? 'Amortizar' : 'Receber'}
                             </Button>
                           )}
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => handleImprimirComprovante(c)}
+                            className="h-6 w-6 p-0 text-teal-700 hover:text-teal-900 hover:bg-teal-50"
+                            title="Imprimir Comprovante"
+                          >
+                            <Printer className="w-3 h-3" />
+                          </Button>
                           {canEdit && (
                             <Button
                               size="sm"
@@ -1000,6 +1373,28 @@ export default function ContasReceber() {
                   ))}
                 </SelectContent>
               </Select>
+            </div>
+
+            <div>
+              <Label className="text-xs font-semibold text-gray-700">
+                Cliente Depositante (Opcional)
+              </Label>
+              <Input
+                value={clienteDepositante}
+                onChange={(e) => setClienteDepositante(e.target.value)}
+                placeholder="Ex: Nome da pessoa ou empresa que realizou o depósito"
+                list="clientes-depositantes-list"
+                className="mt-1"
+              />
+              <datalist id="clientes-depositantes-list">
+                {clientes.map((cli) => (
+                  <option key={cli.id} value={cli.nome} />
+                ))}
+              </datalist>
+              <p className="text-[11px] text-gray-500 mt-1">
+                Preencha caso o depósito/transferência tenha sido feito por um terceiro diferente do
+                cliente comprador.
+              </p>
             </div>
 
             <div className="grid grid-cols-2 gap-3">
@@ -1403,6 +1798,16 @@ export default function ContasReceber() {
                     {detailItem.expand?.cliente_id?.nome || 'Não informado'}
                   </span>
                 </div>
+                {detailItem.cliente_depositante && (
+                  <div className="flex justify-between items-center py-1.5 px-2.5 bg-teal-50/70 border border-teal-200 rounded-lg">
+                    <span className="text-teal-800 font-semibold text-[11px]">
+                      Cliente Depositante:
+                    </span>
+                    <span className="font-bold text-teal-950 text-xs">
+                      {detailItem.cliente_depositante}
+                    </span>
+                  </div>
+                )}
                 <div className="flex justify-between py-1">
                   <span className="text-gray-500">Categoria Contábil:</span>
                   <span className="font-medium text-gray-800">
@@ -1444,8 +1849,18 @@ export default function ContasReceber() {
                 </div>
               )}
 
-              {canEdit && detailItem.status !== 'Recebida' && (
-                <div className="pt-6">
+              <div className="pt-4 flex flex-col gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => handleImprimirComprovante(detailItem)}
+                  className="w-full border-teal-300 text-teal-800 hover:bg-teal-50 rounded-xl"
+                >
+                  <Printer className="w-4 h-4 mr-2 text-teal-700" />
+                  Imprimir Comprovante
+                </Button>
+
+                {canEdit && detailItem.status !== 'Recebida' && (
                   <Button
                     onClick={() => {
                       const item = detailItem
@@ -1458,8 +1873,8 @@ export default function ContasReceber() {
                       ? 'Registrar Nova Baixa / Quitar'
                       : 'Receber Título Agora'}
                   </Button>
-                </div>
-              )}
+                )}
+              </div>
             </div>
           )}
         </SheetContent>

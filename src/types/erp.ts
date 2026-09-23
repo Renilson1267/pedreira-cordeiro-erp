@@ -173,6 +173,7 @@ export interface ContaReceber {
   forma_recebimento?: 'Dinheiro' | 'Pix' | 'Cartão' | 'Boleto' | 'Transferência'
   endereco?: string
   nota?: string
+  cliente_depositante?: string
   observacoes?: string
   created: string
   updated: string

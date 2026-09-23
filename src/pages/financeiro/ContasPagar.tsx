@@ -399,6 +399,12 @@ export default function ContasPagar() {
     return Math.max(0, (c.valor || 0) - jaPago)
   }
 
+  const getDocumentoContaPagar = (c: ContaPagar): string => {
+    if (!c.observacoes) return ''
+    const match = c.observacoes.match(/(?:Doc|NF|Nota|Duplicata)[\s:]*([A-Z0-9/\s\-–]+?)(?:\||$)/i)
+    return match && match[1] ? match[1].trim() : ''
+  }
+
   const handleOpenSettle = (conta: ContaPagar) => {
     setSettlingConta(conta)
     setDataPagamento(toInputDate(new Date().toISOString()))
@@ -694,13 +700,14 @@ export default function ContasPagar() {
                 <th className="py-2.5 px-2 text-right whitespace-nowrap">Pago</th>
                 <th className="py-2.5 px-2.5 text-right whitespace-nowrap">Saldo</th>
                 <th className="py-2.5 px-2 text-center whitespace-nowrap">Status</th>
+                <th className="py-2.5 px-2 text-center whitespace-nowrap w-32">Doc / NF</th>
                 <th className="py-2.5 px-2.5 text-right whitespace-nowrap">Ações</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-[#ECEAE4]">
               {filteredContas.length === 0 ? (
                 <tr>
-                  <td colSpan={9} className="py-12 text-center text-gray-400">
+                  <td colSpan={10} className="py-12 text-center text-gray-400">
                     Nenhuma conta a pagar encontrada para os filtros atuais.
                   </td>
                 </tr>
@@ -710,6 +717,7 @@ export default function ContasPagar() {
                   const jaPago = getValorPagoEfetivo(c)
                   const saldoRestante = getSaldoRestante(c)
                   const nomeFornecedor = c.expand?.fornecedor_id?.nome || ''
+                  const doc = getDocumentoContaPagar(c)
 
                   return (
                     <tr
@@ -819,6 +827,22 @@ export default function ContasPagar() {
                         >
                           {displayStatus}
                         </Badge>
+                      </td>
+
+                      {/* Doc / NF */}
+                      <td className="py-2 px-2 text-center whitespace-nowrap">
+                        {doc ? (
+                          <span
+                            className="inline-flex items-center justify-center w-28 px-2 py-0.5 rounded bg-gray-100 text-gray-800 font-semibold font-mono text-[11px] border border-gray-200/80 whitespace-nowrap text-center"
+                            title={doc}
+                          >
+                            {doc}
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center justify-center w-28 text-gray-300 text-center font-mono">
+                            —
+                          </span>
+                        )}
                       </td>
 
                       {/* Ações */}
