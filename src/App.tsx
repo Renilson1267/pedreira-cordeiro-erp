@@ -14,6 +14,8 @@ import VerifyEmail from '@/pages/auth/VerifyEmail'
 import AcceptInvite from '@/pages/auth/AcceptInvite'
 
 import Index from '@/pages/Index'
+import Vendas from '@/pages/financeiro/Vendas'
+import EntregaPage from '@/pages/financeiro/Entrega'
 import ContasPagar from '@/pages/financeiro/ContasPagar'
 import ContasReceber from '@/pages/financeiro/ContasReceber'
 import Conciliacao from '@/pages/financeiro/Conciliacao'
@@ -61,6 +63,8 @@ export default function App() {
               <Route path="/" element={<Index />} />
 
               {/* Financeiro */}
+              <Route path="/financeiro/vendas" element={<Vendas />} />
+              <Route path="/financeiro/entrega" element={<EntregaPage />} />
               <Route path="/financeiro/pagar" element={<ContasPagar />} />
               <Route path="/financeiro/receber" element={<ContasReceber />} />
               <Route path="/financeiro/conciliacao" element={<Conciliacao />} />

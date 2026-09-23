@@ -45,8 +45,14 @@ export const RomaneioEntregaImpressaoModal: React.FC<RomaneioEntregaImpressaoMod
   const veiculo = entrega.expand?.veiculo_id
   const motorista =
     entrega.motorista || entrega.expand?.funcionario_id?.nome || 'Motorista não informado'
+  const venda = entrega.expand?.venda_id
+  const clienteNome =
+    entrega.cliente_nome ||
+    entrega.expand?.cliente_id?.nome ||
+    venda?.expand?.cliente_id?.nome ||
+    entrega.destino
 
-  const valorVenda = Number(entrega.valor_venda) || 0
+  const valorVenda = Number(entrega.valor_venda) || Number(venda?.valor_total) || 0
   const custoViagem = Number(entrega.custo_estimado) || 0
   const margem = valorVenda - custoViagem
 
@@ -130,7 +136,17 @@ export const RomaneioEntregaImpressaoModal: React.FC<RomaneioEntregaImpressaoMod
                   <span className="text-gray-500 block text-[10px] uppercase font-semibold">
                     Destino / Cliente
                   </span>
-                  <span className="font-bold text-teal-950">{entrega.destino}</span>
+                  <span className="font-bold text-teal-950">{clienteNome}</span>
+                  {entrega.destino && entrega.destino !== clienteNome && (
+                    <span className="text-[10px] text-gray-500 block">
+                      Local: {entrega.destino}
+                    </span>
+                  )}
+                  {venda && (
+                    <span className="text-[10px] text-teal-700 block font-semibold mt-0.5">
+                      Venda #{venda.id.slice(0, 8)}
+                    </span>
+                  )}
                 </div>
                 <div>
                   <span className="text-gray-500 block text-[10px] uppercase font-semibold">
@@ -236,7 +252,7 @@ export const RomaneioEntregaImpressaoModal: React.FC<RomaneioEntregaImpressaoMod
                   <tr>
                     <td className="py-2.5 px-3">
                       <span className="font-bold text-gray-900 block text-sm">
-                        {entrega.produto_nome || 'Agregados da Pedreira'}
+                        {entrega.produto_nome || venda?.produto_nome || 'Agregados da Pedreira'}
                       </span>
                       {entrega.expand?.produto_id?.codigo && (
                         <span className="text-[10px] text-gray-400 font-mono">
@@ -245,21 +261,27 @@ export const RomaneioEntregaImpressaoModal: React.FC<RomaneioEntregaImpressaoMod
                       )}
                     </td>
                     <td className="py-2.5 px-3 text-center font-mono text-gray-700 font-medium">
-                      {entrega.unidade_medida || 'm³'}
+                      {entrega.unidade_medida || venda?.unidade || 'm³'}
                     </td>
                     <td className="py-2.5 px-3 text-right font-mono font-bold text-gray-900 text-sm">
                       {entrega.quantidade !== undefined && entrega.quantidade !== null
                         ? Number(entrega.quantidade).toLocaleString('pt-BR', {
                             maximumFractionDigits: 2,
                           })
-                        : '—'}
+                        : venda?.quantidade !== undefined
+                          ? Number(venda.quantidade).toLocaleString('pt-BR', {
+                              maximumFractionDigits: 2,
+                            })
+                          : '—'}
                     </td>
                     <td className="py-2.5 px-3 text-right font-mono text-gray-800">
                       {entrega.preco_unitario_venda && entrega.preco_unitario_venda > 0
                         ? formatCurrency(entrega.preco_unitario_venda)
-                        : entrega.expand?.produto_id?.preco_venda
-                          ? formatCurrency(entrega.expand.produto_id.preco_venda)
-                          : '—'}
+                        : venda?.preco_unitario
+                          ? formatCurrency(venda.preco_unitario)
+                          : entrega.expand?.produto_id?.preco_venda
+                            ? formatCurrency(entrega.expand.produto_id.preco_venda)
+                            : '—'}
                     </td>
                     <td className="py-2.5 px-3 text-right font-mono font-bold text-emerald-800 text-base tabular-nums">
                       {valorVenda > 0 ? formatCurrency(valorVenda) : 'Não informado'}

@@ -4,6 +4,9 @@ import type { Entrega } from '@/types/erp'
 export interface CreateEntregaPayload {
   empresa_id: string
   veiculo_id: string
+  venda_id?: string | null
+  cliente_id?: string | null
+  cliente_nome?: string | null
   data: string
   origem: string
   destino: string
@@ -38,26 +41,26 @@ export const entregasService = {
       : `empresa_id = '${empresaId}'`
     return pb.collection('entregas').getFullList<Entrega>({
       filter,
-      expand: 'veiculo_id,funcionario_id,produto_id,conta_pagar_id',
+      expand: 'veiculo_id,funcionario_id,produto_id,conta_pagar_id,venda_id,cliente_id',
       sort: '-data,-created',
     })
   },
 
   async obterPorId(id: string): Promise<Entrega> {
     return pb.collection('entregas').getOne<Entrega>(id, {
-      expand: 'veiculo_id,funcionario_id,produto_id,conta_pagar_id',
+      expand: 'veiculo_id,funcionario_id,produto_id,conta_pagar_id,venda_id,cliente_id',
     })
   },
 
   async criar(payload: CreateEntregaPayload): Promise<Entrega> {
     return pb.collection('entregas').create<Entrega>(payload, {
-      expand: 'veiculo_id,funcionario_id,produto_id,conta_pagar_id',
+      expand: 'veiculo_id,funcionario_id,produto_id,conta_pagar_id,venda_id,cliente_id',
     })
   },
 
   async atualizar(id: string, payload: UpdateEntregaPayload): Promise<Entrega> {
     return pb.collection('entregas').update<Entrega>(id, payload, {
-      expand: 'veiculo_id,funcionario_id,produto_id,conta_pagar_id',
+      expand: 'veiculo_id,funcionario_id,produto_id,conta_pagar_id,venda_id,cliente_id',
     })
   },
 

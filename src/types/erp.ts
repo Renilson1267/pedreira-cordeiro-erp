@@ -141,12 +141,15 @@ export interface ContaPagar {
   data_pagamento?: string
   forma_pagamento?: 'Dinheiro' | 'Pix' | 'Cartão' | 'Boleto' | 'Transferência'
   observacoes?: string
+  origem_frota?: string
+  veiculo_id?: string
   created: string
   updated: string
   expand?: {
     fornecedor_id?: Fornecedor
     categoria_id?: PlanoConta
     centro_custo_id?: CentroCusto
+    veiculo_id?: Veiculo
   }
 }
 
@@ -175,12 +178,14 @@ export interface ContaReceber {
   nota?: string
   cliente_depositante?: string
   observacoes?: string
+  venda_id?: string
   created: string
   updated: string
   expand?: {
     cliente_id?: Cliente
     categoria_id?: PlanoConta
     centro_custo_id?: CentroCusto
+    venda_id?: Venda
   }
 }
 
@@ -408,10 +413,86 @@ export interface FolhaHorasExtras {
 export type StatusEntrega = 'concluida' | 'em_transito' | 'cancelada'
 export type UnidadeMedidaCarga = 'm³' | 'ton' | 'viagem'
 
+export type StatusVenda = 'Pendente' | 'Faturada' | 'Paga' | 'Cancelada'
+export type FormaPagamentoVenda =
+  | 'Dinheiro'
+  | 'Pix'
+  | 'Boleto'
+  | 'Cartão'
+  | 'Transferência'
+  | 'A Prazo'
+  | 'Outro'
+
+export interface Venda {
+  id: string
+  empresa_id: string
+  cliente_id?: string
+  produto_id?: string
+  produto_nome?: string
+  quantidade: number
+  unidade: 'm³' | 'ton' | 'un' | 'viagem'
+  preco_unitario: number
+  valor_total: number
+  data_venda: string
+  forma_pagamento?: FormaPagamentoVenda
+  status: StatusVenda
+  nota_fiscal?: string
+  conta_receber_id?: string
+  observacoes?: string
+  created: string
+  updated: string
+  expand?: {
+    empresa_id?: Empresa
+    cliente_id?: Cliente
+    produto_id?: Produto
+  }
+}
+
+export type NaturezaDespesaFrota = 'Despesa' | 'Abatimento'
+export type TipoDespesaFrota =
+  | 'Manutenção'
+  | 'Combustível'
+  | 'Pneus'
+  | 'Peças'
+  | 'Seguro'
+  | 'IPVA / Taxas'
+  | 'Lubrificantes'
+  | 'Abatimento / Desconto'
+  | 'Outros'
+
+export interface DespesaFrota {
+  id: string
+  empresa_id: string
+  veiculo_id: string
+  placa_patrimonio?: string
+  setor: string
+  natureza: NaturezaDespesaFrota
+  tipo: TipoDespesaFrota
+  descricao: string
+  fornecedor_id?: string
+  fornecedor_nome?: string
+  data: string
+  valor: number
+  status: 'Pendente' | 'Pago' | 'Cancelado'
+  conta_pagar_id?: string
+  referencia_origem?: string
+  observacoes?: string
+  created: string
+  updated: string
+  expand?: {
+    veiculo_id?: Veiculo
+    fornecedor_id?: Fornecedor
+    conta_pagar_id?: ContaPagar
+  }
+}
+
 export interface Entrega {
   id: string
   empresa_id: string
   veiculo_id: string
+  venda_id?: string
+  cliente_id?: string
+  cliente_nome?: string
   data: string
   origem: string
   destino: string
@@ -443,5 +524,7 @@ export interface Entrega {
     funcionario_id?: Funcionario
     produto_id?: Produto
     conta_pagar_id?: ContaPagar
+    venda_id?: Venda
+    cliente_id?: Cliente
   }
 }

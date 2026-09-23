@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-09-23T16:34:40.709Z",
+  "generatedAt": "2026-09-23T16:49:52.955Z",
   "collections": [
     {
       "name": "users",
@@ -629,6 +629,19 @@
           "type": "number",
           "required": false,
           "system": false
+        },
+        {
+          "name": "origem_frota",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "veiculo_id",
+          "type": "relation",
+          "required": false,
+          "system": false,
+          "collectionRef": "veiculos"
         }
       ],
       "indexes": [
@@ -764,6 +777,13 @@
           "type": "text",
           "required": false,
           "system": false
+        },
+        {
+          "name": "venda_id",
+          "type": "relation",
+          "required": false,
+          "system": false,
+          "collectionRef": "vendas"
         }
       ],
       "indexes": [
@@ -1378,6 +1398,12 @@
           "type": "number",
           "required": false,
           "system": false
+        },
+        {
+          "name": "setor",
+          "type": "text",
+          "required": false,
+          "system": false
         }
       ],
       "indexes": [
@@ -1522,6 +1548,12 @@
         {
           "name": "proxima_revisao_horimetro",
           "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "setor",
+          "type": "text",
           "required": false,
           "system": false
         }
@@ -2130,9 +2162,301 @@
           "type": "number",
           "required": false,
           "system": false
+        },
+        {
+          "name": "venda_id",
+          "type": "relation",
+          "required": false,
+          "system": false,
+          "collectionRef": "vendas"
+        },
+        {
+          "name": "cliente_id",
+          "type": "relation",
+          "required": false,
+          "system": false,
+          "collectionRef": "clientes"
+        },
+        {
+          "name": "cliente_nome",
+          "type": "text",
+          "required": false,
+          "system": false
         }
       ],
       "indexes": []
+    },
+    {
+      "name": "vendas",
+      "type": "base",
+      "apiRules": {
+        "list": "@request.auth.id != ''",
+        "view": "@request.auth.id != ''",
+        "create": "@request.auth.id != ''",
+        "update": "@request.auth.id != ''",
+        "delete": "@request.auth.id != ''"
+      },
+      "fields": [
+        {
+          "name": "empresa_id",
+          "type": "relation",
+          "required": true,
+          "system": false,
+          "collectionRef": "empresas"
+        },
+        {
+          "name": "cliente_id",
+          "type": "relation",
+          "required": false,
+          "system": false,
+          "collectionRef": "clientes"
+        },
+        {
+          "name": "produto_id",
+          "type": "relation",
+          "required": false,
+          "system": false,
+          "collectionRef": "produtos"
+        },
+        {
+          "name": "produto_nome",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "quantidade",
+          "type": "number",
+          "required": true,
+          "system": false
+        },
+        {
+          "name": "unidade",
+          "type": "select",
+          "required": true,
+          "system": false,
+          "selectValues": ["m³", "ton", "un", "viagem"]
+        },
+        {
+          "name": "preco_unitario",
+          "type": "number",
+          "required": true,
+          "system": false
+        },
+        {
+          "name": "valor_total",
+          "type": "number",
+          "required": true,
+          "system": false
+        },
+        {
+          "name": "data_venda",
+          "type": "date",
+          "required": true,
+          "system": false
+        },
+        {
+          "name": "forma_pagamento",
+          "type": "select",
+          "required": false,
+          "system": false,
+          "selectValues": [
+            "Dinheiro",
+            "Pix",
+            "Boleto",
+            "Cartão",
+            "Transferência",
+            "A Prazo",
+            "Outro"
+          ]
+        },
+        {
+          "name": "status",
+          "type": "select",
+          "required": true,
+          "system": false,
+          "selectValues": ["Pendente", "Faturada", "Paga", "Cancelada"]
+        },
+        {
+          "name": "nota_fiscal",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "conta_receber_id",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "observacoes",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "created",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate"]
+        },
+        {
+          "name": "updated",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate", "onUpdate"]
+        }
+      ],
+      "indexes": [
+        "CREATE INDEX idx_vendas_empresa ON vendas (empresa_id)",
+        "CREATE INDEX idx_vendas_cliente ON vendas (cliente_id)",
+        "CREATE INDEX idx_vendas_data ON vendas (data_venda)",
+        "CREATE INDEX idx_vendas_status ON vendas (status)"
+      ]
+    },
+    {
+      "name": "despesas_frota",
+      "type": "base",
+      "apiRules": {
+        "list": "@request.auth.id != ''",
+        "view": "@request.auth.id != ''",
+        "create": "@request.auth.id != ''",
+        "update": "@request.auth.id != ''",
+        "delete": "@request.auth.id != ''"
+      },
+      "fields": [
+        {
+          "name": "empresa_id",
+          "type": "relation",
+          "required": true,
+          "system": false,
+          "collectionRef": "empresas"
+        },
+        {
+          "name": "veiculo_id",
+          "type": "relation",
+          "required": true,
+          "system": false,
+          "collectionRef": "veiculos"
+        },
+        {
+          "name": "placa_patrimonio",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "setor",
+          "type": "text",
+          "required": true,
+          "system": false
+        },
+        {
+          "name": "natureza",
+          "type": "select",
+          "required": true,
+          "system": false,
+          "selectValues": ["Despesa", "Abatimento"]
+        },
+        {
+          "name": "tipo",
+          "type": "select",
+          "required": true,
+          "system": false,
+          "selectValues": [
+            "Manutenção",
+            "Combustível",
+            "Pneus",
+            "Peças",
+            "Seguro",
+            "IPVA / Taxas",
+            "Lubrificantes",
+            "Abatimento / Desconto",
+            "Outros"
+          ]
+        },
+        {
+          "name": "descricao",
+          "type": "text",
+          "required": true,
+          "system": false
+        },
+        {
+          "name": "fornecedor_id",
+          "type": "relation",
+          "required": false,
+          "system": false,
+          "collectionRef": "fornecedores"
+        },
+        {
+          "name": "fornecedor_nome",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "data",
+          "type": "date",
+          "required": true,
+          "system": false
+        },
+        {
+          "name": "valor",
+          "type": "number",
+          "required": true,
+          "system": false
+        },
+        {
+          "name": "status",
+          "type": "select",
+          "required": true,
+          "system": false,
+          "selectValues": ["Pendente", "Pago", "Cancelado"]
+        },
+        {
+          "name": "conta_pagar_id",
+          "type": "relation",
+          "required": false,
+          "system": false,
+          "collectionRef": "contas_pagar"
+        },
+        {
+          "name": "referencia_origem",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "observacoes",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "created",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate"]
+        },
+        {
+          "name": "updated",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate", "onUpdate"]
+        }
+      ],
+      "indexes": [
+        "CREATE INDEX idx_desp_frota_empresa ON despesas_frota (empresa_id)",
+        "CREATE INDEX idx_desp_frota_veiculo ON despesas_frota (veiculo_id)",
+        "CREATE INDEX idx_desp_frota_setor ON despesas_frota (setor)",
+        "CREATE INDEX idx_desp_frota_data ON despesas_frota (data)",
+        "CREATE INDEX idx_desp_frota_natureza ON despesas_frota (natureza)"
+      ]
     }
   ]
 }

@@ -49,7 +49,14 @@ import {
   X,
   User,
   Users,
+  Printer,
 } from 'lucide-react'
+import {
+  RelatorioDespesasSetorImpressaoModal,
+  ItemDespesaImpressao,
+} from '@/components/frotas/RelatorioDespesasSetorImpressaoModal'
+import { despesasFrotaService } from '@/services/despesasFrota'
+import type { DespesaFrota } from '@/types/erp'
 import {
   ResponsiveContainer,
   BarChart,
@@ -81,7 +88,12 @@ export default function Relatorios() {
   const [abastecimentos, setAbastecimentos] = useState<Abastecimento[]>([])
   const [manutencoes, setManutencoes] = useState<Manutencao[]>([])
   const [entregas, setEntregas] = useState<Entrega[]>([])
+  const [despesasFrota, setDespesasFrota] = useState<DespesaFrota[]>([])
   const [loading, setLoading] = useState(false)
+
+  // Modal Impressão A4 de Despesas do Setor
+  const [modalImpressaoSetorOpen, setModalImpressaoSetorOpen] = useState(false)
+  const [setorParaImpressao, setSetorParaImpressao] = useState('Entrega')
 
   // Filtros específicos por relatório
   // 1. Frotas: Equipamento, Setor e Centro de Custo
@@ -99,7 +111,7 @@ export default function Relatorios() {
     if (!currentEmpresa) return
     try {
       setLoading(true)
-      const [m, cp, cr, f, c, pc, cc, v, ab, mn, ent] = await Promise.all([
+      const [m, cp, cr, f, c, pc, cc, v, ab, mn, ent, dfList] = await Promise.all([
         pb.collection('movimentos_financeiros').getFullList<MovimentoFinanceiro>({
           filter: `empresa_id = '${currentEmpresa.id}'`,
           expand: 'categoria_id,centro_custo_id',
@@ -145,6 +157,7 @@ export default function Relatorios() {
           expand: 'veiculo_id',
           sort: '-data',
         }),
+        despesasFrotaService.listar(currentEmpresa.id),
       ])
 
       setMovimentos(m)
@@ -158,6 +171,7 @@ export default function Relatorios() {
       setAbastecimentos(ab)
       setManutencoes(mn)
       setEntregas(ent)
+      setDespesasFrota(dfList)
     } catch (err) {
       console.error('Error fetching reports data:', err)
     } finally {
@@ -581,6 +595,80 @@ export default function Relatorios() {
     frotasSetorFilter,
     frotasCentroCustoFilter,
   ])
+
+  // Itens para o Relatório Oficial de Impressão A4 por Setor com TODAS as despesas dos equipamentos
+  const itensParaImpressaoSetor = useMemo<ItemDespesaImpressao[]>(() => {
+    const list: ItemDespesaImpressao[] = []
+    const setorAlvo = setorParaImpressao
+
+    // 1. Despesas registradas em despesas_frota para os equipamentos deste setor
+    despesasFrota.forEach((df) => {
+      const v = veiculos.find((veic) => veic.id === df.veiculo_id)
+      const pertence =
+        veiculoCorrespondeAoSetor(df.setor, setorAlvo) ||
+        (v && veiculoCorrespondeAoSetor(v.setor, setorAlvo))
+      if (pertence) {
+        list.push({
+          id: df.id,
+          data: df.data,
+          veiculo_codigo: v?.codigo_interno || df.placa_patrimonio || 'Equipamento',
+          veiculo_modelo: v?.modelo,
+          placa: v?.placa || df.placa_patrimonio,
+          setor: df.setor || v?.setor || setorAlvo,
+          tipo: df.tipo,
+          descricao: df.descricao,
+          fornecedor: df.fornecedor_nome || df.expand?.fornecedor_id?.nome || '—',
+          valor: df.valor,
+          natureza: df.natureza,
+          status: df.status,
+        })
+      }
+    })
+
+    // 2. Manutenções registradas
+    manutencoes.forEach((m) => {
+      const v = veiculos.find((veic) => veic.id === m.veiculo_id)
+      if (v && veiculoCorrespondeAoSetor(v.setor, setorAlvo)) {
+        list.push({
+          id: m.id,
+          data: m.data,
+          veiculo_codigo: v.codigo_interno,
+          veiculo_modelo: v.modelo,
+          placa: v.placa,
+          setor: v.setor || setorAlvo,
+          tipo: `Manutenção (${m.tipo})`,
+          descricao: m.descricao || 'Manutenção técnica realizada',
+          fornecedor: m.oficina_nome || m.expand?.fornecedor_id?.nome || 'Oficina Interna',
+          valor: m.custo || 0,
+          natureza: 'Despesa',
+          status: m.status || 'concluida',
+        })
+      }
+    })
+
+    // 3. Abastecimentos registrados
+    abastecimentos.forEach((a) => {
+      const v = veiculos.find((veic) => veic.id === a.veiculo_id)
+      if (v && veiculoCorrespondeAoSetor(v.setor, setorAlvo)) {
+        list.push({
+          id: a.id,
+          data: a.data,
+          veiculo_codigo: v.codigo_interno,
+          veiculo_modelo: v.modelo,
+          placa: v.placa,
+          setor: v.setor || setorAlvo,
+          tipo: 'Combustível',
+          descricao: `Abastecimento ${a.litros ? a.litros.toFixed(1) + 'L' : ''} ${a.combustivel || 'Diesel S10'}`,
+          fornecedor: a.expand?.fornecedor_id?.nome || 'Posto Interno Pedreira',
+          valor: a.valor_total || 0,
+          natureza: 'Despesa',
+          status: 'Concluído',
+        })
+      }
+    })
+
+    return list.sort((a, b) => b.data.localeCompare(a.data))
+  }, [despesasFrota, manutencoes, abastecimentos, veiculos, setorParaImpressao])
 
   // Totais consolidados de Frotas
   const totaisFrotas = useMemo(() => {
@@ -1393,8 +1481,25 @@ export default function Relatorios() {
                       )}
                     </div>
 
-                    <div className="text-right text-[11px] text-gray-500 font-mono">
-                      {frotasPorVeiculo.length} equipamento(s) selecionado(s)
+                    <div className="flex items-center gap-2">
+                      <Button
+                        size="sm"
+                        onClick={() => {
+                          const setorDestino =
+                            frotasSetorFilter !== 'todos' ? frotasSetorFilter : 'Entrega'
+                          setSetorParaImpressao(setorDestino)
+                          setModalImpressaoSetorOpen(true)
+                        }}
+                        className="bg-teal-700 hover:bg-teal-800 text-white rounded-xl shadow-xs text-xs h-8 px-3 font-semibold"
+                        title="Imprimir relatório A4 com todas as despesas dos equipamentos do setor"
+                      >
+                        <Printer className="w-3.5 h-3.5 mr-1.5" />
+                        Imprimir Despesas do Setor (
+                        {frotasSetorFilter !== 'todos' ? frotasSetorFilter : 'Entrega'})
+                      </Button>
+                      <div className="text-right text-[11px] text-gray-500 font-mono">
+                        {frotasPorVeiculo.length} equipamento(s)
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -1595,6 +1700,15 @@ export default function Relatorios() {
           </div>
         </SheetContent>
       </Sheet>
+
+      {/* Modal Impressão A4 das Despesas do Setor com Cabeçalho Grupo Pedreira Cordeiro */}
+      <RelatorioDespesasSetorImpressaoModal
+        setor={setorParaImpressao}
+        empresa={currentEmpresa}
+        itens={itensParaImpressaoSetor}
+        open={modalImpressaoSetorOpen}
+        onOpenChange={setModalImpressaoSetorOpen}
+      />
     </div>
   )
 }

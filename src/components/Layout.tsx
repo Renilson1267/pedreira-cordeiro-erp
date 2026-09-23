@@ -39,6 +39,7 @@ import {
   Construction,
   PieChart,
   Clock,
+  ShoppingCart,
 } from 'lucide-react'
 
 export default function Layout() {
@@ -63,6 +64,8 @@ export default function Layout() {
     {
       group: 'Financeiro',
       items: [
+        { label: 'Vendas', path: '/financeiro/vendas', icon: ShoppingCart },
+        { label: 'Entrega', path: '/financeiro/entrega', icon: Truck },
         { label: 'Contas a Pagar', path: '/financeiro/pagar', icon: ArrowDownLeft },
         { label: 'Contas a Receber', path: '/financeiro/receber', icon: ArrowUpRight },
         { label: 'Conciliação', path: '/financeiro/conciliacao', icon: Landmark },

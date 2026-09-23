@@ -40,7 +40,9 @@ import {
   Filter,
   DollarSign,
   Layers,
+  Receipt,
 } from 'lucide-react'
+import { DespesasVeiculoModal } from '@/components/frotas/DespesasVeiculoModal'
 
 // Re-exporta para compatibilidade reversa caso outros módulos importem daqui
 export { SETORES_PEDREIRA, TIPO_LABELS }
@@ -58,6 +60,8 @@ export default function Veiculos() {
   // Drawer Form
   const [isDrawerOpen, setIsDrawerOpen] = useState(false)
   const [editingId, setEditingId] = useState<string | null>(null)
+  const [modalDespesasVeiculoOpen, setModalDespesasVeiculoOpen] = useState(false)
+  const [veiculoParaDespesas, setVeiculoParaDespesas] = useState<Veiculo | null>(null)
 
   const [codigoInterno, setCodigoInterno] = useState('')
   const [placa, setPlaca] = useState('')
@@ -591,6 +595,19 @@ export default function Veiculos() {
                       </td>
                       <td className="py-3.5 px-4 text-right">
                         <div className="flex items-center justify-end gap-1">
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => {
+                              setVeiculoParaDespesas(v)
+                              setModalDespesasVeiculoOpen(true)
+                            }}
+                            className="h-7 px-2 text-teal-700 hover:text-teal-900 hover:bg-teal-50 text-[10px] font-semibold"
+                            title="Ver todas as despesas e abatimentos deste equipamento"
+                          >
+                            <Receipt className="w-3 h-3 mr-1" />
+                            Despesas
+                          </Button>
                           {canEdit && (
                             <Button
                               size="sm"
@@ -873,6 +890,14 @@ export default function Veiculos() {
           </form>
         </SheetContent>
       </Sheet>
+
+      {/* Modal Consulta e Lançamento de Despesas por Placa/Equipamento */}
+      <DespesasVeiculoModal
+        veiculo={veiculoParaDespesas}
+        open={modalDespesasVeiculoOpen}
+        onOpenChange={setModalDespesasVeiculoOpen}
+        onDespesaAdded={() => loadVeiculos()}
+      />
     </div>
   )
 }
