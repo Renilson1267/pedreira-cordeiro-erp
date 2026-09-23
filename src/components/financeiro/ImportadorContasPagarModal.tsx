@@ -275,20 +275,21 @@ export function desdobrarCelulasMescladas(ws: XLSX.WorkSheet): void {
 
 // Regex padronizadas de sinônimos para identificação de colunas em qualquer aba
 export const REGEX_COL_VENCIMENTO =
-  /^(?:DT\s*VENC|DATA\s*VENC|VENCIMENTO|VENC|DATA|DT|DIA)\b|VENC|DT\s*VENC|DATA\s*VENC/i
+  /^(?:DT\s*VENC|DATA\s*VENC|VENCIMENTO|VENC|DATA|DT|DIA|PREVISAO|PREV)\b|VENC|DT\s*VENC|DATA\s*VENC|PREVISAO/i
 export const REGEX_COL_VALOR =
-  /VALOR\s*TOTAL|VALOR\s*R\$?|A\s*PAGAR|PREVISTO|VALOR|TOTAL|LIQUIDO|BRUTO|R\$|PAGO/i
+  /VALOR\s*TOTAL|VALOR\s*R\$?|A\s*PAGAR|PREVISTO|VALOR|TOTAL|LIQUIDO|BRUTO|R\$|DEBITO|DESPESA|CUSTO/i
 export const REGEX_COL_VALOR_PAGO = /VALOR\s*PAGO|PAGO|PG|LIQUID/i
-export const REGEX_COL_DATA_PAGAMENTO = /DT\s*PAG|DATA\s*PAG|BAIXA|DATA\s*BAIXA|LIQUID/i
+export const REGEX_COL_DATA_PAGAMENTO = /DT\s*PAG|DATA\s*PAG|BAIXA|DATA\s*BAIXA|LIQUID|QUITAC/i
 export const REGEX_COL_FORNECEDOR =
-  /FORNECEDOR|FAVORECIDO|CREDOR|BENEFICIARIO|EMPRESA|NOME|HISTORICO\s*FAVORECIDO/i
-export const REGEX_COL_DESCRICAO = /HISTORICO|DESCRICAO|DESC|SERV|PROD|REFERENCIA|ITEM|DISCRIM/i
+  /FORNECEDOR|FAVORECIDO|CREDOR|BENEFICIARIO|EMPRESA|NOME|HISTORICO\s*FAVORECIDO|DESTINATARIO/i
+export const REGEX_COL_DESCRICAO =
+  /HISTORICO|DESCRICAO|DESC|SERV|PROD|REFERENCIA|ITEM|DISCRIM|DETALHE/i
 
 export function detectarLinhaCabecalho(matrix: any[][]): number {
   if (!matrix || matrix.length === 0) return 1
 
-  // Buscar dinamicamente até a linha 30 (cabeçalho pode ter títulos ou sumários acima)
-  const maxScan = Math.min(matrix.length, 30)
+  // Buscar dinamicamente até a linha 50
+  const maxScan = Math.min(matrix.length, 50)
 
   let bestRow = -1
   let bestScore = 0
@@ -301,7 +302,6 @@ export function detectarLinhaCabecalho(matrix: any[][]): number {
 
     if (texts.length < 2) continue
 
-    // Verifica se esta linha parece ser o título do relatório mesclado (ex: "RELATORIO DE CONTAS A PAGAR")
     const rowJoin = texts.join(' ')
     const isPureTitle =
       texts.length <= 2 &&
@@ -321,9 +321,12 @@ export function detectarLinhaCabecalho(matrix: any[][]): number {
         t === 'DATA' ||
         t === 'DT' ||
         t === 'DIA' ||
+        t === 'PREVISAO' ||
+        t === 'PREV' ||
         t.includes('VENC') ||
         t.includes('DATA') ||
-        t.includes('EMISS'),
+        t.includes('EMISS') ||
+        t.includes('PREVIS'),
     )
     const hasForn = texts.some(
       (t) =>
@@ -336,7 +339,8 @@ export function detectarLinhaCabecalho(matrix: any[][]): number {
         t.includes('BENEFICI') ||
         t.includes('EMPRESA') ||
         t.includes('NOME') ||
-        t.includes('HISTORICO FAVORECIDO'),
+        t.includes('HISTORICO FAVORECIDO') ||
+        t.includes('DESTINAT'),
     )
     const hasVal = texts.some(
       (t) =>
@@ -349,13 +353,18 @@ export function detectarLinhaCabecalho(matrix: any[][]): number {
         t === 'LIQUIDO' ||
         t === 'BRUTO' ||
         t === 'TOTAL' ||
+        t === 'DEBITO' ||
+        t === 'DESPESA' ||
+        t === 'CUSTO' ||
         t.includes('VALOR') ||
         t.includes('PAGAR') ||
         t.includes('PREVIST') ||
         t.includes('TOTAL') ||
         t.includes('PAGO') ||
         t.includes('BRUTO') ||
-        t.includes('LIQUID'),
+        t.includes('LIQUID') ||
+        t.includes('DEBIT') ||
+        t.includes('DESPES'),
     )
     const hasDesc = texts.some(
       (t) =>
@@ -369,7 +378,8 @@ export function detectarLinhaCabecalho(matrix: any[][]): number {
         t.includes('DISCRIM') ||
         t.includes('ITEM') ||
         t.includes('SERVIC') ||
-        t.includes('PRODUTO'),
+        t.includes('PRODUTO') ||
+        t.includes('DETALH'),
     )
     const hasDoc = texts.some((t) => t.includes('DOC') || t.includes('NF') || t.includes('NOTA'))
     const hasStatus = texts.some(
@@ -403,7 +413,7 @@ export function detectarLinhaCabecalho(matrix: any[][]): number {
   }
 
   // Fallback: primeira linha com pelo menos 2 células de texto não vazias
-  for (let r = 0; r < Math.min(matrix.length, 5); r++) {
+  for (let r = 0; r < Math.min(matrix.length, 10); r++) {
     const row = matrix[r] || []
     const filled = row.filter((c) => String(c ?? '').trim().length > 0)
     if (filled.length >= 2) return r + 1
@@ -559,14 +569,14 @@ export function parseDataPagar(val: any, anoFallback?: number, mesFallback?: num
     }
   }
 
-  // 5. Formato brasileiro DD/MM/YYYY ou DD/MM/YY ou DD-MM-YYYY com possíveis espaços ao redor
-  const brMatch = str.match(/^(\d{1,2})\s*[/.-]\s*(\d{1,2})\s*[/.-]\s*(\d{2,4})/)
+  // 5. Formato brasileiro DD/MM/YYYY ou DD/MM/YY ou DD-MM-YYYY ou apenas DD/MM
+  const brMatch = str.match(/^(\d{1,2})\s*[/.-]\s*(\d{1,2})(?:\s*[/.-]\s*(\d{2,4}))?/)
   if (brMatch) {
     const d = parseInt(brMatch[1], 10)
     const m = parseInt(brMatch[2], 10)
-    let y = parseInt(brMatch[3], 10)
+    let y = brMatch[3] ? parseInt(brMatch[3], 10) : anoFallback || 2026
     if (y < 100) y += 2000
-    if (m >= 1 && m <= 12) {
+    if (m >= 1 && m <= 12 && d >= 1 && d <= 31) {
       return toUtcNoon(y, m, d)
     }
   }
@@ -620,7 +630,7 @@ export function parseDataPagar(val: any, anoFallback?: number, mesFallback?: num
 
   // 9. Fallback com competência
   if (anoFallback && mesFallback) {
-    return toUtcNoon(anoFallback, mesFallback, 10)
+    return toUtcNoon(anoFallback, mesFallback, 1)
   }
 
   const now = new Date()
@@ -1169,10 +1179,36 @@ export function ImportadorContasPagarModal({
           try {
             let rawVenc = getVal(row, vencCol)
             let rawForn = String(getVal(row, fornCol) || '').trim()
-            const rawDesc = String(getVal(row, descCol) || '').trim()
+            let rawDesc = String(getVal(row, descCol) || '').trim()
+
+            // Se fornecedor e descrição vieram vazios, procurar na linha a primeira célula textual representativa
+            if (!rawForn && !rawDesc) {
+              for (let cIdx = 0; cIdx < row.length; cIdx++) {
+                if (cIdx === vencColIdx || cIdx === docColIdx) continue
+                const cv = row[cIdx]
+                if (
+                  cv &&
+                  typeof cv === 'string' &&
+                  cv.trim().length > 1 &&
+                  !/^\d+([.,]\d+)?$/.test(cv.trim())
+                ) {
+                  const cNorm = normalizarNomeColuna(cv)
+                  if (
+                    !cNorm.startsWith('TOTAL') &&
+                    !cNorm.startsWith('SUBTOTAL') &&
+                    !cNorm.startsWith('SALDO')
+                  ) {
+                    rawDesc = cv.trim()
+                    break
+                  }
+                }
+              }
+            }
+
             if (!rawForn && rawDesc) {
               rawForn = rawDesc
             }
+
             const rawValor = parseValorPagar(getVal(row, valCol))
             const rawValorPago = valPagoCol ? parseValorPagar(getVal(row, valPagoCol)) : 0
             const rawDataPag = getVal(row, dataPagCol)
@@ -1223,7 +1259,9 @@ export function ImportadorContasPagarModal({
                     hName.includes('TOTAL') ||
                     hName.includes('LIQUID') ||
                     hName.includes('BRUTO') ||
-                    hName.includes('PAGO')
+                    hName.includes('PAGO') ||
+                    hName.includes('DEBIT') ||
+                    hName.includes('DESPES')
                   ) {
                     if (cellVal > valorFinal) {
                       valorFinal = cellVal
@@ -1239,15 +1277,7 @@ export function ImportadorContasPagarModal({
             }
 
             if (valorFinal <= 0) {
-              // Se há descrição ou favorecido mas o valor foi 0, registrar motivo
-              if (rawDesc || rawForn) {
-                resultSummary.erros.push({
-                  aba: sheetCfg.name,
-                  linha: numLinha,
-                  motivo: `Valor não reconhecido ou zerado (${String(getVal(row, valCol)) || 'vazio'})`,
-                })
-                sheetErrosCount += 1
-              }
+              // Se há descrição ou favorecido mas o valor foi 0, continuar sem abortar
               continue
             }
 
@@ -1300,16 +1330,42 @@ export function ImportadorContasPagarModal({
               }
             }
 
-            // 2. Data de Vencimento com herança de bloco:
-            // Se rawVenc estiver vazio ou indefinido, herdar da ultimaDataValida da mesma aba
+            // 2. Data de Vencimento com herança de bloco e busca por coluna alternativa:
             let dataParaVenc = rawVenc
             const rawVencStr = String(rawVenc ?? '').trim()
             if (!rawVencStr && ultimaDataValida) {
               dataParaVenc = ultimaDataValida
             }
 
-            const dataVencimentoISO = parseDataPagar(dataParaVenc, sheetCfg.ano, sheetCfg.mes)
-            if (rawVencStr) {
+            let dataVencimentoISO = parseDataPagar(dataParaVenc, sheetCfg.ano, sheetCfg.mes)
+
+            // Se ainda não obteve data válida com vencCol, tentar varrer as colunas da linha
+            if (!dataVencimentoISO || dataVencimentoISO.startsWith('1970')) {
+              for (let colIdx = 0; colIdx < row.length; colIdx++) {
+                if (colIdx === docColIdx) continue
+                const candVal = row[colIdx]
+                if (candVal !== null && candVal !== undefined && String(candVal).trim() !== '') {
+                  const parsed = parseDataPagar(candVal, sheetCfg.ano, sheetCfg.mes)
+                  if (parsed && !parsed.startsWith('1970')) {
+                    dataVencimentoISO = parsed
+                    rawVenc = candVal
+                    break
+                  }
+                }
+              }
+            }
+
+            // Fallback resiliente: se a linha tem descrição e valor válidos, herdar data anterior ou dia 01 da competência
+            if (!dataVencimentoISO || dataVencimentoISO.startsWith('1970')) {
+              if (ultimaDataValida) {
+                dataVencimentoISO = parseDataPagar(ultimaDataValida, sheetCfg.ano, sheetCfg.mes)
+              }
+              if (!dataVencimentoISO || dataVencimentoISO.startsWith('1970')) {
+                const y = sheetCfg.ano || 2026
+                const m = sheetCfg.mes || 1
+                dataVencimentoISO = `${y}-${String(m).padStart(2, '0')}-01T12:00:00.000Z`
+              }
+            } else {
               ultimaDataValida = rawVenc
             }
 

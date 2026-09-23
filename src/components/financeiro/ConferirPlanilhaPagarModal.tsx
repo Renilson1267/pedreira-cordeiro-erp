@@ -627,10 +627,36 @@ export function ConferirPlanilhaPagarModal({
 
           let rawVenc = getVal(row, vencCol)
           let rawForn = String(getVal(row, fornCol) || '').trim()
-          const rawDesc = String(getVal(row, descCol) || '').trim()
+          let rawDesc = String(getVal(row, descCol) || '').trim()
+
+          // Se fornecedor e descrição vieram vazios, procurar na linha a primeira célula textual representativa
+          if (!rawForn && !rawDesc) {
+            for (let cIdx = 0; cIdx < row.length; cIdx++) {
+              if (cIdx === vencColIdx || cIdx === docColIdx) continue
+              const cv = row[cIdx]
+              if (
+                cv &&
+                typeof cv === 'string' &&
+                cv.trim().length > 1 &&
+                !/^\d+([.,]\d+)?$/.test(cv.trim())
+              ) {
+                const cNorm = normalizarNomeColuna(cv)
+                if (
+                  !cNorm.startsWith('TOTAL') &&
+                  !cNorm.startsWith('SUBTOTAL') &&
+                  !cNorm.startsWith('SALDO')
+                ) {
+                  rawDesc = cv.trim()
+                  break
+                }
+              }
+            }
+          }
+
           if (!rawForn && rawDesc) {
             rawForn = rawDesc
           }
+
           const rawValor = parseValorPagar(getVal(row, valCol))
           const rawValorPago = valPagoCol ? parseValorPagar(getVal(row, valPagoCol)) : 0
           const rawDataPag = getVal(row, dataPagCol)
@@ -677,7 +703,9 @@ export function ConferirPlanilhaPagarModal({
                   hName.includes('TOTAL') ||
                   hName.includes('LIQUID') ||
                   hName.includes('BRUTO') ||
-                  hName.includes('PAGO')
+                  hName.includes('PAGO') ||
+                  hName.includes('DEBIT') ||
+                  hName.includes('DESPES')
                 ) {
                   if (cellVal > valorFinal) {
                     valorFinal = cellVal
@@ -694,17 +722,42 @@ export function ConferirPlanilhaPagarModal({
 
           if (valorFinal <= 0) continue
 
-          // Data Vencimento Planilha com herança de bloco
+          // Data Vencimento Planilha com herança de bloco e busca por coluna alternativa
           let dataParaVenc = rawVenc
           const rawVencStr = String(rawVenc ?? '').trim()
           if (!rawVencStr && ultimaDataValida) {
             dataParaVenc = ultimaDataValida
           }
 
-          const vencIso = parseDataPagar(dataParaVenc, sheetCfg.ano, sheetCfg.mes)
-          if (rawVencStr) {
+          let vencIso = parseDataPagar(dataParaVenc, sheetCfg.ano, sheetCfg.mes)
+          if (!vencIso || vencIso.startsWith('1970')) {
+            for (let colIdx = 0; colIdx < row.length; colIdx++) {
+              if (colIdx === docColIdx) continue
+              const candVal = row[colIdx]
+              if (candVal !== null && candVal !== undefined && String(candVal).trim() !== '') {
+                const parsed = parseDataPagar(candVal, sheetCfg.ano, sheetCfg.mes)
+                if (parsed && !parsed.startsWith('1970')) {
+                  vencIso = parsed
+                  rawVenc = candVal
+                  break
+                }
+              }
+            }
+          }
+
+          if (!vencIso || vencIso.startsWith('1970')) {
+            if (ultimaDataValida) {
+              vencIso = parseDataPagar(ultimaDataValida, sheetCfg.ano, sheetCfg.mes)
+            }
+            if (!vencIso || vencIso.startsWith('1970')) {
+              const y = sheetCfg.ano || 2026
+              const m = sheetCfg.mes || 1
+              vencIso = `${y}-${String(m).padStart(2, '0')}-01T12:00:00.000Z`
+            }
+          } else {
             ultimaDataValida = rawVenc
           }
+
           const vencDateOnly = vencIso.slice(0, 10)
 
           // Status Planilha

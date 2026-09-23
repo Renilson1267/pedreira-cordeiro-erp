@@ -14,7 +14,7 @@
     "format": "oxfmt",
     "format:check": "oxfmt --check",
     "preview": "vite preview",
-    "test": "echo \"there are no tests for this project\" && exit 0",
+    "test": "node --experimental-strip-types run_test.ts",
     "test:watch": "echo \"there are no tests for this project\" && exit 0"
   },
   "dependencies": {
