@@ -537,16 +537,37 @@ const MESES_PT_MAP: Record<string, number> = {
   dez: 12,
 }
 
+export function isAnoDataSanitarioPagar(ano: number, anoCompetencia?: number): boolean {
+  if (isNaN(ano) || ano < 2024 || ano > 2028) {
+    return false
+  }
+  if (anoCompetencia && anoCompetencia >= 2024 && anoCompetencia <= 2028) {
+    if (Math.abs(ano - anoCompetencia) > 2) {
+      return false
+    }
+  }
+  return true
+}
+
 export function parseDataPagar(val: any, anoFallback?: number, mesFallback?: number): string {
-  // Safe helper to construct UTC noon ISO string
+  const fallbackYear =
+    anoFallback && anoFallback >= 2024 && anoFallback <= 2028 ? anoFallback : 2026
+  const fallbackMonth = mesFallback && mesFallback >= 1 && mesFallback <= 12 ? mesFallback : 1
+
+  // Safe helper to construct UTC noon ISO string com barreira sanitária
   const toUtcNoon = (y: number, m: number, d: number) => {
+    let safeYear = y
+    if (!isAnoDataSanitarioPagar(safeYear, fallbackYear)) {
+      safeYear = fallbackYear
+    }
+    const safeMonth = Math.min(12, Math.max(1, m))
     const clampedDay = Math.min(31, Math.max(1, d))
-    return new Date(Date.UTC(y, m - 1, clampedDay, 12, 0, 0)).toISOString()
+    return new Date(Date.UTC(safeYear, safeMonth - 1, clampedDay, 12, 0, 0)).toISOString()
   }
 
   if (val === null || val === undefined || val === '') {
     if (anoFallback && mesFallback) {
-      return toUtcNoon(anoFallback, mesFallback, 10)
+      return toUtcNoon(fallbackYear, fallbackMonth, 10)
     }
     const now = new Date()
     return toUtcNoon(now.getUTCFullYear(), now.getUTCMonth() + 1, now.getUTCDate())
@@ -555,18 +576,13 @@ export function parseDataPagar(val: any, anoFallback?: number, mesFallback?: num
   // 1. Objeto Date (ex: lido pelo XLSX com cellDates: true)
   if (val instanceof Date) {
     if (!isNaN(val.getTime())) {
-      // Usar a data do calendário do Date sem shift indesejado de timezone
-      // Se a data veio em UTC meia-noite (como XLSX lê células de data), getUTCDate() tem o dia exato
-      // Se tiver horas > 20 em UTC com offset negativo local, os métodos UTC ou locais podem divergir:
-      // XLSX com cellDates: true gera a data como UTC midnight (ex: 2026-08-31 00:00:00 UTC).
-      // Então getUTCFullYear / getUTCMonth + 1 / getUTCDate reflete o dia exato da célula!
       const y = val.getUTCFullYear()
       const m = val.getUTCMonth() + 1
       const d = val.getUTCDate()
       return toUtcNoon(y, m, d)
     }
     if (anoFallback && mesFallback) {
-      return toUtcNoon(anoFallback, mesFallback, 10)
+      return toUtcNoon(fallbackYear, fallbackMonth, 10)
     }
     const now = new Date()
     return toUtcNoon(now.getUTCFullYear(), now.getUTCMonth() + 1, now.getUTCDate())
@@ -575,11 +591,13 @@ export function parseDataPagar(val: any, anoFallback?: number, mesFallback?: num
   // 2. Número serial Excel (ex: 46265)
   if (typeof val === 'number') {
     if (!isNaN(val) && val > 0) {
-      // Excel epoch: 1899-12-30 UTC
       const ms = Math.round((val - 25569) * 86400 * 1000)
       const d = new Date(ms)
       if (!isNaN(d.getTime())) {
-        return toUtcNoon(d.getUTCFullYear(), d.getUTCMonth() + 1, d.getUTCDate())
+        const y = d.getUTCFullYear()
+        if (isAnoDataSanitarioPagar(y, fallbackYear)) {
+          return toUtcNoon(y, d.getUTCMonth() + 1, d.getUTCDate())
+        }
       }
     }
   }
@@ -587,14 +605,13 @@ export function parseDataPagar(val: any, anoFallback?: number, mesFallback?: num
   const str = String(val).trim()
   if (!str) {
     if (anoFallback && mesFallback) {
-      return toUtcNoon(anoFallback, mesFallback, 10)
+      return toUtcNoon(fallbackYear, fallbackMonth, 10)
     }
     const now = new Date()
     return toUtcNoon(now.getUTCFullYear(), now.getUTCMonth() + 1, now.getUTCDate())
   }
 
   // 3. String date em formato "Mon Jun 01 2026" ou "Wed Mar 06 2024" ou "Mon Jun 01 2026 00:00:00 GMT-0300"
-  // Padrão: (DiaSemana) (MêsInglês) (Dia) (Ano) ...
   const textDateMatch = str.match(
     /^(?:[A-Za-z]{3}\s+)?([A-Za-z]{3})\s+(\d{1,2})(?:st|nd|rd|th)?(?:,?\s+(\d{4}))?/,
   )
@@ -603,7 +620,7 @@ export function parseDataPagar(val: any, anoFallback?: number, mesFallback?: num
     const mesNum = MESES_INGLES_MAP[rawMesNome] || MESES_PT_MAP[rawMesNome]
     if (mesNum) {
       const diaNum = parseInt(textDateMatch[2], 10)
-      let anoNum = textDateMatch[3] ? parseInt(textDateMatch[3], 10) : anoFallback || 2026
+      let anoNum = textDateMatch[3] ? parseInt(textDateMatch[3], 10) : fallbackYear
       if (anoNum < 100) anoNum += 2000
       return toUtcNoon(anoNum, mesNum, diaNum)
     }
@@ -613,9 +630,7 @@ export function parseDataPagar(val: any, anoFallback?: number, mesFallback?: num
   if (/^\d{1,2}$/.test(str)) {
     const dia = parseInt(str, 10)
     if (dia >= 1 && dia <= 31) {
-      const y = anoFallback || 2026
-      const m = mesFallback || 1
-      return toUtcNoon(y, m, dia)
+      return toUtcNoon(fallbackYear, fallbackMonth, dia)
     }
   }
 
@@ -624,7 +639,7 @@ export function parseDataPagar(val: any, anoFallback?: number, mesFallback?: num
   if (brMatch) {
     const d = parseInt(brMatch[1], 10)
     const m = parseInt(brMatch[2], 10)
-    let y = brMatch[3] ? parseInt(brMatch[3], 10) : anoFallback || 2026
+    let y = brMatch[3] ? parseInt(brMatch[3], 10) : fallbackYear
     if (y < 100) y += 2000
     if (m >= 1 && m <= 12 && d >= 1 && d <= 31) {
       return toUtcNoon(y, m, d)
@@ -637,7 +652,7 @@ export function parseDataPagar(val: any, anoFallback?: number, mesFallback?: num
     const d = parseInt(digits8Match[1], 10)
     const m = parseInt(digits8Match[2], 10)
     const y = parseInt(digits8Match[3], 10)
-    if (m >= 1 && m <= 12 && d >= 1 && d <= 31 && y >= 2020 && y <= 2035) {
+    if (m >= 1 && m <= 12 && d >= 1 && d <= 31 && isAnoDataSanitarioPagar(y, fallbackYear)) {
       return toUtcNoon(y, m, d)
     }
   }
@@ -660,7 +675,7 @@ export function parseDataPagar(val: any, anoFallback?: number, mesFallback?: num
     const nomeMes = ptExtensoMatch[2].slice(0, 3).toLowerCase()
     const mesNum = MESES_PT_MAP[nomeMes] || MESES_INGLES_MAP[nomeMes]
     if (mesNum && d >= 1 && d <= 31) {
-      const y = ptExtensoMatch[3] ? parseInt(ptExtensoMatch[3], 10) : anoFallback || 2026
+      const y = ptExtensoMatch[3] ? parseInt(ptExtensoMatch[3], 10) : fallbackYear
       return toUtcNoon(y, mesNum, d)
     }
   }
@@ -668,9 +683,6 @@ export function parseDataPagar(val: any, anoFallback?: number, mesFallback?: num
   // 8. Tentar parse genérico com new Date(str)
   const parsed = new Date(str)
   if (!isNaN(parsed.getTime())) {
-    // Para evitar que "2026-08-31" sofra off-by-one de fuso local, pegamos os componentes:
-    // Se a string tem formato date-only, Date.parse assume UTC em browsers modernos
-    // Se tem formato local, pega os componentes locais
     const isIsoDateOnly = /^\d{4}-\d{2}-\d{2}$/.test(str)
     const y = isIsoDateOnly ? parsed.getUTCFullYear() : parsed.getFullYear()
     const m = isIsoDateOnly ? parsed.getUTCMonth() + 1 : parsed.getMonth() + 1
@@ -680,7 +692,7 @@ export function parseDataPagar(val: any, anoFallback?: number, mesFallback?: num
 
   // 9. Fallback com competência
   if (anoFallback && mesFallback) {
-    return toUtcNoon(anoFallback, mesFallback, 1)
+    return toUtcNoon(fallbackYear, fallbackMonth, 1)
   }
 
   const now = new Date()
@@ -1557,25 +1569,68 @@ export function ImportadorContasPagarModal({
               }
             }
 
-            // 2. Data de Vencimento com herança de bloco e busca por coluna alternativa:
+            // 2. Data de Vencimento com barreira sanitária estrita (2024-2028), herança e busca segura
             let dataParaVenc = rawVenc
             const rawVencStr = String(rawVenc ?? '').trim()
-            if (!rawVencStr && ultimaDataValida) {
+
+            const isValidaSanitariaPagar = (val: any) => {
+              if (val === null || val === undefined || String(val).trim() === '') return false
+              const parsed = parseDataPagar(val, sheetCfg.ano, sheetCfg.mes)
+              if (!parsed || parsed.startsWith('1970')) return false
+              const yMatch = parsed.match(/^(\d{4})/)
+              if (!yMatch) return false
+              const y = parseInt(yMatch[1], 10)
+              return y >= 2024 && y <= 2028
+            }
+
+            let teveDataPropriaPagar = false
+            if (rawVencStr && isValidaSanitariaPagar(rawVenc)) {
+              teveDataPropriaPagar = true
+              ultimaDataValida = rawVenc
+            } else if (rawVencStr && !isValidaSanitariaPagar(rawVenc)) {
+              sheetErrosCount += 1
+              resultSummary.erros.push({
+                aba: sheetCfg.name,
+                linha: numLinha,
+                motivo: `Data de vencimento na linha ("${rawVencStr.slice(0, 30)}") fora do intervalo plausível (2024-2028). Aplicada data da competência.`,
+              })
+            }
+
+            if (
+              !teveDataPropriaPagar &&
+              ultimaDataValida &&
+              isValidaSanitariaPagar(ultimaDataValida)
+            ) {
               dataParaVenc = ultimaDataValida
             }
 
             let dataVencimentoISO = parseDataPagar(dataParaVenc, sheetCfg.ano, sheetCfg.mes)
 
-            // Se ainda não obteve data válida com vencCol, tentar varrer as colunas da linha
-            if (!dataVencimentoISO || dataVencimentoISO.startsWith('1970')) {
+            // Se ainda não obteve data válida com vencCol, tentar varrer as colunas da linha excluindo colunas proibidas
+            if (
+              !dataVencimentoISO ||
+              dataVencimentoISO.startsWith('1970') ||
+              !isValidaSanitariaPagar(dataVencimentoISO)
+            ) {
               for (let colIdx = 0; colIdx < row.length; colIdx++) {
                 if (colIdx === activeDocColIdx) continue
+                const colHeader = normalizarNomeColuna(activeHeaders[colIdx] || '')
+                if (
+                  colHeader.includes('VALOR') ||
+                  colHeader.includes('FORNEC') ||
+                  colHeader.includes('FAVOREC') ||
+                  colHeader.includes('DOC') ||
+                  colHeader.includes('NOTA')
+                ) {
+                  continue
+                }
                 const candVal = row[colIdx]
                 if (candVal !== null && candVal !== undefined && String(candVal).trim() !== '') {
-                  const parsed = parseDataPagar(candVal, sheetCfg.ano, sheetCfg.mes)
-                  if (parsed && !parsed.startsWith('1970')) {
-                    dataVencimentoISO = parsed
+                  if (isValidaSanitariaPagar(candVal)) {
+                    dataVencimentoISO = parseDataPagar(candVal, sheetCfg.ano, sheetCfg.mes)
                     rawVenc = candVal
+                    teveDataPropriaPagar = true
+                    ultimaDataValida = candVal
                     break
                   }
                 }
@@ -1583,17 +1638,26 @@ export function ImportadorContasPagarModal({
             }
 
             // Fallback resiliente: se a linha tem descrição e valor válidos, herdar data anterior ou dia 01 da competência
-            if (!dataVencimentoISO || dataVencimentoISO.startsWith('1970')) {
-              if (ultimaDataValida) {
+            if (
+              !dataVencimentoISO ||
+              dataVencimentoISO.startsWith('1970') ||
+              !isValidaSanitariaPagar(dataVencimentoISO)
+            ) {
+              if (ultimaDataValida && isValidaSanitariaPagar(ultimaDataValida)) {
                 dataVencimentoISO = parseDataPagar(ultimaDataValida, sheetCfg.ano, sheetCfg.mes)
               }
-              if (!dataVencimentoISO || dataVencimentoISO.startsWith('1970')) {
+              if (
+                !dataVencimentoISO ||
+                dataVencimentoISO.startsWith('1970') ||
+                !isValidaSanitariaPagar(dataVencimentoISO)
+              ) {
                 const y = sheetCfg.ano || 2026
                 const m = sheetCfg.mes || 1
                 dataVencimentoISO = `${y}-${String(m).padStart(2, '0')}-01T12:00:00.000Z`
               }
-            } else {
+            } else if (rawVencStr && !teveDataPropriaPagar && isValidaSanitariaPagar(rawVenc)) {
               ultimaDataValida = rawVenc
+              teveDataPropriaPagar = true
             }
 
             // 3. Descrição
@@ -1657,9 +1721,15 @@ export function ImportadorContasPagarModal({
                 ? rawValorPago
                 : 0
 
+            const rawPagParaParse = isValidaSanitariaPagar(rawDataPag)
+              ? rawDataPag
+              : isValidaSanitariaPagar(rawVenc)
+                ? rawVenc
+                : dataVencimentoISO
+
             const dataPagamentoISO =
               isPaga || (isParcial && rawValorPago > 0)
-                ? parseDataPagar(rawDataPag || rawVenc, sheetCfg.ano, sheetCfg.mes)
+                ? parseDataPagar(rawPagParaParse, sheetCfg.ano, sheetCfg.mes)
                 : null
 
             // 6. Forma de Pagamento

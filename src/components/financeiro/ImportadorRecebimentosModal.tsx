@@ -1021,34 +1021,69 @@ export function ImportadorRecebimentosModal({
               }
             }
 
-            // 2. Data com herança de bloco e busca por coluna alternativa
+            // 2. Data com barreira sanitária estrita, herança de bloco e busca segura
             let dataParaVenc = rawData
             const rawDataStr = String(rawData ?? '').trim()
             let teveDataPropriaNaLinha = false
 
-            // Se a célula de data da linha atual tiver conteúdo
-            if (rawDataStr) {
-              const parsedPropria = parseDataReceber(rawData, sheetCfg.ano, sheetCfg.mes)
-              if (parsedPropria && !parsedPropria.startsWith('1970')) {
-                teveDataPropriaNaLinha = true
-                ultimaDataValida = rawData
-              }
+            // Helper de checagem sanitária para aceitar célula como data
+            const isValidaSanitaria = (val: any) => {
+              if (val === null || val === undefined || String(val).trim() === '') return false
+              const parsed = parseDataReceber(val, sheetCfg.ano, sheetCfg.mes)
+              if (!parsed || parsed.startsWith('1970')) return false
+              const yMatch = parsed.match(/^(\d{4})/)
+              if (!yMatch) return false
+              const y = parseInt(yMatch[1], 10)
+              return y >= 2024 && y <= 2028
             }
 
-            if (!teveDataPropriaNaLinha && ultimaDataValida) {
+            // Se a célula de data da linha atual tiver conteúdo
+            if (rawDataStr && isValidaSanitaria(rawData)) {
+              teveDataPropriaNaLinha = true
+              ultimaDataValida = rawData
+            } else if (rawDataStr && !isValidaSanitaria(rawData)) {
+              // Data absurda ou fora de faixa (ex.: número de nota/telefone na coluna de data)
+              // Registrar divergência na aba e descartar como data própria
+              sheetErrosCount += 1
+              resultSummary.erros.push({
+                aba: sheetCfg.name,
+                linha: numLinha,
+                motivo: `Data na linha ("${rawDataStr.slice(0, 30)}") fora do intervalo sanitário plausível (2024-2028). Aplicada data herdada da competência.`,
+              })
+            }
+
+            if (
+              !teveDataPropriaNaLinha &&
+              ultimaDataValida &&
+              isValidaSanitaria(ultimaDataValida)
+            ) {
               dataParaVenc = ultimaDataValida
             }
 
             let dataVencimentoISO = parseDataReceber(dataParaVenc, sheetCfg.ano, sheetCfg.mes)
 
-            if (!dataVencimentoISO || dataVencimentoISO.startsWith('1970')) {
+            if (
+              !dataVencimentoISO ||
+              dataVencimentoISO.startsWith('1970') ||
+              !isValidaSanitaria(dataVencimentoISO)
+            ) {
+              // Buscar apenas em colunas que NÃO sejam doc, cliente ou valores
               for (let colIdx = 0; colIdx < row.length; colIdx++) {
                 if (colIdx === activeDocColIdx) continue
+                const colHeader = normalizarNomeColuna(activeHeaders[colIdx] || '')
+                if (
+                  colHeader.includes('VALOR') ||
+                  colHeader.includes('CLIENTE') ||
+                  colHeader.includes('SACADO') ||
+                  colHeader.includes('DOC') ||
+                  colHeader.includes('NOTA')
+                ) {
+                  continue
+                }
                 const candVal = row[colIdx]
                 if (candVal !== null && candVal !== undefined && String(candVal).trim() !== '') {
-                  const parsed = parseDataReceber(candVal, sheetCfg.ano, sheetCfg.mes)
-                  if (parsed && !parsed.startsWith('1970')) {
-                    dataVencimentoISO = parsed
+                  if (isValidaSanitaria(candVal)) {
+                    dataVencimentoISO = parseDataReceber(candVal, sheetCfg.ano, sheetCfg.mes)
                     rawData = candVal
                     teveDataPropriaNaLinha = true
                     ultimaDataValida = candVal
@@ -1058,16 +1093,24 @@ export function ImportadorRecebimentosModal({
               }
             }
 
-            if (!dataVencimentoISO || dataVencimentoISO.startsWith('1970')) {
-              if (ultimaDataValida) {
+            if (
+              !dataVencimentoISO ||
+              dataVencimentoISO.startsWith('1970') ||
+              !isValidaSanitaria(dataVencimentoISO)
+            ) {
+              if (ultimaDataValida && isValidaSanitaria(ultimaDataValida)) {
                 dataVencimentoISO = parseDataReceber(ultimaDataValida, sheetCfg.ano, sheetCfg.mes)
               }
-              if (!dataVencimentoISO || dataVencimentoISO.startsWith('1970')) {
+              if (
+                !dataVencimentoISO ||
+                dataVencimentoISO.startsWith('1970') ||
+                !isValidaSanitaria(dataVencimentoISO)
+              ) {
                 const y = sheetCfg.ano || 2026
                 const m = sheetCfg.mes || 1
                 dataVencimentoISO = `${y}-${String(m).padStart(2, '0')}-01T12:00:00.000Z`
               }
-            } else if (rawDataStr && !teveDataPropriaNaLinha) {
+            } else if (rawDataStr && !teveDataPropriaNaLinha && isValidaSanitaria(rawData)) {
               ultimaDataValida = rawData
               teveDataPropriaNaLinha = true
             }
@@ -1148,9 +1191,15 @@ export function ImportadorRecebimentosModal({
                     ? valorFinal
                     : 0
 
+            const rawRecebimentoParaParse = isValidaSanitaria(rawDataRec)
+              ? rawDataRec
+              : isValidaSanitaria(rawData)
+                ? rawData
+                : dataVencimentoISO
+
             const dataRecebimentoISO =
               finalStatus !== 'Aberta'
-                ? parseDataReceber(rawDataRec || rawData, sheetCfg.ano, sheetCfg.mes)
+                ? parseDataReceber(rawRecebimentoParaParse, sheetCfg.ano, sheetCfg.mes)
                 : null
 
             // 6. Forma de Pagamento / Recebimento

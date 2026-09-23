@@ -431,15 +431,59 @@ export function parseValorReceber(val: any): number {
 /**
  * Parse robusto de datas evitando deslocamento de fuso (shift UTC vs local).
  */
+/**
+ * Valida se um ano e data calculados pertencem a um intervalo sanitário plausível (2024 a 2028).
+ */
+export function isAnoDataSanitario(ano: number, anoCompetencia?: number): boolean {
+  if (isNaN(ano) || ano < 2024 || ano > 2028) {
+    return false
+  }
+  if (anoCompetencia && anoCompetencia >= 2024 && anoCompetencia <= 2028) {
+    // Tolerância em torno da competência da aba (ex.: até 1 ano antes/depois)
+    if (Math.abs(ano - anoCompetencia) > 2) {
+      return false
+    }
+  }
+  return true
+}
+
+/**
+ * Valida se uma string ISO representa uma data sanitária.
+ */
+export function isIsoDataSanitaria(
+  isoString: string | null | undefined,
+  anoCompetencia?: number,
+): boolean {
+  if (!isoString || typeof isoString !== 'string') return false
+  const match = isoString.match(/^(\d{4})-(\d{2})-(\d{2})/)
+  if (!match) return false
+  const ano = parseInt(match[1], 10)
+  return isAnoDataSanitario(ano, anoCompetencia)
+}
+
+/**
+ * Parse robusto de datas evitando deslocamento de fuso (shift UTC vs local)
+ * e com barreira sanitária estrita de ano (2024–2028).
+ */
 export function parseDataReceber(val: any, anoFallback?: number, mesFallback?: number): string {
+  const fallbackYear =
+    anoFallback && anoFallback >= 2024 && anoFallback <= 2028 ? anoFallback : 2026
+  const fallbackMonth = mesFallback && mesFallback >= 1 && mesFallback <= 12 ? mesFallback : 1
+
   const toUtcNoon = (y: number, m: number, d: number) => {
+    // Barreira sanitária de ano
+    let safeYear = y
+    if (!isAnoDataSanitario(safeYear, fallbackYear)) {
+      safeYear = fallbackYear
+    }
+    const safeMonth = Math.min(12, Math.max(1, m))
     const clampedDay = Math.min(31, Math.max(1, d))
-    return new Date(Date.UTC(y, m - 1, clampedDay, 12, 0, 0)).toISOString()
+    return new Date(Date.UTC(safeYear, safeMonth - 1, clampedDay, 12, 0, 0)).toISOString()
   }
 
   if (val === null || val === undefined || val === '') {
     if (anoFallback && mesFallback) {
-      return toUtcNoon(anoFallback, mesFallback, 10)
+      return toUtcNoon(fallbackYear, fallbackMonth, 10)
     }
     const now = new Date()
     return toUtcNoon(now.getUTCFullYear(), now.getUTCMonth() + 1, now.getUTCDate())
@@ -453,18 +497,23 @@ export function parseDataReceber(val: any, anoFallback?: number, mesFallback?: n
       return toUtcNoon(y, m, d)
     }
     if (anoFallback && mesFallback) {
-      return toUtcNoon(anoFallback, mesFallback, 10)
+      return toUtcNoon(fallbackYear, fallbackMonth, 10)
     }
     const now = new Date()
     return toUtcNoon(now.getUTCFullYear(), now.getUTCMonth() + 1, now.getUTCDate())
   }
 
   if (typeof val === 'number') {
+    // Número serial Excel (ex: 46265)
+    // Limite sanitário para número serial: ~45000 a 47000 (anos 2023 a 2028)
     if (!isNaN(val) && val > 0) {
       const ms = Math.round((val - 25569) * 86400 * 1000)
       const d = new Date(ms)
       if (!isNaN(d.getTime())) {
-        return toUtcNoon(d.getUTCFullYear(), d.getUTCMonth() + 1, d.getUTCDate())
+        const y = d.getUTCFullYear()
+        if (isAnoDataSanitario(y, fallbackYear)) {
+          return toUtcNoon(y, d.getUTCMonth() + 1, d.getUTCDate())
+        }
       }
     }
   }
@@ -472,7 +521,7 @@ export function parseDataReceber(val: any, anoFallback?: number, mesFallback?: n
   const str = String(val).trim()
   if (!str) {
     if (anoFallback && mesFallback) {
-      return toUtcNoon(anoFallback, mesFallback, 10)
+      return toUtcNoon(fallbackYear, fallbackMonth, 10)
     }
     const now = new Date()
     return toUtcNoon(now.getUTCFullYear(), now.getUTCMonth() + 1, now.getUTCDate())
@@ -486,7 +535,7 @@ export function parseDataReceber(val: any, anoFallback?: number, mesFallback?: n
     const mesNum = MESES_INGLES_MAP[rawMesNome] || MESES_PT_MAP[rawMesNome]
     if (mesNum) {
       const diaNum = parseInt(textDateMatch[2], 10)
-      let anoNum = textDateMatch[3] ? parseInt(textDateMatch[3], 10) : anoFallback || 2026
+      let anoNum = textDateMatch[3] ? parseInt(textDateMatch[3], 10) : fallbackYear
       if (anoNum < 100) anoNum += 2000
       return toUtcNoon(anoNum, mesNum, diaNum)
     }
@@ -495,9 +544,7 @@ export function parseDataReceber(val: any, anoFallback?: number, mesFallback?: n
   if (/^\d{1,2}$/.test(str)) {
     const dia = parseInt(str, 10)
     if (dia >= 1 && dia <= 31) {
-      const y = anoFallback || 2026
-      const m = mesFallback || 1
-      return toUtcNoon(y, m, dia)
+      return toUtcNoon(fallbackYear, fallbackMonth, dia)
     }
   }
 
@@ -505,7 +552,7 @@ export function parseDataReceber(val: any, anoFallback?: number, mesFallback?: n
   if (brMatch) {
     const d = parseInt(brMatch[1], 10)
     const m = parseInt(brMatch[2], 10)
-    let y = brMatch[3] ? parseInt(brMatch[3], 10) : anoFallback || 2026
+    let y = brMatch[3] ? parseInt(brMatch[3], 10) : fallbackYear
     if (y < 100) y += 2000
     if (m >= 1 && m <= 12 && d >= 1 && d <= 31) {
       return toUtcNoon(y, m, d)
@@ -517,7 +564,7 @@ export function parseDataReceber(val: any, anoFallback?: number, mesFallback?: n
     const d = parseInt(digits8Match[1], 10)
     const m = parseInt(digits8Match[2], 10)
     const y = parseInt(digits8Match[3], 10)
-    if (m >= 1 && m <= 12 && d >= 1 && d <= 31 && y >= 2020 && y <= 2035) {
+    if (m >= 1 && m <= 12 && d >= 1 && d <= 31 && isAnoDataSanitario(y, fallbackYear)) {
       return toUtcNoon(y, m, d)
     }
   }
@@ -538,7 +585,7 @@ export function parseDataReceber(val: any, anoFallback?: number, mesFallback?: n
     const nomeMes = ptExtensoMatch[2].slice(0, 3).toLowerCase()
     const mesNum = MESES_PT_MAP[nomeMes] || MESES_INGLES_MAP[nomeMes]
     if (mesNum && d >= 1 && d <= 31) {
-      const y = ptExtensoMatch[3] ? parseInt(ptExtensoMatch[3], 10) : anoFallback || 2026
+      const y = ptExtensoMatch[3] ? parseInt(ptExtensoMatch[3], 10) : fallbackYear
       return toUtcNoon(y, mesNum, d)
     }
   }
@@ -553,7 +600,7 @@ export function parseDataReceber(val: any, anoFallback?: number, mesFallback?: n
   }
 
   if (anoFallback && mesFallback) {
-    return toUtcNoon(anoFallback, mesFallback, 1)
+    return toUtcNoon(fallbackYear, fallbackMonth, 1)
   }
 
   const now = new Date()

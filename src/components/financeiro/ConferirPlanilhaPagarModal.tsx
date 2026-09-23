@@ -878,40 +878,69 @@ export function ConferirPlanilhaPagarModal({
 
           if (valorFinal <= 0) continue
 
-          // Data Vencimento Planilha com herança de bloco e busca por coluna alternativa
+          // Data Vencimento Planilha com barreira sanitária estrita (2024-2028), herança e busca segura
           let dataParaVenc = rawVenc
           const rawVencStr = String(rawVenc ?? '').trim()
-          if (!rawVencStr && ultimaDataValida) {
+
+          const isValidaSanitariaConf = (val: any) => {
+            if (val === null || val === undefined || String(val).trim() === '') return false
+            const parsed = parseDataPagar(val, sheetCfg.ano, sheetCfg.mes)
+            if (!parsed || parsed.startsWith('1970')) return false
+            const yMatch = parsed.match(/^(\d{4})/)
+            if (!yMatch) return false
+            const y = parseInt(yMatch[1], 10)
+            return y >= 2024 && y <= 2028
+          }
+
+          let teveDataPropriaConf = false
+          if (rawVencStr && isValidaSanitariaConf(rawVenc)) {
+            teveDataPropriaConf = true
+            ultimaDataValida = rawVenc
+          }
+
+          if (!teveDataPropriaConf && ultimaDataValida && isValidaSanitariaConf(ultimaDataValida)) {
             dataParaVenc = ultimaDataValida
           }
 
           let vencIso = parseDataPagar(dataParaVenc, sheetCfg.ano, sheetCfg.mes)
-          if (!vencIso || vencIso.startsWith('1970')) {
+          if (!vencIso || vencIso.startsWith('1970') || !isValidaSanitariaConf(vencIso)) {
             for (let colIdx = 0; colIdx < row.length; colIdx++) {
               if (colIdx === activeDocColIdx) continue
+              const colHeader = normalizarNomeColuna(activeHeaders[colIdx] || '')
+              if (
+                colHeader.includes('VALOR') ||
+                colHeader.includes('FORNEC') ||
+                colHeader.includes('FAVOREC') ||
+                colHeader.includes('DOC') ||
+                colHeader.includes('NOTA')
+              ) {
+                continue
+              }
               const candVal = row[colIdx]
               if (candVal !== null && candVal !== undefined && String(candVal).trim() !== '') {
-                const parsed = parseDataPagar(candVal, sheetCfg.ano, sheetCfg.mes)
-                if (parsed && !parsed.startsWith('1970')) {
-                  vencIso = parsed
+                if (isValidaSanitariaConf(candVal)) {
+                  vencIso = parseDataPagar(candVal, sheetCfg.ano, sheetCfg.mes)
                   rawVenc = candVal
+                  teveDataPropriaConf = true
+                  ultimaDataValida = candVal
                   break
                 }
               }
             }
           }
 
-          if (!vencIso || vencIso.startsWith('1970')) {
-            if (ultimaDataValida) {
+          if (!vencIso || vencIso.startsWith('1970') || !isValidaSanitariaConf(vencIso)) {
+            if (ultimaDataValida && isValidaSanitariaConf(ultimaDataValida)) {
               vencIso = parseDataPagar(ultimaDataValida, sheetCfg.ano, sheetCfg.mes)
             }
-            if (!vencIso || vencIso.startsWith('1970')) {
+            if (!vencIso || vencIso.startsWith('1970') || !isValidaSanitariaConf(vencIso)) {
               const y = sheetCfg.ano || 2026
               const m = sheetCfg.mes || 1
               vencIso = `${y}-${String(m).padStart(2, '0')}-01T12:00:00.000Z`
             }
-          } else {
+          } else if (rawVencStr && !teveDataPropriaConf && isValidaSanitariaConf(rawVenc)) {
             ultimaDataValida = rawVenc
+            teveDataPropriaConf = true
           }
 
           const vencDateOnly = vencIso.slice(0, 10)
@@ -943,8 +972,14 @@ export function ConferirPlanilhaPagarModal({
             }
           }
 
+          const rawPagParaParseConf = isValidaSanitariaConf(rawDataPag)
+            ? rawDataPag
+            : isValidaSanitariaConf(rawVenc)
+              ? rawVenc
+              : vencIso
+
           const dataPagIso = isPagaPlanilha
-            ? parseDataPagar(rawDataPag || rawVenc, sheetCfg.ano, sheetCfg.mes)
+            ? parseDataPagar(rawPagParaParseConf, sheetCfg.ano, sheetCfg.mes)
             : null
 
           const docInfo = rawDoc ? ` [NF/Doc: ${rawDoc}]` : ''
