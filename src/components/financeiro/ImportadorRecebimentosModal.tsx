@@ -96,6 +96,7 @@ export interface SheetReceberImportResult {
   aba: string
   linhasLidas: number
   importados: number
+  atualizados: number
   duplicados: number
   errosCount: number
   vaziaOuSemCabecalho?: boolean
@@ -105,6 +106,7 @@ export interface SheetReceberImportResult {
 export interface RecebimentosImportSummary {
   totalLidos: number
   importados: number
+  atualizados: number
   duplicadosPulados: number
   recebidasBaixadas: number
   emAberto: number
@@ -436,6 +438,7 @@ export function ImportadorRecebimentosModal({
     const resultSummary: RecebimentosImportSummary = {
       totalLidos: 0,
       importados: 0,
+      atualizados: 0,
       duplicadosPulados: 0,
       recebidasBaixadas: 0,
       emAberto: 0,
@@ -467,17 +470,38 @@ export function ImportadorRecebimentosModal({
         categoriasCache.set(cat.nome.trim().toLowerCase(), cat)
       })
 
-      // Deduplicação: cliente_id + data(YYYY-MM-DD) + valor + descricao normalizada
-      const existingKeys = new Set<string>()
+      // Deduplicação inteligente e suporte a atualização de datas saneadas:
+      // A chave exata inclui data (YYYY-MM-DD)
+      const existingExactKeys = new Set<string>()
+      // A chave flexível (nota/doc ou descrição + cliente + valor) guarda o registro existente
+      // para podermos atualizar a data caso seja diferente (ex.: saneada genericamente em 07/04)
+      const existingFlexRecords = new Map<string, ContaReceber>()
+
+      const normalizarTextoComparacao = (txt: string) =>
+        (txt || '')
+          .toLowerCase()
+          .replace(/[\s\-_/\\.,;:()]+/g, ' ')
+          .trim()
+
       contasExistentes.forEach((c) => {
         const d = c.vencimento.slice(0, 10)
-        const descNorm = (c.descricao || '')
-          .toLowerCase()
-          .replace(/[\s\-_]+/g, ' ')
-          .trim()
-          .slice(0, 30)
-        const key = `${c.cliente_id || ''}_${d}_${Number(c.valor).toFixed(2)}_${descNorm}`
-        existingKeys.add(key)
+        const descNorm = normalizarTextoComparacao(c.descricao).slice(0, 30)
+        const notaNorm = normalizarTextoComparacao(c.nota || '')
+        const valorStr = Number(c.valor || 0).toFixed(2)
+
+        const exactKey = `${c.cliente_id || ''}_${d}_${valorStr}_${descNorm}`
+        existingExactKeys.add(exactKey)
+
+        if (notaNorm) {
+          const flexKeyDoc = `doc_${c.cliente_id || ''}_${valorStr}_${notaNorm}`
+          if (!existingFlexRecords.has(flexKeyDoc)) {
+            existingFlexRecords.set(flexKeyDoc, c)
+          }
+        }
+        const flexKeyDesc = `desc_${c.cliente_id || ''}_${valorStr}_${descNorm}`
+        if (!existingFlexRecords.has(flexKeyDesc)) {
+          existingFlexRecords.set(flexKeyDesc, c)
+        }
       })
 
       const sheetsToImport = sheetsConfig.filter((s) => s.selected)
@@ -1124,23 +1148,75 @@ export function ImportadorRecebimentosModal({
             const notaFinal = (rawDoc || extraidos.nota || '').trim()
             const enderecoFinal = (extraidos.cidade || '').trim()
 
-            // 4. Verificação de Duplicidade (Idempotência)
-            // Apenas descarta como duplicado se a data for real/válida (não herdada cegamente de um bloco que já fechou)
+            // 4. Verificação de Duplicidade e Atualização Inteligente (Vencimento)
             const dateOnly = dataVencimentoISO.slice(0, 10)
-            const descNorm = descFinal
-              .toLowerCase()
-              .replace(/[\s\-_]+/g, ' ')
-              .trim()
-              .slice(0, 30)
-            const dedupeKey = `${clienteId || ''}_${dateOnly}_${valorFinal.toFixed(2)}_${descNorm}`
+            const descNorm = normalizarTextoComparacao(descFinal).slice(0, 30)
+            const notaNorm = normalizarTextoComparacao(notaFinal || '')
+            const valorStr = valorFinal.toFixed(2)
 
-            // Se for duplicado de linha pré-existente
-            if (detectarDuplicados && existingKeys.has(dedupeKey)) {
-              // Se a data da linha foi herdada de bloco anterior (sem data própria) e temos indício de semana/bloco novo,
-              // não descartar cegamente se for lançamento genuíno
+            const exactKey = `${clienteId || ''}_${dateOnly}_${valorStr}_${descNorm}`
+
+            // Se existir EXATAMENTE com mesma data, cliente, valor e descrição => duplicata real, pular
+            if (detectarDuplicados && existingExactKeys.has(exactKey)) {
               resultSummary.duplicadosPulados += 1
               sheetDuplicados += 1
               continue
+            }
+
+            // Se existir registro prévio com mesma nota/doc (ou mesma desc) + cliente + valor,
+            // mas com DATA DIFERENTE (ex: data saneada genericamente em 07/04), ATUALIZAR a data correta no banco
+            let existingRecordToUpdate: ContaReceber | null = null
+            if (detectarDuplicados) {
+              if (notaNorm) {
+                const flexKeyDoc = `doc_${clienteId || ''}_${valorStr}_${notaNorm}`
+                if (existingFlexRecords.has(flexKeyDoc)) {
+                  existingRecordToUpdate = existingFlexRecords.get(flexKeyDoc)!
+                }
+              }
+              if (!existingRecordToUpdate) {
+                const flexKeyDesc = `desc_${clienteId || ''}_${valorStr}_${descNorm}`
+                if (existingFlexRecords.has(flexKeyDesc)) {
+                  existingRecordToUpdate = existingFlexRecords.get(flexKeyDesc)!
+                }
+              }
+            }
+
+            if (existingRecordToUpdate) {
+              const prevDateOnly = existingRecordToUpdate.vencimento.slice(0, 10)
+              // Se a data existente for diferente da nova data da planilha, atualizamos o registro com os dados corretos!
+              if (prevDateOnly !== dateOnly) {
+                await sleep(100)
+                await withRateLimitRetry(
+                  () =>
+                    pb.collection('contas_receber').update(existingRecordToUpdate!.id, {
+                      vencimento: dataVencimentoISO,
+                      nota: notaFinal || existingRecordToUpdate!.nota || undefined,
+                      endereco: enderecoFinal || existingRecordToUpdate!.endereco || undefined,
+                      observacoes: `Atualizado via reimportação de planilha [Aba: ${sheetCfg.name}]${notaFinal ? ` | Doc: ${notaFinal}` : ''}`,
+                    }),
+                  {
+                    onRetry: (tentativa, delayMs) => {
+                      setProgressMsg(
+                        `Aguardando servidor... limite temporário (429) na atualização do título "${descFinal.slice(0, 25)}...". Tentativa ${tentativa} em ${(delayMs / 1000).toFixed(1)}s`,
+                      )
+                    },
+                  },
+                )
+
+                // Atualiza chaves do cache para não atualizar/duplicar novamente
+                existingExactKeys.add(exactKey)
+                existingFlexRecords.delete(`doc_${clienteId || ''}_${valorStr}_${notaNorm}`)
+                existingFlexRecords.delete(`desc_${clienteId || ''}_${valorStr}_${descNorm}`)
+
+                resultSummary.atualizados += 1
+                sheetImportados += 1
+                continue
+              } else {
+                // Se até a data coincidir exatamente, é duplicado
+                resultSummary.duplicadosPulados += 1
+                sheetDuplicados += 1
+                continue
+              }
             }
 
             // 5. Determinar Situação (Recebida, Aberta, Parcial, Recebimento Antecipado)
