@@ -1016,6 +1016,38 @@ export function ImportadorRecebimentosModal({
         let activeCatCol = catCol
         let activeDocCol = docCol
 
+        // Índices numéricos das colunas ativas: preservam a posição física exata através de subtotais e novos blocos
+        let activeDataColIdx = dataCol ? currentSheetHeaders.indexOf(dataCol) : -1
+        let activeCliColIdx = cliCol ? currentSheetHeaders.indexOf(cliCol) : -1
+        let activeDescColIdx = descCol ? currentSheetHeaders.indexOf(descCol) : -1
+        let activeValColIdx = valCol ? currentSheetHeaders.indexOf(valCol) : -1
+        let activeValRecColIdx = valRecCol ? currentSheetHeaders.indexOf(valRecCol) : -1
+        let activeDataRecColIdx = dataRecCol ? currentSheetHeaders.indexOf(dataRecCol) : -1
+        let activeFormaColIdx = formaCol ? currentSheetHeaders.indexOf(formaCol) : -1
+        let activeStatusColIdx = statusCol ? currentSheetHeaders.indexOf(statusCol) : -1
+        let activeCentroColIdx = centroCol ? currentSheetHeaders.indexOf(centroCol) : -1
+        let activeCatColIdx = catCol ? currentSheetHeaders.indexOf(catCol) : -1
+        let activeDocColIdx = docCol ? currentSheetHeaders.indexOf(docCol) : -1
+
+        // Leitura de célula: prioridade MÁXIMA para o índice numérico guardado; fallback por nome de coluna
+        const getValByIndexOrName = (row: any[], colIdx: number, headerName: string): any => {
+          if (colIdx >= 0 && colIdx < row.length) {
+            const v = row[colIdx]
+            if (v !== undefined && v !== null && v !== '') return v
+          }
+          if (headerName) {
+            const idx = activeHeaders.indexOf(headerName)
+            if (idx !== -1 && idx < row.length) {
+              const v = row[idx]
+              if (v !== undefined && v !== null && v !== '') return v
+            }
+          }
+          if (colIdx >= 0 && colIdx < row.length) {
+            return row[colIdx] ?? ''
+          }
+          return ''
+        }
+
         const getVal = (row: any[], headerName: string): any => {
           if (!headerName) return ''
           const colIdx = activeHeaders.indexOf(headerName)
@@ -1035,25 +1067,25 @@ export function ImportadorRecebimentosModal({
         let ultimaDataValida: { val: any; r: number } | null = null
 
         // Função para recalcular mapeamento de colunas em um novo bloco
+        // REGRA MANDATÓRIA:
+        // As posições físicas das colunas NÃO mudam entre blocos da mesma aba.
+        // Se o novo bloco encontrar rótulo explícito, atualize nome + índice;
+        // Se NÃO encontrar rótulo explícito (rótulo genérico Coluna_X), PRESERVE o índice numérico anterior
+        // (herança do bloco/cabeçalho principal). NUNCA zere nem descarte índices de coluna na transição de bloco.
         const recalcularMapeamentoBloco = (novoHeaderRow: any[]) => {
           const newHeaders = novoHeaderRow.map(
             (c, i) => String(c || '').trim() || `Coluna_${i + 1}`,
           )
-          if (newHeaders.filter((h) => !h.startsWith('Coluna_')).length >= 2) {
+          const nonGenericHeaders = newHeaders.filter((h) => !h.startsWith('Coluna_'))
+          if (nonGenericHeaders.length >= 2) {
             activeHeaders = newHeaders
-            const findColInBlock = (pattern: RegExp) =>
-              activeHeaders.find((h) => pattern.test(normalizarNomeColuna(h)) || pattern.test(h)) ||
-              ''
 
-            const matchColInBlock = (userCol: string, pattern: RegExp, fallback: string = '') => {
-              if (userCol && activeHeaders.includes(userCol)) return userCol
-              if (userCol) {
-                const uNorm = normalizarNomeColuna(userCol)
-                const m = activeHeaders.find((h) => normalizarNomeColuna(h) === uNorm)
-                if (m) return m
-              }
-              return findColInBlock(pattern) || fallback
-            }
+            const findColInBlock = (pattern: RegExp) =>
+              activeHeaders.find(
+                (h) =>
+                  !h.startsWith('Coluna_') &&
+                  (pattern.test(normalizarNomeColuna(h)) || pattern.test(h)),
+              ) || ''
 
             const blockDataFound = findColInBlock(REGEX_COL_DATA)
             const blockDataRecFound = findColInBlock(REGEX_COL_DATA_RECEBIMENTO)
@@ -1066,94 +1098,64 @@ export function ImportadorRecebimentosModal({
             const blockCatFound = findColInBlock(REGEX_COL_CATEGORIA)
             const blockDocFound = findColInBlock(REGEX_COL_DOCUMENTO)
 
-            // REGRA: quando o sub-bloco não encontrar um rótulo, HERDAR a coluna ativa prévia ou o cabeçalho principal
-            // em vez de resetar para vazio.
-            activeDataCol =
-              matchColInBlock(mapping.data, REGEX_COL_DATA, blockDataFound || '') ||
-              activeDataCol ||
-              dataCol
-            activeDataRecCol =
-              matchColInBlock(
-                mapping.dataRecebimento,
-                REGEX_COL_DATA_RECEBIMENTO,
-                blockDataRecFound || '',
-              ) ||
-              activeDataRecCol ||
-              dataRecCol
-
-            activeCliCol =
-              matchColInBlock(
-                mapping.cliente,
-                REGEX_COL_CLIENTE,
-                blockCliFound || blockDescFound || '',
-              ) ||
-              activeCliCol ||
-              cliCol
-            activeDescCol =
-              matchColInBlock(
-                mapping.descricao,
-                REGEX_COL_DESCRICAO,
-                blockCliFound && blockDescFound && blockCliFound !== blockDescFound
-                  ? blockDescFound
-                  : '',
-              ) ||
-              activeDescCol ||
-              descCol
-
-            const blockValCompra =
+            const blockValCompraFound =
               findColInBlock(REGEX_COL_VALOR_COMPRA) ||
               activeHeaders.find(
-                (h) => !isColunaCheque(h) && REGEX_COL_VALOR.test(normalizarNomeColuna(h)),
+                (h) =>
+                  !h.startsWith('Coluna_') &&
+                  !isColunaCheque(h) &&
+                  REGEX_COL_VALOR.test(normalizarNomeColuna(h)),
               ) ||
               ''
-            activeValCol =
-              matchColInBlock(
-                mapping.valor && !isColunaCheque(mapping.valor) ? mapping.valor : '',
-                REGEX_COL_VALOR_COMPRA,
-                blockValCompra,
-              ) ||
-              activeValCol ||
-              valCol
-            if (isColunaCheque(activeValCol)) {
-              activeValCol = blockValCompra || valCol
-            }
 
-            activeValRecCol =
-              matchColInBlock(
-                mapping.valorRecebido,
-                REGEX_COL_VALOR_RECEBIDO,
-                blockValRecFound || '',
-              ) ||
-              activeValRecCol ||
-              valRecCol
-            activeFormaCol =
-              matchColInBlock(
-                mapping.formaRecebimento,
-                REGEX_COL_FORMA_RECEBIMENTO,
-                blockFormaFound || '',
-              ) ||
-              activeFormaCol ||
-              formaCol
-            activeStatusCol =
-              matchColInBlock(mapping.status, REGEX_COL_STATUS, blockStatusFound || '') ||
-              activeStatusCol ||
-              statusCol
-            activeCentroCol =
-              matchColInBlock(
-                mapping.centroCusto,
-                REGEX_COL_CENTRO_CUSTO,
-                blockCentroFound || '',
-              ) ||
-              activeCentroCol ||
-              centroCol
-            activeCatCol =
-              matchColInBlock(mapping.categoria, REGEX_COL_CATEGORIA, blockCatFound || '') ||
-              activeCatCol ||
-              catCol
-            activeDocCol =
-              matchColInBlock(mapping.documento, REGEX_COL_DOCUMENTO, blockDocFound || '') ||
-              activeDocCol ||
-              docCol
+            // Atualização ou PRESERVAÇÃO estrita de coluna e índice numérico
+            if (blockDataFound) {
+              activeDataCol = blockDataFound
+              activeDataColIdx = activeHeaders.indexOf(blockDataFound)
+            }
+            if (blockDataRecFound) {
+              activeDataRecCol = blockDataRecFound
+              activeDataRecColIdx = activeHeaders.indexOf(blockDataRecFound)
+            }
+            if (blockCliFound) {
+              activeCliCol = blockCliFound
+              activeCliColIdx = activeHeaders.indexOf(blockCliFound)
+            } else if (!blockCliFound && blockDescFound && activeCliColIdx === -1) {
+              activeCliCol = blockDescFound
+              activeCliColIdx = activeHeaders.indexOf(blockDescFound)
+            }
+            if (blockDescFound) {
+              activeDescCol = blockDescFound
+              activeDescColIdx = activeHeaders.indexOf(blockDescFound)
+            }
+            if (blockValCompraFound && !isColunaCheque(blockValCompraFound)) {
+              activeValCol = blockValCompraFound
+              activeValColIdx = activeHeaders.indexOf(blockValCompraFound)
+            }
+            if (blockValRecFound && !isColunaCheque(blockValRecFound)) {
+              activeValRecCol = blockValRecFound
+              activeValRecColIdx = activeHeaders.indexOf(blockValRecFound)
+            }
+            if (blockFormaFound) {
+              activeFormaCol = blockFormaFound
+              activeFormaColIdx = activeHeaders.indexOf(blockFormaFound)
+            }
+            if (blockStatusFound) {
+              activeStatusCol = blockStatusFound
+              activeStatusColIdx = activeHeaders.indexOf(blockStatusFound)
+            }
+            if (blockCentroFound) {
+              activeCentroCol = blockCentroFound
+              activeCentroColIdx = activeHeaders.indexOf(blockCentroFound)
+            }
+            if (blockCatFound) {
+              activeCatCol = blockCatFound
+              activeCatColIdx = activeHeaders.indexOf(blockCatFound)
+            }
+            if (blockDocFound) {
+              activeDocCol = blockDocFound
+              activeDocColIdx = activeHeaders.indexOf(blockDocFound)
+            }
           }
         }
 
@@ -1332,12 +1334,11 @@ export function ImportadorRecebimentosModal({
           sheetLidos += 1
           resultSummary.totalLidos += 1
 
-          const activeDataColIdx = activeDataCol ? activeHeaders.indexOf(activeDataCol) : -1
-          const activeDocColIdx = activeDocCol ? activeHeaders.indexOf(activeDocCol) : -1
-
-          let rawData = getVal(row, activeDataCol)
-          let rawCli = String(getVal(row, activeCliCol) || '').trim()
-          let rawDesc = String(getVal(row, activeDescCol) || '').trim()
+          let rawData = getValByIndexOrName(row, activeDataColIdx, activeDataCol)
+          let rawCli = String(getValByIndexOrName(row, activeCliColIdx, activeCliCol) || '').trim()
+          let rawDesc = String(
+            getValByIndexOrName(row, activeDescColIdx, activeDescCol) || '',
+          ).trim()
 
           // Se cliente e descrição vierem vazios, procurar na linha a primeira célula textual representativa
           if (!rawCli && !rawDesc) {
@@ -1370,7 +1371,7 @@ export function ImportadorRecebimentosModal({
 
           // Parsing primário de valor da coluna mapeada (ex.: "VALOR DA COMPRA")
           // Barreira anti-parcela e anti-cheque: se a célula contiver padrão de parcela ou cheque, zera.
-          const rawValCell = getVal(row, activeValCol)
+          const rawValCell = getValByIndexOrName(row, activeValColIdx, activeValCol)
           let rawValor = 0
           if (
             isPadraoNumeroParcela(rawValCell) ||
@@ -1387,8 +1388,8 @@ export function ImportadorRecebimentosModal({
           }
 
           let rawValorRec = 0
-          if (activeValRecCol) {
-            const rawRecCell = getVal(row, activeValRecCol)
+          if (activeValRecColIdx !== -1 || activeValRecCol) {
+            const rawRecCell = getValByIndexOrName(row, activeValRecColIdx, activeValRecCol)
             if (
               isPadraoNumeroParcela(rawRecCell) ||
               isNumeroChequeOuSerieBancaria(rawRecCell).ehCheque
@@ -1402,12 +1403,22 @@ export function ImportadorRecebimentosModal({
             }
           }
 
-          const rawDataRec = getVal(row, activeDataRecCol)
-          const rawForma = String(getVal(row, activeFormaCol) || '').trim()
-          const rawStatus = String(getVal(row, activeStatusCol) || '').trim()
-          const rawCentro = String(getVal(row, activeCentroCol) || '').trim()
-          const rawCat = String(getVal(row, activeCatCol) || '').trim()
-          const rawDoc = String(getVal(row, activeDocCol) || '').trim()
+          const rawDataRec = getValByIndexOrName(row, activeDataRecColIdx, activeDataRecCol)
+          const rawForma = String(
+            getValByIndexOrName(row, activeFormaColIdx, activeFormaCol) || '',
+          ).trim()
+          const rawStatus = String(
+            getValByIndexOrName(row, activeStatusColIdx, activeStatusCol) || '',
+          ).trim()
+          const rawCentro = String(
+            getValByIndexOrName(row, activeCentroColIdx, activeCentroCol) || '',
+          ).trim()
+          const rawCat = String(
+            getValByIndexOrName(row, activeCatColIdx, activeCatCol) || '',
+          ).trim()
+          const rawDoc = String(
+            getValByIndexOrName(row, activeDocColIdx, activeDocCol) || '',
+          ).trim()
 
           const lowerDesc = (rawDesc || rawCli).toLowerCase()
           if (
@@ -1427,6 +1438,7 @@ export function ImportadorRecebimentosModal({
           let valorFinal = rawValor > 0 ? rawValor : rawValorRec
 
           const temAlgumaColunaDocumentoNaLinha = Boolean(
+            activeDocColIdx !== -1 ||
             activeDocCol ||
             activeHeaders.some((h) => {
               const hn = normalizarNomeColuna(h)
@@ -1436,9 +1448,16 @@ export function ImportadorRecebimentosModal({
 
           // Se a coluna de valor foi mapeada (ex.: "VALOR DA COMPRA") mas a célula desta linha está vazia:
           // Se houver qualquer coluna de documento/nota na linha, PROIBIDO fazer varredura de fallback.
-          const linhaComValorCompraMapeadoMasVazio = Boolean(activeValCol && valorFinal <= 0)
+          const linhaComValorCompraMapeadoMasVazio = Boolean(
+            (activeValColIdx !== -1 || activeValCol) && valorFinal <= 0,
+          )
 
-          if (valorFinal <= 0 && !activeValCol && !linhaComValorCompraMapeadoMasVazio) {
+          if (
+            valorFinal <= 0 &&
+            activeValColIdx === -1 &&
+            !activeValCol &&
+            !linhaComValorCompraMapeadoMasVazio
+          ) {
             // Varredura de linha apenas quando NÃO HÁ coluna de cabeçalho de valor reconhecível na aba
             let maiorValorEncontrado = 0
             for (let colIdx = 0; colIdx < row.length; colIdx++) {
@@ -1609,9 +1628,21 @@ export function ImportadorRecebimentosModal({
 
           // Se a coluna de data mapeada não continha data válida, inspecionar colunas alternativas na PRÓPRIA linha
           if (!teveDataPropriaNaLinha) {
-            const activeValColIdx = activeValCol ? activeHeaders.indexOf(activeValCol) : -1
+            const valIdxParaExcluir =
+              activeValColIdx !== -1
+                ? activeValColIdx
+                : activeValCol
+                  ? activeHeaders.indexOf(activeValCol)
+                  : -1
+            const docIdxParaExcluir =
+              activeDocColIdx !== -1
+                ? activeDocColIdx
+                : activeDocCol
+                  ? activeHeaders.indexOf(activeDocCol)
+                  : -1
+
             for (let colIdx = 0; colIdx < row.length; colIdx++) {
-              if (colIdx === activeDocColIdx || colIdx === activeValColIdx) continue
+              if (colIdx === docIdxParaExcluir || colIdx === valIdxParaExcluir) continue
               const colHeader = normalizarNomeColuna(activeHeaders[colIdx] || '')
               if (
                 colHeader.includes('VALOR') ||
@@ -1807,12 +1838,11 @@ export function ImportadorRecebimentosModal({
                 descFinal: item.descFinal,
                 valorPrevisto: item.valorFinal,
                 valorRecebido: item.rawValorRec,
-                temColunaValorRecebido: Boolean(activeValRecCol),
-                temColunaDataRecebimento: Boolean(activeDataRecCol),
+                temColunaValorRecebido: Boolean(activeValRecColIdx !== -1 || activeValRecCol),
+                temColunaDataRecebimento: Boolean(activeDataRecColIdx !== -1 || activeDataRecCol),
                 rawDataRecebimentoValida: isValidaSanitaria(item.rawDataRec),
                 classificacaoPadrao,
               })
-
               const finalStatus: 'Recebida' | 'Aberta' | 'Parcial' | 'Recebimento Antecipado' =
                 classificacaoResult.status
 

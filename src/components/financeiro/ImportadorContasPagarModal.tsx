@@ -1374,6 +1374,38 @@ export function ImportadorContasPagarModal({
         let activeDocCol = docCol
         let activeCnpjCol = cnpjCol
 
+        // Índices numéricos das colunas ativas
+        let activeVencColIdx = vencCol ? currentSheetHeaders.indexOf(vencCol) : -1
+        let activeFornColIdx = fornCol ? currentSheetHeaders.indexOf(fornCol) : -1
+        let activeDescColIdx = descCol ? currentSheetHeaders.indexOf(descCol) : -1
+        let activeValColIdx = valCol ? currentSheetHeaders.indexOf(valCol) : -1
+        let activeValPagoColIdx = valPagoCol ? currentSheetHeaders.indexOf(valPagoCol) : -1
+        let activeDataPagColIdx = dataPagCol ? currentSheetHeaders.indexOf(dataPagCol) : -1
+        let activeFormaColIdx = formaCol ? currentSheetHeaders.indexOf(formaCol) : -1
+        let activeStatusColIdx = statusCol ? currentSheetHeaders.indexOf(statusCol) : -1
+        let activeCentroColIdx = centroCol ? currentSheetHeaders.indexOf(centroCol) : -1
+        let activeCatColIdx = catCol ? currentSheetHeaders.indexOf(catCol) : -1
+        let activeDocColIdx = docCol ? currentSheetHeaders.indexOf(docCol) : -1
+        let activeCnpjColIdx = cnpjCol ? currentSheetHeaders.indexOf(cnpjCol) : -1
+
+        const getValByIndexOrName = (row: any[], colIdx: number, headerName: string): any => {
+          if (colIdx >= 0 && colIdx < row.length) {
+            const v = row[colIdx]
+            if (v !== undefined && v !== null && v !== '') return v
+          }
+          if (headerName) {
+            const idx = activeHeaders.indexOf(headerName)
+            if (idx !== -1 && idx < row.length) {
+              const v = row[idx]
+              if (v !== undefined && v !== null && v !== '') return v
+            }
+          }
+          if (colIdx >= 0 && colIdx < row.length) {
+            return row[colIdx] ?? ''
+          }
+          return ''
+        }
+
         const getVal = (row: any[], headerName: string): any => {
           if (!headerName) return ''
           const colIdx = activeHeaders.indexOf(headerName)
@@ -1391,62 +1423,82 @@ export function ImportadorContasPagarModal({
         let ultimaDataValida: any = null
 
         // Função para recalcular mapeamento de colunas em um novo bloco/quinzena
+        // Preserva índices numéricos anteriores se o novo bloco não tiver rótulo explícito
         const recalcularMapeamentoBloco = (novoHeaderRow: any[]) => {
           const newHeaders = novoHeaderRow.map(
             (c, i) => String(c || '').trim() || `Coluna_${i + 1}`,
           )
-          if (newHeaders.filter((h) => !h.startsWith('Coluna_')).length >= 2) {
+          const nonGenericHeaders = newHeaders.filter((h) => !h.startsWith('Coluna_'))
+          if (nonGenericHeaders.length >= 2) {
             activeHeaders = newHeaders
             const findColInBlock = (pattern: RegExp) =>
-              activeHeaders.find((h) => pattern.test(normalizarNomeColuna(h)) || pattern.test(h)) ||
-              ''
+              activeHeaders.find(
+                (h) =>
+                  !h.startsWith('Coluna_') &&
+                  (pattern.test(normalizarNomeColuna(h)) || pattern.test(h)),
+              ) || ''
 
-            const matchColInBlock = (userCol: string, pattern: RegExp, fallback: string = '') => {
-              if (userCol && activeHeaders.includes(userCol)) return userCol
-              if (userCol) {
-                const uNorm = normalizarNomeColuna(userCol)
-                const m = activeHeaders.find((h) => normalizarNomeColuna(h) === uNorm)
-                if (m) return m
-              }
-              return findColInBlock(pattern) || fallback
+            const bVenc = findColInBlock(REGEX_COL_VENCIMENTO)
+            const bForn = findColInBlock(REGEX_COL_FORNECEDOR)
+            const bDesc = findColInBlock(REGEX_COL_DESCRICAO)
+            const bVal = findColInBlock(REGEX_COL_VALOR)
+            const bValPago = findColInBlock(REGEX_COL_VALOR_PAGO)
+            const bDataPag = findColInBlock(REGEX_COL_DATA_PAGAMENTO)
+            const bForma = findColInBlock(/FORMA|MEIO|TIPO PAG/i)
+            const bStatus = findColInBlock(/STATUS|SITUACAO|COND/i)
+            const bCentro = findColInBlock(/CENTRO|CC|CUSTO|FRENTE|SETOR/i)
+            const bCat = findColInBlock(/CATEG|PLANO|CONTA/i)
+            const bDoc = findColInBlock(/DOC|NF|NOTA|DUPLICATA|FATURA/i)
+            const bCnpj = findColInBlock(/CNPJ|CPF|INSC/i)
+
+            if (bVenc) {
+              activeVencCol = bVenc
+              activeVencColIdx = activeHeaders.indexOf(bVenc)
             }
-
-            activeVencCol = matchColInBlock(
-              mapping.vencimento,
-              REGEX_COL_VENCIMENTO,
-              findColInBlock(REGEX_COL_VENCIMENTO) || activeHeaders[0] || '',
-            )
-            activeFornCol = matchColInBlock(
-              mapping.fornecedor,
-              REGEX_COL_FORNECEDOR,
-              findColInBlock(REGEX_COL_FORNECEDOR),
-            )
-            activeDescCol = matchColInBlock(
-              mapping.descricao,
-              REGEX_COL_DESCRICAO,
-              findColInBlock(REGEX_COL_DESCRICAO),
-            )
-            activeValCol = matchColInBlock(
-              mapping.valor,
-              REGEX_COL_VALOR,
-              findColInBlock(REGEX_COL_VALOR),
-            )
-            activeValPagoCol = matchColInBlock(
-              mapping.valorPago,
-              REGEX_COL_VALOR_PAGO,
-              findColInBlock(REGEX_COL_VALOR_PAGO),
-            )
-            activeDataPagCol = matchColInBlock(
-              mapping.dataPagamento,
-              REGEX_COL_DATA_PAGAMENTO,
-              findColInBlock(REGEX_COL_DATA_PAGAMENTO),
-            )
-            activeFormaCol = matchColInBlock(mapping.formaPagamento, /FORMA|MEIO|TIPO PAG/i)
-            activeStatusCol = matchColInBlock(mapping.status, /STATUS|SITUACAO|COND/i)
-            activeCentroCol = matchColInBlock(mapping.centroCusto, /CENTRO|CC|CUSTO|FRENTE|SETOR/i)
-            activeCatCol = matchColInBlock(mapping.categoria, /CATEG|PLANO|CONTA/i)
-            activeDocCol = matchColInBlock(mapping.documento, /DOC|NF|NOTA|DUPLICATA|FATURA/i)
-            activeCnpjCol = matchColInBlock(mapping.cnpj, /CNPJ|CPF|INSC/i)
+            if (bForn) {
+              activeFornCol = bForn
+              activeFornColIdx = activeHeaders.indexOf(bForn)
+            }
+            if (bDesc) {
+              activeDescCol = bDesc
+              activeDescColIdx = activeHeaders.indexOf(bDesc)
+            }
+            if (bVal) {
+              activeValCol = bVal
+              activeValColIdx = activeHeaders.indexOf(bVal)
+            }
+            if (bValPago) {
+              activeValPagoCol = bValPago
+              activeValPagoColIdx = activeHeaders.indexOf(bValPago)
+            }
+            if (bDataPag) {
+              activeDataPagCol = bDataPag
+              activeDataPagColIdx = activeHeaders.indexOf(bDataPag)
+            }
+            if (bForma) {
+              activeFormaCol = bForma
+              activeFormaColIdx = activeHeaders.indexOf(bForma)
+            }
+            if (bStatus) {
+              activeStatusCol = bStatus
+              activeStatusColIdx = activeHeaders.indexOf(bStatus)
+            }
+            if (bCentro) {
+              activeCentroCol = bCentro
+              activeCentroColIdx = activeHeaders.indexOf(bCentro)
+            }
+            if (bCat) {
+              activeCatCol = bCat
+              activeCatColIdx = activeHeaders.indexOf(bCat)
+            }
+            if (bDoc) {
+              activeDocCol = bDoc
+              activeDocColIdx = activeHeaders.indexOf(bDoc)
+            }
+            if (bCnpj) {
+              activeCnpjCol = bCnpj
+              activeCnpjColIdx = activeHeaders.indexOf(bCnpj)
+            }
           }
         }
 
@@ -1574,12 +1626,13 @@ export function ImportadorContasPagarModal({
           sheetLidos += 1
           resultSummary.totalLidos += 1
 
-          const activeVencColIdx = activeVencCol ? activeHeaders.indexOf(activeVencCol) : -1
-          const activeDocColIdx = activeDocCol ? activeHeaders.indexOf(activeDocCol) : -1
-
-          let rawVenc = getVal(row, activeVencCol)
-          let rawForn = String(getVal(row, activeFornCol) || '').trim()
-          let rawDesc = String(getVal(row, activeDescCol) || '').trim()
+          let rawVenc = getValByIndexOrName(row, activeVencColIdx, activeVencCol)
+          let rawForn = String(
+            getValByIndexOrName(row, activeFornColIdx, activeFornCol) || '',
+          ).trim()
+          let rawDesc = String(
+            getValByIndexOrName(row, activeDescColIdx, activeDescCol) || '',
+          ).trim()
 
           // Se fornecedor e descrição vierem vazios, procurar na linha a primeira célula textual representativa
           if (!rawForn && !rawDesc) {
@@ -1609,15 +1662,30 @@ export function ImportadorContasPagarModal({
             rawForn = rawDesc
           }
 
-          const rawValor = parseValorPagar(getVal(row, activeValCol))
-          const rawValorPago = activeValPagoCol ? parseValorPagar(getVal(row, activeValPagoCol)) : 0
-          const rawDataPag = getVal(row, activeDataPagCol)
-          const rawForma = String(getVal(row, activeFormaCol) || '').trim()
-          const rawStatus = String(getVal(row, activeStatusCol) || '').toLowerCase()
-          const rawCentro = String(getVal(row, activeCentroCol) || '').trim()
-          const rawCat = String(getVal(row, activeCatCol) || '').trim()
-          const rawDoc = String(getVal(row, activeDocCol) || '').trim()
-          const rawCnpj = String(getVal(row, activeCnpjCol) || '').trim()
+          const rawValor = parseValorPagar(getValByIndexOrName(row, activeValColIdx, activeValCol))
+          const rawValorPago =
+            activeValPagoColIdx !== -1 || activeValPagoCol
+              ? parseValorPagar(getValByIndexOrName(row, activeValPagoColIdx, activeValPagoCol))
+              : 0
+          const rawDataPag = getValByIndexOrName(row, activeDataPagColIdx, activeDataPagCol)
+          const rawForma = String(
+            getValByIndexOrName(row, activeFormaColIdx, activeFormaCol) || '',
+          ).trim()
+          const rawStatus = String(
+            getValByIndexOrName(row, activeStatusColIdx, activeStatusCol) || '',
+          ).toLowerCase()
+          const rawCentro = String(
+            getValByIndexOrName(row, activeCentroColIdx, activeCentroCol) || '',
+          ).trim()
+          const rawCat = String(
+            getValByIndexOrName(row, activeCatColIdx, activeCatCol) || '',
+          ).trim()
+          const rawDoc = String(
+            getValByIndexOrName(row, activeDocColIdx, activeDocCol) || '',
+          ).trim()
+          const rawCnpj = String(
+            getValByIndexOrName(row, activeCnpjColIdx, activeCnpjCol) || '',
+          ).trim()
 
           // Ignorar se a descrição ou favorecido for totalizador
           const lowerDesc = (rawDesc || rawForn).toLowerCase()

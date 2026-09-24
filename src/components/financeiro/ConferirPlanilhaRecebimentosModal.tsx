@@ -291,6 +291,121 @@ export function ConferirPlanilhaRecebimentosModal({
         let statusCol = findCol(REGEX_COL_STATUS)
         let docCol = findCol(REGEX_COL_DOCUMENTO)
 
+        // Estado mutável de cabeçalhos e índices para suporte a sub-blocos e subtotais
+        let activeHeaders = [...headers]
+        let activeDataCol = dataCol
+        let activeCliCol = cliCol
+        let activeDescCol = descCol
+        let activeValCol = valCol
+        let activeValRecCol = valRecCol
+        let activeDataRecCol = dataRecCol
+        let activeFormaCol = formaCol
+        let activeStatusCol = statusCol
+        let activeDocCol = docCol
+
+        let activeDataColIdx = dataCol ? headers.indexOf(dataCol) : -1
+        let activeCliColIdx = cliCol ? headers.indexOf(cliCol) : -1
+        let activeDescColIdx = descCol ? headers.indexOf(descCol) : -1
+        let activeValColIdx = valCol ? headers.indexOf(valCol) : -1
+        let activeValRecColIdx = valRecCol ? headers.indexOf(valRecCol) : -1
+        let activeDataRecColIdx = dataRecCol ? headers.indexOf(dataRecCol) : -1
+        let activeFormaColIdx = formaCol ? headers.indexOf(formaCol) : -1
+        let activeStatusColIdx = statusCol ? headers.indexOf(statusCol) : -1
+        let activeDocColIdx = docCol ? headers.indexOf(docCol) : -1
+
+        const getValByIndexOrName = (row: any[], colIdx: number, headerName: string): any => {
+          if (colIdx >= 0 && colIdx < row.length) {
+            const v = row[colIdx]
+            if (v !== undefined && v !== null && v !== '') return v
+          }
+          if (headerName) {
+            const idx = activeHeaders.indexOf(headerName)
+            if (idx !== -1 && idx < row.length) {
+              const v = row[idx]
+              if (v !== undefined && v !== null && v !== '') return v
+            }
+          }
+          if (colIdx >= 0 && colIdx < row.length) {
+            return row[colIdx] ?? ''
+          }
+          return ''
+        }
+
+        const recalcularMapeamentoBlocoConferencia = (novoHeaderRow: any[]) => {
+          const newHeaders = novoHeaderRow.map(
+            (c, i) => String(c || '').trim() || `Coluna_${i + 1}`,
+          )
+          const nonGenericHeaders = newHeaders.filter((h) => !h.startsWith('Coluna_'))
+          if (nonGenericHeaders.length >= 2) {
+            activeHeaders = newHeaders
+
+            const findColInBlock = (pattern: RegExp) =>
+              activeHeaders.find(
+                (h) =>
+                  !h.startsWith('Coluna_') &&
+                  (pattern.test(normalizarNomeColuna(h)) || pattern.test(h)),
+              ) || ''
+
+            const bData = findColInBlock(REGEX_COL_DATA)
+            const bDataRec = findColInBlock(REGEX_COL_DATA_RECEBIMENTO)
+            const bCli = findColInBlock(REGEX_COL_CLIENTE)
+            const bDesc = findColInBlock(REGEX_COL_DESCRICAO)
+            const bValCompra =
+              findColInBlock(REGEX_COL_VALOR_COMPRA) ||
+              activeHeaders.find(
+                (h) =>
+                  !h.startsWith('Coluna_') &&
+                  !isColunaCheque(h) &&
+                  REGEX_COL_VALOR.test(normalizarNomeColuna(h)),
+              ) ||
+              ''
+            const bValRec = findColInBlock(REGEX_COL_VALOR_RECEBIDO)
+            const bForma = findColInBlock(REGEX_COL_FORMA_RECEBIMENTO)
+            const bStatus = findColInBlock(REGEX_COL_STATUS)
+            const bDoc = findColInBlock(REGEX_COL_DOCUMENTO)
+
+            if (bData) {
+              activeDataCol = bData
+              activeDataColIdx = activeHeaders.indexOf(bData)
+            }
+            if (bDataRec) {
+              activeDataRecCol = bDataRec
+              activeDataRecColIdx = activeHeaders.indexOf(bDataRec)
+            }
+            if (bCli) {
+              activeCliCol = bCli
+              activeCliColIdx = activeHeaders.indexOf(bCli)
+            } else if (!bCli && bDesc && activeCliColIdx === -1) {
+              activeCliCol = bDesc
+              activeCliColIdx = activeHeaders.indexOf(bDesc)
+            }
+            if (bDesc) {
+              activeDescCol = bDesc
+              activeDescColIdx = activeHeaders.indexOf(bDesc)
+            }
+            if (bValCompra && !isColunaCheque(bValCompra)) {
+              activeValCol = bValCompra
+              activeValColIdx = activeHeaders.indexOf(bValCompra)
+            }
+            if (bValRec && !isColunaCheque(bValRec)) {
+              activeValRecCol = bValRec
+              activeValRecColIdx = activeHeaders.indexOf(bValRec)
+            }
+            if (bForma) {
+              activeFormaCol = bForma
+              activeFormaColIdx = activeHeaders.indexOf(bForma)
+            }
+            if (bStatus) {
+              activeStatusCol = bStatus
+              activeStatusColIdx = activeHeaders.indexOf(bStatus)
+            }
+            if (bDoc) {
+              activeDocCol = bDoc
+              activeDocColIdx = activeHeaders.indexOf(bDoc)
+            }
+          }
+        }
+
         const dataRows = matrix.slice(headerRow)
         let ultimaDataValida: any = null
 
@@ -322,14 +437,51 @@ export function ConferirPlanilhaRecebimentosModal({
             .join(' ')
 
           // Separador de quinzena, semana ou cabeçalhos repetidos
-          if (
+          const isQuinzenaOrSemanaSeparator =
             rowTextJoined.includes('QUINZENA') ||
             rowTextJoined.includes('SEMANA') ||
-            rowTextJoined.startsWith('BLOCO') ||
-            ((rowTextJoined.includes('DATA') || rowTextJoined.includes('VENC')) &&
-              rowTextJoined.includes('VALOR'))
-          ) {
-            ultimaDataValida = null
+            rowTextJoined.startsWith('BLOCO')
+
+          const hasDataTerm =
+            rowTextJoined.includes('DATA') ||
+            rowTextJoined.includes('VENC') ||
+            rowTextJoined.includes('DT')
+          const hasValTerm =
+            rowTextJoined.includes('VALOR') ||
+            rowTextJoined.includes('RECEB') ||
+            rowTextJoined.includes('TOTAL')
+          const hasCliOrDescTerm =
+            rowTextJoined.includes('CLIENTE') ||
+            rowTextJoined.includes('SACAD') ||
+            rowTextJoined.includes('HIST') ||
+            rowTextJoined.includes('DESC') ||
+            rowTextJoined.includes('DOC') ||
+            rowTextJoined.includes('NF')
+
+          const isRepeatedHeader =
+            (hasDataTerm && hasValTerm) ||
+            (hasDataTerm && hasCliOrDescTerm) ||
+            (hasValTerm && hasCliOrDescTerm)
+
+          if (isQuinzenaOrSemanaSeparator || isRepeatedHeader) {
+            if (isRepeatedHeader) {
+              recalcularMapeamentoBlocoConferencia(row)
+              ultimaDataValida = null
+            } else if (r + 1 < dataRows.length) {
+              const nextRow = dataRows[r + 1]
+              const nextRowJoin = nextRow
+                .map((c) => normalizarNomeColuna(c))
+                .filter(Boolean)
+                .join(' ')
+              if (
+                nextRowJoin.includes('DATA') ||
+                nextRowJoin.includes('VENC') ||
+                nextRowJoin.includes('VALOR')
+              ) {
+                recalcularMapeamentoBlocoConferencia(nextRow)
+                ultimaDataValida = null
+              }
+            }
             continue
           }
 
@@ -339,20 +491,31 @@ export function ConferirPlanilhaRecebimentosModal({
             rowTextJoined.startsWith('SALDO')
           ) {
             ultimaDataValida = null
+            for (let ahead = 1; ahead <= 3 && r + ahead < dataRows.length; ahead++) {
+              const candRow = dataRows[r + ahead]
+              const candRowJoin = candRow
+                .map((c) => normalizarNomeColuna(c))
+                .filter(Boolean)
+                .join(' ')
+              if (
+                (candRowJoin.includes('DATA') || candRowJoin.includes('VENC')) &&
+                (candRowJoin.includes('VALOR') || candRowJoin.includes('CLIENTE'))
+              ) {
+                recalcularMapeamentoBlocoConferencia(candRow)
+                break
+              }
+            }
             continue
           }
 
-          const getVal = (colName: string) => {
-            if (!colName) return ''
-            const idx = headers.indexOf(colName)
-            if (idx === -1) return ''
-            return row[idx] ?? ''
-          }
-
-          let rawData = getVal(dataCol)
-          let rawCli = String(getVal(cliCol) || '').trim()
-          let rawDesc = String(getVal(descCol) || '').trim()
-          const rawDoc = String(getVal(docCol) || '').trim()
+          let rawData = getValByIndexOrName(row, activeDataColIdx, activeDataCol)
+          let rawCli = String(getValByIndexOrName(row, activeCliColIdx, activeCliCol) || '').trim()
+          let rawDesc = String(
+            getValByIndexOrName(row, activeDescColIdx, activeDescCol) || '',
+          ).trim()
+          const rawDoc = String(
+            getValByIndexOrName(row, activeDocColIdx, activeDocCol) || '',
+          ).trim()
 
           if (!rawCli && !rawDesc) {
             // Buscar texto plausível na linha
@@ -374,21 +537,21 @@ export function ConferirPlanilhaRecebimentosModal({
             rawCli = rawDesc
           }
 
-          const valRaw = getVal(valCol)
-          const valRecRaw = getVal(valRecCol)
+          const valRaw = getValByIndexOrName(row, activeValColIdx, activeValCol)
+          const valRecRaw = getValByIndexOrName(row, activeValRecColIdx, activeValRecCol)
 
           // Barreira anti-parcela, anti-cheque e anti-nota:
           let valParsed = 0
           if (
             !isPadraoNumeroParcela(valRaw) &&
             !isNumeroChequeOuSerieBancaria(valRaw).ehCheque &&
-            !isSuspeitoNumeroNotaFiscal(valRaw, valCol).ehNota
+            !isSuspeitoNumeroNotaFiscal(valRaw, activeValCol).ehNota
           ) {
-            const valDet = parseValorReceberDetalhado(valRaw, valCol)
+            const valDet = parseValorReceberDetalhado(valRaw, activeValCol)
             if (
               !valDet.invalidoOuAbsurdo &&
               !isNumeroChequeOuSerieBancaria(valDet.valor).ehCheque &&
-              !isSuspeitoNumeroNotaFiscal(valDet.valor, valCol).ehNota
+              !isSuspeitoNumeroNotaFiscal(valDet.valor, activeValCol).ehNota
             ) {
               valParsed = valDet.valor
             }
@@ -398,13 +561,13 @@ export function ConferirPlanilhaRecebimentosModal({
           if (
             !isPadraoNumeroParcela(valRecRaw) &&
             !isNumeroChequeOuSerieBancaria(valRecRaw).ehCheque &&
-            !isSuspeitoNumeroNotaFiscal(valRecRaw, valRecCol).ehNota
+            !isSuspeitoNumeroNotaFiscal(valRecRaw, activeValRecCol).ehNota
           ) {
-            const valRecDet = parseValorReceberDetalhado(valRecRaw, valRecCol)
+            const valRecDet = parseValorReceberDetalhado(valRecRaw, activeValRecCol)
             if (
               !valRecDet.invalidoOuAbsurdo &&
               !isNumeroChequeOuSerieBancaria(valRecDet.valor).ehCheque &&
-              !isSuspeitoNumeroNotaFiscal(valRecDet.valor, valRecCol).ehNota
+              !isSuspeitoNumeroNotaFiscal(valRecDet.valor, activeValRecCol).ehNota
             ) {
               valRecParsed = valRecDet.valor
             }
@@ -416,17 +579,25 @@ export function ConferirPlanilhaRecebimentosModal({
           // REGRA ESTRITA: Se a coluna de valor existia mas estava vazia na linha,
           // NUNCA inventar valor por varredura quando houver documento/nota na linha.
           const temColunaDocNaLinha = Boolean(
-            docCol ||
-            headers.some((h) => {
+            activeDocColIdx !== -1 ||
+            activeDocCol ||
+            activeHeaders.some((h) => {
               const hn = normalizarNomeColuna(h)
               return REGEX_COL_DOCUMENTO.test(hn) || hn.includes('NOTA') || hn.includes('NF')
             }),
           )
-          const linhaComValorMapeadoMasVazio = Boolean(valCol && valorPlanilha <= 0)
+          const linhaComValorMapeadoMasVazio = Boolean(
+            (activeValColIdx !== -1 || activeValCol) && valorPlanilha <= 0,
+          )
 
           // Se a coluna de valor não foi mapeada na aba, varredura apenas como último recurso
           // ignorando sempre colunas de cheque, notas/documentos e colunas não monetárias
-          if (valorPlanilha <= 0 && !valCol && !linhaComValorMapeadoMasVazio) {
+          if (
+            valorPlanilha <= 0 &&
+            activeValColIdx === -1 &&
+            !activeValCol &&
+            !linhaComValorMapeadoMasVazio
+          ) {
             for (let cIdx = 0; cIdx < row.length; cIdx++) {
               const h = headers[cIdx]
               if (isColunaCheque(h) || isColunaNaoMonetaria(h)) continue
@@ -455,7 +626,9 @@ export function ConferirPlanilhaRecebimentosModal({
 
           if (valorPlanilha <= 0) {
             // Se houver cliente ou descrição ou situação na linha mas sem valor, registrar como divergência visível
-            const rawStatusCheck = String(getVal(statusCol) || '').trim()
+            const rawStatusCheck = String(
+              getValByIndexOrName(row, activeStatusColIdx, activeStatusCol) || '',
+            ).trim()
             if (rawCli || rawDesc || rawStatusCheck) {
               todosItens.push({
                 id: `item_pl_sem_valor_${sheetName}_${r}`,
@@ -524,16 +697,18 @@ export function ConferirPlanilhaRecebimentosModal({
           ).trim()
 
           // Determinar status na planilha
-          const rawStatus = String(getVal(statusCol) || '').trim()
-          const rawDataRec = getVal(dataRecCol)
+          const rawStatus = String(
+            getValByIndexOrName(row, activeStatusColIdx, activeStatusCol) || '',
+          ).trim()
+          const rawDataRec = getValByIndexOrName(row, activeDataRecColIdx, activeDataRecCol)
           const statusClass = classificarStatusRecebimento({
             rawStatus,
             row,
             descFinal: rawDesc,
             valorPrevisto: valorPlanilha,
             valorRecebido: valorRecebidoPlanilha,
-            temColunaValorRecebido: Boolean(valRecCol),
-            temColunaDataRecebimento: Boolean(dataRecCol),
+            temColunaValorRecebido: Boolean(activeValRecColIdx !== -1 || activeValRecCol),
+            temColunaDataRecebimento: Boolean(activeDataRecColIdx !== -1 || activeDataRecCol),
             rawDataRecebimentoValida: Boolean(rawDataRec),
           })
 
