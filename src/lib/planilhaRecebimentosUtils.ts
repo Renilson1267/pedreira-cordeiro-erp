@@ -1380,3 +1380,50 @@ export function extrairCidadeENota(descricao: string | null | undefined): {
 
   return { cidade, nota, textoLivreObservacao }
 }
+
+/**
+ * Extrai números de nota/documento de observações legadas ou textos livres
+ * (ex.: "Obs: NF9551/94824", "Doc: 94825", "NF9493/93194 A NF9505/94669", "90486 A 90549").
+ * Retorna uma lista de strings de documentos candidatos limpos.
+ */
+export function extrairDocumentosDeObservacao(observacoes: string | null | undefined): string[] {
+  if (!observacoes || typeof observacoes !== 'string') return []
+  const obs = observacoes.trim()
+  if (!obs) return []
+
+  const resultados = new Set<string>()
+
+  // Padrões explícitos com prefixos "Doc: X", "Obs: NF...", "NF...", "[Doc: X]"
+  const padroes = [
+    /\[(?:Doc|NF|NF-e|NFe|Nota|Duplicata|Fatura)[\s:]*([^\]|]+)\]/gi,
+    /(?:(?:Doc|Nota|Duplicata|Fatura)[\s.:#-]+|Obs:\s*(?:NF[\s.:#-]*|Doc[\s.:#-]*|))([A-Z0-9/\s\-–Aa,.]+)/gi,
+    /\bNF[\s.:#-]*([0-9/\s\-–Aa,.]+)/gi,
+  ]
+
+  for (const regex of padroes) {
+    let match: RegExpExecArray | null
+    while ((match = regex.exec(obs)) !== null) {
+      const cand = (match[1] || '').trim()
+      if (cand && isNotaValida(cand)) {
+        resultados.add(cand.replace(/^(?:Doc|NF|NF-e|NFe|Nota)[\s.:#-]+/i, '').trim())
+      }
+    }
+  }
+
+  // Se não capturou por regex estruturada, tentar extrair trechos com dígitos/barras/intervalos
+  const partes = obs.split(/[|;\n]/)
+  for (const p of partes) {
+    const trimmed = p.trim()
+    const matchTrecho = trimmed.match(
+      /(?:(?:Doc|NF|Nota)[\s.:#-]+)?([0-9]{3,8}(?:[\s/A\-–]+[0-9]{3,8})*)/i,
+    )
+    if (matchTrecho && matchTrecho[1]) {
+      const cand = matchTrecho[1].trim()
+      if (isNotaValida(cand)) {
+        resultados.add(cand)
+      }
+    }
+  }
+
+  return Array.from(resultados).filter(Boolean)
+}

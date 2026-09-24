@@ -47,6 +47,7 @@ import {
   normalizarNomeColuna,
   inferirMesPorDatasDaPlanilha,
   extrairCidadeENota,
+  extrairDocumentosDeObservacao,
   isNotaValida,
   classificarStatusRecebimento,
   normalizarFormaRecebimento,
@@ -562,8 +563,28 @@ export function ImportadorRecebimentosModal({
       const normalizarTextoComparacao = (txt: string) =>
         (txt || '')
           .toLowerCase()
+          .normalize('NFD')
+          .replace(/[\u0300-\u036f]/g, '')
           .replace(/[\s\-_/\\.,;:()]+/g, ' ')
           .trim()
+
+      // Mapa de cliente_id -> nome normalizado para indexação rápida
+      const clienteIdParaNomeNorm = new Map<string, string>()
+      clientesCache.forEach((cli) => {
+        if (cli.id && cli.nome) {
+          clienteIdParaNomeNorm.set(cli.id, normalizarTextoComparacao(cli.nome).slice(0, 30))
+        }
+      })
+
+      // Contagem de ocorrências por cliente_id + valor para permitir fallback seguro único cli_${clienteId}_${valorStr}
+      const countPorClienteEValor = new Map<string, number>()
+      contasAtuaisDoBanco.forEach((c) => {
+        if (c.cliente_id) {
+          const vStr = Number(c.valor || 0).toFixed(2)
+          const k = `cli_${c.cliente_id}_${vStr}`
+          countPorClienteEValor.set(k, (countPorClienteEValor.get(k) || 0) + 1)
+        }
+      })
 
       contasAtuaisDoBanco.forEach((c) => {
         const d = c.vencimento.slice(0, 10)
@@ -574,15 +595,52 @@ export function ImportadorRecebimentosModal({
         const exactKey = `${c.cliente_id || ''}_${d}_${valorStr}_${descNorm}`
         existingExactKeys.add(exactKey)
 
+        // Indexar por documento estruturado (c.nota)
         if (notaNorm) {
           const flexKeyDoc = `doc_${c.cliente_id || ''}_${valorStr}_${notaNorm}`
           if (!existingFlexRecords.has(flexKeyDoc)) {
             existingFlexRecords.set(flexKeyDoc, c)
           }
         }
-        const flexKeyDesc = `desc_${c.cliente_id || ''}_${valorStr}_${descNorm}`
-        if (!existingFlexRecords.has(flexKeyDesc)) {
-          existingFlexRecords.set(flexKeyDesc, c)
+
+        // Extração de documento(s) a partir de c.observacoes quando c.nota vazio ou complementar
+        // Ex.: "Importado de planilha [Aba: JANEIRO_26] | Obs: NF9551/94824"
+        const docsDaObs = extrairDocumentosDeObservacao(c.observacoes)
+        docsDaObs.forEach((docCand) => {
+          const docCandNorm = normalizarTextoComparacao(docCand)
+          if (docCandNorm) {
+            const flexKeyObsDoc = `doc_${c.cliente_id || ''}_${valorStr}_${docCandNorm}`
+            if (!existingFlexRecords.has(flexKeyObsDoc)) {
+              existingFlexRecords.set(flexKeyObsDoc, c)
+            }
+          }
+        })
+
+        // Indexar por descrição caso preenchida
+        if (descNorm) {
+          const flexKeyDesc = `desc_${c.cliente_id || ''}_${valorStr}_${descNorm}`
+          if (!existingFlexRecords.has(flexKeyDesc)) {
+            existingFlexRecords.set(flexKeyDesc, c)
+          }
+        }
+
+        // Indexar por cliente_id + valor + nome do cliente normalizado
+        if (c.cliente_id) {
+          const cliNorm = clienteIdParaNomeNorm.get(c.cliente_id) || ''
+          if (cliNorm) {
+            const flexKeyCli = `cli_${c.cliente_id}_${valorStr}_${cliNorm}`
+            if (!existingFlexRecords.has(flexKeyCli)) {
+              existingFlexRecords.set(flexKeyCli, c)
+            }
+          }
+
+          // Fallback quando cliente+valor for único no banco (ou seja, não há ambiguidade de múltiplos títulos com mesmo valor)
+          const fallbackKey = `cli_${c.cliente_id}_${valorStr}`
+          if (countPorClienteEValor.get(fallbackKey) === 1) {
+            if (!existingFlexRecords.has(fallbackKey)) {
+              existingFlexRecords.set(fallbackKey, c)
+            }
+          }
         }
       })
 
@@ -1407,13 +1465,14 @@ export function ImportadorRecebimentosModal({
               dataVencimentoISO = parseDataReceber(ultimaDataValida.val, sheetCfg.ano, sheetCfg.mes)
             } else {
               // NUNCA usar "primeiro dia do mês da aba" como data de um título se a linha não tiver data legível:
-              // PROIBIDO usar "1º dia do mês da aba" como fallback — vira divergência no resumo.
+              // PROIBIDO usar "1º dia do mês da aba" como fallback — vira divergência no resumo explícita com nome do cliente.
               sheetDivergenciasCount += 1
+              const cliInfo = rawCli ? `, cliente: "${rawCli}"` : ''
               resultSummary.erros.push({
                 aba: sheetCfg.name,
                 linha: numLinha,
                 tipo: 'divergencia',
-                motivo: `Aba ${sheetCfg.name}: Linha ${numLinha} sem data de vencimento legível na linha. Registro não importado para evitar vencimento arbitrário no dia 01.`,
+                motivo: `Aba ${sheetCfg.name}: data ilegível na planilha — linha ${numLinha}${cliInfo}. Registro não importado para evitar vencimento arbitrário no dia 01.`,
               })
               continue
             }
@@ -1562,23 +1621,36 @@ export function ImportadorRecebimentosModal({
               // Se existir registro prévio com mesma nota/doc ou mesma desc/cli + cliente + valor,
               // reconciliar e atualizar vencimento, data_recebimento, forma, status, nota e endereço quando divergirem
               let existingRecordToUpdate: ContaReceber | null = null
+              let matchedFlexKey: string | null = null
+
               if (detectarDuplicados) {
                 if (item.notaNorm) {
                   const flexKeyDoc = `doc_${clienteId || ''}_${item.valorStr}_${item.notaNorm}`
                   if (existingFlexRecords.has(flexKeyDoc)) {
                     existingRecordToUpdate = existingFlexRecords.get(flexKeyDoc)!
+                    matchedFlexKey = flexKeyDoc
                   }
                 }
                 if (!existingRecordToUpdate && item.descNorm) {
                   const flexKeyDesc = `desc_${clienteId || ''}_${item.valorStr}_${item.descNorm}`
                   if (existingFlexRecords.has(flexKeyDesc)) {
                     existingRecordToUpdate = existingFlexRecords.get(flexKeyDesc)!
+                    matchedFlexKey = flexKeyDesc
                   }
                 }
                 if (!existingRecordToUpdate && item.cliNorm) {
                   const flexKeyCli = `cli_${clienteId || ''}_${item.valorStr}_${item.cliNorm}`
                   if (existingFlexRecords.has(flexKeyCli)) {
                     existingRecordToUpdate = existingFlexRecords.get(flexKeyCli)!
+                    matchedFlexKey = flexKeyCli
+                  }
+                }
+                // Fallback cliente+valor único no banco
+                if (!existingRecordToUpdate && clienteId) {
+                  const fallbackKey = `cli_${clienteId}_${item.valorStr}`
+                  if (existingFlexRecords.has(fallbackKey)) {
+                    existingRecordToUpdate = existingFlexRecords.get(fallbackKey)!
+                    matchedFlexKey = fallbackKey
                   }
                 }
               }
@@ -1608,7 +1680,18 @@ export function ImportadorRecebimentosModal({
                 const prevValorRec = Number(existingRecordToUpdate.valor_recebido || 0)
                 const valorRecDiverge = Math.abs(prevValorRec - valorEfetivoRecebido) > 0.01
 
-                // Se houver qualquer divergência em vencimento, status, data de pagamento, forma, nota ou endereço, ATUALIZAR
+                const prevValorPrevisto = Number(existingRecordToUpdate.valor || 0)
+                const valorPrevistoDiverge = Math.abs(prevValorPrevisto - item.valorFinal) > 0.01
+
+                // Detecção de legado congelado no dia 1 do mês da aba (ex.: 2026-01-01)
+                const mesAbaPad = String(sheetCfg.mes).padStart(2, '0')
+                const diaPrimeiroAba = `${sheetCfg.ano}-${mesAbaPad}-01`
+                const ehLegadoDiaPrimeiro =
+                  prevDateOnly === diaPrimeiroAba &&
+                  (existingRecordToUpdate.observacoes || '').includes(sheetCfg.name)
+
+                // Se houver qualquer divergência em vencimento, status, data de pagamento, forma, nota, endereço ou valor,
+                // ou se for um registro legado que estava no dia 01 da aba e agora tem data real, ATUALIZAR
                 if (
                   dataMudou ||
                   notaDiverge ||
@@ -1616,19 +1699,24 @@ export function ImportadorRecebimentosModal({
                   statusDiverge ||
                   formaDiverge ||
                   dataRecDiverge ||
-                  valorRecDiverge
+                  valorRecDiverge ||
+                  valorPrevistoDiverge ||
+                  ehLegadoDiaPrimeiro
                 ) {
                   await withRateLimitRetry(
                     () =>
                       pb.collection('contas_receber').update(existingRecordToUpdate!.id, {
-                        ...(dataMudou ? { vencimento: item.dataVencimentoISO } : {}),
+                        ...(dataMudou || ehLegadoDiaPrimeiro
+                          ? { vencimento: item.dataVencimentoISO }
+                          : {}),
                         ...(notaDiverge ? { nota: item.notaFinal } : {}),
                         ...(enderecoDiverge ? { endereco: item.enderecoFinal } : {}),
                         ...(statusDiverge ? { status: finalStatus } : {}),
                         ...(formaDiverge ? { forma_recebimento: finalForma } : {}),
                         ...(dataRecDiverge ? { data_recebimento: dataRecebimentoISO } : {}),
                         ...(valorRecDiverge ? { valor_recebido: valorEfetivoRecebido } : {}),
-                        observacoes: `Atualizado via reimportação de planilha [Aba: ${sheetCfg.name}]${item.notaFinal ? ` | Doc: ${item.notaFinal}` : ''}`,
+                        ...(valorPrevistoDiverge ? { valor: item.valorFinal } : {}),
+                        observacoes: `Atualizado via reimportação de planilha [Aba: ${sheetCfg.name}]${item.notaFinal ? ` | Doc: ${item.notaFinal}` : ''}${item.textoLivreExtra ? ` | Obs: ${item.textoLivreExtra}` : ''}`,
                       }),
                     {
                       maxRetries: 8,
@@ -1642,6 +1730,9 @@ export function ImportadorRecebimentosModal({
                     },
                   )
 
+                  if (matchedFlexKey) {
+                    existingFlexRecords.delete(matchedFlexKey)
+                  }
                   if (item.notaNorm) {
                     existingFlexRecords.delete(
                       `doc_${clienteId || ''}_${item.valorStr}_${item.notaNorm}`,
@@ -1656,6 +1747,9 @@ export function ImportadorRecebimentosModal({
                     existingFlexRecords.delete(
                       `cli_${clienteId || ''}_${item.valorStr}_${item.cliNorm}`,
                     )
+                  }
+                  if (clienteId) {
+                    existingFlexRecords.delete(`cli_${clienteId}_${item.valorStr}`)
                   }
 
                   resultSummary.atualizados += 1
