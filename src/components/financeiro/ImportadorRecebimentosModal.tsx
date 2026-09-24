@@ -56,6 +56,7 @@ import {
   normalizarFormaRecebimento,
   sanitizarNomeCliente,
   REGEX_COL_DATA,
+  REGEX_COL_DATA_EMISSAO,
   REGEX_COL_CLIENTE,
   REGEX_COL_DESCRICAO,
   REGEX_COL_VALOR,

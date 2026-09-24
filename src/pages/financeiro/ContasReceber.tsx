@@ -2222,6 +2222,36 @@ export default function ContasReceber() {
                       Estornar Recebimento
                     </Button>
                   )}
+
+                {canEdit && (
+                  <div className="grid grid-cols-2 gap-2 pt-1">
+                    <Button
+                      variant="outline"
+                      className="border-[#ECEAE4] rounded-xl text-gray-700"
+                      onClick={() => {
+                        const item = detailItem
+                        setDetailItem(null)
+                        handleEdit(item)
+                      }}
+                    >
+                      <Edit2 className="w-4 h-4 mr-2" />
+                      Editar
+                    </Button>
+                    <Button
+                      variant="destructive"
+                      className="rounded-xl"
+                      onClick={() => {
+                        handleDelete(
+                          detailItem.id,
+                          detailItem.descricao || detailItem.expand?.cliente_id?.nome,
+                        )
+                      }}
+                    >
+                      <Trash2 className="w-4 h-4 mr-2" />
+                      Excluir
+                    </Button>
+                  </div>
+                )}
               </div>
             </div>
           )}
