@@ -1056,71 +1056,104 @@ export function ImportadorRecebimentosModal({
             }
 
             const blockDataFound = findColInBlock(REGEX_COL_DATA)
-            activeDataCol = matchColInBlock(mapping.data, REGEX_COL_DATA, blockDataFound || '')
+            const blockDataRecFound = findColInBlock(REGEX_COL_DATA_RECEBIMENTO)
             const blockCliFound = findColInBlock(REGEX_COL_CLIENTE)
             const blockDescFound = findColInBlock(REGEX_COL_DESCRICAO)
+            const blockValRecFound = findColInBlock(REGEX_COL_VALOR_RECEBIDO)
+            const blockFormaFound = findColInBlock(REGEX_COL_FORMA_RECEBIMENTO)
+            const blockStatusFound = findColInBlock(REGEX_COL_STATUS)
+            const blockCentroFound = findColInBlock(REGEX_COL_CENTRO_CUSTO)
+            const blockCatFound = findColInBlock(REGEX_COL_CATEGORIA)
+            const blockDocFound = findColInBlock(REGEX_COL_DOCUMENTO)
 
-            activeCliCol = matchColInBlock(
-              mapping.cliente,
-              REGEX_COL_CLIENTE,
-              blockCliFound || blockDescFound || '',
-            )
-            activeDescCol = matchColInBlock(
-              mapping.descricao,
-              REGEX_COL_DESCRICAO,
-              blockCliFound && blockDescFound && blockCliFound !== blockDescFound
-                ? blockDescFound
-                : '',
-            )
+            // REGRA: quando o sub-bloco não encontrar um rótulo, HERDAR a coluna ativa prévia ou o cabeçalho principal
+            // em vez de resetar para vazio.
+            activeDataCol =
+              matchColInBlock(mapping.data, REGEX_COL_DATA, blockDataFound || '') ||
+              activeDataCol ||
+              dataCol
+            activeDataRecCol =
+              matchColInBlock(
+                mapping.dataRecebimento,
+                REGEX_COL_DATA_RECEBIMENTO,
+                blockDataRecFound || '',
+              ) ||
+              activeDataRecCol ||
+              dataRecCol
+
+            activeCliCol =
+              matchColInBlock(
+                mapping.cliente,
+                REGEX_COL_CLIENTE,
+                blockCliFound || blockDescFound || '',
+              ) ||
+              activeCliCol ||
+              cliCol
+            activeDescCol =
+              matchColInBlock(
+                mapping.descricao,
+                REGEX_COL_DESCRICAO,
+                blockCliFound && blockDescFound && blockCliFound !== blockDescFound
+                  ? blockDescFound
+                  : '',
+              ) ||
+              activeDescCol ||
+              descCol
+
             const blockValCompra =
               findColInBlock(REGEX_COL_VALOR_COMPRA) ||
               activeHeaders.find(
                 (h) => !isColunaCheque(h) && REGEX_COL_VALOR.test(normalizarNomeColuna(h)),
               ) ||
               ''
-            activeValCol = matchColInBlock(
-              mapping.valor && !isColunaCheque(mapping.valor) ? mapping.valor : '',
-              REGEX_COL_VALOR_COMPRA,
-              blockValCompra,
-            )
+            activeValCol =
+              matchColInBlock(
+                mapping.valor && !isColunaCheque(mapping.valor) ? mapping.valor : '',
+                REGEX_COL_VALOR_COMPRA,
+                blockValCompra,
+              ) ||
+              activeValCol ||
+              valCol
             if (isColunaCheque(activeValCol)) {
-              activeValCol = blockValCompra
+              activeValCol = blockValCompra || valCol
             }
-            activeValRecCol = matchColInBlock(
-              mapping.valorRecebido,
-              REGEX_COL_VALOR_RECEBIDO,
-              findColInBlock(REGEX_COL_VALOR_RECEBIDO),
-            )
-            activeDataRecCol = matchColInBlock(
-              mapping.dataRecebimento,
-              REGEX_COL_DATA_RECEBIMENTO,
-              findColInBlock(REGEX_COL_DATA_RECEBIMENTO),
-            )
-            activeFormaCol = matchColInBlock(
-              mapping.formaRecebimento,
-              REGEX_COL_FORMA_RECEBIMENTO,
-              findColInBlock(REGEX_COL_FORMA_RECEBIMENTO),
-            )
-            activeStatusCol = matchColInBlock(
-              mapping.status,
-              REGEX_COL_STATUS,
-              findColInBlock(REGEX_COL_STATUS),
-            )
-            activeCentroCol = matchColInBlock(
-              mapping.centroCusto,
-              REGEX_COL_CENTRO_CUSTO,
-              findColInBlock(REGEX_COL_CENTRO_CUSTO),
-            )
-            activeCatCol = matchColInBlock(
-              mapping.categoria,
-              REGEX_COL_CATEGORIA,
-              findColInBlock(REGEX_COL_CATEGORIA),
-            )
-            activeDocCol = matchColInBlock(
-              mapping.documento,
-              REGEX_COL_DOCUMENTO,
-              findColInBlock(REGEX_COL_DOCUMENTO),
-            )
+
+            activeValRecCol =
+              matchColInBlock(
+                mapping.valorRecebido,
+                REGEX_COL_VALOR_RECEBIDO,
+                blockValRecFound || '',
+              ) ||
+              activeValRecCol ||
+              valRecCol
+            activeFormaCol =
+              matchColInBlock(
+                mapping.formaRecebimento,
+                REGEX_COL_FORMA_RECEBIMENTO,
+                blockFormaFound || '',
+              ) ||
+              activeFormaCol ||
+              formaCol
+            activeStatusCol =
+              matchColInBlock(mapping.status, REGEX_COL_STATUS, blockStatusFound || '') ||
+              activeStatusCol ||
+              statusCol
+            activeCentroCol =
+              matchColInBlock(
+                mapping.centroCusto,
+                REGEX_COL_CENTRO_CUSTO,
+                blockCentroFound || '',
+              ) ||
+              activeCentroCol ||
+              centroCol
+            activeCatCol =
+              matchColInBlock(mapping.categoria, REGEX_COL_CATEGORIA, blockCatFound || '') ||
+              activeCatCol ||
+              catCol
+            activeDocCol =
+              matchColInBlock(mapping.documento, REGEX_COL_DOCUMENTO, blockDocFound || '') ||
+              activeDocCol ||
+              docCol
           }
         }
 
@@ -1624,12 +1657,12 @@ export function ImportadorRecebimentosModal({
               // NUNCA usar "primeiro dia do mês da aba" como data de um título se a linha não tiver data legível:
               // PROIBIDO usar "1º dia do mês da aba" como fallback — vira divergência no resumo explícita com nome do cliente.
               sheetDivergenciasCount += 1
-              const cliInfo = rawCli ? `, cliente: "${rawCli}"` : ''
+              const cliNomeExibicao = rawCli || rawDesc || 'cliente não identificado'
               resultSummary.erros.push({
                 aba: sheetCfg.name,
                 linha: numLinha,
                 tipo: 'divergencia',
-                motivo: `Aba ${sheetCfg.name}: data ilegível na planilha — linha ${numLinha}${cliInfo}. Registro não importado para evitar vencimento arbitrário no dia 01.`,
+                motivo: `vencimento ilegível — linha ${numLinha}, cliente ${cliNomeExibicao}`,
               })
               continue
             }

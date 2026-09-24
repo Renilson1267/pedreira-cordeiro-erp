@@ -228,7 +228,7 @@ export const REGEX_COL_VALOR_COMPRA =
 export const REGEX_COL_VALOR_RECEBIDO =
   /^(?:VALOR\s*RECEBIDO|VALOR\s*PAGO|VALOR\s*LIQUID|RECEBIDO|REC|LIQUID|PAGO)$/i
 export const REGEX_COL_DATA_RECEBIMENTO =
-  /DATA\s*(?:DE\s*)?PAG(?:AMENTO)?|DT\s*(?:DE\s*)?PAG(?:AMENTO)?|DATA\s*PAG|DT\s*PAG|DT\s*REC|DATA\s*REC|RECEBIMENTO|RECEB|BAIXA|DATA\s*BAIXA|LIQUID|QUITAC/i
+  /DATA\s*(?:DE\s*|DA\s*)?PAG(?:TO|AMENTO)?|DT\s*(?:DE\s*|DA\s*)?PAG(?:TO|AMENTO)?|DATA\s*PAG(?:TO)?|DT\s*PAG(?:TO)?|DATA\s*PGTO|DT\s*PGTO|PAGAMENTO|PGTO|DATA\s*(?:DE\s*|DA\s*)?BAIXA|DT\s*(?:DE\s*|DA\s*)?BAIXA|BAIXA|DATA\s*REC(?:EB)?|DT\s*REC(?:EB)?|RECEBIMENTO|RECEB|LIQUID|QUITAC/i
 export const REGEX_COL_FORMA_RECEBIMENTO =
   /TIPO\s*DE\s*PAGAMENTO|FORMA\s*DE\s*PAGAMENTO|TIPO\s*PAGAMENTO|FORMA\s*PAGAMENTO|FORMA|MEIO|TIPO\s*RECEB|TIPO\s*PAG|FORMA\s*PAG/i
 export const REGEX_COL_STATUS = /SITUACAO|STATUS|SITUAC|CONDICAO|ESTADO/i
@@ -1044,9 +1044,9 @@ export function parseDataReceber(val: any, anoFallback?: number, mesFallback?: n
   }
 
   if (typeof val === 'number') {
-    // Número serial Excel (ex: 46265)
-    // Limite sanitário para número serial: ~45000 a 47000 (anos 2023 a 2028)
-    if (!isNaN(val) && val > 0) {
+    // Número serial Excel legítimo (> 35000, ex: 45000 a 47500 para anos 2023 a 2029)
+    // Números avulso como 1..31 ou prazos (30, 45, 60) NUNCA são seriais de data
+    if (!isNaN(val) && val > 35000) {
       const ms = Math.round((val - 25569) * 86400 * 1000)
       const d = new Date(ms)
       if (!isNaN(d.getTime())) {
@@ -1056,6 +1056,7 @@ export function parseDataReceber(val: any, anoFallback?: number, mesFallback?: n
         }
       }
     }
+    return ''
   }
 
   const str = String(val).trim()
@@ -1077,13 +1078,25 @@ export function parseDataReceber(val: any, anoFallback?: number, mesFallback?: n
     }
   }
 
-  // Proibido interpretar número avulso puro como dia do mês sem contexto explícito de coluna de data
-  if (/^\d{1,2}$/.test(str)) {
-    const dia = parseInt(str, 10)
-    // Se for dia do mês entre 1 e 31, aceita apenas se for número sanitário com mês/ano de fallback
-    if (dia >= 1 && dia <= 31 && fallbackMonth && fallbackYear) {
-      return toUtcNoon(fallbackYear, fallbackMonth, dia)
+  // Serial Excel numérico representado como string (> 35000)
+  if (/^\d{5,}$/.test(str)) {
+    const serialNum = parseInt(str, 10)
+    if (serialNum > 35000 && serialNum < 70000) {
+      const ms = Math.round((serialNum - 25569) * 86400 * 1000)
+      const d = new Date(ms)
+      if (!isNaN(d.getTime())) {
+        const y = d.getUTCFullYear()
+        if (isAnoDataSanitario(y, fallbackYear)) {
+          return toUtcNoon(y, d.getUTCMonth() + 1, d.getUTCDate())
+        }
+      }
     }
+    return ''
+  }
+
+  // REGRA ESTRITA: Número avulso 1-31 NUNCA vira data de vencimento.
+  // Prazos como "30" (dias) ou dias isolados sem mês/ano explícito não são aceitos.
+  if (/^\d{1,2}$/.test(str)) {
     return ''
   }
 
