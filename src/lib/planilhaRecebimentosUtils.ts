@@ -877,20 +877,191 @@ export function normalizarTextoStatus(str: any): string {
 }
 
 /**
- * Classifica a linha de recebimento conforme a coluna de situação/status e valores:
- * - Se a linha da planilha tiver situação explícita de "ABERTA", "VENCIDA", "PROXIMO DE VENCER", "A RECEBER", "PENDENTE" etc.:
- *   priorizar 'Aberta', SEM gerar movimento de caixa e SEM data_recebimento, mesmo que haja valor pago preenchido.
- * - Se a situação indicar quitação explícita ("PAGO", "PAGA", "RECEBIDO", "RECEBIDA", "QUITADO", "LIQUIDADO", "BAIXADO"):
- *   classificar como 'Recebida'.
- * - Se a situação indicar adiantamento ("ANTECIPADO", "ADIANTAMENTO", "CREDITO", "DEPOSITO"):
- *   classificar como 'Recebimento Antecipado'.
- * - Se a situação indicar parcial ("PARCIAL"):
- *   classificar como 'Parcial'.
- * - Se a situação estiver vazia / sem coluna de situação:
- *   aplica a heurística de valores (vazio/zero -> Aberta; < previsto -> Parcial; >= previsto -> Recebida).
+ * Varre TODAS as células de uma linha da planilha (mesmo fora da coluna mapeada de status,
+ * lidando com mesclagens e deslocamentos) e detecta se há indicador explícito de quitação,
+ * aberto ou parcial.
+ *
+ * Termos de quitação priorizados:
+ * "JA PAGA", "JA PAGO", "JÁ PAGA", "JÁ PAGO", "PAGO", "PAGA", "RECEBIDO", "RECEBIDA",
+ * "QUITADO", "QUITADA", "LIQUIDADO", "LIQUIDADA", "BAIXADO", "BAIXADA".
+ *
+ * Termos de aberto: "CONTA VENCIDA", "VENCIDA", "VENCIDO", "ABERTA", "ABERTO", "EM ABERTO",
+ * "PROXIMO DE VENCER", "A RECEBER", "PENDENTE", "NAO PAGO", "NAO RECEBIDO".
+ *
+ * Termos de parcial: "PARCIAL", "PAGO PARCIAL", "PAGA PARCIAL", "PARCIALMENTE PAGO".
+ */
+export function detectarStatusNaLinha(
+  row: any[] | null | undefined,
+  fallbackStatusColVal?: any,
+): {
+  statusPriorizado: 'Recebida' | 'Aberta' | 'Parcial' | 'Recebimento Antecipado' | null
+  termoDetectado: string
+  fonte: 'celula_linha' | 'coluna_mapeada' | 'nenhuma'
+} {
+  const celulas: any[] = []
+  if (Array.isArray(row)) {
+    celulas.push(...row)
+  }
+  if (fallbackStatusColVal !== undefined && fallbackStatusColVal !== null) {
+    celulas.push(fallbackStatusColVal)
+  }
+
+  // 1ª PASSAGEM: Varredura de Quitação Explícita ("JÁ PAGA", "PAGO", "QUITADO", etc.)
+  // Tem prioridade máxima sobre qualquer valor zero/vazio de valor pago
+  for (const c of celulas) {
+    if (c === null || c === undefined) continue
+    if (typeof c === 'number' || c instanceof Date) continue
+    const norm = normalizarTextoStatus(c)
+    if (!norm) continue
+
+    // Ignorar negações tipo "NAO PAGO", "NAO RECEBIDO", "NAO QUITADO"
+    const isNegacao =
+      norm === 'NAO PAGO' ||
+      norm === 'NAO PAGA' ||
+      norm === 'NAO RECEBIDO' ||
+      norm === 'NAO RECEBIDA' ||
+      norm.includes('NAO PAG') ||
+      norm.includes('NAO RECEB') ||
+      norm.includes('NAO QUIT')
+    if (isNegacao) continue
+
+    // Já Paga / Já Pago
+    const isJaPaga =
+      norm === 'JA PAGA' ||
+      norm === 'JA PAGO' ||
+      norm.startsWith('JA PAG') ||
+      norm.includes('JA PAGA') ||
+      norm.includes('JA PAGO')
+
+    // Outros termos de quitação explícita
+    const isQuitada =
+      isJaPaga ||
+      norm === 'RECEBIDA' ||
+      norm === 'RECEBIDO' ||
+      norm === 'PAGO' ||
+      norm === 'PAGA' ||
+      norm === 'QUITADO' ||
+      norm === 'QUITADA' ||
+      norm === 'LIQUIDADO' ||
+      norm === 'LIQUIDADA' ||
+      norm === 'BAIXADO' ||
+      norm === 'BAIXADA' ||
+      /\b(?:JA\s*PAG[OA]S?|RECEBID[OA]S?|PAG[OA]S?|QUITAD[OA]S?|LIQUIDAD[OA]S?|BAIXAD[OA]S?)\b/.test(
+        norm,
+      )
+
+    if (isQuitada) {
+      return {
+        statusPriorizado: 'Recebida',
+        termoDetectado: norm,
+        fonte: 'celula_linha',
+      }
+    }
+  }
+
+  // 2ª PASSAGEM: Parcial ("PARCIAL", "PAGO PARCIAL", etc.)
+  for (const c of celulas) {
+    if (c === null || c === undefined) continue
+    if (typeof c === 'number' || c instanceof Date) continue
+    const norm = normalizarTextoStatus(c)
+    if (!norm) continue
+
+    if (
+      norm === 'PARCIAL' ||
+      norm === 'PAGO PARCIAL' ||
+      norm === 'PAGA PARCIAL' ||
+      norm === 'PARCIALMENTE PAGO' ||
+      norm === 'PARCIALMENTE PAGA' ||
+      norm === 'RECEBIDO PARCIAL' ||
+      norm === 'RECEBIDA PARCIAL' ||
+      /\bPARCIAL(?:MENTE)?\b/.test(norm)
+    ) {
+      return {
+        statusPriorizado: 'Parcial',
+        termoDetectado: norm,
+        fonte: 'celula_linha',
+      }
+    }
+  }
+
+  // 3ª PASSAGEM: Adiantamento / Antecipado
+  for (const c of celulas) {
+    if (c === null || c === undefined) continue
+    if (typeof c === 'number' || c instanceof Date) continue
+    const norm = normalizarTextoStatus(c)
+    if (!norm) continue
+
+    if (
+      norm === 'RECEBIMENTO ANTECIPADO' ||
+      norm === 'ANTECIPADO' ||
+      norm === 'ADIANTAMENTO' ||
+      norm.includes('ANTECIP') ||
+      norm.includes('ADIANT')
+    ) {
+      return {
+        statusPriorizado: 'Recebimento Antecipado',
+        termoDetectado: norm,
+        fonte: 'celula_linha',
+      }
+    }
+  }
+
+  // 4ª PASSAGEM: Aberta / Conta Vencida / Pendente
+  for (const c of celulas) {
+    if (c === null || c === undefined) continue
+    if (typeof c === 'number' || c instanceof Date) continue
+    const norm = normalizarTextoStatus(c)
+    if (!norm) continue
+
+    const isAberta =
+      norm === 'CONTA VENCIDA' ||
+      norm.startsWith('CONTA VENCID') ||
+      norm.includes('CONTA VENCID') ||
+      norm === 'VENCIDA' ||
+      norm === 'VENCIDO' ||
+      norm === 'ABERTA' ||
+      norm === 'ABERTO' ||
+      norm === 'EM ABERTO' ||
+      norm === 'PROXIMO DE VENCER' ||
+      norm === 'PROXIMO A VENCER' ||
+      norm === 'PROXIMA DE VENCER' ||
+      norm === 'PROXIMA A VENCER' ||
+      norm === 'A VENCER' ||
+      norm === 'A RECEBER' ||
+      norm === 'PENDENTE' ||
+      norm === 'PENDENTES' ||
+      norm === 'NAO PAGO' ||
+      norm === 'NAO PAGA' ||
+      norm.includes('NAO PAG') ||
+      norm.includes('NAO RECEB')
+    if (isAberta) {
+      return {
+        statusPriorizado: 'Aberta',
+        termoDetectado: norm,
+        fonte: 'celula_linha',
+      }
+    }
+  }
+
+  return {
+    statusPriorizado: null,
+    termoDetectado: '',
+    fonte: 'nenhuma',
+  }
+}
+
+/**
+ * Classifica a linha de recebimento conforme a coluna de situação/status, varredura de linha e valores:
+ * - Se a linha da planilha contiver (em qualquer célula da linha ou na coluna de status) "JA PAGA", "JA PAGO",
+ *   "RECEBIDO", "RECEBIDA", "PAGO", "PAGA", "QUITADO", "QUITADA", "LIQUIDADO", "LIQUIDADA", "BAIXADO", "BAIXADA":
+ *   priorizar 'Recebida' com valor_recebido = valor previsto (caso valor pago venha zerado/vazio).
+ * - "CONTA VENCIDA" e termos de aberto continuam -> "Aberta".
+ * - "PARCIAL" -> "Parcial".
+ * - O fallback "Aberta" (valor pago vazio) só vale quando NENHUM indicador de quitação existir na linha inteira.
  */
 export function classificarStatusRecebimento(params: {
   rawStatus?: string | null
+  row?: any[] | null
   descFinal?: string | null
   valorPrevisto: number
   valorRecebido: number
@@ -905,6 +1076,7 @@ export function classificarStatusRecebimento(params: {
 } {
   const {
     rawStatus,
+    row,
     descFinal = '',
     valorPrevisto,
     valorRecebido,
@@ -933,52 +1105,10 @@ export function classificarStatusRecebimento(params: {
     }
   }
 
-  const normStatus = normalizarTextoStatus(rawStatus)
-  const normDesc = normalizarTextoStatus(descFinal)
+  // 1. Detecção profunda na linha inteira (varre todas as células da linha + coluna de status)
+  const deteccaoLinha = detectarStatusNaLinha(row, rawStatus)
 
-  // REGRAS DE SITUAÇÃO DA PLANILHA (QUANDO HOUVER VALOR DE SITUAÇÃO):
-  // Devem ser avaliadas ANTES de qualquer heurística por valor pago.
-  // A comparação normaliza acentos, caixa alta/baixa e espaços extras.
-
-  // 1. Situações Recebidas / Pagas Explícitas:
-  // "Já paga", "Já pago", "Ja paga", "JA PAGA", "Recebida", "Recebido", "Pago", "Paga", "Quitada", "Liquidada", "Baixada".
-  // AVALIADO ANTES de qualquer branch para evitar sobrescritas ou falsos positivos.
-  const isJaPaga =
-    normStatus === 'JA PAGA' ||
-    normStatus === 'JA PAGO' ||
-    normStatus.startsWith('JA PAG') ||
-    normStatus.includes('JA PAGA') ||
-    normStatus.includes('JA PAGO')
-
-  const isStatusQuitada =
-    isJaPaga ||
-    normStatus === 'RECEBIDA' ||
-    normStatus === 'RECEBIDO' ||
-    normStatus === 'PAGO' ||
-    normStatus === 'PAGA' ||
-    normStatus === 'QUITADA' ||
-    normStatus === 'QUITADO' ||
-    normStatus === 'BAIXADA' ||
-    normStatus === 'BAIXADO' ||
-    normStatus === 'LIQUIDADA' ||
-    normStatus === 'LIQUIDADO' ||
-    normStatus.includes('RECEB') ||
-    normStatus.includes('LIQUID') ||
-    normStatus.includes('BAIX') ||
-    normStatus.includes('QUIT') ||
-    normStatus.includes('PAGO') ||
-    normStatus.includes('PAGA')
-
-  // Se NÃO for "NÃO PAGO" / "NÃO PAGA" e for quitada:
-  const isNaoPago =
-    normStatus === 'NAO PAGO' ||
-    normStatus === 'NAO PAGA' ||
-    normStatus === 'NAO RECEBIDO' ||
-    normStatus === 'NAO RECEBIDA' ||
-    normStatus.includes('NAO PAG') ||
-    normStatus.includes('NAO RECEB')
-
-  if (isStatusQuitada && !isNaoPago) {
+  if (deteccaoLinha.statusPriorizado === 'Recebida') {
     const valEfetivo = valorRecebido > 0 ? valorRecebido : valorPrevisto
     return {
       status: 'Recebida',
@@ -987,34 +1117,7 @@ export function classificarStatusRecebimento(params: {
     }
   }
 
-  // 2. Situações em Aberto / Não pagas / Conta vencida:
-  // "Conta vencida", "Conta vencida.", "Vencida", "Vencido", "Aberta", "Em aberto", "Próximo de vencer", "A receber", "Pendente", etc.
-  // -> Status "Aberta", SEM gerar movimento de caixa, data_recebimento = null e valor_recebido = 0.
-  const isStatusAbertaOuVencida =
-    normStatus === 'CONTA VENCIDA' ||
-    normStatus.startsWith('CONTA VENCID') ||
-    normStatus.includes('CONTA VENCID') ||
-    normStatus === 'VENCIDA' ||
-    normStatus === 'VENCIDO' ||
-    normStatus === 'ABERTA' ||
-    normStatus === 'ABERTO' ||
-    normStatus === 'EM ABERTO' ||
-    normStatus === 'PROXIMO DE VENCER' ||
-    normStatus === 'PROXIMO A VENCER' ||
-    normStatus === 'PROXIMA DE VENCER' ||
-    normStatus === 'PROXIMA A VENCER' ||
-    normStatus === 'A VENCER' ||
-    normStatus === 'A RECEBER' ||
-    normStatus === 'PENDENTE' ||
-    normStatus === 'PENDENTES' ||
-    isNaoPago ||
-    normStatus.includes('ABERT') ||
-    normStatus.includes('VENC') ||
-    normStatus.includes('PEND') ||
-    normStatus.includes('A VENCER') ||
-    normStatus.includes('A RECEBER')
-
-  if (isStatusAbertaOuVencida) {
+  if (deteccaoLinha.statusPriorizado === 'Aberta') {
     return {
       status: 'Aberta',
       valorEfetivoRecebido: 0,
@@ -1022,19 +1125,7 @@ export function classificarStatusRecebimento(params: {
     }
   }
 
-  // 3. Situações Parciais:
-  // "Parcial", "Pago parcial", "Parcialmente pago" -> status "Parcial" com valor pago gravado.
-  const isStatusParcial =
-    normStatus === 'PARCIAL' ||
-    normStatus === 'PAGO PARCIAL' ||
-    normStatus === 'PAGA PARCIAL' ||
-    normStatus === 'PARCIALMENTE PAGO' ||
-    normStatus === 'PARCIALMENTE PAGA' ||
-    normStatus === 'RECEBIDO PARCIAL' ||
-    normStatus === 'RECEBIDA PARCIAL' ||
-    normStatus.includes('PARCIAL')
-
-  if (isStatusParcial) {
+  if (deteccaoLinha.statusPriorizado === 'Parcial') {
     const valEfetivo = valorRecebido > 0 ? valorRecebido : 0
     return {
       status: 'Parcial',
@@ -1043,10 +1134,19 @@ export function classificarStatusRecebimento(params: {
     }
   }
 
-  // 4. Checagem de Adiantamento / Recebimento Antecipado no status ou na descrição
+  if (deteccaoLinha.statusPriorizado === 'Recebimento Antecipado') {
+    return {
+      status: 'Recebimento Antecipado',
+      valorEfetivoRecebido: valorPrevisto,
+      situacaoExplicitamenteAberta: false,
+    }
+  }
+
+  const normStatus = normalizarTextoStatus(rawStatus)
+  const normDesc = normalizarTextoStatus(descFinal)
+
+  // 2. Checagem de Adiantamento / Recebimento Antecipado na descrição
   const isAntecipado =
-    normStatus.includes('ANTECIP') ||
-    normStatus.includes('ADIANT') ||
     normDesc.includes('ANTECIP') ||
     normDesc.includes('ADIANT') ||
     normDesc.includes('DEPOSITO') ||
@@ -1060,8 +1160,8 @@ export function classificarStatusRecebimento(params: {
     }
   }
 
-  // 5. Sem coluna de situação ou situação não reconhecida / vazia:
-  // Aplicar heurística de valores
+  // 3. Sem indicador na linha inteira:
+  // Aplicar heurística de valores (apenas quando NENHUM indicador de quitação existir na linha inteira)
   if (temColunaValorRecebido) {
     if (valorRecebido <= 0.009) {
       return {
@@ -1094,7 +1194,7 @@ export function classificarStatusRecebimento(params: {
     }
   }
 
-  // Título previsto entra como 'Aberta'
+  // Título previsto sem quitação na linha entra como 'Aberta'
   return {
     status: 'Aberta',
     valorEfetivoRecebido: 0,

@@ -464,6 +464,7 @@ export function ConferirPlanilhaRecebimentosModal({
           const rawDataRec = getVal(dataRecCol)
           const statusClass = classificarStatusRecebimento({
             rawStatus,
+            row,
             descFinal: rawDesc,
             valorPrevisto: valorPlanilha,
             valorRecebido: valorRecebidoPlanilha,

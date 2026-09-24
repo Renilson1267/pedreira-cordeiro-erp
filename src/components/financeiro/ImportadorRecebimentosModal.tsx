@@ -49,6 +49,7 @@ import {
   extrairCidadeENota,
   extrairDocumentosDeObservacao,
   isNotaValida,
+  detectarStatusNaLinha,
   classificarStatusRecebimento,
   normalizarFormaRecebimento,
   REGEX_COL_DATA,
@@ -1075,6 +1076,7 @@ export function ImportadorRecebimentosModal({
           rawDataRec: any
           rawForma: string
           rawStatus: string
+          rawRow?: any[]
           rawCentro: string
           rawCat: string
           notaNorm: string
@@ -1523,6 +1525,7 @@ export function ImportadorRecebimentosModal({
             rawDataRec,
             rawForma,
             rawStatus,
+            rawRow: row,
             rawCentro,
             rawCat,
             notaNorm,
@@ -1589,6 +1592,7 @@ export function ImportadorRecebimentosModal({
               // Determinar Situação e valores preliminares para uso em caso de criação OU reconciliação/atualização
               const classificacaoResult = classificarStatusRecebimento({
                 rawStatus: item.rawStatus,
+                row: item.rawRow,
                 descFinal: item.descFinal,
                 valorPrevisto: item.valorFinal,
                 valorRecebido: item.rawValorRec,
@@ -1603,15 +1607,26 @@ export function ImportadorRecebimentosModal({
 
               const valorEfetivoRecebido = classificacaoResult.valorEfetivoRecebido
 
-              const rawRecebimentoParaParse = isValidaSanitaria(item.rawDataRec)
-                ? item.rawDataRec
-                : item.dataVencimentoISO
+              const temDataRecLegivel = isValidaSanitaria(item.rawDataRec)
+              let dataRecebimentoISO: string | null = null
 
-              const dataRecebimentoISO =
-                finalStatus !== 'Aberta'
-                  ? parseDataReceber(rawRecebimentoParaParse, sheetCfg.ano, sheetCfg.mes) ||
-                    item.dataVencimentoISO
-                  : null
+              if (finalStatus !== 'Aberta') {
+                if (temDataRecLegivel) {
+                  dataRecebimentoISO =
+                    parseDataReceber(item.rawDataRec, sheetCfg.ano, sheetCfg.mes) || null
+                } else {
+                  // Data de pagamento ilegível/ausente na planilha:
+                  // NUNCA inventar data. Mantém dataRecebimentoISO = null e registra divergência explícita no resumo
+                  dataRecebimentoISO = null
+                  sheetDivergenciasCount += 1
+                  resultSummary.erros.push({
+                    aba: sheetCfg.name,
+                    linha: item.numLinha,
+                    tipo: 'divergencia',
+                    motivo: `data de pagamento ilegível — linha ${item.numLinha}, cliente ${item.rawCli || item.descFinal || 'não identificado'} (status Recebida gravado com data de recebimento vazia)`,
+                  })
+                }
+              }
 
               const finalForma = normalizarFormaRecebimento(
                 item.rawForma,
@@ -1703,21 +1718,27 @@ export function ImportadorRecebimentosModal({
                   valorPrevistoDiverge ||
                   ehLegadoDiaPrimeiro
                 ) {
-                  await withRateLimitRetry(
+                  const updatedConta = await withRateLimitRetry(
                     () =>
-                      pb.collection('contas_receber').update(existingRecordToUpdate!.id, {
-                        ...(dataMudou || ehLegadoDiaPrimeiro
-                          ? { vencimento: item.dataVencimentoISO }
-                          : {}),
-                        ...(notaDiverge ? { nota: item.notaFinal } : {}),
-                        ...(enderecoDiverge ? { endereco: item.enderecoFinal } : {}),
-                        ...(statusDiverge ? { status: finalStatus } : {}),
-                        ...(formaDiverge ? { forma_recebimento: finalForma } : {}),
-                        ...(dataRecDiverge ? { data_recebimento: dataRecebimentoISO } : {}),
-                        ...(valorRecDiverge ? { valor_recebido: valorEfetivoRecebido } : {}),
-                        ...(valorPrevistoDiverge ? { valor: item.valorFinal } : {}),
-                        observacoes: `Atualizado via reimportação de planilha [Aba: ${sheetCfg.name}]${item.notaFinal ? ` | Doc: ${item.notaFinal}` : ''}${item.textoLivreExtra ? ` | Obs: ${item.textoLivreExtra}` : ''}`,
-                      }),
+                      pb
+                        .collection('contas_receber')
+                        .update<ContaReceber>(existingRecordToUpdate!.id, {
+                          ...(dataMudou || ehLegadoDiaPrimeiro
+                            ? { vencimento: item.dataVencimentoISO }
+                            : {}),
+                          ...(notaDiverge ? { nota: item.notaFinal } : {}),
+                          ...(enderecoDiverge ? { endereco: item.enderecoFinal } : {}),
+                          ...(statusDiverge ? { status: finalStatus } : {}),
+                          ...(formaDiverge || (finalStatus !== 'Aberta' && finalForma)
+                            ? { forma_recebimento: finalForma }
+                            : {}),
+                          ...(dataRecDiverge ? { data_recebimento: dataRecebimentoISO } : {}),
+                          ...(valorRecDiverge || finalStatus === 'Recebida'
+                            ? { valor_recebido: valorEfetivoRecebido }
+                            : {}),
+                          ...(valorPrevistoDiverge ? { valor: item.valorFinal } : {}),
+                          observacoes: `Atualizado via reimportação de planilha [Aba: ${sheetCfg.name}]${item.notaFinal ? ` | Doc: ${item.notaFinal}` : ''}${item.textoLivreExtra ? ` | Obs: ${item.textoLivreExtra}` : ''}`,
+                        }),
                     {
                       maxRetries: 8,
                       initialDelayMs: 400,
@@ -1729,6 +1750,57 @@ export function ImportadorRecebimentosModal({
                       },
                     },
                   )
+
+                  // Se atualizou de "Aberta" para "Recebida", "Parcial" ou "Recebimento Antecipado",
+                  // gerar movimento financeiro correspondente (se ainda não existir movimento para esta conta)
+                  if (
+                    prevStatus === 'Aberta' &&
+                    (finalStatus === 'Recebida' ||
+                      finalStatus === 'Parcial' ||
+                      finalStatus === 'Recebimento Antecipado') &&
+                    valorEfetivoRecebido > 0
+                  ) {
+                    try {
+                      // Verifica se já existe movimento para não duplicar
+                      const movExistente = await pb
+                        .collection('movimentos_financeiros')
+                        .getFirstListItem(`referencia_id = "${existingRecordToUpdate.id}"`)
+                        .catch(() => null)
+
+                      if (!movExistente) {
+                        const dataMovimento = dataRecebimentoISO || item.dataVencimentoISO
+                        const descMovimento = updatedConta.descricao
+                          ? `Recebimento${finalStatus === 'Parcial' ? ' parcial' : ''}: ${updatedConta.descricao}${item.rawCli ? ` [${item.rawCli}]` : ''}`
+                          : `Recebimento${finalStatus === 'Parcial' ? ' parcial' : ''}${item.rawCli ? `: ${item.rawCli}` : ''}`
+
+                        await withRateLimitRetry(
+                          () =>
+                            pb.collection('movimentos_financeiros').create({
+                              empresa_id: empresaId,
+                              tipo: 'Entrada',
+                              descricao: descMovimento,
+                              valor: valorEfetivoRecebido,
+                              data: dataMovimento,
+                              categoria_id: updatedConta.categoria_id || null,
+                              centro_custo_id: updatedConta.centro_custo_id || null,
+                              origem: 'ContaReceber',
+                              referencia_id: updatedConta.id,
+                              conciliado: false,
+                            }),
+                          {
+                            maxRetries: 8,
+                            initialDelayMs: 400,
+                            maxDelayMs: 8000,
+                          },
+                        )
+                      }
+                    } catch (movErr) {
+                      console.warn(
+                        'Erro ao gerar movimento de caixa na reconciliação para Recebida:',
+                        movErr,
+                      )
+                    }
+                  }
 
                   if (matchedFlexKey) {
                     existingFlexRecords.delete(matchedFlexKey)
@@ -1754,6 +1826,9 @@ export function ImportadorRecebimentosModal({
 
                   resultSummary.atualizados += 1
                   sheetAtualizados += 1
+                  if (finalStatus === 'Recebida') {
+                    resultSummary.recebidasBaixadas += 1
+                  }
                   return
                 } else {
                   // Se não houve divergência, considerar duplicado idêntico
@@ -1849,10 +1924,10 @@ export function ImportadorRecebimentosModal({
                 (finalStatus === 'Recebida' ||
                   finalStatus === 'Recebimento Antecipado' ||
                   finalStatus === 'Parcial') &&
-                valorEfetivoRecebido > 0 &&
-                dataRecebimentoISO
+                valorEfetivoRecebido > 0
               ) {
                 try {
+                  const dataMov = dataRecebimentoISO || item.dataVencimentoISO
                   const descMovimento = createdConta.descricao
                     ? `Recebimento${finalStatus === 'Parcial' ? ' parcial' : ''}: ${createdConta.descricao}${item.rawCli ? ` [${item.rawCli}]` : ''}`
                     : `Recebimento${finalStatus === 'Parcial' ? ' parcial' : ''}${item.rawCli ? `: ${item.rawCli}` : ''}`
@@ -1864,7 +1939,7 @@ export function ImportadorRecebimentosModal({
                         tipo: 'Entrada',
                         descricao: descMovimento,
                         valor: valorEfetivoRecebido,
-                        data: dataRecebimentoISO,
+                        data: dataMov,
                         categoria_id: finalCategoriaId,
                         centro_custo_id: finalCentroCustoId,
                         origem: 'ContaReceber',

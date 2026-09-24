@@ -899,22 +899,27 @@ export default function ContasReceber() {
   }, [contas])
 
   const getContaStatusReal = (c: ContaReceber): StatusContaReceber => {
-    if (c.status === 'Recebida' || c.status === 'Recebimento Antecipado') return c.status
-    const isOverdue = c.vencimento.slice(0, 10) < nowISO
-    if (isOverdue) return 'Vencida'
+    // Decisão permanente v0.0.65: títulos "Aberta" exibem SEMPRE status Aberta (vencida/aberta/próximo de vencer = Aberta).
+    // O controle gerencial de atraso é feito visualmente (destaque vermelho/âmbar) e no KPI de Vencidos.
+    if (c.status === 'Aberta') return 'Aberta'
     return c.status
   }
 
   const filteredContas = useMemo(() => {
     return contas.filter((c) => {
-      const currentRealStatus = getContaStatusReal(c)
+      const isOverdue =
+        (c.status === 'Aberta' || c.status === 'Parcial') && c.vencimento.slice(0, 10) < nowISO
 
       if (statusFilter !== 'Todas') {
         if (statusFilter === 'Aberta') {
-          if (c.status !== 'Aberta' || currentRealStatus === 'Vencida') return false
+          // O filtro "Aberta" inclui tanto títulos a vencer quanto vencidos (decisão do usuário)
+          if (c.status !== 'Aberta') return false
         } else if (statusFilter === 'Parcial') {
           if (c.status !== 'Parcial') return false
-        } else if ((currentRealStatus as string) !== (statusFilter as string)) {
+        } else if (statusFilter === 'Vencida') {
+          // Aba Vencida continua permitindo ver apenas títulos em atraso para conveniência
+          if (!isOverdue) return false
+        } else if (c.status !== statusFilter) {
           return false
         }
       }
@@ -1212,7 +1217,9 @@ export default function ContasReceber() {
                         {saldoRestante > 0 ? (
                           <span
                             className={
-                              displayStatus === 'Vencida' ? 'text-red-600' : 'text-amber-700'
+                              c.vencimento.slice(0, 10) < nowISO && c.status === 'Aberta'
+                                ? 'text-red-600'
+                                : 'text-amber-700'
                             }
                           >
                             {formatCurrency(saldoRestante)}
@@ -1224,22 +1231,31 @@ export default function ContasReceber() {
 
                       {/* Status */}
                       <td className="py-2 px-2 text-center whitespace-nowrap">
-                        <Badge
-                          variant="outline"
-                          className={`text-[11px] px-1.5 py-0 leading-tight font-medium ${
-                            displayStatus === 'Recebida'
-                              ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                              : displayStatus === 'Parcial'
-                                ? 'bg-amber-50 text-amber-800 border-amber-300 font-semibold'
-                                : displayStatus === 'Vencida'
-                                  ? 'bg-red-50 text-red-700 border-red-200'
-                                  : displayStatus === 'Recebimento Antecipado'
-                                    ? 'bg-teal-50 text-teal-800 border-teal-300 font-semibold'
-                                    : 'bg-blue-50 text-blue-700 border-blue-200'
-                          }`}
-                        >
-                          {displayStatus}
-                        </Badge>
+                        {(() => {
+                          const isAtrasado =
+                            c.vencimento.slice(0, 10) < nowISO &&
+                            (c.status === 'Aberta' || c.status === 'Parcial')
+                          return (
+                            <Badge
+                              variant="outline"
+                              className={`text-[11px] px-1.5 py-0 leading-tight font-medium ${
+                                displayStatus === 'Recebida'
+                                  ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                                  : displayStatus === 'Parcial'
+                                    ? isAtrasado
+                                      ? 'bg-amber-50 text-red-700 border-red-300 font-semibold'
+                                      : 'bg-amber-50 text-amber-800 border-amber-300 font-semibold'
+                                    : displayStatus === 'Recebimento Antecipado'
+                                      ? 'bg-teal-50 text-teal-800 border-teal-300 font-semibold'
+                                      : isAtrasado
+                                        ? 'bg-red-50 text-red-700 border-red-300 font-semibold'
+                                        : 'bg-blue-50 text-blue-700 border-blue-200'
+                              }`}
+                            >
+                              {displayStatus}
+                            </Badge>
+                          )
+                        })()}
                       </td>
 
                       {/* Doc / Nota */}
