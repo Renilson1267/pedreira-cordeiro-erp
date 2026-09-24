@@ -359,61 +359,69 @@ export function ConferirPlanilhaRecebimentosModal({
           const valRaw = getVal(valCol)
           const valRecRaw = getVal(valRecCol)
 
-          if (isPadraoNumeroParcela(valRaw) || isPadraoNumeroParcela(valRecRaw)) {
-            // Se for número de parcela (1.1, 2.2 etc.), vira divergência e não processa
-            todosItens.push({
-              id: `item_pl_parcela_${sheetName}_${r}`,
-              numLinhaPlanilha: numLinha,
-              tipo: 'planilha_apenas',
-              aba: sheetName,
-              clienteNome: rawCli || 'Cliente não identificado',
-              documentoNota: '',
-              descricao: rawDesc || rawCli,
-              vencimentoPlanilha: '',
-              valorPlanilha: 0,
-              valorRecebidoPlanilha: 0,
-              statusPlanilha: 'Aberta',
-              divergencias: [
-                {
-                  campo: 'Valor Previsto',
-                  valorPlanilha: `Número de parcela ("${valRaw || valRecRaw}") identificado na coluna de valor`,
-                  valorSistema: 'Rejeitado pela barreira anti-parcela X.Y',
-                },
-              ],
-            })
-            continue
+          // Barreira anti-parcela: quando a célula contiver padrão de parcela (ex.: "1.1", "2.2"),
+          // apenas ZERA a leitura daquela célula e prossegue na linha, buscando o valor legítimo em VALOR PAGO; nunca descartar a linha.
+          let valParsed = 0
+          if (!isPadraoNumeroParcela(valRaw)) {
+            const valDet = parseValorReceberDetalhado(valRaw)
+            if (!valDet.invalidoOuAbsurdo) {
+              valParsed = valDet.valor
+            }
           }
 
-          const valDet = parseValorReceberDetalhado(valRaw)
-          const valRecDet = parseValorReceberDetalhado(valRecRaw)
-          if (valDet.invalidoOuAbsurdo || valRecDet.invalidoOuAbsurdo) {
-            todosItens.push({
-              id: `item_pl_invalido_${sheetName}_${r}`,
-              numLinhaPlanilha: numLinha,
-              tipo: 'planilha_apenas',
-              aba: sheetName,
-              clienteNome: rawCli || 'Cliente não identificado',
-              documentoNota: '',
-              descricao: rawDesc || rawCli,
-              vencimentoPlanilha: '',
-              valorPlanilha: 0,
-              valorRecebidoPlanilha: 0,
-              statusPlanilha: 'Aberta',
-              divergencias: [
-                {
-                  campo: 'Valor Previsto',
-                  valorPlanilha: valDet.motivo || valRecDet.motivo || 'Valor monetário inválido',
-                  valorSistema: 'Rejeitado',
-                },
-              ],
-            })
-            continue
+          let valRecParsed = 0
+          if (!isPadraoNumeroParcela(valRecRaw)) {
+            const valRecDet = parseValorReceberDetalhado(valRecRaw)
+            if (!valRecDet.invalidoOuAbsurdo) {
+              valRecParsed = valRecDet.valor
+            }
           }
 
-          const valorPlanilha = valDet.valor > 0 ? valDet.valor : valRecDet.valor
-          const valorRecebidoPlanilha = valRecDet.valor
+          let valorPlanilha = valParsed > 0 ? valParsed : valRecParsed
+          const valorRecebidoPlanilha = valRecParsed
+
+          // Se nenhuma das colunas mapeadas tiver valor > 0, varrer outras células da linha
+          if (valorPlanilha <= 0) {
+            for (let cIdx = 0; cIdx < row.length; cIdx++) {
+              const cellRaw = row[cIdx]
+              if (!cellRaw || isPadraoNumeroParcela(cellRaw)) continue
+              const cellDet = parseValorReceberDetalhado(cellRaw)
+              if (
+                !cellDet.invalidoOuAbsurdo &&
+                cellDet.valor > 0 &&
+                !isPadraoNumeroParcela(cellDet.valor)
+              ) {
+                valorPlanilha = cellDet.valor
+                break
+              }
+            }
+          }
 
           if (valorPlanilha <= 0) {
+            // Se houver cliente ou descrição ou situação na linha mas sem valor, registrar como divergência visível
+            const rawStatusCheck = String(getVal(statusCol) || '').trim()
+            if (rawCli || rawDesc || rawStatusCheck) {
+              todosItens.push({
+                id: `item_pl_sem_valor_${sheetName}_${r}`,
+                numLinhaPlanilha: numLinha,
+                tipo: 'planilha_apenas',
+                aba: sheetName,
+                clienteNome: rawCli || 'Cliente não identificado',
+                documentoNota: '',
+                descricao: rawDesc || rawCli,
+                vencimentoPlanilha: '',
+                valorPlanilha: 0,
+                valorRecebidoPlanilha: 0,
+                statusPlanilha: 'Aberta',
+                divergencias: [
+                  {
+                    campo: 'Valor Previsto',
+                    valorPlanilha: 'Sem valor monetário legível na linha',
+                    valorSistema: 'Requer conferência',
+                  },
+                ],
+              })
+            }
             continue // Linhas sem valor não são lançamentos contábeis
           }
 

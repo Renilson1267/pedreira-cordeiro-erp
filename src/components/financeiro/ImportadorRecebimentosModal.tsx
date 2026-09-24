@@ -52,6 +52,7 @@ import {
   detectarStatusNaLinha,
   classificarStatusRecebimento,
   normalizarFormaRecebimento,
+  sanitizarNomeCliente,
   REGEX_COL_DATA,
   REGEX_COL_CLIENTE,
   REGEX_COL_DESCRICAO,
@@ -665,7 +666,7 @@ export function ImportadorRecebimentosModal({
 
       // Resolver cliente de forma segura e cacheada em memória com retentativas e reuso de promessa
       const getOrCreateCliente = async (nomeCli: string, sheetName: string): Promise<string> => {
-        const rawTrim = (nomeCli || '').trim()
+        const rawTrim = sanitizarNomeCliente(nomeCli)
         if (!rawTrim) {
           throw new Error('Nome do cliente vazio ou não informado')
         }
@@ -673,6 +674,14 @@ export function ImportadorRecebimentosModal({
 
         if (clientesCache.has(keyCli)) {
           return clientesCache.get(keyCli)!.id
+        }
+
+        // Busca flexível no cache existente (ex.: nome sem pontuação final ou contido)
+        for (const [cacheKey, cli] of clientesCache.entries()) {
+          const sanCacheKey = sanitizarNomeCliente(cacheKey).toLowerCase()
+          if (sanCacheKey === keyCli || (keyCli.length >= 8 && sanCacheKey.startsWith(keyCli))) {
+            return cli.id
+          }
         }
 
         if (!criarClientesNaoEncontrados) {
@@ -1275,57 +1284,32 @@ export function ImportadorRecebimentosModal({
           }
 
           // Parsing detalhado de valor para rejeitar números implausíveis (telefone/doc lido como valor ou padrão parcela)
+          // Barreira anti-parcela: quando a célula contiver padrão de parcela (ex.: "1.1", "2.2"),
+          // apenas ZERA a leitura daquela célula e prossegue na linha, buscando o valor legítimo em VALOR PAGO ou outras células; NUNCA descartar a linha inteira.
           const rawValCell = getVal(row, activeValCol)
+          let rawValor = 0
           if (isPadraoNumeroParcela(rawValCell)) {
-            sheetDivergenciasCount += 1
-            resultSummary.erros.push({
-              aba: sheetCfg.name,
-              linha: numLinha,
-              tipo: 'divergencia',
-              motivo: `Aba ${sheetCfg.name}: Linha ${numLinha}: Coluna de valor contém número de parcela ("${rawValCell}"). Linha não importada (barreira anti-parcela X.Y).`,
-            })
-            continue
+            rawValor = 0
+          } else {
+            const valParsed = parseValorReceberDetalhado(rawValCell)
+            if (valParsed.invalidoOuAbsurdo) {
+              rawValor = 0
+            } else {
+              rawValor = valParsed.valor
+            }
           }
 
-          const valParsed = parseValorReceberDetalhado(rawValCell)
-          if (valParsed.invalidoOuAbsurdo) {
-            sheetDivergenciasCount += 1
-            resultSummary.erros.push({
-              aba: sheetCfg.name,
-              linha: numLinha,
-              tipo: 'divergencia',
-              motivo: `Aba ${sheetCfg.name}: Linha ${numLinha}: Coluna de valor contém número inválido/implausível: ${valParsed.motivo || String(rawValCell)}. Linha não importada.`,
-            })
-            continue
-          }
-
-          let rawValor = valParsed.valor
           let rawValorRec = 0
           if (activeValRecCol) {
             const rawRecCell = getVal(row, activeValRecCol)
             if (isPadraoNumeroParcela(rawRecCell)) {
-              sheetDivergenciasCount += 1
-              resultSummary.erros.push({
-                aba: sheetCfg.name,
-                linha: numLinha,
-                tipo: 'divergencia',
-                motivo: `Aba ${sheetCfg.name}: Linha ${numLinha}: Coluna de valor recebido contém número de parcela ("${rawRecCell}"). Linha não importada (barreira anti-parcela X.Y).`,
-              })
-              continue
+              rawValorRec = 0
+            } else {
+              const recParsed = parseValorReceberDetalhado(rawRecCell)
+              if (!recParsed.invalidoOuAbsurdo) {
+                rawValorRec = recParsed.valor
+              }
             }
-
-            const recParsed = parseValorReceberDetalhado(rawRecCell)
-            if (recParsed.invalidoOuAbsurdo) {
-              sheetDivergenciasCount += 1
-              resultSummary.erros.push({
-                aba: sheetCfg.name,
-                linha: numLinha,
-                tipo: 'divergencia',
-                motivo: `Aba ${sheetCfg.name}: Linha ${numLinha}: Coluna de valor recebido contém número implausível: ${recParsed.motivo || String(rawRecCell)}. Linha não importada.`,
-              })
-              continue
-            }
-            rawValorRec = recParsed.valor
           }
 
           const rawDataRec = getVal(row, activeDataRecCol)
@@ -1399,6 +1383,17 @@ export function ImportadorRecebimentosModal({
           }
 
           if (valorFinal <= 0) {
+            // Toda linha com situação legível ou documento mas sem valor legível aparece como divergência no resumo
+            const temSituacao = Boolean(String(getVal(row, activeStatusCol) || '').trim())
+            if (temSituacao || rawCli || rawDesc) {
+              sheetDivergenciasCount += 1
+              resultSummary.erros.push({
+                aba: sheetCfg.name,
+                linha: numLinha,
+                tipo: 'divergencia',
+                motivo: `Aba ${sheetCfg.name}: Linha ${numLinha}: Lançamento sem valor financeiro legível (cliente: "${rawCli || rawDesc || 'não informado'}"). Não gravado.`,
+              })
+            }
             continue
           }
 
@@ -1512,6 +1507,10 @@ export function ImportadorRecebimentosModal({
           // exceto se houver uma coluna de descrição dedicada DIFERENTE da coluna de cliente.
           // A cidade identificada vai para o campo Endereço e o número de nota vai para o campo Nota.
           // Nota só aceita conteúdo numérico/documento; se for texto livre, vira observação.
+          // Sanitização do nome do cliente removendo pontuação/hífen final (ex.: "GAMARRA CONSTRUTORA E LOCADORA LTDA -")
+          rawCli = sanitizarNomeCliente(rawCli)
+          rawDesc = sanitizarNomeCliente(rawDesc)
+
           const textoParaExtracao = `${rawCli || ''} ${rawDesc || ''}${rawDoc ? ` [Doc: ${rawDoc}]` : ''}`
           const extraidos = extrairCidadeENota(textoParaExtracao)
           const notaFinal = (rawDoc && isNotaValida(rawDoc) ? rawDoc : extraidos.nota || '').trim()

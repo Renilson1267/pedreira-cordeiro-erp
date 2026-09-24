@@ -1059,6 +1059,18 @@ export function detectarStatusNaLinha(
  * - "PARCIAL" -> "Parcial".
  * - O fallback "Aberta" (valor pago vazio) só vale quando NENHUM indicador de quitação existir na linha inteira.
  */
+/**
+ * Sanitiza nome de cliente removendo traços, hífens, barras e espaços no final
+ * (ex.: "GAMARRA CONSTRUTORA E LOCADORA LTDA -" -> "GAMARRA CONSTRUTORA E LOCADORA LTDA").
+ */
+export function sanitizarNomeCliente(nome: string | null | undefined): string {
+  if (!nome || typeof nome !== 'string') return ''
+  let s = nome.trim()
+  // Remove repetidamente hífens, meias-riscas, travessões, barras e espaços no fim
+  s = s.replace(/[\s\-_–—/\\|:]+$/g, '').trim()
+  return s
+}
+
 export function classificarStatusRecebimento(params: {
   rawStatus?: string | null
   row?: any[] | null
@@ -1106,9 +1118,13 @@ export function classificarStatusRecebimento(params: {
   }
 
   // 1. Detecção profunda na linha inteira (varre todas as células da linha + coluna de status)
+  // A situação "Já paga", "Quitado", "Recebida" tem precedência INCONDICIONAL sobre qualquer
+  // valor zero/vazio de coluna de valor pago ou valor previsto.
   const deteccaoLinha = detectarStatusNaLinha(row, rawStatus)
 
   if (deteccaoLinha.statusPriorizado === 'Recebida') {
+    // Se valorRecebido for positivo, usa ele; se valorPrevisto for positivo, usa ele;
+    // ou se ambos forem vazios/zero mas um deles vier depois, garante o maior valor positivo
     const valEfetivo = valorRecebido > 0 ? valorRecebido : valorPrevisto
     return {
       status: 'Recebida',
@@ -1214,7 +1230,23 @@ export function normalizarFormaRecebimento(
   const normForma = normalizarTextoStatus(forma)
   const normDesc = normalizarTextoStatus(descricaoFallback)
 
-  // Boleto
+  // 1. Depósito / Transferência / TED / DOC (com ou sem menção a banco, ex.: "DEPOSITO BRAD", "DEPOSITO BRADESCO")
+  if (
+    normForma.includes('DEPOSITO') ||
+    normForma.includes('DEPOS') ||
+    normForma.includes('TRANSF') ||
+    normForma.includes('TED') ||
+    normForma.includes('DOC') ||
+    normDesc.includes('TRANSF') ||
+    normDesc.includes('TED') ||
+    normDesc.includes('DOC') ||
+    normDesc.includes('DEPOSITO') ||
+    normDesc.includes('DEPOS')
+  ) {
+    return 'Transferência'
+  }
+
+  // 2. Boleto
   if (
     normForma.includes('BOLETO') ||
     normForma.includes('BOL') ||
@@ -1224,26 +1256,12 @@ export function normalizarFormaRecebimento(
     return 'Boleto'
   }
 
-  // Pix
+  // 3. Pix
   if (normForma.includes('PIX') || normForma.includes('CHAVE') || normDesc.includes('PIX')) {
     return 'Pix'
   }
 
-  // Transferência / TED / DOC / Depósito em conta / Bancos típicos
-  if (
-    normForma.includes('TRANSF') ||
-    normForma.includes('TED') ||
-    normForma.includes('DOC') ||
-    normForma.includes('DEPOSITO') ||
-    normForma.includes('DEPOS') ||
-    normDesc.includes('TRANSF') ||
-    normDesc.includes('TED') ||
-    normDesc.includes('DOC')
-  ) {
-    return 'Transferência'
-  }
-
-  // Cartão (Débito/Crédito)
+  // 4. Cartão (Débito/Crédito)
   if (
     normForma.includes('CART') ||
     normForma.includes('DEBITO') ||
@@ -1254,7 +1272,7 @@ export function normalizarFormaRecebimento(
     return 'Cartão'
   }
 
-  // Dinheiro / Espécie
+  // 5. Dinheiro / Espécie
   if (
     normForma.includes('DINHEIRO') ||
     normForma.includes('ESPECIE') ||
@@ -1265,17 +1283,18 @@ export function normalizarFormaRecebimento(
     return 'Dinheiro'
   }
 
-  // Menção a bancos na forma ou descrição (Santander, Bradesco, etc.) costumam ser boletos/cobrança bancária
+  // 6. Menção a bancos na forma ou descrição (Santander, Bradesco, etc.) sem depósito/transf costumam ser boletos/cobrança bancária
   if (
     normForma.includes('SANTANDER') ||
     normForma.includes('BRADESCO') ||
+    normForma.includes('BRAD') ||
     normForma.includes('BANCO') ||
     normDesc.includes('SANTANDER') ||
-    normDesc.includes('BRADESCO')
+    normDesc.includes('BRADESCO') ||
+    normDesc.includes('BRAD')
   ) {
     return 'Boleto'
   }
-
   // Padrão do ERP da pedreira
   return 'Pix'
 }
@@ -1342,9 +1361,9 @@ export function isNotaValida(str: string | null | undefined): boolean {
   }
 
   // Padrão aceito: dígitos com barras, hífens, letras 'A'/'a' indicando intervalo, ou prefixos NF/NFe/Doc
-  // Ex: "90569", "86716 A 91585", "87205/87278/92623", "NF-1234", "DOC 5543"
+  // Aceita prefixo com separador opcional (ex.: "NF9482/90570 A 92", "NF-1234", "DOC 5543", "90569")
   const docPattern =
-    /^(?:(?:NF|NF-e|NFe|Nota|Doc|Duplicata|Fatura|Ch|Cheque)[\s.:#-]+)?[\d\s/\-–Aa,.]+$/i
+    /^(?:(?:NF|NF-e|NFe|Nota|Doc|Duplicata|Fatura|Ch|Cheque)[\s.:#-]*|)[\d\s/\-–Aa,.]+$/i
   return docPattern.test(trimmed)
 }
 
@@ -1393,9 +1412,9 @@ export function extrairCidadeENota(descricao: string | null | undefined): {
     }
   }
 
-  // Normalizar nota removendo prefixo "Doc: " se existir
+  // Normalizar nota removendo prefixo "Doc: " se existir (com separador opcional para NF/Doc)
   if (rawNotaCandidate) {
-    rawNotaCandidate = rawNotaCandidate.replace(/^(?:Doc|NF|NF-e|NFe|Nota)[\s.:#-]+/i, '').trim()
+    rawNotaCandidate = rawNotaCandidate.replace(/^(?:Doc|NF|NF-e|NFe|Nota)[\s.:#-]*/i, '').trim()
   }
 
   // Validar se o candidato a nota é documento fiscal ou texto livre
