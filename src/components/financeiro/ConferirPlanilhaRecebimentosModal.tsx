@@ -481,7 +481,8 @@ export function ConferirPlanilhaRecebimentosModal({
 
           // BUSCA DE CASAMENTO COM CONTAS DO SISTEMA
           // Prioridade 1: Match por Nota/Doc (se existir e tiver dígitos) + valor com tolerância
-          // Prioridade 2: Match por Cliente similar + valor com tolerância + vencimento aproximado
+          // Prioridade 2: Match por Cliente similar + mesmo valor (ignorando vencimento devido a legados 01/01)
+          // Prioridade 3: Match por Cliente similar + vencimento aproximado
           let melhorCandidato: ContaReceber | null = null
           let melhorDistancia = Infinity
 
@@ -510,7 +511,7 @@ export function ConferirPlanilhaRecebimentosModal({
               break
             }
 
-            // Match por cliente + vencimento próximo
+            // Match por cliente similar
             const clienteBate =
               cliNormPlanilha &&
               contaCliNorm &&
@@ -524,8 +525,17 @@ export function ConferirPlanilhaRecebimentosModal({
               const dSis = new Date(conta.vencimento).getTime()
               const difDias = Math.abs(dPl - dSis) / (1000 * 60 * 60 * 24)
 
-              if (difDias <= toleranciaDiasVenc && difDias < melhorDistancia) {
-                melhorDistancia = difDias
+              // Se o vencimento no sistema for o dia 01 (legado típico), casar imediatamente
+              const isDiaPrimeiroLegado = (conta.vencimento || '').slice(8, 10) === '01'
+
+              if (isDiaPrimeiroLegado || difDias <= toleranciaDiasVenc) {
+                if (difDias < melhorDistancia || isDiaPrimeiroLegado) {
+                  melhorDistancia = difDias
+                  melhorCandidato = conta
+                  if (isDiaPrimeiroLegado) break
+                }
+              } else if (!melhorCandidato) {
+                // Fallback cliente + mesmo valor na mesma aba
                 melhorCandidato = conta
               }
             }
@@ -542,6 +552,28 @@ export function ConferirPlanilhaRecebimentosModal({
                 difValor <= toleranciaCentavos &&
                 (notaNumeros === contaNotaNumeros || contaNotaNumeros.includes(notaNumeros))
               ) {
+                melhorCandidato = conta
+                break
+              }
+            }
+          }
+
+          // Se ainda não achou, buscar em contasExistentes por cliente + mesmo valor (ignorando vencimento)
+          if (!melhorCandidato && cliNormPlanilha) {
+            for (const conta of contasExistentes) {
+              if (contasPareadasIds.has(conta.id)) continue
+              const difValor = Math.abs(Number(conta.valor || 0) - valorPlanilha)
+              if (difValor > toleranciaCentavos) continue
+
+              const contaCliNome = clientesMap.get(conta.cliente_id) || conta.descricao || ''
+              const contaCliNorm = normalizar(contaCliNome)
+              const clienteBate =
+                contaCliNorm &&
+                (cliNormPlanilha.includes(contaCliNorm) ||
+                  contaCliNorm.includes(cliNormPlanilha) ||
+                  cliNormPlanilha.slice(0, 10) === contaCliNorm.slice(0, 10))
+
+              if (clienteBate) {
                 melhorCandidato = conta
                 break
               }

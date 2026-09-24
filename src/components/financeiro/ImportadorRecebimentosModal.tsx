@@ -577,9 +577,16 @@ export function ImportadorRecebimentosModal({
         }
       })
 
-      // Contagem de ocorrências por cliente_id + valor para permitir fallback seguro único cli_${clienteId}_${valorStr}
+      // Ordenar contas existentes priorizando registros em Aberta/Parcial para serem reconciliados primeiro
+      // Se houver um registro Aberta e outro Recebida com mesmo doc/cliente+valor, a preferência é atualizar o Aberta.
+      const contasOrdenadasParaIndexacao = [...contasAtuaisDoBanco].sort((a, b) => {
+        const pesoStatus = (st: string) => (st === 'Aberta' ? 1 : st === 'Parcial' ? 2 : 3)
+        return pesoStatus(a.status) - pesoStatus(b.status)
+      })
+
+      // Contagem de ocorrências por cliente_id + valor
       const countPorClienteEValor = new Map<string, number>()
-      contasAtuaisDoBanco.forEach((c) => {
+      contasOrdenadasParaIndexacao.forEach((c) => {
         if (c.cliente_id) {
           const vStr = Number(c.valor || 0).toFixed(2)
           const k = `cli_${c.cliente_id}_${vStr}`
@@ -587,7 +594,7 @@ export function ImportadorRecebimentosModal({
         }
       })
 
-      contasAtuaisDoBanco.forEach((c) => {
+      contasOrdenadasParaIndexacao.forEach((c) => {
         const d = c.vencimento.slice(0, 10)
         const descNorm = normalizarTextoComparacao(c.descricao).slice(0, 30)
         const notaNorm = normalizarTextoComparacao(c.nota || '')
@@ -596,11 +603,16 @@ export function ImportadorRecebimentosModal({
         const exactKey = `${c.cliente_id || ''}_${d}_${valorStr}_${descNorm}`
         existingExactKeys.add(exactKey)
 
-        // Indexar por documento estruturado (c.nota)
+        // Indexar por documento estruturado (c.nota) COM cliente_id
         if (notaNorm) {
           const flexKeyDoc = `doc_${c.cliente_id || ''}_${valorStr}_${notaNorm}`
           if (!existingFlexRecords.has(flexKeyDoc)) {
             existingFlexRecords.set(flexKeyDoc, c)
+          }
+          // Indexar por nota global por empresa (mesmo se cliente_id for vazio ou divergir levemente)
+          const flexKeyGlobalDoc = `globaldoc_${valorStr}_${notaNorm}`
+          if (!existingFlexRecords.has(flexKeyGlobalDoc)) {
+            existingFlexRecords.set(flexKeyGlobalDoc, c)
           }
         }
 
@@ -613,6 +625,10 @@ export function ImportadorRecebimentosModal({
             const flexKeyObsDoc = `doc_${c.cliente_id || ''}_${valorStr}_${docCandNorm}`
             if (!existingFlexRecords.has(flexKeyObsDoc)) {
               existingFlexRecords.set(flexKeyObsDoc, c)
+            }
+            const flexKeyObsGlobalDoc = `globaldoc_${valorStr}_${docCandNorm}`
+            if (!existingFlexRecords.has(flexKeyObsGlobalDoc)) {
+              existingFlexRecords.set(flexKeyObsGlobalDoc, c)
             }
           }
         })
@@ -635,12 +651,11 @@ export function ImportadorRecebimentosModal({
             }
           }
 
-          // Fallback quando cliente+valor for único no banco (ou seja, não há ambiguidade de múltiplos títulos com mesmo valor)
+          // Fallback por cliente_id + valor: sempre disponível como candidato de reconciliação
+          // Prioriza o registro com status Aberta (que veio primeiro na ordenação)
           const fallbackKey = `cli_${c.cliente_id}_${valorStr}`
-          if (countPorClienteEValor.get(fallbackKey) === 1) {
-            if (!existingFlexRecords.has(fallbackKey)) {
-              existingFlexRecords.set(fallbackKey, c)
-            }
+          if (!existingFlexRecords.has(fallbackKey)) {
+            existingFlexRecords.set(fallbackKey, c)
           }
         }
       })
@@ -1634,25 +1649,40 @@ export function ImportadorRecebimentosModal({
               )
 
               // Se existir registro prévio com mesma nota/doc ou mesma desc/cli + cliente + valor,
-              // reconciliar e atualizar vencimento, data_recebimento, forma, status, nota e endereço quando divergirem
+              // reconciliar e atualizar vencimento, data_recebimento, forma, status, nota e endereço quando divergirem.
+              // Hierarquia de casamento estrita conforme especificação:
+              // (a) nota/doc
+              // (b) cliente_id + valor (ignorando vencimento)
+              // (c) desc/cli + valor ou nota global
               let existingRecordToUpdate: ContaReceber | null = null
               let matchedFlexKey: string | null = null
 
               if (detectarDuplicados) {
+                // (a) Por nota/doc (com cliente_id ou global na empresa)
                 if (item.notaNorm) {
                   const flexKeyDoc = `doc_${clienteId || ''}_${item.valorStr}_${item.notaNorm}`
                   if (existingFlexRecords.has(flexKeyDoc)) {
                     existingRecordToUpdate = existingFlexRecords.get(flexKeyDoc)!
                     matchedFlexKey = flexKeyDoc
+                  } else {
+                    const flexKeyGlobalDoc = `globaldoc_${item.valorStr}_${item.notaNorm}`
+                    if (existingFlexRecords.has(flexKeyGlobalDoc)) {
+                      existingRecordToUpdate = existingFlexRecords.get(flexKeyGlobalDoc)!
+                      matchedFlexKey = flexKeyGlobalDoc
+                    }
                   }
                 }
-                if (!existingRecordToUpdate && item.descNorm) {
-                  const flexKeyDesc = `desc_${clienteId || ''}_${item.valorStr}_${item.descNorm}`
-                  if (existingFlexRecords.has(flexKeyDesc)) {
-                    existingRecordToUpdate = existingFlexRecords.get(flexKeyDesc)!
-                    matchedFlexKey = flexKeyDesc
+
+                // (b) Por cliente_id + valor (ignorando vencimento)
+                if (!existingRecordToUpdate && clienteId) {
+                  const fallbackKey = `cli_${clienteId}_${item.valorStr}`
+                  if (existingFlexRecords.has(fallbackKey)) {
+                    existingRecordToUpdate = existingFlexRecords.get(fallbackKey)!
+                    matchedFlexKey = fallbackKey
                   }
                 }
+
+                // (c) Por cliente normalizado + valor
                 if (!existingRecordToUpdate && item.cliNorm) {
                   const flexKeyCli = `cli_${clienteId || ''}_${item.valorStr}_${item.cliNorm}`
                   if (existingFlexRecords.has(flexKeyCli)) {
@@ -1660,12 +1690,13 @@ export function ImportadorRecebimentosModal({
                     matchedFlexKey = flexKeyCli
                   }
                 }
-                // Fallback cliente+valor único no banco
-                if (!existingRecordToUpdate && clienteId) {
-                  const fallbackKey = `cli_${clienteId}_${item.valorStr}`
-                  if (existingFlexRecords.has(fallbackKey)) {
-                    existingRecordToUpdate = existingFlexRecords.get(fallbackKey)!
-                    matchedFlexKey = fallbackKey
+
+                // (d) Por descrição + valor
+                if (!existingRecordToUpdate && item.descNorm) {
+                  const flexKeyDesc = `desc_${clienteId || ''}_${item.valorStr}_${item.descNorm}`
+                  if (existingFlexRecords.has(flexKeyDesc)) {
+                    existingRecordToUpdate = existingFlexRecords.get(flexKeyDesc)!
+                    matchedFlexKey = flexKeyDesc
                   }
                 }
               }
@@ -1809,6 +1840,7 @@ export function ImportadorRecebimentosModal({
                     existingFlexRecords.delete(
                       `doc_${clienteId || ''}_${item.valorStr}_${item.notaNorm}`,
                     )
+                    existingFlexRecords.delete(`globaldoc_${item.valorStr}_${item.notaNorm}`)
                   }
                   if (item.descNorm) {
                     existingFlexRecords.delete(
