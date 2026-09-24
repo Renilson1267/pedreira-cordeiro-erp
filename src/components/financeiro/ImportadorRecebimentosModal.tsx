@@ -1361,8 +1361,9 @@ export function ImportadorRecebimentosModal({
 
           // Se a coluna de data mapeada não continha data válida, inspecionar colunas alternativas na PRÓPRIA linha
           if (!teveDataPropriaNaLinha) {
+            const activeValColIdx = activeValCol ? activeHeaders.indexOf(activeValCol) : -1
             for (let colIdx = 0; colIdx < row.length; colIdx++) {
-              if (colIdx === activeDocColIdx || colIdx === activeValCol) continue
+              if (colIdx === activeDocColIdx || colIdx === activeValColIdx) continue
               const colHeader = normalizarNomeColuna(activeHeaders[colIdx] || '')
               if (
                 colHeader.includes('VALOR') ||
