@@ -215,8 +215,10 @@ export function desdobrarCelulasMescladas(ws: XLSX.WorkSheet): void {
 }
 
 // Regex padronizadas para identificação de colunas em recebimentos
+export const REGEX_COL_DATA_EMISSAO =
+  /^(?:DATA\s*(?:DE\s*|DA\s*)?EMISS[AÃ]O|DT\s*(?:DE\s*|DA\s*)?EMISS[AÃ]O|DATA\s*EMISS[AÃ]O|DT\s*EMISS[AÃ]O|EMISS[AÃ]O|DATA\s*(?:DE\s*|DA\s*)?NOTA|DT\s*(?:DE\s*|DA\s*)?NOTA|DATA\s*(?:DO\s*)?DOC(?:UMENTO)?|DATA\s*PEDIDO|DT\s*PEDIDO)\b|DATA\s*EMIS|DT\s*EMIS|EMISS[AÃ]O/i
 export const REGEX_COL_DATA =
-  /^(?:DATA\s*DE\s*VENCIMENTO|DATA\s*VENCIMENTO|DATA\s*VENC|DT\s*VENC|VENCIMENTO|VENC|DATA\s*DA\s*COMPRA|DATA\s*COMPRA|DATA|DT|DIA|PREVISAO|EMISSAO)\b|VENCIMENTO|DATA\s*VENC|DT\s*VENC|VENC/i
+  /^(?:DATA\s*DE\s*VENCIMENTO|DATA\s*VENCIMENTO|DATA\s*VENC|DT\s*VENC|VENCIMENTO|VENC|DATA\s*DA\s*COMPRA|DATA\s*COMPRA|DATA|DT|DIA|PREVISAO)\b|VENCIMENTO|DATA\s*VENC|DT\s*VENC|VENC/i
 export const REGEX_COL_CLIENTE =
   /CLIENTE|SACADO|DEVEDOR|NOME|DESTINATARIO|COMPRADOR|RAZAO\s*SOCIAL|FAVORECIDO|HISTORICO\s*CLIENTE/i
 export const REGEX_COL_DESCRICAO =
@@ -601,6 +603,7 @@ export function isColunaNaoMonetaria(colName: string | null | undefined): boolea
   if (REGEX_COL_DOCUMENTO.test(norm)) return true
   if (REGEX_COL_PARCELA.test(norm)) return true
   if (REGEX_COL_DATA.test(norm)) return true
+  if (REGEX_COL_DATA_EMISSAO.test(norm)) return true
   if (REGEX_COL_DATA_RECEBIMENTO.test(norm)) return true
   if (REGEX_COL_TELEFONE_OU_DOC.test(norm)) return true
   if (

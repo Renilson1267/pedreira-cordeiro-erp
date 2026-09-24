@@ -88,6 +88,7 @@ export interface ImportadorRecebimentosModalProps {
 
 export interface ColumnMappingReceber {
   data: string
+  dataEmissao?: string
   cliente: string
   descricao: string
   valor: string
@@ -169,6 +170,7 @@ export function ImportadorRecebimentosModal({
   // Column Mapping
   const [mapping, setMapping] = useState<ColumnMappingReceber>({
     data: '',
+    dataEmissao: '',
     cliente: '',
     descricao: '',
     valor: '',
@@ -213,6 +215,7 @@ export function ImportadorRecebimentosModal({
     setEstimatedTimeLeft('')
     setMapping({
       data: '',
+      dataEmissao: '',
       cliente: '',
       descricao: '',
       valor: '',
@@ -410,6 +413,7 @@ export function ImportadorRecebimentosModal({
     const clienteSugerido = cliColFound || descColFound || ''
 
     const colDataSugerida = findCol(REGEX_COL_DATA) || ''
+    const colDataEmissaoSugerida = findCol(REGEX_COL_DATA_EMISSAO) || ''
     // Prioridade máxima para "VALOR DA COMPRA" e nunca selecionar coluna de cheque
     const valorSugerido =
       headers.find(
@@ -420,6 +424,12 @@ export function ImportadorRecebimentosModal({
 
     setMapping((prev) => ({
       data: prev.data && headers.includes(prev.data) ? prev.data : colDataSugerida,
+      dataEmissao:
+        prev.dataEmissao && headers.includes(prev.dataEmissao)
+          ? prev.dataEmissao
+          : colDataEmissaoSugerida && colDataEmissaoSugerida !== colDataSugerida
+            ? colDataEmissaoSugerida
+            : '',
       cliente: prev.cliente && headers.includes(prev.cliente) ? prev.cliente : clienteSugerido,
       descricao:
         prev.descricao && headers.includes(prev.descricao)
@@ -878,6 +888,13 @@ export function ImportadorRecebimentosModal({
         const dataColFound = findColInSheet(REGEX_COL_DATA)
         const dataCol = matchColWithFallback(mapping.data, REGEX_COL_DATA, dataColFound || '')
 
+        const dataEmissaoColFound = findColInSheet(REGEX_COL_DATA_EMISSAO)
+        const dataEmissaoCol = matchColWithFallback(
+          mapping.dataEmissao || '',
+          REGEX_COL_DATA_EMISSAO,
+          dataEmissaoColFound || '',
+        )
+
         const rawCliColFound = findColInSheet(REGEX_COL_CLIENTE)
         const rawDescColFound = findColInSheet(REGEX_COL_DESCRICAO)
 
@@ -1005,6 +1022,7 @@ export function ImportadorRecebimentosModal({
         // Estado mutável de colunas ativas para suporte a múltiplos blocos ou subtotais na mesma aba
         let activeHeaders = [...currentSheetHeaders]
         let activeDataCol = dataCol
+        let activeDataEmissaoCol = dataEmissaoCol
         let activeCliCol = cliCol
         let activeDescCol = descCol
         let activeValCol = valCol
@@ -1018,6 +1036,9 @@ export function ImportadorRecebimentosModal({
 
         // Índices numéricos das colunas ativas: preservam a posição física exata através de subtotais e novos blocos
         let activeDataColIdx = dataCol ? currentSheetHeaders.indexOf(dataCol) : -1
+        let activeDataEmissaoColIdx = dataEmissaoCol
+          ? currentSheetHeaders.indexOf(dataEmissaoCol)
+          : -1
         let activeCliColIdx = cliCol ? currentSheetHeaders.indexOf(cliCol) : -1
         let activeDescColIdx = descCol ? currentSheetHeaders.indexOf(descCol) : -1
         let activeValColIdx = valCol ? currentSheetHeaders.indexOf(valCol) : -1
@@ -1088,6 +1109,7 @@ export function ImportadorRecebimentosModal({
               ) || ''
 
             const blockDataFound = findColInBlock(REGEX_COL_DATA)
+            const blockDataEmissaoFound = findColInBlock(REGEX_COL_DATA_EMISSAO)
             const blockDataRecFound = findColInBlock(REGEX_COL_DATA_RECEBIMENTO)
             const blockCliFound = findColInBlock(REGEX_COL_CLIENTE)
             const blockDescFound = findColInBlock(REGEX_COL_DESCRICAO)
@@ -1112,6 +1134,10 @@ export function ImportadorRecebimentosModal({
             if (blockDataFound) {
               activeDataCol = blockDataFound
               activeDataColIdx = activeHeaders.indexOf(blockDataFound)
+            }
+            if (blockDataEmissaoFound && blockDataEmissaoFound !== blockDataFound) {
+              activeDataEmissaoCol = blockDataEmissaoFound
+              activeDataEmissaoColIdx = activeHeaders.indexOf(blockDataEmissaoFound)
             }
             if (blockDataRecFound) {
               activeDataRecCol = blockDataRecFound
@@ -1179,6 +1205,7 @@ export function ImportadorRecebimentosModal({
           rawCli: string
           descFinal: string
           dataVencimentoISO: string
+          dataEmissaoISO?: string | null
           notaFinal: string
           enderecoFinal: string
           textoLivreExtra: string
@@ -1335,6 +1362,10 @@ export function ImportadorRecebimentosModal({
           resultSummary.totalLidos += 1
 
           let rawData = getValByIndexOrName(row, activeDataColIdx, activeDataCol)
+          let rawDataEmissao =
+            activeDataEmissaoColIdx !== -1 && activeDataEmissaoColIdx !== activeDataColIdx
+              ? getValByIndexOrName(row, activeDataEmissaoColIdx, activeDataEmissaoCol)
+              : null
           let rawCli = String(getValByIndexOrName(row, activeCliColIdx, activeCliCol) || '').trim()
           let rawDesc = String(
             getValByIndexOrName(row, activeDescColIdx, activeDescCol) || '',
@@ -1749,11 +1780,17 @@ export function ImportadorRecebimentosModal({
           const notaNorm = normalizarTextoComparacao(notaFinal || '')
           const valorStr = valorFinal.toFixed(2)
 
+          let dataEmissaoISO: string | null = null
+          if (rawDataEmissao && isValidaSanitaria(rawDataEmissao)) {
+            dataEmissaoISO = parseDataReceber(rawDataEmissao, sheetCfg.ano, sheetCfg.mes) || null
+          }
+
           preparedItems.push({
             numLinha,
             rawCli,
             descFinal,
             dataVencimentoISO,
+            dataEmissaoISO,
             notaFinal,
             enderecoFinal,
             textoLivreExtra,
@@ -1934,6 +1971,10 @@ export function ImportadorRecebimentosModal({
               if (existingRecordToUpdate) {
                 const prevDateOnly = (existingRecordToUpdate.vencimento || '').slice(0, 10)
                 const dataMudou = prevDateOnly !== item.dateOnly
+                const emissaoDiverge = Boolean(
+                  item.dataEmissaoISO &&
+                  item.dataEmissaoISO !== (existingRecordToUpdate.data_emissao || ''),
+                )
                 const notaDiverge = Boolean(
                   item.notaFinal && item.notaFinal !== (existingRecordToUpdate.nota || ''),
                 )
@@ -1970,6 +2011,7 @@ export function ImportadorRecebimentosModal({
                 // ou se for um registro legado que estava no dia 01 da aba e agora tem data real, ATUALIZAR
                 if (
                   dataMudou ||
+                  emissaoDiverge ||
                   notaDiverge ||
                   enderecoDiverge ||
                   statusDiverge ||
@@ -1987,6 +2029,7 @@ export function ImportadorRecebimentosModal({
                           ...(dataMudou || ehLegadoDiaPrimeiro
                             ? { vencimento: item.dataVencimentoISO }
                             : {}),
+                          ...(emissaoDiverge ? { data_emissao: item.dataEmissaoISO } : {}),
                           ...(notaDiverge ? { nota: item.notaFinal } : {}),
                           ...(enderecoDiverge ? { endereco: item.enderecoFinal } : {}),
                           ...(statusDiverge ? { status: finalStatus } : {}),
@@ -2134,6 +2177,7 @@ export function ImportadorRecebimentosModal({
                     valor: item.valorFinal,
                     valor_recebido: valorEfetivoRecebido,
                     vencimento: item.dataVencimentoISO,
+                    data_emissao: item.dataEmissaoISO || undefined,
                     parcelas: 1,
                     status: finalStatus,
                     data_recebimento: dataRecebimentoISO,
@@ -2716,7 +2760,7 @@ export function ImportadorRecebimentosModal({
                 {/* Data */}
                 <div>
                   <Label className="text-xs font-semibold text-gray-700">
-                    Data de Vencimento / Emissão *
+                    Data de Vencimento *
                   </Label>
                   <Select
                     value={mapping.data}
@@ -2726,6 +2770,31 @@ export function ImportadorRecebimentosModal({
                       <SelectValue placeholder="Selecione a coluna..." />
                     </SelectTrigger>
                     <SelectContent>
+                      {sheetHeaders.map((h) => (
+                        <SelectItem key={h} value={h}>
+                          {h}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                {/* Data de Emissão (opcional) */}
+                <div>
+                  <Label className="text-xs font-semibold text-gray-700">
+                    Data de Emissão (opcional)
+                  </Label>
+                  <Select
+                    value={mapping.dataEmissao || 'none'}
+                    onValueChange={(val) =>
+                      setMapping({ ...mapping, dataEmissao: val === 'none' ? '' : val })
+                    }
+                  >
+                    <SelectTrigger className="mt-1">
+                      <SelectValue placeholder="Selecione a coluna..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">Não mapear / Deixar vazio</SelectItem>
                       {sheetHeaders.map((h) => (
                         <SelectItem key={h} value={h}>
                           {h}

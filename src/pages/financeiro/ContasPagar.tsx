@@ -39,7 +39,19 @@ import {
   AlertCircle,
   FileText,
   FileSpreadsheet,
+  RotateCcw,
+  X,
 } from 'lucide-react'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
 import { ImportadorContasPagarModal } from '@/components/financeiro/ImportadorContasPagarModal'
 import { ConferirPlanilhaPagarModal } from '@/components/financeiro/ConferirPlanilhaPagarModal'
 import {
@@ -65,6 +77,12 @@ export default function ContasPagar() {
   >('Todas')
   const [centroCustoFilter, setCentroCustoFilter] = useState<string>('todos')
   const [searchQuery, setSearchQuery] = useState('')
+  const [campoDataFiltro, setCampoDataFiltro] = useState<
+    'vencimento' | 'data_emissao' | 'data_pagamento'
+  >('vencimento')
+  const [dataInicioFilter, setDataInicioFilter] = useState('')
+  const [dataFimFilter, setDataFimFilter] = useState('')
+  const [opcaoPeriodoRapido, setOpcaoPeriodoRapido] = useState<string>('todos')
 
   // Import Modal
   const [importModalOpen, setImportModalOpen] = useState(false)
@@ -81,6 +99,7 @@ export default function ContasPagar() {
   const [descricao, setDescricao] = useState('')
   const [categoriaId, setCategoriaId] = useState('')
   const [valor, setValor] = useState<number>(0)
+  const [dataEmissao, setDataEmissao] = useState('')
   const [vencimento, setVencimento] = useState('')
   const [parcelas, setParcelas] = useState<number>(1)
   const [prazoSelecionado, setPrazoSelecionado] = useState<TipoPrazo>('mensal')
@@ -98,6 +117,16 @@ export default function ContasPagar() {
     'Dinheiro' | 'Pix' | 'Cartão' | 'Boleto' | 'Transferência'
   >('Pix')
   const [isSubmitting, setIsSubmitting] = useState(false)
+
+  // Confirmation Alert Dialog State
+  const [confirmDialogOpen, setConfirmDialogOpen] = useState(false)
+  const [confirmDialogData, setConfirmDialogData] = useState<{
+    title: string
+    description: string
+    confirmLabel?: string
+    confirmVariant?: 'default' | 'destructive'
+    action: () => Promise<void>
+  } | null>(null)
 
   // Read-only Detail Drawer
   const [detailItem, setDetailItem] = useState<ContaPagar | null>(null)
@@ -175,6 +204,7 @@ export default function ContasPagar() {
     setDescricao('')
     setCategoriaId(categorias[0]?.id || '')
     setValor(0)
+    setDataEmissao(hoje)
     setVencimento(hoje)
     setParcelas(1)
     setPrazoSelecionado('mensal')
@@ -187,6 +217,7 @@ export default function ContasPagar() {
 
   const handleEdit = (c: ContaPagar) => {
     const venc = toInputDate(c.vencimento)
+    const emiss = c.data_emissao ? toInputDate(c.data_emissao) : ''
     const numP = c.parcelas || 1
     setEditingId(c.id)
     setFornecedorId(c.fornecedor_id || '')
@@ -194,6 +225,7 @@ export default function ContasPagar() {
     setDescricao(c.descricao)
     setCategoriaId(c.categoria_id || '')
     setValor(c.valor)
+    setDataEmissao(emiss)
     setVencimento(venc)
     setParcelas(numP)
     setPrazoSelecionado('mensal')
@@ -306,85 +338,108 @@ export default function ContasPagar() {
       return
     }
 
-    try {
-      setIsSubmitting(true)
+    const dataEmissaoIso = dataEmissao ? new Date(`${dataEmissao}T12:00:00Z`).toISOString() : null
+    const acaoTexto = editingId ? 'atualizar esta conta a pagar' : 'gravar este novo lançamento'
 
-      // Regra: se o fornecedor não for informado, preenche automaticamente com a descrição
-      const finalFornecedorId = await resolverFornecedorId(
-        fornecedorId,
-        descricao,
-        currentEmpresa!.id,
-      )
+    setConfirmDialogData({
+      title: editingId
+        ? 'Confirmar alteração de conta a pagar'
+        : 'Confirmar criação de conta a pagar',
+      description: `Deseja ${acaoTexto} no valor de ${formatCurrency(valor)} para "${descricao.trim()}" com vencimento em ${formatDate(vencimento)}?`,
+      confirmLabel: editingId ? 'Atualizar Título' : 'Gravar Título',
+      confirmVariant: 'default',
+      action: async () => {
+        try {
+          setIsSubmitting(true)
 
-      if (editingId) {
-        // Update single record
-        await pb.collection('contas_pagar').update(editingId, {
-          descricao: descricao.trim(),
-          fornecedor_id: finalFornecedorId,
-          categoria_id: categoriaId === 'none' || !categoriaId ? null : categoriaId,
-          centro_custo_id: centroCustoId === 'none' || !centroCustoId ? null : centroCustoId,
-          valor: Number(valor),
-          vencimento: new Date(vencimento).toISOString(),
-          parcelas: Number(parcelas),
-          status: status,
-          observacoes: observacoes.trim(),
-        })
-        toast({ title: 'Conta a pagar atualizada!' })
-      } else {
-        // Multiple installments support com datas digitadas/calculadas
-        const numParcelas = Math.max(1, Number(parcelas))
+          // Regra: se o fornecedor não for informado, preenche automaticamente com a descrição
+          const finalFornecedorId = await resolverFornecedorId(
+            fornecedorId,
+            descricao,
+            currentEmpresa!.id,
+          )
 
-        // Se gradeParcelas estiver vazia ou com tamanho diferente, gera fallback
-        const parcelasParaSalvar =
-          gradeParcelas.length === numParcelas
-            ? gradeParcelas
-            : gerarGradeParcelas(vencimento, numParcelas, prazoSelecionado, valor)
+          if (editingId) {
+            // Update single record
+            await pb.collection('contas_pagar').update(editingId, {
+              descricao: descricao.trim(),
+              fornecedor_id: finalFornecedorId,
+              categoria_id: categoriaId === 'none' || !categoriaId ? null : categoriaId,
+              centro_custo_id: centroCustoId === 'none' || !centroCustoId ? null : centroCustoId,
+              valor: Number(valor),
+              vencimento: new Date(vencimento).toISOString(),
+              data_emissao: dataEmissaoIso,
+              parcelas: Number(parcelas),
+              status: status,
+              observacoes: observacoes.trim(),
+            })
+            toast({ title: 'Conta a pagar atualizada!' })
+          } else {
+            // Multiple installments support com datas digitadas/calculadas
+            const numParcelas = Math.max(1, Number(parcelas))
 
-        for (let i = 0; i < parcelasParaSalvar.length; i++) {
-          const item = parcelasParaSalvar[i]
-          // Salvar com a data de vencimento digitada pelo usuário (meio-dia UTC ou ISO da data)
-          const dataVencIso = item.vencimento
-            ? new Date(`${item.vencimento}T12:00:00Z`).toISOString()
-            : new Date(vencimento).toISOString()
+            const parcelasParaSalvar =
+              gradeParcelas.length === numParcelas
+                ? gradeParcelas
+                : gerarGradeParcelas(vencimento, numParcelas, prazoSelecionado, valor)
 
-          const desc =
-            numParcelas > 1 ? `${descricao.trim()} (${i + 1}/${numParcelas})` : descricao.trim()
+            for (let i = 0; i < parcelasParaSalvar.length; i++) {
+              const item = parcelasParaSalvar[i]
+              const dataVencIso = item.vencimento
+                ? new Date(`${item.vencimento}T12:00:00Z`).toISOString()
+                : new Date(vencimento).toISOString()
 
-          await pb.collection('contas_pagar').create({
-            empresa_id: currentEmpresa!.id,
-            descricao: desc,
-            fornecedor_id: finalFornecedorId,
-            categoria_id: categoriaId === 'none' || !categoriaId ? null : categoriaId,
-            centro_custo_id: centroCustoId === 'none' || !centroCustoId ? null : centroCustoId,
-            valor: Number(item.valor) || Number(valor) / (numParcelas > 1 ? numParcelas : 1),
-            vencimento: dataVencIso,
-            parcelas: numParcelas,
-            status: status,
-            observacoes: observacoes.trim(),
-          })
+              const desc =
+                numParcelas > 1 ? `${descricao.trim()} (${i + 1}/${numParcelas})` : descricao.trim()
+
+              await pb.collection('contas_pagar').create({
+                empresa_id: currentEmpresa!.id,
+                descricao: desc,
+                fornecedor_id: finalFornecedorId,
+                categoria_id: categoriaId === 'none' || !categoriaId ? null : categoriaId,
+                centro_custo_id: centroCustoId === 'none' || !centroCustoId ? null : centroCustoId,
+                valor: Number(item.valor) || Number(valor) / (numParcelas > 1 ? numParcelas : 1),
+                vencimento: dataVencIso,
+                data_emissao: dataEmissaoIso || undefined,
+                parcelas: numParcelas,
+                status: status,
+                observacoes: observacoes.trim(),
+              })
+            }
+            toast({ title: 'Conta a pagar criada com sucesso!' })
+          }
+
+          setIsDrawerOpen(false)
+          setSearchParams({})
+          await loadData()
+        } catch (err: any) {
+          toast({ title: 'Erro ao salvar conta', description: err.message, variant: 'destructive' })
+        } finally {
+          setIsSubmitting(false)
         }
-        toast({ title: 'Conta a pagar criada com sucesso!' })
-      }
-
-      setIsDrawerOpen(false)
-      setSearchParams({})
-      await loadData()
-    } catch (err: any) {
-      toast({ title: 'Erro ao salvar conta', description: err.message, variant: 'destructive' })
-    } finally {
-      setIsSubmitting(false)
-    }
+      },
+    })
+    setConfirmDialogOpen(true)
   }
 
-  const handleDelete = async (id: string) => {
-    if (!confirm('Deseja realmente excluir este lançamento?')) return
-    try {
-      await pb.collection('contas_pagar').delete(id)
-      toast({ title: 'Lançamento excluído com sucesso.' })
-      await loadData()
-    } catch (err: any) {
-      toast({ title: 'Erro ao excluir', description: err.message, variant: 'destructive' })
-    }
+  const handleDelete = (id: string, descricaoAlvo?: string) => {
+    setConfirmDialogData({
+      title: 'Confirmar exclusão de conta a pagar',
+      description: `Deseja realmente excluir o título ${descricaoAlvo ? `"${descricaoAlvo}"` : ''}? Esta ação removerá o registro e não poderá ser desfeita.`,
+      confirmLabel: 'Excluir Título',
+      confirmVariant: 'destructive',
+      action: async () => {
+        try {
+          await pb.collection('contas_pagar').delete(id)
+          toast({ title: 'Lançamento excluído com sucesso.' })
+          if (detailItem?.id === id) setDetailItem(null)
+          await loadData()
+        } catch (err: any) {
+          toast({ title: 'Erro ao excluir', description: err.message, variant: 'destructive' })
+        }
+      },
+    })
+    setConfirmDialogOpen(true)
   }
 
   const getValorPagoEfetivo = (c: ContaPagar) => {
@@ -398,6 +453,74 @@ export default function ContasPagar() {
     if (c.status === 'Paga') return 0
     const jaPago = getValorPagoEfetivo(c)
     return Math.max(0, (c.valor || 0) - jaPago)
+  }
+
+  const handleEstorno = (c: ContaPagar) => {
+    const valorPagoAtual = getValorPagoEfetivo(c)
+    if (valorPagoAtual <= 0 && c.status === 'Aberta') {
+      toast({ title: 'Este título não possui baixas para estornar.', variant: 'destructive' })
+      return
+    }
+
+    const fornecedorNome = c.expand?.fornecedor_id?.nome || c.descricao || 'Título'
+
+    setConfirmDialogData({
+      title: 'Confirmar estorno de pagamento',
+      description: `Deseja estornar o pagamento de ${formatCurrency(valorPagoAtual)} pago para "${fornecedorNome}"? O título voltará para o status "Aberta", o valor pago e a data de pagamento serão zerados, e será lançado um movimento de caixa inverso (Entrada/Estorno) de mesmo valor para manter os saldos bancários e contábeis consistentes.`,
+      confirmLabel: 'Confirmar Estorno',
+      confirmVariant: 'destructive',
+      action: async () => {
+        try {
+          setIsSubmitting(true)
+          const agora = new Date()
+          const dataHojeFormatada = formatDate(agora.toISOString())
+          const obsEstorno = ` [Estornado em ${dataHojeFormatada}: revertido ${formatCurrency(valorPagoAtual)}]`
+
+          // 1. Reverter o título para Aberta, zerando valor_pago e data_pagamento
+          await pb.collection('contas_pagar').update(c.id, {
+            status: 'Aberta',
+            valor_pago: 0,
+            data_pagamento: null,
+            forma_pagamento: null,
+            observacoes: (c.observacoes || '') + obsEstorno,
+          })
+
+          // 2. Criar movimento financeiro inverso (Entrada no caixa revertendo a saída original)
+          if (valorPagoAtual > 0) {
+            await pb.collection('movimentos_financeiros').create({
+              empresa_id: currentEmpresa!.id,
+              tipo: 'Entrada',
+              descricao: `Estorno de pagamento: ${c.descricao || fornecedorNome}${c.expand?.centro_custo_id ? ` [${c.expand.centro_custo_id.codigo}]` : ''}`,
+              valor: valorPagoAtual,
+              data: agora.toISOString(),
+              categoria_id: c.categoria_id || null,
+              centro_custo_id: c.centro_custo_id || null,
+              origem: 'ContaPagar',
+              referencia_id: c.id,
+              conciliado: false,
+            })
+          }
+
+          toast({
+            title: 'Pagamento estornado com sucesso!',
+            description: `Título retornado para Em Aberto e movimento de estorno no caixa registrado no valor de ${formatCurrency(valorPagoAtual)}.`,
+          })
+          if (detailItem?.id === c.id) {
+            setDetailItem(null)
+          }
+          await loadData()
+        } catch (err: any) {
+          toast({
+            title: 'Erro ao estornar pagamento',
+            description: err.message,
+            variant: 'destructive',
+          })
+        } finally {
+          setIsSubmitting(false)
+        }
+      },
+    })
+    setConfirmDialogOpen(true)
   }
 
   const getDocumentoContaPagar = (c: ContaPagar): string => {
@@ -423,95 +546,113 @@ export default function ContasPagar() {
       return
     }
 
-    try {
-      setIsSubmitting(true)
-      const payDateISO = new Date(dataPagamento).toISOString()
+    setConfirmDialogData({
+      title: 'Confirmar pagamento / baixa',
+      description: `Deseja registrar o pagamento de ${formatCurrency(valorBaixa)} em ${dataPagamento ? formatDate(dataPagamento) : 'hoje'} via ${formaPagamento}? Isso atualizará o saldo e lançará a saída correspondente no fluxo financeiro.`,
+      confirmLabel: 'Confirmar Pagamento',
+      confirmVariant: 'default',
+      action: async () => {
+        try {
+          setIsSubmitting(true)
+          const payDateISO = new Date(dataPagamento).toISOString()
 
-      const totalAcumuladoAntes = getValorPagoEfetivo(settlingConta)
-      const novoTotalPago = totalAcumuladoAntes + valorBaixa
-      const valorTituloTotal = Number(settlingConta.valor || 0)
-      const estaQuitado = novoTotalPago >= valorTituloTotal - 0.009
-      const novoStatus = estaQuitado ? 'Paga' : 'Parcial'
+          const totalAcumuladoAntes = getValorPagoEfetivo(settlingConta)
+          const novoTotalPago = totalAcumuladoAntes + valorBaixa
+          const valorTituloTotal = Number(settlingConta.valor || 0)
+          const estaQuitado = novoTotalPago >= valorTituloTotal - 0.009
+          const novoStatus = estaQuitado ? 'Paga' : 'Parcial'
 
-      const obsBaixa = ` [Baixa ${novoStatus === 'Paga' ? 'total' : 'parcial'} de ${formatCurrency(valorBaixa)} em ${formatDate(payDateISO)}]`
+          const obsBaixa = ` [Baixa ${novoStatus === 'Paga' ? 'total' : 'parcial'} de ${formatCurrency(valorBaixa)} em ${formatDate(payDateISO)}]`
 
-      // 1. Update status to Paga or Parcial and save valor_pago
-      await pb.collection('contas_pagar').update(settlingConta.id, {
-        status: novoStatus,
-        valor_pago: novoTotalPago,
-        data_pagamento: payDateISO,
-        forma_pagamento: formaPagamento,
-        observacoes: (settlingConta.observacoes || '') + obsBaixa,
-      })
+          // 1. Update status to Paga or Parcial and save valor_pago
+          await pb.collection('contas_pagar').update(settlingConta.id, {
+            status: novoStatus,
+            valor_pago: novoTotalPago,
+            data_pagamento: payDateISO,
+            forma_pagamento: formaPagamento,
+            observacoes: (settlingConta.observacoes || '') + obsBaixa,
+          })
 
-      // 2. Create financial movement with the exact partial payment amount
-      await pb.collection('movimentos_financeiros').create({
-        empresa_id: currentEmpresa!.id,
-        tipo: 'Saida',
-        descricao: `Pagamento${novoStatus === 'Parcial' ? ' parcial' : ''}: ${settlingConta.descricao}${settlingConta.expand?.centro_custo_id ? ` [${settlingConta.expand.centro_custo_id.codigo}]` : ''}`,
-        valor: valorBaixa,
-        data: payDateISO,
-        categoria_id: settlingConta.categoria_id || null,
-        centro_custo_id: settlingConta.centro_custo_id || null,
-        origem: 'ContaPagar',
-        referencia_id: settlingConta.id,
-        conciliado: false,
-      })
+          // 2. Create financial movement with the exact partial payment amount
+          await pb.collection('movimentos_financeiros').create({
+            empresa_id: currentEmpresa!.id,
+            tipo: 'Saida',
+            descricao: `Pagamento${novoStatus === 'Parcial' ? ' parcial' : ''}: ${settlingConta.descricao}${settlingConta.expand?.centro_custo_id ? ` [${settlingConta.expand.centro_custo_id.codigo}]` : ''}`,
+            valor: valorBaixa,
+            data: payDateISO,
+            categoria_id: settlingConta.categoria_id || null,
+            centro_custo_id: settlingConta.centro_custo_id || null,
+            origem: 'ContaPagar',
+            referencia_id: settlingConta.id,
+            conciliado: false,
+          })
 
-      toast({
-        title: estaQuitado
-          ? 'Título quitado integralmente!'
-          : 'Pagamento parcial registrado com sucesso!',
-        description: estaQuitado
-          ? `Valor pago: ${formatCurrency(valorBaixa)}`
-          : `Pago: ${formatCurrency(valorBaixa)}. Saldo a pagar: ${formatCurrency(Math.max(0, valorTituloTotal - novoTotalPago))}`,
-      })
-      setSettleModalOpen(false)
-      setSearchParams({})
-      await loadData()
-    } catch (err: any) {
-      toast({ title: 'Erro ao baixar título', description: err.message, variant: 'destructive' })
-    } finally {
-      setIsSubmitting(false)
-    }
+          toast({
+            title: estaQuitado
+              ? 'Título quitado integralmente!'
+              : 'Pagamento parcial registrado com sucesso!',
+            description: estaQuitado
+              ? `Valor pago: ${formatCurrency(valorBaixa)}`
+              : `Pago: ${formatCurrency(valorBaixa)}. Saldo a pagar: ${formatCurrency(Math.max(0, valorTituloTotal - novoTotalPago))}`,
+          })
+          setSettleModalOpen(false)
+          setSearchParams({})
+          await loadData()
+        } catch (err: any) {
+          toast({
+            title: 'Erro ao baixar título',
+            description: err.message,
+            variant: 'destructive',
+          })
+        } finally {
+          setIsSubmitting(false)
+        }
+      },
+    })
+    setConfirmDialogOpen(true)
   }
 
-  // Calculations for summary pills
   const nowISO = new Date().toISOString().slice(0, 10)
   const currentMonth = new Date().getMonth()
   const currentYear = new Date().getFullYear()
 
-  // Saldo total em aberto (não vencido)
-  const totalAberto = useMemo(() => {
-    return contas
-      .filter(
-        (c) =>
-          (c.status === 'Aberta' || c.status === 'Parcial') && c.vencimento.slice(0, 10) >= nowISO,
-      )
-      .reduce((sum, c) => sum + getSaldoRestante(c), 0)
-  }, [contas, nowISO])
+  // Seletor de período rápido
+  const handleSelecionarPeriodoRapido = (opcao: string) => {
+    setOpcaoPeriodoRapido(opcao)
+    const hoje = new Date()
+    const y = hoje.getFullYear()
+    const m = hoje.getMonth()
 
-  // Saldo total vencido
-  const totalVencido = useMemo(() => {
-    return contas
-      .filter(
-        (c) =>
-          c.status === 'Vencida' ||
-          ((c.status === 'Aberta' || c.status === 'Parcial') && c.vencimento.slice(0, 10) < nowISO),
-      )
-      .reduce((sum, c) => sum + getSaldoRestante(c), 0)
-  }, [contas, nowISO])
+    if (opcao === 'todos') {
+      setDataInicioFilter('')
+      setDataFimFilter('')
+    } else if (opcao === 'este_mes') {
+      const primeiroDia = new Date(y, m, 1)
+      const ultimoDia = new Date(y, m + 1, 0)
+      setDataInicioFilter(toInputDate(primeiroDia.toISOString()))
+      setDataFimFilter(toInputDate(ultimoDia.toISOString()))
+    } else if (opcao === 'mes_passado') {
+      const primeiroDia = new Date(y, m - 1, 1)
+      const ultimoDia = new Date(y, m, 0)
+      setDataInicioFilter(toInputDate(primeiroDia.toISOString()))
+      setDataFimFilter(toInputDate(ultimoDia.toISOString()))
+    } else if (opcao === 'este_ano') {
+      const primeiroDia = new Date(y, 0, 1)
+      const ultimoDia = new Date(y, 11, 31)
+      setDataInicioFilter(toInputDate(primeiroDia.toISOString()))
+      setDataFimFilter(toInputDate(ultimoDia.toISOString()))
+    }
+  }
 
-  // Total pago no mês (somando valores pagos das contas com pagamento neste mês)
-  const totalPagoMes = useMemo(() => {
-    return contas
-      .filter((c) => {
-        if (!c.data_pagamento) return false
-        const d = new Date(c.data_pagamento)
-        return d.getMonth() === currentMonth && d.getFullYear() === currentYear
-      })
-      .reduce((sum, c) => sum + getValorPagoEfetivo(c), 0)
-  }, [contas, currentMonth, currentYear])
+  const handleLimparFiltros = () => {
+    setStatusFilter('Todas')
+    setCentroCustoFilter('todos')
+    setDataInicioFilter('')
+    setDataFimFilter('')
+    setCampoDataFiltro('vencimento')
+    setOpcaoPeriodoRapido('todos')
+    setSearchQuery('')
+  }
 
   const getContaStatusReal = (c: ContaPagar): StatusContaPagar => {
     if (c.status === 'Paga') return 'Paga'
@@ -520,7 +661,7 @@ export default function ContasPagar() {
     return c.status
   }
 
-  // Filtered List
+  // Filtered List com suporte a período de vencimento/emissão/pagamento
   const filteredContas = useMemo(() => {
     return contas.filter((c) => {
       const currentRealStatus = getContaStatusReal(c)
@@ -537,6 +678,23 @@ export default function ContasPagar() {
       if (centroCustoFilter !== 'todos' && c.centro_custo_id !== centroCustoFilter) {
         return false
       }
+
+      // Filtro de período por campo selecionado
+      if (dataInicioFilter || dataFimFilter) {
+        let campoValorData: string | undefined
+        if (campoDataFiltro === 'vencimento') {
+          campoValorData = c.vencimento ? c.vencimento.slice(0, 10) : undefined
+        } else if (campoDataFiltro === 'data_emissao') {
+          campoValorData = c.data_emissao ? c.data_emissao.slice(0, 10) : undefined
+        } else if (campoDataFiltro === 'data_pagamento') {
+          campoValorData = c.data_pagamento ? c.data_pagamento.slice(0, 10) : undefined
+        }
+
+        if (!campoValorData) return false
+        if (dataInicioFilter && campoValorData < dataInicioFilter) return false
+        if (dataFimFilter && campoValorData > dataFimFilter) return false
+      }
+
       if (searchQuery.trim()) {
         const q = searchQuery.toLowerCase()
         const fornecedorNome = c.expand?.fornecedor_id?.nome?.toLowerCase() || ''
@@ -546,7 +704,43 @@ export default function ContasPagar() {
       }
       return true
     })
-  }, [contas, statusFilter, centroCustoFilter, searchQuery, nowISO])
+  }, [
+    contas,
+    statusFilter,
+    centroCustoFilter,
+    campoDataFiltro,
+    dataInicioFilter,
+    dataFimFilter,
+    searchQuery,
+    nowISO,
+  ])
+
+  // Calculations for summary pills aplicando os filtros do período
+  // Saldo total em aberto (não vencido) nos títulos filtrados
+  const totalAberto = useMemo(() => {
+    return filteredContas
+      .filter(
+        (c) =>
+          (c.status === 'Aberta' || c.status === 'Parcial') && c.vencimento.slice(0, 10) >= nowISO,
+      )
+      .reduce((sum, c) => sum + getSaldoRestante(c), 0)
+  }, [filteredContas, nowISO])
+
+  // Saldo total vencido nos títulos filtrados
+  const totalVencido = useMemo(() => {
+    return filteredContas
+      .filter(
+        (c) =>
+          c.status === 'Vencida' ||
+          ((c.status === 'Aberta' || c.status === 'Parcial') && c.vencimento.slice(0, 10) < nowISO),
+      )
+      .reduce((sum, c) => sum + getSaldoRestante(c), 0)
+  }, [filteredContas, nowISO])
+
+  // Total pago nos títulos filtrados
+  const totalPagoMes = useMemo(() => {
+    return filteredContas.reduce((sum, c) => sum + getValorPagoEfetivo(c), 0)
+  }, [filteredContas])
 
   return (
     <div className="space-y-6">
@@ -625,7 +819,7 @@ export default function ContasPagar() {
         <div className="p-4 rounded-2xl bg-white border border-[#ECEAE4] shadow-xs flex items-center justify-between">
           <div>
             <span className="text-xs font-semibold text-emerald-600 uppercase tracking-wider block">
-              Pago no Mês
+              Total Pago
             </span>
             <span className="text-xl font-bold text-emerald-700 tabular-nums">
               {formatCurrency(totalPagoMes)}
@@ -638,9 +832,9 @@ export default function ContasPagar() {
       </div>
 
       {/* Filter and Search Bar */}
-      <Card className="rounded-2xl border-[#ECEAE4] bg-white shadow-xs p-4">
+      <Card className="rounded-2xl border-[#ECEAE4] bg-white shadow-xs p-4 space-y-3">
+        {/* Linha 1: Status chips, Centro de custo e busca */}
         <div className="flex flex-col md:flex-row items-center justify-between gap-3">
-          {/* Status chips */}
           <div className="flex flex-wrap items-center gap-1.5 w-full md:w-auto">
             {(['Todas', 'Aberta', 'Parcial', 'Paga', 'Vencida'] as const).map((st) => (
               <button
@@ -685,6 +879,94 @@ export default function ContasPagar() {
             </div>
           </div>
         </div>
+
+        {/* Linha 2: Seletor de Período (Opções Rápidas + Intervalo Personalizado de Datas) */}
+        <div className="pt-2 border-t border-[#ECEAE4] flex flex-wrap items-center justify-between gap-3 text-xs">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="flex items-center text-gray-600 font-medium text-xs">
+              <Calendar className="w-3.5 h-3.5 mr-1 text-teal-700" />
+              Filtrar por período:
+            </span>
+
+            {/* Campo da data a filtrar */}
+            <Select value={campoDataFiltro} onValueChange={(v: any) => setCampoDataFiltro(v)}>
+              <SelectTrigger className="w-[155px] bg-[#FAF9F7] border-[#ECEAE4] text-xs h-8 rounded-lg">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="vencimento">Vencimento</SelectItem>
+                <SelectItem value="data_emissao">Data de Emissão</SelectItem>
+                <SelectItem value="data_pagamento">Data de Pagamento</SelectItem>
+              </SelectContent>
+            </Select>
+
+            {/* Opções Rápidas */}
+            <div className="flex items-center gap-1 bg-[#FAF9F7] p-0.5 rounded-lg border border-[#ECEAE4]">
+              {[
+                { id: 'todos', label: 'Todo o período' },
+                { id: 'este_mes', label: 'Este mês' },
+                { id: 'mes_passado', label: 'Mês passado' },
+                { id: 'este_ano', label: 'Este ano' },
+              ].map((op) => (
+                <button
+                  key={op.id}
+                  type="button"
+                  onClick={() => handleSelecionarPeriodoRapido(op.id)}
+                  className={`px-2.5 py-1 rounded-md text-[11px] font-medium transition-colors ${
+                    opcaoPeriodoRapido === op.id
+                      ? 'bg-teal-700 text-white shadow-xs'
+                      : 'text-gray-600 hover:text-gray-900 hover:bg-gray-200/60'
+                  }`}
+                >
+                  {op.label}
+                </button>
+              ))}
+            </div>
+
+            {/* Datas personalizada de / até */}
+            <div className="flex items-center gap-1.5 ml-1">
+              <span className="text-gray-400 text-[11px]">De:</span>
+              <Input
+                type="date"
+                value={dataInicioFilter}
+                onChange={(e) => {
+                  setOpcaoPeriodoRapido('custom')
+                  setDataInicioFilter(e.target.value)
+                }}
+                className="w-36 h-8 text-xs font-mono bg-[#FAF9F7] border-[#ECEAE4] rounded-lg"
+              />
+            </div>
+
+            <div className="flex items-center gap-1.5">
+              <span className="text-gray-400 text-[11px]">Até:</span>
+              <Input
+                type="date"
+                value={dataFimFilter}
+                onChange={(e) => {
+                  setOpcaoPeriodoRapido('custom')
+                  setDataFimFilter(e.target.value)
+                }}
+                className="w-36 h-8 text-xs font-mono bg-[#FAF9F7] border-[#ECEAE4] rounded-lg"
+              />
+            </div>
+          </div>
+
+          {(statusFilter !== 'Todas' ||
+            centroCustoFilter !== 'todos' ||
+            dataInicioFilter ||
+            dataFimFilter ||
+            searchQuery) && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={handleLimparFiltros}
+              className="h-8 px-2 text-xs text-gray-500 hover:text-gray-900 hover:bg-gray-100 rounded-lg"
+            >
+              <X className="w-3.5 h-3.5 mr-1" />
+              Limpar Filtros
+            </Button>
+          )}
+        </div>
       </Card>
 
       {/* Table / Cards List */}
@@ -694,6 +976,7 @@ export default function ContasPagar() {
             <thead>
               <tr className="bg-[#FAF9F7] border-b border-[#ECEAE4] text-gray-500 uppercase font-semibold text-[11px] tracking-wider">
                 <th className="py-2.5 px-2.5 whitespace-nowrap">Vencimento</th>
+                <th className="py-2.5 px-2.5 whitespace-nowrap">Emissão</th>
                 <th className="py-2.5 px-2.5 min-w-[140px]">Descrição / Fornecedor</th>
                 <th className="py-2.5 px-2 whitespace-nowrap">C. Custo</th>
                 <th className="py-2.5 px-2 whitespace-nowrap">Categoria</th>
@@ -708,7 +991,7 @@ export default function ContasPagar() {
             <tbody className="divide-y divide-[#ECEAE4]">
               {filteredContas.length === 0 ? (
                 <tr>
-                  <td colSpan={10} className="py-12 text-center text-gray-400">
+                  <td colSpan={11} className="py-12 text-center text-gray-400">
                     Nenhuma conta a pagar encontrada para os filtros atuais.
                   </td>
                 </tr>
@@ -729,6 +1012,11 @@ export default function ContasPagar() {
                       {/* Vencimento */}
                       <td className="py-2 px-2.5 font-mono font-medium text-gray-800 whitespace-nowrap text-xs">
                         {formatDate(c.vencimento)}
+                      </td>
+
+                      {/* Emissão */}
+                      <td className="py-2 px-2.5 font-mono text-gray-500 whitespace-nowrap text-xs">
+                        {c.data_emissao ? formatDate(c.data_emissao) : '—'}
                       </td>
 
                       {/* Descrição / Fornecedor */}
@@ -863,6 +1151,19 @@ export default function ContasPagar() {
                               {c.status === 'Parcial' ? 'Amortizar' : 'Baixar'}
                             </Button>
                           )}
+                          {canEdit &&
+                            (displayStatus === 'Paga' || (c.valor_pago && c.valor_pago > 0)) && (
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => handleEstorno(c)}
+                                className="h-6 px-2 text-[11px] border-amber-300 text-amber-800 hover:bg-amber-50"
+                                title="Estornar pagamento e reverter saldo"
+                              >
+                                <RotateCcw className="w-3 h-3 mr-1 text-amber-600" />
+                                Estornar
+                              </Button>
+                            )}
                           {canEdit && (
                             <Button
                               size="sm"
@@ -878,7 +1179,7 @@ export default function ContasPagar() {
                             <Button
                               size="sm"
                               variant="ghost"
-                              onClick={() => handleDelete(c.id)}
+                              onClick={() => handleDelete(c.id, c.descricao || nomeFornecedor)}
                               className="h-6 w-6 p-0 text-red-500 hover:bg-red-50"
                               title="Excluir"
                             >
@@ -995,7 +1296,7 @@ export default function ContasPagar() {
               </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-3 gap-3">
               <div>
                 <Label className="text-xs font-semibold text-gray-700">Valor Total (R$) *</Label>
                 <Input
@@ -1010,8 +1311,18 @@ export default function ContasPagar() {
               </div>
 
               <div>
+                <Label className="text-xs font-semibold text-gray-700">Data de Emissão</Label>
+                <Input
+                  type="date"
+                  value={dataEmissao}
+                  onChange={(e) => setDataEmissao(e.target.value)}
+                  className="mt-1 font-mono"
+                />
+              </div>
+
+              <div>
                 <Label className="text-xs font-semibold text-gray-700">
-                  {editingId || parcelas <= 1 ? 'Vencimento *' : '1º Vencimento (Data Base) *'}
+                  {editingId || parcelas <= 1 ? 'Vencimento *' : '1º Vencimento *'}
                 </Label>
                 <Input
                   type="date"
@@ -1274,6 +1585,12 @@ export default function ContasPagar() {
                   </span>
                 </div>
                 <div className="flex justify-between py-1">
+                  <span className="text-gray-500">Data de Emissão:</span>
+                  <span className="font-mono text-gray-800">
+                    {detailItem.data_emissao ? formatDate(detailItem.data_emissao) : '—'}
+                  </span>
+                </div>
+                <div className="flex justify-between py-1">
                   <span className="text-gray-500">Data de Vencimento:</span>
                   <span className="font-mono text-gray-800">
                     {formatDate(detailItem.vencimento)}
@@ -1308,26 +1625,95 @@ export default function ContasPagar() {
                 </div>
               )}
 
-              {canEdit && detailItem.status !== 'Paga' && (
-                <div className="pt-6">
-                  <Button
-                    onClick={() => {
-                      const item = detailItem
-                      setDetailItem(null)
-                      handleOpenSettle(item)
-                    }}
-                    className="w-full bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl"
-                  >
-                    {detailItem.status === 'Parcial'
-                      ? 'Registrar Nova Baixa / Quitar'
-                      : 'Baixar Título Agora'}
-                  </Button>
+              {canEdit && (
+                <div className="pt-4 space-y-2">
+                  {detailItem.status !== 'Paga' && (
+                    <Button
+                      onClick={() => {
+                        const item = detailItem
+                        setDetailItem(null)
+                        handleOpenSettle(item)
+                      }}
+                      className="w-full bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl"
+                    >
+                      {detailItem.status === 'Parcial'
+                        ? 'Registrar Nova Baixa / Quitar'
+                        : 'Baixar Título Agora'}
+                    </Button>
+                  )}
+
+                  {(detailItem.status === 'Paga' ||
+                    (detailItem.valor_pago && detailItem.valor_pago > 0)) && (
+                    <Button
+                      variant="outline"
+                      className="w-full border-amber-300 text-amber-800 hover:bg-amber-50 rounded-xl"
+                      onClick={() => handleEstorno(detailItem)}
+                    >
+                      <RotateCcw className="w-4 h-4 mr-2 text-amber-600" />
+                      Estornar Pagamento
+                    </Button>
+                  )}
+
+                  <div className="grid grid-cols-2 gap-2 pt-1">
+                    <Button
+                      variant="outline"
+                      className="border-[#ECEAE4] rounded-xl text-gray-700"
+                      onClick={() => {
+                        const item = detailItem
+                        setDetailItem(null)
+                        handleEdit(item)
+                      }}
+                    >
+                      <Edit2 className="w-4 h-4 mr-2" />
+                      Editar
+                    </Button>
+                    <Button
+                      variant="destructive"
+                      className="rounded-xl"
+                      onClick={() => {
+                        handleDelete(detailItem.id, detailItem.descricao)
+                      }}
+                    >
+                      <Trash2 className="w-4 h-4 mr-2" />
+                      Excluir
+                    </Button>
+                  </div>
                 </div>
               )}
             </div>
           )}
         </SheetContent>
       </Sheet>
+
+      {/* AlertDialog de Confirmação para Todas as Modificações */}
+      <AlertDialog open={confirmDialogOpen} onOpenChange={setConfirmDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{confirmDialogData?.title || 'Confirmar ação'}</AlertDialogTitle>
+            <AlertDialogDescription>{confirmDialogData?.description}</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isSubmitting}>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={isSubmitting}
+              className={
+                confirmDialogData?.confirmVariant === 'destructive'
+                  ? 'bg-red-600 hover:bg-red-700 text-white'
+                  : 'bg-teal-700 hover:bg-teal-800 text-white'
+              }
+              onClick={async (e) => {
+                e.preventDefault()
+                if (confirmDialogData?.action) {
+                  await confirmDialogData.action()
+                }
+                setConfirmDialogOpen(false)
+              }}
+            >
+              {confirmDialogData?.confirmLabel || 'Confirmar'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {/* Modal Importador XLSX Contas a Pagar */}
       <ImportadorContasPagarModal

@@ -32,6 +32,16 @@ import {
   DialogTitle,
   DialogFooter,
 } from '@/components/ui/dialog'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetFooter } from '@/components/ui/sheet'
 import {
   Select,
@@ -55,6 +65,9 @@ import {
   ArrowDownLeft,
   FileSpreadsheet,
   Printer,
+  RotateCcw,
+  X,
+  Filter,
 } from 'lucide-react'
 
 export default function ContasReceber() {
@@ -72,6 +85,12 @@ export default function ContasReceber() {
   const [statusFilter, setStatusFilter] = useState<
     'Todas' | 'Aberta' | 'Parcial' | 'Recebida' | 'Vencida' | 'Recebimento Antecipado'
   >('Todas')
+  const [campoDataFiltro, setCampoDataFiltro] = useState<
+    'vencimento' | 'data_emissao' | 'data_recebimento'
+  >('vencimento')
+  const [dataInicioFilter, setDataInicioFilter] = useState<string>('')
+  const [dataFimFilter, setDataFimFilter] = useState<string>('')
+  const [opcaoPeriodoRapido, setOpcaoPeriodoRapido] = useState<string>('todos')
   const [centroCustoFilter, setCentroCustoFilter] = useState<string>('todos')
   const [searchQuery, setSearchQuery] = useState('')
 
@@ -89,6 +108,7 @@ export default function ContasReceber() {
   const [categoriaId, setCategoriaId] = useState('')
   const [valor, setValor] = useState<number>(0)
   const [vencimento, setVencimento] = useState('')
+  const [dataEmissao, setDataEmissao] = useState('')
   const [parcelas, setParcelas] = useState<number>(1)
   const [prazoSelecionado, setPrazoSelecionado] = useState<TipoPrazo>('mensal')
   const [gradeParcelas, setGradeParcelas] = useState<ItemParcela[]>([])
@@ -114,6 +134,16 @@ export default function ContasReceber() {
 
   // Read-only Detail Drawer
   const [detailItem, setDetailItem] = useState<ContaReceber | null>(null)
+
+  // Confirmation Alert Dialog State
+  const [confirmDialogOpen, setConfirmDialogOpen] = useState(false)
+  const [confirmDialogData, setConfirmDialogData] = useState<{
+    title: string
+    description: string
+    confirmLabel?: string
+    confirmVariant?: 'default' | 'destructive'
+    action: () => Promise<void> | void
+  } | null>(null)
 
   useRealtime('contas_receber', () => loadData())
 
@@ -195,6 +225,7 @@ export default function ContasReceber() {
     setCategoriaId(categorias[0]?.id || '')
     setValor(0)
     setVencimento(hoje)
+    setDataEmissao('')
     setParcelas(1)
     setPrazoSelecionado('mensal')
     setDatasCustomizadasManuais(false)
@@ -217,6 +248,7 @@ export default function ContasReceber() {
     setCategoriaId(c.categoria_id || '')
     setValor(c.valor)
     setVencimento(venc)
+    setDataEmissao(c.data_emissao ? toInputDate(c.data_emissao) : '')
     setParcelas(numP)
     setPrazoSelecionado('mensal')
     setDatasCustomizadasManuais(false)
@@ -291,97 +323,191 @@ export default function ContasReceber() {
       return
     }
 
-    try {
-      setIsSubmitting(true)
+    const isEdit = Boolean(editingId)
+    setConfirmDialogData({
+      title: isEdit ? 'Confirmar alteração de título' : 'Confirmar inclusão de título a receber',
+      description: isEdit
+        ? `Deseja salvar as alterações no título "${descricao.trim()}" no valor de ${formatCurrency(valor)}?`
+        : `Deseja criar ${parcelas > 1 ? `${parcelas} parcelas` : 'o título'} de "${descricao.trim()}" no valor total de ${formatCurrency(valor)}?`,
+      confirmLabel: isEdit ? 'Confirmar Alteração' : 'Criar Título',
+      confirmVariant: 'default',
+      action: async () => {
+        try {
+          setIsSubmitting(true)
+          const dataEmissaoIso = dataEmissao
+            ? new Date(`${dataEmissao}T12:00:00Z`).toISOString()
+            : null
 
-      if (editingId) {
-        await pb.collection('contas_receber').update(editingId, {
-          descricao: descricao.trim(),
-          cliente_id: clienteId === 'none' || !clienteId ? null : clienteId,
-          cliente_depositante: clienteDepositante.trim() || '',
-          categoria_id: categoriaId === 'none' || !categoriaId ? null : categoriaId,
-          centro_custo_id: centroCustoId === 'none' || !centroCustoId ? null : centroCustoId,
-          valor: Number(valor),
-          vencimento: new Date(vencimento).toISOString(),
-          parcelas: Number(parcelas),
-          status: status,
-          endereco: endereco.trim(),
-          nota: nota.trim(),
-          observacoes: observacoes.trim(),
-        })
-        toast({ title: 'Conta a receber atualizada!' })
-      } else {
-        const numParcelas = Math.max(1, Number(parcelas))
-        const parcelasParaSalvar =
-          gradeParcelas.length === numParcelas
-            ? gradeParcelas
-            : gerarGradeParcelas(vencimento, numParcelas, prazoSelecionado, valor)
-
-        for (let i = 0; i < parcelasParaSalvar.length; i++) {
-          const item = parcelasParaSalvar[i]
-          const dataVencIso = item.vencimento
-            ? new Date(`${item.vencimento}T12:00:00Z`).toISOString()
-            : new Date(vencimento).toISOString()
-
-          const parcelValue =
-            Number(item.valor) || Number(valor) / (numParcelas > 1 ? numParcelas : 1)
-
-          const desc =
-            numParcelas > 1 ? `${descricao.trim()} (${i + 1}/${numParcelas})` : descricao.trim()
-
-          const createdConta = await pb.collection('contas_receber').create<ContaReceber>({
-            empresa_id: currentEmpresa!.id,
-            descricao: desc,
-            cliente_id: clienteId === 'none' || !clienteId ? null : clienteId,
-            cliente_depositante: clienteDepositante.trim() || '',
-            categoria_id: categoriaId === 'none' || !categoriaId ? null : categoriaId,
-            centro_custo_id: centroCustoId === 'none' || !centroCustoId ? null : centroCustoId,
-            valor: parcelValue,
-            vencimento: dataVencIso,
-            parcelas: numParcelas,
-            status: status,
-            endereco: endereco.trim(),
-            nota: nota.trim(),
-            observacoes: observacoes.trim(),
-            data_recebimento: status === 'Recebimento Antecipado' ? dataVencIso : undefined,
-          })
-
-          if (status === 'Recebimento Antecipado' && clienteId && clienteId !== 'none') {
-            await pb.collection('creditos_clientes').create({
-              empresa_id: currentEmpresa!.id,
-              cliente_id: clienteId,
-              valor: parcelValue,
-              saldo_restante: parcelValue,
-              origem: 'Recebimento Antecipado',
-              descricao: `Depósito/Adiantamento ref. ${desc}`,
-              data: dataVencIso,
-              status: 'disponivel',
-              referencia_conta_id: createdConta.id,
+          if (editingId) {
+            await pb.collection('contas_receber').update(editingId, {
+              descricao: descricao.trim(),
+              cliente_id: clienteId === 'none' || !clienteId ? null : clienteId,
+              cliente_depositante: clienteDepositante.trim() || '',
+              categoria_id: categoriaId === 'none' || !categoriaId ? null : categoriaId,
+              centro_custo_id: centroCustoId === 'none' || !centroCustoId ? null : centroCustoId,
+              valor: Number(valor),
+              vencimento: new Date(vencimento).toISOString(),
+              data_emissao: dataEmissaoIso,
+              parcelas: Number(parcelas),
+              status: status,
+              endereco: endereco.trim(),
+              nota: nota.trim(),
+              observacoes: observacoes.trim(),
             })
-          }
-        }
-        toast({ title: 'Conta a receber criada com sucesso!' })
-      }
+            toast({ title: 'Conta a receber atualizada!' })
+          } else {
+            const numParcelas = Math.max(1, Number(parcelas))
+            const parcelasParaSalvar =
+              gradeParcelas.length === numParcelas
+                ? gradeParcelas
+                : gerarGradeParcelas(vencimento, numParcelas, prazoSelecionado, valor)
 
-      setIsDrawerOpen(false)
-      setSearchParams({})
-      await loadData()
-    } catch (err: any) {
-      toast({ title: 'Erro ao salvar conta', description: err.message, variant: 'destructive' })
-    } finally {
-      setIsSubmitting(false)
-    }
+            for (let i = 0; i < parcelasParaSalvar.length; i++) {
+              const item = parcelasParaSalvar[i]
+              const dataVencIso = item.vencimento
+                ? new Date(`${item.vencimento}T12:00:00Z`).toISOString()
+                : new Date(vencimento).toISOString()
+
+              const parcelValue =
+                Number(item.valor) || Number(valor) / (numParcelas > 1 ? numParcelas : 1)
+
+              const desc =
+                numParcelas > 1 ? `${descricao.trim()} (${i + 1}/${numParcelas})` : descricao.trim()
+
+              const createdConta = await pb.collection('contas_receber').create<ContaReceber>({
+                empresa_id: currentEmpresa!.id,
+                descricao: desc,
+                cliente_id: clienteId === 'none' || !clienteId ? null : clienteId,
+                cliente_depositante: clienteDepositante.trim() || '',
+                categoria_id: categoriaId === 'none' || !categoriaId ? null : categoriaId,
+                centro_custo_id: centroCustoId === 'none' || !centroCustoId ? null : centroCustoId,
+                valor: parcelValue,
+                vencimento: dataVencIso,
+                data_emissao: dataEmissaoIso || undefined,
+                parcelas: numParcelas,
+                status: status,
+                endereco: endereco.trim(),
+                nota: nota.trim(),
+                observacoes: observacoes.trim(),
+                data_recebimento: status === 'Recebimento Antecipado' ? dataVencIso : undefined,
+              })
+
+              if (status === 'Recebimento Antecipado' && clienteId && clienteId !== 'none') {
+                await pb.collection('creditos_clientes').create({
+                  empresa_id: currentEmpresa!.id,
+                  cliente_id: clienteId,
+                  valor: parcelValue,
+                  saldo_restante: parcelValue,
+                  origem: 'Recebimento Antecipado',
+                  descricao: `Depósito/Adiantamento ref. ${desc}`,
+                  data: dataVencIso,
+                  status: 'disponivel',
+                  referencia_conta_id: createdConta.id,
+                })
+              }
+            }
+            toast({ title: 'Conta a receber criada com sucesso!' })
+          }
+
+          setIsDrawerOpen(false)
+          setSearchParams({})
+          await loadData()
+        } catch (err: any) {
+          toast({ title: 'Erro ao salvar conta', description: err.message, variant: 'destructive' })
+        } finally {
+          setIsSubmitting(false)
+        }
+      },
+    })
+    setConfirmDialogOpen(true)
   }
 
-  const handleDelete = async (id: string) => {
-    if (!confirm('Deseja realmente excluir este lançamento?')) return
-    try {
-      await pb.collection('contas_receber').delete(id)
-      toast({ title: 'Lançamento excluído com sucesso.' })
-      await loadData()
-    } catch (err: any) {
-      toast({ title: 'Erro ao excluir', description: err.message, variant: 'destructive' })
+  const handleDelete = (id: string, descricaoAlvo?: string) => {
+    setConfirmDialogData({
+      title: 'Confirmar exclusão de título',
+      description: `Deseja realmente excluir o título a receber ${descricaoAlvo ? `"${descricaoAlvo}"` : ''}? Esta ação removerá o registro e não poderá ser desfeita.`,
+      confirmLabel: 'Excluir Título',
+      confirmVariant: 'destructive',
+      action: async () => {
+        try {
+          await pb.collection('contas_receber').delete(id)
+          toast({ title: 'Lançamento excluído com sucesso.' })
+          if (detailItem?.id === id) setDetailItem(null)
+          await loadData()
+        } catch (err: any) {
+          toast({ title: 'Erro ao excluir', description: err.message, variant: 'destructive' })
+        }
+      },
+    })
+    setConfirmDialogOpen(true)
+  }
+
+  const handleEstorno = (c: ContaReceber) => {
+    const valorRecebidoAtual = getValorRecebidoEfetivo(c)
+    if (valorRecebidoAtual <= 0 && c.status === 'Aberta') {
+      toast({ title: 'Este título não possui baixas para estornar.', variant: 'destructive' })
+      return
     }
+
+    const clienteNome = c.expand?.cliente_id?.nome || c.descricao || 'Título'
+
+    setConfirmDialogData({
+      title: 'Confirmar estorno de recebimento',
+      description: `Deseja estornar o recebimento de ${formatCurrency(valorRecebidoAtual)} de "${clienteNome}"? O título voltará para o status "Aberta", o valor recebido e data serão zerados, e será lançado um movimento de caixa inverso (Saída/Estorno) de mesmo valor para manter os saldos bancários e contábeis consistentes.`,
+      confirmLabel: 'Confirmar Estorno',
+      confirmVariant: 'destructive',
+      action: async () => {
+        try {
+          setIsSubmitting(true)
+          const agora = new Date()
+          const dataHojeFormatada = formatDate(agora.toISOString())
+          const obsEstorno = ` [Estornado em ${dataHojeFormatada}: revertido ${formatCurrency(valorRecebidoAtual)}]`
+
+          // 1. Reverter o título para Aberta, zerando valor_recebido e data_recebimento
+          await pb.collection('contas_receber').update(c.id, {
+            status: 'Aberta',
+            valor_recebido: 0,
+            data_recebimento: null,
+            forma_recebimento: null,
+            observacoes: (c.observacoes || '') + obsEstorno,
+          })
+
+          // 2. Criar movimento financeiro inverso (Saída no valor estornado)
+          if (valorRecebidoAtual > 0) {
+            await pb.collection('movimentos_financeiros').create({
+              empresa_id: currentEmpresa!.id,
+              tipo: 'Saida',
+              descricao: `Estorno de recebimento: ${c.descricao || clienteNome}${c.nota ? ` [Doc: ${c.nota}]` : ''}`,
+              valor: valorRecebidoAtual,
+              data: agora.toISOString(),
+              categoria_id: c.categoria_id || null,
+              centro_custo_id: c.centro_custo_id || null,
+              origem: 'ContaReceber',
+              referencia_id: c.id,
+              conciliado: false,
+            })
+          }
+
+          toast({
+            title: 'Recebimento estornado com sucesso!',
+            description: `Título retornado para Em Aberto e movimento de saída gerado no valor de ${formatCurrency(valorRecebidoAtual)}.`,
+          })
+          if (detailItem?.id === c.id) {
+            setDetailItem(null)
+          }
+          await loadData()
+        } catch (err: any) {
+          toast({
+            title: 'Erro ao estornar recebimento',
+            description: err.message,
+            variant: 'destructive',
+          })
+        } finally {
+          setIsSubmitting(false)
+        }
+      },
+    })
+    setConfirmDialogOpen(true)
   }
 
   // Crédito disponível para o cliente da conta selecionada para baixa
@@ -771,132 +897,97 @@ export default function ContasReceber() {
       return
     }
 
-    try {
-      setIsSubmitting(true)
-      const recDateISO = new Date(dataRecebimento).toISOString()
+    setConfirmDialogData({
+      title: 'Confirmar recebimento / baixa',
+      description: `Deseja registrar o recebimento de ${formatCurrency(valorBaixa)} em ${dataRecebimento ? formatDate(dataRecebimento) : 'hoje'} via ${formaRecebimento}? Isso atualizará o saldo e lançará a entrada no caixa.`,
+      confirmLabel: 'Confirmar Recebimento',
+      confirmVariant: 'default',
+      action: async () => {
+        try {
+          setIsSubmitting(true)
+          const recDateISO = new Date(dataRecebimento).toISOString()
 
-      // Abatimento de crédito se selecionado
-      let formaFinal = formaRecebimento
-      if (usarCreditoCliente && valorCreditoUsado > 0) {
-        formaFinal = 'Crédito do Cliente' as any
-        let restanteParaAbater = valorCreditoUsado
+          // Abatimento de crédito se selecionado
+          let formaFinal = formaRecebimento
+          if (usarCreditoCliente && valorCreditoUsado > 0) {
+            formaFinal = 'Crédito do Cliente' as any
+            let restanteParaAbater = valorCreditoUsado
 
-        for (const cred of creditosDisponiveisCliente) {
-          if (restanteParaAbater <= 0) break
-          const abatimento = Math.min(cred.saldo_restante, restanteParaAbater)
-          const novoSaldo = cred.saldo_restante - abatimento
-          const novoStatus = novoSaldo <= 0.001 ? 'utilizado' : 'parcial'
+            for (const cred of creditosDisponiveisCliente) {
+              if (restanteParaAbater <= 0) break
+              const abatimento = Math.min(cred.saldo_restante, restanteParaAbater)
+              const novoSaldo = cred.saldo_restante - abatimento
+              const novoStatus = novoSaldo <= 0.001 ? 'utilizado' : 'parcial'
 
-          await pb.collection('creditos_clientes').update(cred.id, {
-            saldo_restante: novoSaldo,
+              await pb.collection('creditos_clientes').update(cred.id, {
+                saldo_restante: novoSaldo,
+                status: novoStatus,
+              })
+
+              restanteParaAbater -= abatimento
+            }
+          }
+
+          const totalAcumuladoAntes = getValorRecebidoEfetivo(settlingConta)
+          const novoTotalRecebido = totalAcumuladoAntes + valorBaixa
+          const valorTituloTotal = Number(settlingConta.valor || 0)
+          const estaQuitado = novoTotalRecebido >= valorTituloTotal - 0.009
+          const novoStatus = estaQuitado ? 'Recebida' : 'Parcial'
+
+          const obsBaixa = ` [Baixa ${novoStatus === 'Recebida' ? 'total' : 'parcial'} de ${formatCurrency(valorBaixa)} em ${formatDate(recDateISO)}${usarCreditoCliente ? ` (Crédito: ${formatCurrency(valorCreditoUsado)})` : ''}]`
+
+          await pb.collection('contas_receber').update(settlingConta.id, {
             status: novoStatus,
+            valor_recebido: novoTotalRecebido,
+            data_recebimento: recDateISO,
+            forma_recebimento: formaFinal,
+            observacoes: (settlingConta.observacoes || '') + obsBaixa,
           })
 
-          restanteParaAbater -= abatimento
+          const clienteNomeTitulo = settlingConta.expand?.cliente_id?.nome || ''
+          const rotuloTitulo = settlingConta.descricao
+            ? `${settlingConta.descricao}${clienteNomeTitulo ? ` [${clienteNomeTitulo}]` : ''}`
+            : clienteNomeTitulo || 'Recebimento'
+
+          await pb.collection('movimentos_financeiros').create({
+            empresa_id: currentEmpresa!.id,
+            tipo: 'Entrada',
+            descricao: `Recebimento${novoStatus === 'Parcial' ? ' parcial' : ''}: ${rotuloTitulo}${usarCreditoCliente ? ' (Compensado via Crédito)' : ''}${settlingConta.expand?.centro_custo_id ? ` [${settlingConta.expand.centro_custo_id.codigo}]` : ''}`,
+            valor: valorBaixa,
+            data: recDateISO,
+            categoria_id: settlingConta.categoria_id || null,
+            centro_custo_id: settlingConta.centro_custo_id || null,
+            origem: 'ContaReceber',
+            referencia_id: settlingConta.id,
+            conciliado: false,
+          })
+
+          toast({
+            title: estaQuitado
+              ? 'Título quitado integralmente!'
+              : 'Recebimento parcial registrado com sucesso!',
+            description: estaQuitado
+              ? `Valor recebido: ${formatCurrency(valorBaixa)}`
+              : `Recebido: ${formatCurrency(valorBaixa)}. Saldo restante: ${formatCurrency(Math.max(0, valorTituloTotal - novoTotalRecebido))}`,
+          })
+          setSettleModalOpen(false)
+          setSearchParams({})
+          await loadData()
+        } catch (err: any) {
+          toast({
+            title: 'Erro ao liquidar recebimento',
+            description: err.message,
+            variant: 'destructive',
+          })
+        } finally {
+          setIsSubmitting(false)
         }
-      }
-
-      const totalAcumuladoAntes = getValorRecebidoEfetivo(settlingConta)
-      const novoTotalRecebido = totalAcumuladoAntes + valorBaixa
-      const valorTituloTotal = Number(settlingConta.valor || 0)
-      const estaQuitado = novoTotalRecebido >= valorTituloTotal - 0.009
-      const novoStatus = estaQuitado ? 'Recebida' : 'Parcial'
-
-      const obsBaixa = ` [Baixa ${novoStatus === 'Recebida' ? 'total' : 'parcial'} de ${formatCurrency(valorBaixa)} em ${formatDate(recDateISO)}${usarCreditoCliente ? ` (Crédito: ${formatCurrency(valorCreditoUsado)})` : ''}]`
-
-      await pb.collection('contas_receber').update(settlingConta.id, {
-        status: novoStatus,
-        valor_recebido: novoTotalRecebido,
-        data_recebimento: recDateISO,
-        forma_recebimento: formaFinal,
-        observacoes: (settlingConta.observacoes || '') + obsBaixa,
-      })
-
-      const clienteNomeTitulo = settlingConta.expand?.cliente_id?.nome || ''
-      const rotuloTitulo = settlingConta.descricao
-        ? `${settlingConta.descricao}${clienteNomeTitulo ? ` [${clienteNomeTitulo}]` : ''}`
-        : clienteNomeTitulo || 'Recebimento'
-
-      await pb.collection('movimentos_financeiros').create({
-        empresa_id: currentEmpresa!.id,
-        tipo: 'Entrada',
-        descricao: `Recebimento${novoStatus === 'Parcial' ? ' parcial' : ''}: ${rotuloTitulo}${usarCreditoCliente ? ' (Compensado via Crédito)' : ''}${settlingConta.expand?.centro_custo_id ? ` [${settlingConta.expand.centro_custo_id.codigo}]` : ''}`,
-        valor: valorBaixa,
-        data: recDateISO,
-        categoria_id: settlingConta.categoria_id || null,
-        centro_custo_id: settlingConta.centro_custo_id || null,
-        origem: 'ContaReceber',
-        referencia_id: settlingConta.id,
-        conciliado: false,
-      })
-
-      toast({
-        title: estaQuitado
-          ? 'Título quitado integralmente!'
-          : 'Recebimento parcial registrado com sucesso!',
-        description: estaQuitado
-          ? `Valor recebido: ${formatCurrency(valorBaixa)}`
-          : `Recebido: ${formatCurrency(valorBaixa)}. Saldo restante: ${formatCurrency(Math.max(0, valorTituloTotal - novoTotalRecebido))}`,
-      })
-      setSettleModalOpen(false)
-      setSearchParams({})
-      await loadData()
-    } catch (err: any) {
-      toast({
-        title: 'Erro ao liquidar recebimento',
-        description: err.message,
-        variant: 'destructive',
-      })
-    } finally {
-      setIsSubmitting(false)
-    }
+      },
+    })
+    setConfirmDialogOpen(true)
   }
 
   const nowISO = new Date().toISOString().slice(0, 10)
-  const currentMonth = new Date().getMonth()
-  const currentYear = new Date().getFullYear()
-
-  // Saldo total em aberto (não vencido)
-  const totalAberto = useMemo(() => {
-    return contas
-      .filter(
-        (c) =>
-          (c.status === 'Aberta' || c.status === 'Parcial') && c.vencimento.slice(0, 10) >= nowISO,
-      )
-      .reduce((sum, c) => sum + getSaldoRestante(c), 0)
-  }, [contas, nowISO])
-
-  // Saldo total vencido
-  const totalVencido = useMemo(() => {
-    return contas
-      .filter(
-        (c) =>
-          c.status === 'Vencida' ||
-          ((c.status === 'Aberta' || c.status === 'Parcial') && c.vencimento.slice(0, 10) < nowISO),
-      )
-      .reduce((sum, c) => sum + getSaldoRestante(c), 0)
-  }, [contas, nowISO])
-
-  // Total efetivamente recebido de todos os títulos
-  const totalRecebido = useMemo(() => {
-    return contas.reduce((sum, c) => sum + getValorRecebidoEfetivo(c), 0)
-  }, [contas])
-
-  const totalRecebidoMes = useMemo(() => {
-    return contas
-      .filter((c) => {
-        if (!c.data_recebimento) return false
-        const d = new Date(c.data_recebimento)
-        return d.getMonth() === currentMonth && d.getFullYear() === currentYear
-      })
-      .reduce((sum, c) => sum + getValorRecebidoEfetivo(c), 0)
-  }, [contas, currentMonth, currentYear])
-
-  const totalAntecipado = useMemo(() => {
-    return contas
-      .filter((c) => c.status === 'Recebimento Antecipado')
-      .reduce((sum, c) => sum + (c.valor || 0), 0)
-  }, [contas])
 
   const getContaStatusReal = (c: ContaReceber): StatusContaReceber => {
     // Decisão permanente v0.0.65: títulos "Aberta" exibem SEMPRE status Aberta (vencida/aberta/próximo de vencer = Aberta).
@@ -905,6 +996,7 @@ export default function ContasReceber() {
     return c.status
   }
 
+  // Filtragem completa com suporte a período de datas
   const filteredContas = useMemo(() => {
     return contas.filter((c) => {
       const isOverdue =
@@ -912,20 +1004,36 @@ export default function ContasReceber() {
 
       if (statusFilter !== 'Todas') {
         if (statusFilter === 'Aberta') {
-          // O filtro "Aberta" inclui tanto títulos a vencer quanto vencidos (decisão do usuário)
           if (c.status !== 'Aberta') return false
         } else if (statusFilter === 'Parcial') {
           if (c.status !== 'Parcial') return false
         } else if (statusFilter === 'Vencida') {
-          // Aba Vencida continua permitindo ver apenas títulos em atraso para conveniência
           if (!isOverdue) return false
         } else if (c.status !== statusFilter) {
           return false
         }
       }
+
       if (centroCustoFilter !== 'todos' && c.centro_custo_id !== centroCustoFilter) {
         return false
       }
+
+      // Filtro de período por campo selecionado
+      if (dataInicioFilter || dataFimFilter) {
+        let campoValorData: string | undefined
+        if (campoDataFiltro === 'vencimento') {
+          campoValorData = c.vencimento ? c.vencimento.slice(0, 10) : undefined
+        } else if (campoDataFiltro === 'data_emissao') {
+          campoValorData = c.data_emissao ? c.data_emissao.slice(0, 10) : undefined
+        } else if (campoDataFiltro === 'data_recebimento') {
+          campoValorData = c.data_recebimento ? c.data_recebimento.slice(0, 10) : undefined
+        }
+
+        if (!campoValorData) return false
+        if (dataInicioFilter && campoValorData < dataInicioFilter) return false
+        if (dataFimFilter && campoValorData > dataFimFilter) return false
+      }
+
       if (searchQuery.trim()) {
         const q = searchQuery.toLowerCase()
         const clienteNome = c.expand?.cliente_id?.nome?.toLowerCase() || ''
@@ -937,7 +1045,83 @@ export default function ContasReceber() {
       }
       return true
     })
-  }, [contas, statusFilter, centroCustoFilter, searchQuery, nowISO])
+  }, [
+    contas,
+    statusFilter,
+    centroCustoFilter,
+    campoDataFiltro,
+    dataInicioFilter,
+    dataFimFilter,
+    searchQuery,
+    nowISO,
+  ])
+
+  // Totais refletindo a lista filtrada (requisito 1: "Os filtros devem refletir na listagem e nos totais/cards")
+  const totalAberto = useMemo(() => {
+    return filteredContas
+      .filter(
+        (c) =>
+          (c.status === 'Aberta' || c.status === 'Parcial') && c.vencimento.slice(0, 10) >= nowISO,
+      )
+      .reduce((sum, c) => sum + getSaldoRestante(c), 0)
+  }, [filteredContas, nowISO])
+
+  const totalVencido = useMemo(() => {
+    return filteredContas
+      .filter(
+        (c) =>
+          c.status === 'Vencida' ||
+          ((c.status === 'Aberta' || c.status === 'Parcial') && c.vencimento.slice(0, 10) < nowISO),
+      )
+      .reduce((sum, c) => sum + getSaldoRestante(c), 0)
+  }, [filteredContas, nowISO])
+
+  const totalRecebido = useMemo(() => {
+    return filteredContas.reduce((sum, c) => sum + getValorRecebidoEfetivo(c), 0)
+  }, [filteredContas])
+
+  const totalAntecipado = useMemo(() => {
+    return filteredContas
+      .filter((c) => c.status === 'Recebimento Antecipado')
+      .reduce((sum, c) => sum + (c.valor || 0), 0)
+  }, [filteredContas])
+
+  const handleSelecionarPeriodoRapido = (opcao: string) => {
+    setOpcaoPeriodoRapido(opcao)
+    const hoje = new Date()
+    const y = hoje.getFullYear()
+    const m = hoje.getMonth()
+
+    if (opcao === 'todos') {
+      setDataInicioFilter('')
+      setDataFimFilter('')
+    } else if (opcao === 'este_mes') {
+      const primeiroDia = new Date(y, m, 1)
+      const ultimoDia = new Date(y, m + 1, 0)
+      setDataInicioFilter(toInputDate(primeiroDia.toISOString()))
+      setDataFimFilter(toInputDate(ultimoDia.toISOString()))
+    } else if (opcao === 'mes_passado') {
+      const primeiroDia = new Date(y, m - 1, 1)
+      const ultimoDia = new Date(y, m, 0)
+      setDataInicioFilter(toInputDate(primeiroDia.toISOString()))
+      setDataFimFilter(toInputDate(ultimoDia.toISOString()))
+    } else if (opcao === 'este_ano') {
+      const primeiroDia = new Date(y, 0, 1)
+      const ultimoDia = new Date(y, 11, 31)
+      setDataInicioFilter(toInputDate(primeiroDia.toISOString()))
+      setDataFimFilter(toInputDate(ultimoDia.toISOString()))
+    }
+  }
+
+  const handleLimparFiltros = () => {
+    setStatusFilter('Todas')
+    setCentroCustoFilter('todos')
+    setDataInicioFilter('')
+    setDataFimFilter('')
+    setOpcaoPeriodoRapido('todos')
+    setCampoDataFiltro('vencimento')
+    setSearchQuery('')
+  }
 
   return (
     <div className="space-y-6">
@@ -1026,7 +1210,8 @@ export default function ContasReceber() {
       </div>
 
       {/* Filter and Search Bar */}
-      <Card className="rounded-2xl border-[#ECEAE4] bg-white shadow-xs p-4">
+      <Card className="rounded-2xl border-[#ECEAE4] bg-white shadow-xs p-4 space-y-3">
+        {/* Linha 1: Status e busca rápida */}
         <div className="flex flex-col md:flex-row items-center justify-between gap-3">
           <div className="flex flex-wrap items-center gap-1.5 w-full md:w-auto">
             {(
@@ -1085,6 +1270,92 @@ export default function ContasReceber() {
             </div>
           </div>
         </div>
+
+        {/* Linha 2: Filtro de Período (Opções Rápidas + De / Até) com seleção de campo de data e botão limpar */}
+        <div className="pt-2 border-t border-[#ECEAE4] flex flex-wrap items-center justify-between gap-3 text-xs">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="flex items-center text-gray-600 font-medium text-xs">
+              <Calendar className="w-3.5 h-3.5 mr-1 text-teal-700" />
+              Filtrar por período:
+            </span>
+
+            <Select value={campoDataFiltro} onValueChange={(v: any) => setCampoDataFiltro(v)}>
+              <SelectTrigger className="w-[160px] bg-[#FAF9F7] border-[#ECEAE4] text-xs h-8 rounded-lg">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="vencimento">Vencimento</SelectItem>
+                <SelectItem value="data_emissao">Data de Emissão</SelectItem>
+                <SelectItem value="data_recebimento">Data de Recebimento</SelectItem>
+              </SelectContent>
+            </Select>
+
+            {/* Opções Rápidas */}
+            <div className="flex items-center gap-1 bg-[#FAF9F7] p-0.5 rounded-lg border border-[#ECEAE4]">
+              {[
+                { id: 'todos', label: 'Todo o período' },
+                { id: 'este_mes', label: 'Este mês' },
+                { id: 'mes_passado', label: 'Mês passado' },
+                { id: 'este_ano', label: 'Este ano' },
+              ].map((op) => (
+                <button
+                  key={op.id}
+                  type="button"
+                  onClick={() => handleSelecionarPeriodoRapido(op.id)}
+                  className={`px-2.5 py-1 rounded-md text-[11px] font-medium transition-colors ${
+                    opcaoPeriodoRapido === op.id
+                      ? 'bg-teal-700 text-white shadow-xs'
+                      : 'text-gray-600 hover:text-gray-900 hover:bg-gray-200/60'
+                  }`}
+                >
+                  {op.label}
+                </button>
+              ))}
+            </div>
+
+            <div className="flex items-center gap-1.5 ml-1">
+              <span className="text-gray-400 text-[11px]">De:</span>
+              <Input
+                type="date"
+                value={dataInicioFilter}
+                onChange={(e) => {
+                  setOpcaoPeriodoRapido('custom')
+                  setDataInicioFilter(e.target.value)
+                }}
+                className="w-36 h-8 text-xs font-mono bg-[#FAF9F7] border-[#ECEAE4] rounded-lg"
+              />
+            </div>
+
+            <div className="flex items-center gap-1.5">
+              <span className="text-gray-400 text-[11px]">Até:</span>
+              <Input
+                type="date"
+                value={dataFimFilter}
+                onChange={(e) => {
+                  setOpcaoPeriodoRapido('custom')
+                  setDataFimFilter(e.target.value)
+                }}
+                className="w-36 h-8 text-xs font-mono bg-[#FAF9F7] border-[#ECEAE4] rounded-lg"
+              />
+            </div>
+          </div>
+
+          {(statusFilter !== 'Todas' ||
+            centroCustoFilter !== 'todos' ||
+            dataInicioFilter ||
+            dataFimFilter ||
+            searchQuery) && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={handleLimparFiltros}
+              className="h-8 px-2 text-xs text-gray-500 hover:text-gray-900 hover:bg-gray-100 rounded-lg"
+            >
+              <X className="w-3.5 h-3.5 mr-1" />
+              Limpar Filtros
+            </Button>
+          )}
+        </div>
       </Card>
 
       {/* Table / Cards List */}
@@ -1094,6 +1365,7 @@ export default function ContasReceber() {
             <thead>
               <tr className="bg-[#FAF9F7] border-b border-[#ECEAE4] text-gray-500 uppercase font-semibold text-[11px] tracking-wider">
                 <th className="py-2.5 px-2.5 whitespace-nowrap">Vencimento</th>
+                <th className="py-2.5 px-2.5 whitespace-nowrap">Emissão</th>
                 <th className="py-2.5 px-2.5 min-w-[140px]">Cliente / Pagador</th>
                 <th className="py-2.5 px-2 whitespace-nowrap">Cidade</th>
                 <th className="py-2.5 px-2 whitespace-nowrap">Forma</th>
@@ -1109,7 +1381,7 @@ export default function ContasReceber() {
             <tbody className="divide-y divide-[#ECEAE4]">
               {filteredContas.length === 0 ? (
                 <tr>
-                  <td colSpan={11} className="py-12 text-center text-gray-400">
+                  <td colSpan={12} className="py-12 text-center text-gray-400">
                     Nenhuma conta a receber encontrada para os filtros atuais.
                   </td>
                 </tr>
@@ -1130,6 +1402,11 @@ export default function ContasReceber() {
                       {/* Vencimento */}
                       <td className="py-2 px-2.5 font-mono font-medium text-gray-800 whitespace-nowrap text-xs">
                         {formatDate(c.vencimento)}
+                      </td>
+
+                      {/* Emissão */}
+                      <td className="py-2 px-2.5 font-mono text-gray-500 whitespace-nowrap text-xs">
+                        {c.data_emissao ? formatDate(c.data_emissao) : '—'}
                       </td>
 
                       {/* Cliente / Descrição */}
@@ -1291,6 +1568,20 @@ export default function ContasReceber() {
                               {c.status === 'Parcial' ? 'Amortizar' : 'Receber'}
                             </Button>
                           )}
+                          {canEdit &&
+                            (displayStatus === 'Recebida' ||
+                              (c.valor_recebido && c.valor_recebido > 0)) && (
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => handleEstorno(c)}
+                                className="h-6 px-2 text-[11px] border-amber-300 text-amber-800 hover:bg-amber-50"
+                                title="Estornar recebimento e reverter saldo"
+                              >
+                                <RotateCcw className="w-3 h-3 mr-1 text-amber-600" />
+                                Estornar
+                              </Button>
+                            )}
                           <Button
                             size="sm"
                             variant="ghost"
@@ -1315,7 +1606,9 @@ export default function ContasReceber() {
                             <Button
                               size="sm"
                               variant="ghost"
-                              onClick={() => handleDelete(c.id)}
+                              onClick={() =>
+                                handleDelete(c.id, c.descricao || c.expand?.cliente_id?.nome)
+                              }
                               className="h-6 w-6 p-0 text-red-500 hover:bg-red-50"
                               title="Excluir"
                             >
@@ -1455,7 +1748,7 @@ export default function ContasReceber() {
               </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-3 gap-3">
               <div>
                 <Label className="text-xs font-semibold text-gray-700">Valor Total (R$) *</Label>
                 <Input
@@ -1470,8 +1763,18 @@ export default function ContasReceber() {
               </div>
 
               <div>
+                <Label className="text-xs font-semibold text-gray-700">Data de Emissão</Label>
+                <Input
+                  type="date"
+                  value={dataEmissao}
+                  onChange={(e) => setDataEmissao(e.target.value)}
+                  className="mt-1 font-mono"
+                />
+              </div>
+
+              <div>
                 <Label className="text-xs font-semibold text-gray-700">
-                  {editingId || parcelas <= 1 ? 'Vencimento *' : '1º Vencimento (Data Base) *'}
+                  {editingId || parcelas <= 1 ? 'Vencimento *' : '1º Vencimento *'}
                 </Label>
                 <Input
                   type="date"
@@ -1838,6 +2141,12 @@ export default function ContasReceber() {
                   </span>
                 </div>
                 <div className="flex justify-between py-1">
+                  <span className="text-gray-500">Data de Emissão:</span>
+                  <span className="font-mono text-gray-800">
+                    {detailItem.data_emissao ? formatDate(detailItem.data_emissao) : '—'}
+                  </span>
+                </div>
+                <div className="flex justify-between py-1">
                   <span className="text-gray-500">Data de Vencimento:</span>
                   <span className="font-mono text-gray-800">
                     {formatDate(detailItem.vencimento)}
@@ -1897,11 +2206,63 @@ export default function ContasReceber() {
                       : 'Receber Título Agora'}
                   </Button>
                 )}
+
+                {canEdit &&
+                  (detailItem.status === 'Recebida' ||
+                    (detailItem.valor_recebido && detailItem.valor_recebido > 0)) && (
+                    <Button
+                      variant="outline"
+                      onClick={() => {
+                        const item = detailItem
+                        handleEstorno(item)
+                      }}
+                      className="w-full border-amber-300 text-amber-800 hover:bg-amber-50 rounded-xl"
+                    >
+                      <RotateCcw className="w-4 h-4 mr-2 text-amber-600" />
+                      Estornar Recebimento
+                    </Button>
+                  )}
               </div>
             </div>
           )}
         </SheetContent>
       </Sheet>
+      {/* Diálogo de Confirmação Obrigatório */}
+      <AlertDialog open={confirmDialogOpen} onOpenChange={setConfirmDialogOpen}>
+        <AlertDialogContent className="bg-white rounded-2xl border-[#ECEAE4] max-w-[440px]">
+          <AlertDialogHeader>
+            <AlertDialogTitle className="text-base font-bold text-gray-900">
+              {confirmDialogData?.title || 'Confirmar ação'}
+            </AlertDialogTitle>
+            <AlertDialogDescription className="text-xs text-gray-600 leading-relaxed">
+              {confirmDialogData?.description}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter className="pt-2">
+            <AlertDialogCancel disabled={isSubmitting} className="text-xs rounded-xl">
+              Cancelar
+            </AlertDialogCancel>
+            <AlertDialogAction
+              disabled={isSubmitting}
+              onClick={async (e) => {
+                e.preventDefault()
+                if (confirmDialogData?.action) {
+                  await confirmDialogData.action()
+                }
+                setConfirmDialogOpen(false)
+              }}
+              className={`text-xs rounded-xl text-white ${
+                confirmDialogData?.confirmVariant === 'destructive'
+                  ? 'bg-red-600 hover:bg-red-700'
+                  : 'bg-teal-700 hover:bg-teal-800'
+              }`}
+            >
+              {isSubmitting ? 'Processando...' : confirmDialogData?.confirmLabel || 'Confirmar'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
       {/* Modal Importador XLSX */}
       <ImportadorRecebimentosModal
         open={importModalOpen}

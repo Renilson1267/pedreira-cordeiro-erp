@@ -53,6 +53,7 @@ export interface ImportadorContasPagarModalProps {
 
 export interface ColumnMappingPagar {
   vencimento: string
+  dataEmissao?: string
   fornecedor: string
   descricao: string
   valor: string
@@ -276,6 +277,8 @@ export function desdobrarCelulasMescladas(ws: XLSX.WorkSheet): void {
 }
 
 // Regex padronizadas de sinônimos para identificação de colunas em qualquer aba
+export const REGEX_COL_DATA_EMISSAO =
+  /^(?:DT\s*EMIS|DATA\s*EMIS|EMISSAO|DATA\s*DE\s*EMISSAO|DT\s*DE\s*EMISSAO|EMIS)\b|DATA\s*EMIS|DT\s*EMIS/i
 export const REGEX_COL_VENCIMENTO =
   /^(?:DT\s*VENC|DATA\s*VENC|VENCIMENTO|VENC|DATA|DT|DIA|PREVISAO|PREV)\b|VENC|DT\s*VENC|DATA\s*VENC|PREVISAO/i
 export const REGEX_COL_VALOR =
@@ -731,6 +734,7 @@ export function ImportadorContasPagarModal({
   // Column Mapping
   const [mapping, setMapping] = useState<ColumnMappingPagar>({
     vencimento: '',
+    dataEmissao: '',
     fornecedor: '',
     descricao: '',
     valor: '',
@@ -775,6 +779,7 @@ export function ImportadorContasPagarModal({
     setEstimatedTimeLeft('')
     setMapping({
       vencimento: '',
+      dataEmissao: '',
       fornecedor: '',
       descricao: '',
       valor: '',
@@ -946,11 +951,17 @@ export function ImportadorContasPagarModal({
     const descColFound = findCol(REGEX_COL_DESCRICAO) || ''
     const fornColFound = findCol(REGEX_COL_FORNECEDOR) || ''
 
+    const emissaoColFound = findCol(REGEX_COL_DATA_EMISSAO) || ''
+
     setMapping((prev) => ({
       vencimento:
         prev.vencimento && headers.includes(prev.vencimento)
           ? prev.vencimento
           : findCol(REGEX_COL_VENCIMENTO) || headers[0] || '',
+      dataEmissao:
+        prev.dataEmissao && headers.includes(prev.dataEmissao)
+          ? prev.dataEmissao
+          : emissaoColFound || '',
       fornecedor:
         prev.fornecedor && headers.includes(prev.fornecedor)
           ? prev.fornecedor
@@ -1341,6 +1352,13 @@ export function ImportadorContasPagarModal({
           }
         }
 
+        const dataEmissaoColFound = findColInSheet(REGEX_COL_DATA_EMISSAO)
+        const dataEmissaoCol = matchColWithFallback(
+          mapping.dataEmissao || '',
+          REGEX_COL_DATA_EMISSAO,
+          dataEmissaoColFound || '',
+        )
+
         const dataPagCol = matchColWithFallback(
           mapping.dataPagamento,
           REGEX_COL_DATA_PAGAMENTO,
@@ -1362,6 +1380,7 @@ export function ImportadorContasPagarModal({
         // Estado mutável de colunas ativas para suporte a múltiplos blocos/quinzenas na mesma aba
         let activeHeaders = [...currentSheetHeaders]
         let activeVencCol = vencCol
+        let activeDataEmissaoCol = dataEmissaoCol
         let activeFornCol = fornCol
         let activeDescCol = descCol
         let activeValCol = valCol
@@ -1376,6 +1395,9 @@ export function ImportadorContasPagarModal({
 
         // Índices numéricos das colunas ativas
         let activeVencColIdx = vencCol ? currentSheetHeaders.indexOf(vencCol) : -1
+        let activeDataEmissaoColIdx = dataEmissaoCol
+          ? currentSheetHeaders.indexOf(dataEmissaoCol)
+          : -1
         let activeFornColIdx = fornCol ? currentSheetHeaders.indexOf(fornCol) : -1
         let activeDescColIdx = descCol ? currentSheetHeaders.indexOf(descCol) : -1
         let activeValColIdx = valCol ? currentSheetHeaders.indexOf(valCol) : -1
@@ -1439,6 +1461,7 @@ export function ImportadorContasPagarModal({
               ) || ''
 
             const bVenc = findColInBlock(REGEX_COL_VENCIMENTO)
+            const bEmiss = findColInBlock(REGEX_COL_DATA_EMISSAO)
             const bForn = findColInBlock(REGEX_COL_FORNECEDOR)
             const bDesc = findColInBlock(REGEX_COL_DESCRICAO)
             const bVal = findColInBlock(REGEX_COL_VALOR)
@@ -1454,6 +1477,10 @@ export function ImportadorContasPagarModal({
             if (bVenc) {
               activeVencCol = bVenc
               activeVencColIdx = activeHeaders.indexOf(bVenc)
+            }
+            if (bEmiss) {
+              activeDataEmissaoCol = bEmiss
+              activeDataEmissaoColIdx = activeHeaders.indexOf(bEmiss)
             }
             if (bForn) {
               activeFornCol = bForn
@@ -1519,6 +1546,7 @@ export function ImportadorContasPagarModal({
           rawCnpj: string
           descFinal: string
           dataVencimentoISO: string
+          dataEmissaoISO?: string | null
           valorFinal: number
           rawValorPago: number
           rawDataPag: any
@@ -1627,6 +1655,10 @@ export function ImportadorContasPagarModal({
           resultSummary.totalLidos += 1
 
           let rawVenc = getValByIndexOrName(row, activeVencColIdx, activeVencCol)
+          let rawEmiss =
+            activeDataEmissaoColIdx !== -1 || activeDataEmissaoCol
+              ? getValByIndexOrName(row, activeDataEmissaoColIdx, activeDataEmissaoCol)
+              : ''
           let rawForn = String(
             getValByIndexOrName(row, activeFornColIdx, activeFornCol) || '',
           ).trim()
@@ -1824,6 +1856,11 @@ export function ImportadorContasPagarModal({
           // 3. Descrição
           const docInfo = rawDoc ? ` [NF/Doc: ${rawDoc}]` : ''
           const descFinal = rawDesc || `Despesa ${rawForn || sheetCfg.name}${docInfo}`
+          let dataEmissaoISO: string | null = null
+          if (rawEmiss && isValidaSanitariaPagar(rawEmiss)) {
+            dataEmissaoISO = parseDataPagar(rawEmiss, sheetCfg.ano, sheetCfg.mes) || null
+          }
+
           const dateOnly = dataVencimentoISO.slice(0, 10)
           const descNorm = descFinal
             .toLowerCase()
@@ -1837,6 +1874,7 @@ export function ImportadorContasPagarModal({
             rawCnpj,
             descFinal,
             dataVencimentoISO,
+            dataEmissaoISO,
             valorFinal,
             rawValorPago,
             rawDataPag,
@@ -1980,6 +2018,7 @@ export function ImportadorContasPagarModal({
                     valor: item.valorFinal,
                     valor_pago: valorEfetivoPago,
                     vencimento: item.dataVencimentoISO,
+                    data_emissao: item.dataEmissaoISO || undefined,
                     parcelas: 1,
                     status: statusFinalGravado,
                     data_pagamento: dataPagamentoISO,
@@ -2503,6 +2542,31 @@ export function ImportadorContasPagarModal({
                       <SelectValue placeholder="Selecione a coluna..." />
                     </SelectTrigger>
                     <SelectContent>
+                      {sheetHeaders.map((h) => (
+                        <SelectItem key={h} value={h}>
+                          {h}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                {/* Data de Emissão (opcional) */}
+                <div>
+                  <Label className="text-xs font-semibold text-gray-700">
+                    Data de Emissão (opcional)
+                  </Label>
+                  <Select
+                    value={mapping.dataEmissao || 'none'}
+                    onValueChange={(val) =>
+                      setMapping({ ...mapping, dataEmissao: val === 'none' ? '' : val })
+                    }
+                  >
+                    <SelectTrigger className="mt-1">
+                      <SelectValue placeholder="Opcional" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">Não mapear / Opcional</SelectItem>
                       {sheetHeaders.map((h) => (
                         <SelectItem key={h} value={h}>
                           {h}

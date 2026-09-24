@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-09-24T15:54:54.225Z",
+  "generatedAt": "2026-09-24T17:49:33.629Z",
   "collections": [
     {
       "name": "users",
@@ -642,6 +642,12 @@
           "required": false,
           "system": false,
           "collectionRef": "veiculos"
+        },
+        {
+          "name": "data_emissao",
+          "type": "date",
+          "required": false,
+          "system": false
         }
       ],
       "indexes": [
@@ -784,6 +790,12 @@
           "required": false,
           "system": false,
           "collectionRef": "vendas"
+        },
+        {
+          "name": "data_emissao",
+          "type": "date",
+          "required": false,
+          "system": false
         }
       ],
       "indexes": [

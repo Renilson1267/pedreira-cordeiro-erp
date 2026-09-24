@@ -136,6 +136,7 @@ export interface ContaPagar {
   valor: number
   valor_pago?: number
   vencimento: string
+  data_emissao?: string
   parcelas?: number
   status: StatusContaPagar
   data_pagamento?: string
@@ -170,6 +171,7 @@ export interface ContaReceber {
   valor: number
   valor_recebido?: number
   vencimento: string
+  data_emissao?: string
   parcelas?: number
   status: StatusContaReceber
   data_recebimento?: string
