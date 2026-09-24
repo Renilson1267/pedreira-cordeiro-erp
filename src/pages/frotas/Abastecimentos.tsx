@@ -3,6 +3,8 @@ import { useCompany } from '@/contexts/CompanyContext'
 import pb from '@/lib/pocketbase/client'
 import { useRealtime } from '@/hooks/use-realtime'
 import { formatCurrency, formatDate } from '@/lib/formatters'
+import { calcularDatasPeriodoRapido, estaDentroDoPeriodo } from '@/lib/periodo'
+import FiltroPeriodoBar from '@/components/financeiro/FiltroPeriodoBar'
 import type { Abastecimento, Veiculo, Fornecedor, PlanoConta } from '@/types/erp'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -45,6 +47,15 @@ export default function Abastecimentos() {
 
   const [selectedVeiculoFilter, setSelectedVeiculoFilter] = useState('todos')
   const [searchQuery, setSearchQuery] = useState('')
+
+  // Filtro de Período padrão Contas a Pagar / Dashboard
+  const [opcaoPeriodo, setOpcaoPeriodo] = useState<string>('este_mes')
+  const [dataInicio, setDataInicio] = useState<string>(() => {
+    return calcularDatasPeriodoRapido('este_mes').inicio
+  })
+  const [dataFim, setDataFim] = useState<string>(() => {
+    return calcularDatasPeriodoRapido('este_mes').fim
+  })
 
   // Drawer Form
   const [isDrawerOpen, setIsDrawerOpen] = useState(false)
@@ -325,6 +336,7 @@ export default function Abastecimentos() {
   const filteredAbastecimentos = useMemo(() => {
     return abastecimentos.filter((a) => {
       if (selectedVeiculoFilter !== 'todos' && a.veiculo_id !== selectedVeiculoFilter) return false
+      if (!estaDentroDoPeriodo(a.data, dataInicio, dataFim)) return false
       if (searchQuery.trim()) {
         const q = searchQuery.toLowerCase()
         const cod = a.expand?.veiculo_id?.codigo_interno?.toLowerCase() || ''
@@ -334,21 +346,18 @@ export default function Abastecimentos() {
       }
       return true
     })
-  }, [abastecimentos, selectedVeiculoFilter, searchQuery])
+  }, [abastecimentos, selectedVeiculoFilter, searchQuery, dataInicio, dataFim])
 
-  // Totais do mês
-  const now = new Date()
-  const curY = now.getFullYear()
-  const curM = now.getMonth()
+  // Totais calculados dinamicamente com base nas linhas filtradas pelo período
+  const totalLitrosPeriodo = useMemo(() => {
+    return filteredAbastecimentos.reduce((acc, a) => acc + (a.litros || 0), 0)
+  }, [filteredAbastecimentos])
 
-  const abastMesAtual = abastecimentos.filter((a) => {
-    const d = new Date(a.data)
-    return d.getFullYear() === curY && d.getMonth() === curM
-  })
+  const totalCustoPeriodo = useMemo(() => {
+    return filteredAbastecimentos.reduce((acc, a) => acc + (a.valor_total || 0), 0)
+  }, [filteredAbastecimentos])
 
-  const totalLitrosMes = abastMesAtual.reduce((acc, a) => acc + (a.litros || 0), 0)
-  const totalCustoMes = abastMesAtual.reduce((acc, a) => acc + (a.valor_total || 0), 0)
-  const precoMedioLitro = totalLitrosMes > 0 ? totalCustoMes / totalLitrosMes : 0
+  const precoMedioLitro = totalLitrosPeriodo > 0 ? totalCustoPeriodo / totalLitrosPeriodo : 0
 
   return (
     <div className="space-y-6">
@@ -383,29 +392,31 @@ export default function Abastecimentos() {
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <Card className="rounded-2xl border-[#ECEAE4] bg-white shadow-xs p-4">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold text-gray-500 uppercase">Volume no Mês</span>
+            <span className="text-xs font-semibold text-gray-500 uppercase">
+              {dataInicio || dataFim ? 'Volume no Período' : 'Volume Total'}
+            </span>
             <div className="w-8 h-8 rounded-lg bg-teal-50 text-teal-700 flex items-center justify-center">
               <Fuel className="w-4 h-4" />
             </div>
           </div>
           <div className="text-2xl font-bold text-gray-900 mt-2 font-mono">
-            {totalLitrosMes.toLocaleString('pt-BR')}{' '}
+            {totalLitrosPeriodo.toLocaleString('pt-BR')}{' '}
             <span className="text-xs font-normal text-gray-500">Litros</span>
           </div>
-          <p className="text-[11px] text-gray-400 mt-0.5">Consumo total da pedreira no mês</p>
+          <p className="text-[11px] text-gray-400 mt-0.5">Consumo total da pedreira no período</p>
         </Card>
 
         <Card className="rounded-2xl border-[#ECEAE4] bg-white shadow-xs p-4">
           <div className="flex items-center justify-between">
             <span className="text-xs font-semibold text-gray-500 uppercase">
-              Custo Total de Combustível
+              Custo Total ({filteredAbastecimentos.length} reg.)
             </span>
             <div className="w-8 h-8 rounded-lg bg-red-50 text-red-600 flex items-center justify-center">
               <Receipt className="w-4 h-4" />
             </div>
           </div>
           <div className="text-2xl font-bold text-red-600 mt-2 font-mono tabular-nums">
-            {formatCurrency(totalCustoMes)}
+            {formatCurrency(totalCustoPeriodo)}
           </div>
           <p className="text-[11px] text-gray-400 mt-0.5">Integrado com Contas a Pagar</p>
         </Card>
@@ -426,8 +437,8 @@ export default function Abastecimentos() {
         </Card>
       </div>
 
-      {/* Filter and Search */}
-      <Card className="rounded-2xl border-[#ECEAE4] bg-white shadow-xs p-4">
+      {/* Filter and Search Bar */}
+      <Card className="rounded-2xl border-[#ECEAE4] bg-white shadow-xs p-4 space-y-3">
         <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
           <div className="flex flex-wrap items-center gap-2">
             <Select value={selectedVeiculoFilter} onValueChange={setSelectedVeiculoFilter}>
@@ -451,7 +462,7 @@ export default function Abastecimentos() {
                 onClick={() => setSelectedVeiculoFilter('todos')}
                 className="h-9 text-xs text-gray-500"
               >
-                Limpar filtro
+                Todos os veículos
               </Button>
             )}
           </div>
@@ -466,6 +477,30 @@ export default function Abastecimentos() {
             />
           </div>
         </div>
+
+        {/* Barra de Filtro de Período Padrão */}
+        <FiltroPeriodoBar
+          rotulo="Data do abastecimento:"
+          opcaoPeriodo={opcaoPeriodo}
+          onOpcaoChange={setOpcaoPeriodo}
+          dataInicio={dataInicio}
+          onDataInicioChange={setDataInicio}
+          dataFim={dataFim}
+          onDataFimChange={setDataFim}
+          mostrarLimpar={
+            opcaoPeriodo !== 'todos' ||
+            Boolean(dataInicio || dataFim) ||
+            selectedVeiculoFilter !== 'todos' ||
+            Boolean(searchQuery.trim())
+          }
+          onLimpar={() => {
+            setOpcaoPeriodo('todos')
+            setDataInicio('')
+            setDataFim('')
+            setSelectedVeiculoFilter('todos')
+            setSearchQuery('')
+          }}
+        />
       </Card>
 
       {/* Table */}

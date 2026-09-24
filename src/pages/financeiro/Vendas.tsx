@@ -4,6 +4,8 @@ import { useCompany } from '@/contexts/CompanyContext'
 import pb from '@/lib/pocketbase/client'
 import { useRealtime } from '@/hooks/use-realtime'
 import { formatCurrency, formatDate, toInputDate } from '@/lib/formatters'
+import { calcularDatasPeriodoRapido, estaDentroDoPeriodo } from '@/lib/periodo'
+import FiltroPeriodoBar from '@/components/financeiro/FiltroPeriodoBar'
 import type {
   Venda,
   Cliente,
@@ -83,9 +85,14 @@ export default function Vendas() {
   const [selectedClienteFilter, setSelectedClienteFilter] = useState('todos')
   const [selectedProdutoFilter, setSelectedProdutoFilter] = useState('todos')
   const [selectedStatusFilter, setSelectedStatusFilter] = useState('todos')
-  const [selectedPeriodo, setSelectedPeriodo] = useState<string>(() => {
-    const now = new Date()
-    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
+
+  // Filtro de período padrão Contas a Pagar/Receber
+  const [opcaoPeriodo, setOpcaoPeriodo] = useState<string>('este_mes')
+  const [dataInicio, setDataInicio] = useState<string>(() => {
+    return calcularDatasPeriodoRapido('este_mes').inicio
+  })
+  const [dataFim, setDataFim] = useState<string>(() => {
+    return calcularDatasPeriodoRapido('este_mes').fim
   })
 
   // Drawer Form State
@@ -363,9 +370,8 @@ export default function Vendas() {
       if (selectedStatusFilter !== 'todos' && v.status !== selectedStatusFilter) {
         return false
       }
-      if (selectedPeriodo) {
-        const vDate = v.data_venda.slice(0, 7)
-        if (vDate !== selectedPeriodo) return false
+      if (!estaDentroDoPeriodo(v.data_venda, dataInicio, dataFim)) {
+        return false
       }
       if (searchQuery.trim()) {
         const q = searchQuery.toLowerCase()
@@ -381,7 +387,8 @@ export default function Vendas() {
     selectedClienteFilter,
     selectedProdutoFilter,
     selectedStatusFilter,
-    selectedPeriodo,
+    dataInicio,
+    dataFim,
     searchQuery,
   ])
 
@@ -516,16 +523,6 @@ export default function Vendas() {
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
-            {/* Filtro Período */}
-            <div className="w-36">
-              <Input
-                type="month"
-                value={selectedPeriodo}
-                onChange={(e) => setSelectedPeriodo(e.target.value)}
-                className="bg-[#FAF9F7] border-[#ECEAE4] text-xs h-9 font-mono"
-              />
-            </div>
-
             {/* Filtro Cliente */}
             <Select value={selectedClienteFilter} onValueChange={setSelectedClienteFilter}>
               <SelectTrigger className="w-[180px] bg-[#FAF9F7] border-[#ECEAE4] text-xs h-9">
@@ -571,6 +568,34 @@ export default function Vendas() {
             </Select>
           </div>
         </div>
+
+        {/* Barra de Filtro de Período padrão Contas a Pagar/Receber */}
+        <FiltroPeriodoBar
+          rotulo="Data da venda:"
+          opcaoPeriodo={opcaoPeriodo}
+          onOpcaoChange={setOpcaoPeriodo}
+          dataInicio={dataInicio}
+          onDataInicioChange={setDataInicio}
+          dataFim={dataFim}
+          onDataFimChange={setDataFim}
+          mostrarLimpar={
+            opcaoPeriodo !== 'todos' ||
+            Boolean(dataInicio || dataFim) ||
+            selectedClienteFilter !== 'todos' ||
+            selectedProdutoFilter !== 'todos' ||
+            selectedStatusFilter !== 'todos' ||
+            Boolean(searchQuery.trim())
+          }
+          onLimpar={() => {
+            setOpcaoPeriodo('todos')
+            setDataInicio('')
+            setDataFim('')
+            setSelectedClienteFilter('todos')
+            setSelectedProdutoFilter('todos')
+            setSelectedStatusFilter('todos')
+            setSearchQuery('')
+          }}
+        />
       </Card>
 
       {/* Tabela de Vendas */}

@@ -1,10 +1,12 @@
-import React, { useEffect, useState, useMemo } from 'react'
+import React, { useEffect, useState, useMemo, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '@/contexts/AuthContext'
 import { useCompany } from '@/contexts/CompanyContext'
 import pb from '@/lib/pocketbase/client'
 import { useRealtime } from '@/hooks/use-realtime'
 import { formatCurrency, formatDate } from '@/lib/formatters'
+import { calcularDatasPeriodoRapido, estaDentroDoPeriodo } from '@/lib/periodo'
+import FiltroPeriodoBar from '@/components/financeiro/FiltroPeriodoBar'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -43,10 +45,23 @@ export default function Dashboard() {
   const navigate = useNavigate()
 
   const [loading, setLoading] = useState(true)
+
+  // Filtro de período no Dashboard (padrão Contas a Pagar/Receber)
+  const [opcaoPeriodo, setOpcaoPeriodo] = useState<string>('este_mes')
+  const [dataInicio, setDataInicio] = useState<string>(() => {
+    return calcularDatasPeriodoRapido('este_mes').inicio
+  })
+  const [dataFim, setDataFim] = useState<string>(() => {
+    return calcularDatasPeriodoRapido('este_mes').fim
+  })
+
   const [saldoCaixa, setSaldoCaixa] = useState(0)
-  const [pagarMes, setPagarMes] = useState(0)
-  const [receberMes, setReceberMes] = useState(0)
-  const [resultadoMes, setResultadoMes] = useState(0)
+  const [entradasPeriodoTotal, setEntradasPeriodoTotal] = useState(0)
+  const [saidasPeriodoTotal, setSaidasPeriodoTotal] = useState(0)
+  const [pagarPeriodo, setPagarPeriodo] = useState(0)
+  const [receberPeriodo, setReceberPeriodo] = useState(0)
+  const [resultadoPeriodo, setResultadoPeriodo] = useState(0)
+  const [saldoGeralAcumulado, setSaldoGeralAcumulado] = useState(0)
 
   const [movimentosRecentes, setMovimentosRecentes] = useState<any[]>([])
   const [proximosVencimentos, setProximosVencimentos] = useState<any[]>([])
@@ -71,22 +86,15 @@ export default function Dashboard() {
   useRealtime('abastecimentos', () => loadDashboardData())
   useRealtime('manutencoes', () => loadDashboardData())
 
-  const loadDashboardData = async () => {
+  const loadDashboardData = useCallback(async () => {
     if (!currentEmpresa) return
 
     try {
       setLoading(true)
       const now = new Date()
-      const currentYear = now.getFullYear()
-      const currentMonth = now.getMonth()
-
-      const startOfMonth = new Date(Date.UTC(currentYear, currentMonth, 1)).toISOString()
-      const endOfMonth = new Date(
-        Date.UTC(currentYear, currentMonth + 1, 0, 23, 59, 59),
-      ).toISOString()
       const todayISO = now.toISOString().slice(0, 10)
 
-      // 1. Bancos / Caixas (Saldo total)
+      // 1. Bancos / Caixas (Saldo inicial cadastrado)
       const contasBancarias = await pb.collection('bancos_contas').getFullList({
         filter: `empresa_id = '${currentEmpresa.id}'`,
       })
@@ -98,61 +106,82 @@ export default function Dashboard() {
         sort: '-data',
       })
 
-      let saldoAtual = saldoInicialTotal
-      let receitasMes = 0
-      let despesasMes = 0
+      // Saldo geral acumulado de todas as contas até o momento
+      let saldoAcumuladoTotal = saldoInicialTotal
+      let entradasPeriodo = 0
+      let saidasPeriodo = 0
+
+      // Movimentos filtrados pelo período selecionado
+      const movimentosNoPeriodo: any[] = []
 
       allMovimentos.forEach((m) => {
         const val = m.valor || 0
         if (m.tipo === 'Entrada') {
-          saldoAtual += val
+          saldoAcumuladoTotal += val
         } else {
-          saldoAtual -= val
+          saldoAcumuladoTotal -= val
         }
 
-        const mDate = new Date(m.data)
-        if (mDate.getFullYear() === currentYear && mDate.getMonth() === currentMonth) {
+        const noIntervalo = estaDentroDoPeriodo(m.data, dataInicio, dataFim)
+        if (noIntervalo) {
+          movimentosNoPeriodo.push(m)
           if (m.tipo === 'Entrada') {
-            receitasMes += val
+            entradasPeriodo += val
           } else {
-            despesasMes += val
+            saidasPeriodo += val
           }
         }
       })
 
-      setSaldoCaixa(saldoAtual)
-      setResultadoMes(receitasMes - despesasMes)
-      setMovimentosRecentes(allMovimentos.slice(0, 6))
+      setSaldoGeralAcumulado(saldoAcumuladoTotal)
+      setEntradasPeriodoTotal(entradasPeriodo)
+      setSaidasPeriodoTotal(saidasPeriodo)
 
-      // 3. Contas a Pagar do Mês (considerando saldo em aberto)
-      const cpMesList = await pb.collection('contas_pagar').getFullList({
-        filter: `empresa_id = '${currentEmpresa.id}' && vencimento >= '${startOfMonth}' && vencimento <= '${endOfMonth}'`,
+      // Saldo em Caixa Real Atual: o saldo disponível total em caixa/bancos até hoje
+      setSaldoCaixa(saldoAcumuladoTotal)
+
+      // Resultado do Período / do Mês: entradas menos saídas do período selecionado
+      const resultadoCalc = entradasPeriodo - saidasPeriodo
+      setResultadoPeriodo(resultadoCalc)
+      setMovimentosRecentes(
+        (movimentosNoPeriodo.length > 0 ? movimentosNoPeriodo : allMovimentos).slice(0, 6),
+      )
+
+      // 3. Contas a Pagar do Período (considerando saldo em aberto)
+      const allCp = await pb.collection('contas_pagar').getFullList({
+        filter: `empresa_id = '${currentEmpresa.id}'`,
       })
-      const totalPagarMes = cpMesList
+      const cpNoPeriodo = allCp.filter((cp) =>
+        estaDentroDoPeriodo(cp.vencimento, dataInicio, dataFim),
+      )
+      const totalPagarPeriodo = cpNoPeriodo
         .filter((cp) => cp.status !== 'Paga')
         .reduce((sum, cp) => {
           const jaPago = cp.valor_pago || 0
           return sum + Math.max(0, (cp.valor || 0) - jaPago)
         }, 0)
-      setPagarMes(totalPagarMes)
+      setPagarPeriodo(totalPagarPeriodo)
 
-      // 4. Contas a Receber do Mês (considerando saldo em aberto)
-      const crMesList = await pb.collection('contas_receber').getFullList({
-        filter: `empresa_id = '${currentEmpresa.id}' && vencimento >= '${startOfMonth}' && vencimento <= '${endOfMonth}'`,
+      // 4. Contas a Receber do Período (considerando saldo em aberto)
+      const allCr = await pb.collection('contas_receber').getFullList({
+        filter: `empresa_id = '${currentEmpresa.id}'`,
       })
-      const totalReceberMes = crMesList
+      const crNoPeriodo = allCr.filter((cr) =>
+        estaDentroDoPeriodo(cr.vencimento, dataInicio, dataFim),
+      )
+      const totalReceberPeriodo = crNoPeriodo
         .filter((cr) => cr.status !== 'Recebida' && cr.status !== 'Recebimento Antecipado')
         .reduce((sum, cr) => {
           const jaRecebido = cr.valor_recebido || 0
           return sum + Math.max(0, (cr.valor || 0) - jaRecebido)
         }, 0)
-      setReceberMes(totalReceberMes)
+      setReceberPeriodo(totalReceberPeriodo)
 
-      // 5. Aging Overdue Summary (saldo restante das vencidas)
-      const allCpAbertas = await pb.collection('contas_pagar').getFullList({
-        filter: `empresa_id = '${currentEmpresa.id}' && status != 'Paga'`,
-      })
-      const atrasoPagarItems = allCpAbertas.filter((c) => c.vencimento.slice(0, 10) < todayISO)
+      // 5. Aging Overdue Summary (saldo restante das vencidas hoje)
+      const allCpAbertas = allCp.filter((c) => c.status !== 'Paga')
+      const atrasoPagarItems = allCpAbertas.filter(
+        (c) => c.vencimento && c.vencimento.slice(0, 10) < todayISO,
+      )
       setAtrasoPagar({
         count: atrasoPagarItems.length,
         total: atrasoPagarItems.reduce((acc, c) => {
@@ -161,10 +190,12 @@ export default function Dashboard() {
         }, 0),
       })
 
-      const allCrAbertas = await pb.collection('contas_receber').getFullList({
-        filter: `empresa_id = '${currentEmpresa.id}' && status != 'Recebida'`,
-      })
-      const atrasoReceberItems = allCrAbertas.filter((c) => c.vencimento.slice(0, 10) < todayISO)
+      const allCrAbertas = allCr.filter(
+        (c) => c.status !== 'Recebida' && c.status !== 'Recebimento Antecipado',
+      )
+      const atrasoReceberItems = allCrAbertas.filter(
+        (c) => c.vencimento && c.vencimento.slice(0, 10) < todayISO,
+      )
       setAtrasoReceber({
         count: atrasoReceberItems.length,
         total: atrasoReceberItems.reduce((acc, c) => {
@@ -187,7 +218,9 @@ export default function Dashboard() {
         )
         .slice(0, 5)
       setProximosVencimentos(unificados)
-      // 7. Gráfico dos últimos 6 meses
+
+      // 7. Gráfico Fluxo de Caixa: se o período selecionado for maior que 1 mês, agrupa por mês desse intervalo;
+      // senão mostra últimos 6 meses com destaque ao período.
       const monthNames = [
         'Jan',
         'Fev',
@@ -202,50 +235,86 @@ export default function Dashboard() {
         'Nov',
         'Dez',
       ]
-      const monthsData = []
-      for (let i = 5; i >= 0; i--) {
-        const d = new Date(currentYear, currentMonth - i, 1)
-        const y = d.getFullYear()
-        const m = d.getMonth()
-        const label = `${monthNames[m]}/${String(y).slice(2)}`
 
+      // Determinar meses a exibir no gráfico
+      const mesesLabels: { ano: number; mes: number; label: string }[] = []
+      if (dataInicio && dataFim) {
+        const dIni = new Date(dataInicio + 'T00:00:00')
+        const dFim = new Date(dataFim + 'T23:59:59')
+        const diffMeses =
+          (dFim.getFullYear() - dIni.getFullYear()) * 12 + (dFim.getMonth() - dIni.getMonth())
+        if (diffMeses >= 1 && diffMeses <= 12) {
+          for (let m = 0; m <= diffMeses; m++) {
+            const dt = new Date(dIni.getFullYear(), dIni.getMonth() + m, 1)
+            mesesLabels.push({
+              ano: dt.getFullYear(),
+              mes: dt.getMonth(),
+              label: `${monthNames[dt.getMonth()]}/${String(dt.getFullYear()).slice(2)}`,
+            })
+          }
+        }
+      }
+
+      if (mesesLabels.length === 0) {
+        // Padrão: últimos 6 meses
+        const baseDate = dataFim ? new Date(dataFim + 'T00:00:00') : now
+        const baseYear = baseDate.getFullYear()
+        const baseMonth = baseDate.getMonth()
+        for (let i = 5; i >= 0; i--) {
+          const d = new Date(baseYear, baseMonth - i, 1)
+          mesesLabels.push({
+            ano: d.getFullYear(),
+            mes: d.getMonth(),
+            label: `${monthNames[d.getMonth()]}/${String(d.getFullYear()).slice(2)}`,
+          })
+        }
+      }
+
+      const monthsData = mesesLabels.map(({ ano, mes, label }) => {
         let ent = 0
         let sai = 0
         allMovimentos.forEach((mov) => {
+          if (!mov.data) return
           const md = new Date(mov.data)
-          if (md.getFullYear() === y && md.getMonth() === m) {
+          if (md.getFullYear() === ano && md.getMonth() === mes) {
             if (mov.tipo === 'Entrada') ent += mov.valor || 0
             else sai += mov.valor || 0
           }
         })
-
-        monthsData.push({
+        return {
           mes: label,
           Entradas: ent,
           Saídas: sai,
-        })
-      }
+        }
+      })
       setChartData(monthsData)
 
-      // 8. Frotas da Pedreira Resumo & Alertas
+      // 8. Frotas da Pedreira Resumo & Alertas (respeitando o período selecionado quando informado)
       try {
         const [veicList, abastList, manutList] = await Promise.all([
           pb.collection('veiculos').getFullList({
             filter: `empresa_id = '${currentEmpresa.id}'`,
           }),
           pb.collection('abastecimentos').getFullList({
-            filter: `empresa_id = '${currentEmpresa.id}' && data >= '${startOfMonth}' && data <= '${endOfMonth}'`,
+            filter: `empresa_id = '${currentEmpresa.id}'`,
           }),
           pb.collection('manutencoes').getFullList({
-            filter: `empresa_id = '${currentEmpresa.id}' && data >= '${startOfMonth}' && data <= '${endOfMonth}'`,
+            filter: `empresa_id = '${currentEmpresa.id}'`,
           }),
         ])
 
+        const abastFiltrados = abastList.filter((a) =>
+          estaDentroDoPeriodo(a.data, dataInicio, dataFim),
+        )
+        const manutFiltradas = manutList.filter((m) =>
+          estaDentroDoPeriodo(m.data, dataInicio, dataFim),
+        )
+
         const totalAtivos = veicList.filter((v) => v.status === 'ativo').length
         const totalManutencao = veicList.filter((v) => v.status === 'manutencao').length
-        const custoCombustivel = abastList.reduce((acc, a) => acc + (a.valor_total || 0), 0)
-        const custoManutencao = manutList.reduce((acc, m) => acc + (m.custo || 0), 0)
-        const totalLitros = abastList.reduce((acc, a) => acc + (a.litros || 0), 0)
+        const custoCombustivel = abastFiltrados.reduce((acc, a) => acc + (a.valor_total || 0), 0)
+        const custoManutencao = manutFiltradas.reduce((acc, m) => acc + (m.custo || 0), 0)
+        const totalLitros = abastFiltrados.reduce((acc, a) => acc + (a.litros || 0), 0)
 
         setFrotaResumo({
           totalAtivos,
@@ -298,11 +367,11 @@ export default function Dashboard() {
     } finally {
       setLoading(false)
     }
-  }
+  }, [currentEmpresa, dataInicio, dataFim])
 
   useEffect(() => {
     loadDashboardData()
-  }, [currentEmpresa])
+  }, [loadDashboardData])
 
   const firstName = useMemo(() => {
     if (!user?.name) return 'Colaborador'
@@ -490,34 +559,94 @@ export default function Dashboard() {
         </div>
       </div>
 
-      {/* 4 KPIs Row */}
+      {/* Barra de Filtro de Período do Dashboard */}
+      <div className="bg-white p-4 rounded-2xl border border-[#ECEAE4] shadow-xs">
+        <FiltroPeriodoBar
+          rotulo="Período do Dashboard:"
+          opcaoPeriodo={opcaoPeriodo}
+          onOpcaoChange={setOpcaoPeriodo}
+          dataInicio={dataInicio}
+          onDataInicioChange={setDataInicio}
+          dataFim={dataFim}
+          onDataFimChange={setDataFim}
+          mostrarLimpar={opcaoPeriodo !== 'todos' || Boolean(dataInicio || dataFim)}
+          onLimpar={() => {
+            setOpcaoPeriodo('todos')
+            setDataInicio('')
+            setDataFim('')
+          }}
+        />
+        {dataInicio && dataFim && (
+          <div className="mt-2 pt-2 border-t border-[#ECEAE4]/60 flex items-center justify-between text-[11px] text-gray-500">
+            <span>
+              Exibindo dados de <strong>{formatDate(dataInicio)}</strong> até{' '}
+              <strong>{formatDate(dataFim)}</strong>
+            </span>
+            <span className="text-gray-400">
+              Saldo geral consolidado em contas:{' '}
+              <strong>{formatCurrency(saldoGeralAcumulado)}</strong>
+            </span>
+          </div>
+        )}
+      </div>
+
+      {/* 4 KPIs Row — Com destaque azul para positivo e vermelho para negativo no Resultado */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        {/* KPI 1: Saldo em Caixa */}
-        <Card className="rounded-2xl border-[#ECEAE4] shadow-xs bg-white">
+        {/* KPI 1: Saldo em Caixa Real (análise das contas/caixas + movimentos reais) */}
+        <Card
+          className={`rounded-2xl border shadow-xs transition-colors ${
+            saldoCaixa < 0
+              ? 'bg-red-50/50 border-red-200'
+              : saldoCaixa > 0
+                ? 'bg-emerald-50/40 border-emerald-200'
+                : 'bg-white border-[#ECEAE4]'
+          }`}
+        >
           <CardHeader className="flex flex-row items-center justify-between pb-2">
             <CardTitle className="text-xs font-semibold text-gray-500 uppercase tracking-wider">
               Saldo em Caixa
             </CardTitle>
-            <div className="w-8 h-8 rounded-lg bg-teal-50 text-teal-700 flex items-center justify-center">
+            <div
+              className={`w-8 h-8 rounded-lg flex items-center justify-center ${
+                saldoCaixa < 0
+                  ? 'bg-red-100 text-red-700'
+                  : saldoCaixa > 0
+                    ? 'bg-emerald-100 text-emerald-700'
+                    : 'bg-gray-100 text-gray-700'
+              }`}
+            >
               <Wallet className="w-4 h-4" />
             </div>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold tracking-tight text-gray-900 tabular-nums">
+            <div
+              className={`text-2xl font-bold tracking-tight tabular-nums ${
+                saldoCaixa < 0
+                  ? 'text-red-600'
+                  : saldoCaixa > 0
+                    ? 'text-emerald-700'
+                    : 'text-gray-900'
+              }`}
+            >
               {formatCurrency(saldoCaixa)}
             </div>
-            <p className="text-[11px] text-gray-400 mt-1 flex items-center">
-              <TrendingUp className="w-3 h-3 text-emerald-600 mr-1" />
-              Disponibilidade imediata
+            <p className="text-[11px] text-gray-500 mt-1 flex items-center justify-between">
+              <span>Disponível consolidado</span>
+              {dataInicio || dataFim ? (
+                <span className="text-[10px] text-gray-400 font-mono">
+                  Fluxo no filtro: {entradasPeriodoTotal >= saidasPeriodoTotal ? '+' : ''}
+                  {formatCurrency(entradasPeriodoTotal - saidasPeriodoTotal)}
+                </span>
+              ) : null}
             </p>
           </CardContent>
         </Card>
 
-        {/* KPI 2: Contas a Pagar no Mês */}
+        {/* KPI 2: Contas a Pagar no Período */}
         <Card className="rounded-2xl border-[#ECEAE4] shadow-xs bg-white">
           <CardHeader className="flex flex-row items-center justify-between pb-2">
             <CardTitle className="text-xs font-semibold text-gray-500 uppercase tracking-wider">
-              A Pagar no Mês
+              A Pagar no Período
             </CardTitle>
             <div className="w-8 h-8 rounded-lg bg-red-50 text-red-600 flex items-center justify-center">
               <ArrowDownLeft className="w-4 h-4" />
@@ -525,20 +654,20 @@ export default function Dashboard() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold tracking-tight text-red-600 tabular-nums">
-              {formatCurrency(pagarMes)}
+              {formatCurrency(pagarPeriodo)}
             </div>
             <p className="text-[11px] text-gray-400 mt-1 flex items-center">
               <Calendar className="w-3 h-3 mr-1 text-gray-400" />
-              Vencimento no mês atual
+              Vencimentos no filtro ativo
             </p>
           </CardContent>
         </Card>
 
-        {/* KPI 3: Contas a Receber no Mês */}
+        {/* KPI 3: Contas a Receber no Período */}
         <Card className="rounded-2xl border-[#ECEAE4] shadow-xs bg-white">
           <CardHeader className="flex flex-row items-center justify-between pb-2">
             <CardTitle className="text-xs font-semibold text-gray-500 uppercase tracking-wider">
-              A Receber no Mês
+              A Receber no Período
             </CardTitle>
             <div className="w-8 h-8 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center">
               <ArrowUpRight className="w-4 h-4" />
@@ -546,7 +675,7 @@ export default function Dashboard() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold tracking-tight text-teal-700 tabular-nums">
-              {formatCurrency(receberMes)}
+              {formatCurrency(receberPeriodo)}
             </div>
             <p className="text-[11px] text-gray-400 mt-1 flex items-center">
               <Calendar className="w-3 h-3 mr-1 text-gray-400" />
@@ -555,35 +684,82 @@ export default function Dashboard() {
           </CardContent>
         </Card>
 
-        {/* KPI 4: Resultado do Mês */}
-        <Card className="rounded-2xl border-[#ECEAE4] shadow-xs bg-white">
+        {/* KPI 4: Resultado — DESTAQUE VERMELHO quando NEGATIVO e AZUL quando POSITIVO */}
+        <Card
+          className={`rounded-2xl border shadow-sm transition-all ${
+            resultadoPeriodo < 0
+              ? 'bg-red-50 border-red-300 ring-2 ring-red-400/50'
+              : resultadoPeriodo > 0
+                ? 'bg-blue-50 border-blue-300 ring-2 ring-blue-400/50'
+                : 'bg-white border-[#ECEAE4]'
+          }`}
+        >
           <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-xs font-semibold text-gray-500 uppercase tracking-wider">
-              Resultado do Mês
-            </CardTitle>
-            <div
-              className={`w-8 h-8 rounded-lg flex items-center justify-center ${
-                resultadoMes >= 0 ? 'bg-emerald-50 text-emerald-600' : 'bg-red-50 text-red-600'
+            <CardTitle
+              className={`text-xs font-bold uppercase tracking-wider ${
+                resultadoPeriodo < 0
+                  ? 'text-red-800'
+                  : resultadoPeriodo > 0
+                    ? 'text-blue-900'
+                    : 'text-gray-500'
               }`}
             >
-              {resultadoMes >= 0 ? (
-                <TrendingUp className="w-4 h-4" />
+              {opcaoPeriodo === 'este_mes'
+                ? 'Resultado do Mês'
+                : dataInicio || dataFim
+                  ? 'Resultado do Período'
+                  : 'Resultado do Mês / Período'}
+            </CardTitle>
+            <div
+              className={`w-9 h-9 rounded-xl flex items-center justify-center font-bold ${
+                resultadoPeriodo < 0
+                  ? 'bg-red-600 text-white shadow-md shadow-red-200'
+                  : resultadoPeriodo > 0
+                    ? 'bg-blue-600 text-white shadow-md shadow-blue-200'
+                    : 'bg-gray-100 text-gray-600'
+              }`}
+            >
+              {resultadoPeriodo < 0 ? (
+                <TrendingDown className="w-5 h-5 stroke-[2.5]" />
+              ) : resultadoPeriodo > 0 ? (
+                <TrendingUp className="w-5 h-5 stroke-[2.5]" />
               ) : (
-                <TrendingDown className="w-4 h-4" />
+                <Calendar className="w-4 h-4" />
               )}
             </div>
           </CardHeader>
           <CardContent>
             <div
-              className={`text-2xl font-bold tracking-tight tabular-nums ${
-                resultadoMes >= 0 ? 'text-emerald-600' : 'text-red-600'
+              className={`text-3xl font-black tracking-tight tabular-nums ${
+                resultadoPeriodo < 0
+                  ? 'text-red-600'
+                  : resultadoPeriodo > 0
+                    ? 'text-blue-700'
+                    : 'text-gray-900'
               }`}
             >
-              {formatCurrency(resultadoMes)}
+              {formatCurrency(resultadoPeriodo)}
             </div>
-            <p className="text-[11px] text-gray-400 mt-1">
-              {resultadoMes >= 0 ? 'Superávit operacional' : 'Déficit no período'}
-            </p>
+            <div
+              className={`mt-2 pt-2 border-t flex items-center justify-between text-[11px] font-semibold ${
+                resultadoPeriodo < 0
+                  ? 'border-red-200 text-red-700'
+                  : resultadoPeriodo > 0
+                    ? 'border-blue-200 text-blue-700'
+                    : 'border-gray-100 text-gray-500'
+              }`}
+            >
+              <span>
+                {resultadoPeriodo < 0
+                  ? '● Negativo (Déficit operacional)'
+                  : resultadoPeriodo > 0
+                    ? '● Positivo (Superávit operacional)'
+                    : 'Equilíbrio (R$ 0,00)'}
+              </span>
+              <span className="text-[10px] font-mono opacity-80">
+                +{formatCurrency(entradasPeriodoTotal)} / -{formatCurrency(saidasPeriodoTotal)}
+              </span>
+            </div>
           </CardContent>
         </Card>
       </div>

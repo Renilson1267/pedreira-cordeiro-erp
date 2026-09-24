@@ -3,6 +3,8 @@ import { useCompany } from '@/contexts/CompanyContext'
 import pb from '@/lib/pocketbase/client'
 import { useRealtime } from '@/hooks/use-realtime'
 import { formatCurrency, formatDate, toInputDate } from '@/lib/formatters'
+import { calcularDatasPeriodoRapido, estaDentroDoPeriodo } from '@/lib/periodo'
+import FiltroPeriodoBar from '@/components/financeiro/FiltroPeriodoBar'
 import type { Entrega, Venda, Veiculo, Cliente, Produto, Funcionario } from '@/types/erp'
 import { entregasService } from '@/services/entregas'
 import { vendasService } from '@/services/vendas'
@@ -67,9 +69,14 @@ export default function EntregaPage() {
   const [searchQuery, setSearchQuery] = useState('')
   const [selectedStatusFilter, setSelectedStatusFilter] = useState('todos')
   const [selectedVeiculoFilter, setSelectedVeiculoFilter] = useState('todos')
-  const [selectedPeriodo, setSelectedPeriodo] = useState<string>(() => {
-    const now = new Date()
-    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
+
+  // Filtro de período padrão Contas a Pagar/Receber
+  const [opcaoPeriodo, setOpcaoPeriodo] = useState<string>('este_mes')
+  const [dataInicio, setDataInicio] = useState<string>(() => {
+    return calcularDatasPeriodoRapido('este_mes').inicio
+  })
+  const [dataFim, setDataFim] = useState<string>(() => {
+    return calcularDatasPeriodoRapido('este_mes').fim
   })
 
   // Modal Romaneio Impressão
@@ -288,9 +295,8 @@ export default function EntregaPage() {
       if (selectedVeiculoFilter !== 'todos' && e.veiculo_id !== selectedVeiculoFilter) {
         return false
       }
-      if (selectedPeriodo) {
-        const eDate = e.data.slice(0, 7)
-        if (eDate !== selectedPeriodo) return false
+      if (!estaDentroDoPeriodo(e.data, dataInicio, dataFim)) {
+        return false
       }
       if (searchQuery.trim()) {
         const q = searchQuery.toLowerCase()
@@ -311,7 +317,7 @@ export default function EntregaPage() {
       }
       return true
     })
-  }, [entregas, selectedStatusFilter, selectedVeiculoFilter, selectedPeriodo, searchQuery])
+  }, [entregas, selectedStatusFilter, selectedVeiculoFilter, dataInicio, dataFim, searchQuery])
 
   // KPIs
   const kpis = useMemo(() => {
@@ -428,15 +434,6 @@ export default function EntregaPage() {
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
-            <div className="w-36">
-              <Input
-                type="month"
-                value={selectedPeriodo}
-                onChange={(e) => setSelectedPeriodo(e.target.value)}
-                className="bg-[#FAF9F7] border-[#ECEAE4] text-xs h-9 font-mono"
-              />
-            </div>
-
             <Select value={selectedVeiculoFilter} onValueChange={setSelectedVeiculoFilter}>
               <SelectTrigger className="w-[180px] bg-[#FAF9F7] border-[#ECEAE4] text-xs h-9">
                 <SelectValue placeholder="Veículo" />
@@ -464,6 +461,32 @@ export default function EntregaPage() {
             </Select>
           </div>
         </div>
+
+        {/* Filtro de Período padrão */}
+        <FiltroPeriodoBar
+          rotulo="Data da entrega:"
+          opcaoPeriodo={opcaoPeriodo}
+          onOpcaoChange={setOpcaoPeriodo}
+          dataInicio={dataInicio}
+          onDataInicioChange={setDataInicio}
+          dataFim={dataFim}
+          onDataFimChange={setDataFim}
+          mostrarLimpar={
+            opcaoPeriodo !== 'todos' ||
+            Boolean(dataInicio || dataFim) ||
+            selectedVeiculoFilter !== 'todos' ||
+            selectedStatusFilter !== 'todos' ||
+            Boolean(searchQuery.trim())
+          }
+          onLimpar={() => {
+            setOpcaoPeriodo('todos')
+            setDataInicio('')
+            setDataFim('')
+            setSelectedVeiculoFilter('todos')
+            setSelectedStatusFilter('todos')
+            setSearchQuery('')
+          }}
+        />
       </Card>
 
       {/* Tabela de Entregas */}

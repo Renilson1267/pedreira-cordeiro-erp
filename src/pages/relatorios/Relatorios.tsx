@@ -2,6 +2,8 @@ import React, { useState, useEffect, useMemo } from 'react'
 import { useCompany } from '@/contexts/CompanyContext'
 import pb from '@/lib/pocketbase/client'
 import { formatCurrency, formatDate } from '@/lib/formatters'
+import { calcularDatasPeriodoRapido, estaDentroDoPeriodo } from '@/lib/periodo'
+import FiltroPeriodoBar from '@/components/financeiro/FiltroPeriodoBar'
 import type {
   MovimentoFinanceiro,
   ContaPagar,
@@ -72,10 +74,22 @@ export default function Relatorios() {
   const { currentEmpresa } = useCompany()
 
   const [activeReport, setActiveReport] = useState<string | null>(null)
-  const [selectedMes, setSelectedMes] = useState<string>(() => {
-    const d = new Date()
-    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+
+  // Filtro de período padrão Contas a Pagar/Receber
+  const [opcaoPeriodo, setOpcaoPeriodo] = useState<string>('este_mes')
+  const [dataInicio, setDataInicio] = useState<string>(() => {
+    return calcularDatasPeriodoRapido('este_mes').inicio
   })
+  const [dataFim, setDataFim] = useState<string>(() => {
+    return calcularDatasPeriodoRapido('este_mes').fim
+  })
+
+  const rotuloPeriodoArquivo = useMemo(() => {
+    if (dataInicio && dataFim) return `${dataInicio}_a_${dataFim}`
+    if (dataInicio) return `a_partir_de_${dataInicio}`
+    if (dataFim) return `ate_${dataFim}`
+    return 'Geral'
+  }, [dataInicio, dataFim])
 
   const [movimentos, setMovimentos] = useState<MovimentoFinanceiro[]>([])
   const [contasPagar, setContasPagar] = useState<ContaPagar[]>([])
@@ -239,15 +253,10 @@ export default function Relatorios() {
     },
   ]
 
-  // Filtered movements for selected month
+  // Filtered movements for selected period
   const filteredMovimentos = useMemo(() => {
-    if (!selectedMes) return movimentos
-    const [year, month] = selectedMes.split('-')
-    return movimentos.filter((m) => {
-      const d = new Date(m.data)
-      return d.getFullYear() === Number(year) && d.getMonth() + 1 === Number(month)
-    })
-  }, [movimentos, selectedMes])
+    return movimentos.filter((m) => estaDentroDoPeriodo(m.data, dataInicio, dataFim))
+  }, [movimentos, dataInicio, dataFim])
 
   // Lista de fornecedores presentes em Contas a Pagar (com ID ou nome para filtro)
   const fornecedoresOpcoes = useMemo(() => {
@@ -516,22 +525,10 @@ export default function Relatorios() {
 
   // Aggregation for relatorio_frotas com filtros de Equipamento e Centro de Custo
   const frotasPorVeiculo = useMemo(() => {
-    if (!selectedMes) return []
-    const [year, month] = selectedMes.split('-')
-
-    // Filtrar abastecimentos, manutenções e entregas do mês
-    const abMes = abastecimentos.filter((a) => {
-      const d = new Date(a.data)
-      return d.getFullYear() === Number(year) && d.getMonth() + 1 === Number(month)
-    })
-    const manMes = manutencoes.filter((m) => {
-      const d = new Date(m.data)
-      return d.getFullYear() === Number(year) && d.getMonth() + 1 === Number(month)
-    })
-    const entMes = entregas.filter((e) => {
-      const d = new Date(e.data)
-      return d.getFullYear() === Number(year) && d.getMonth() + 1 === Number(month)
-    })
+    // Filtrar abastecimentos, manutenções e entregas dentro do período padrão
+    const abMes = abastecimentos.filter((a) => estaDentroDoPeriodo(a.data, dataInicio, dataFim))
+    const manMes = manutencoes.filter((m) => estaDentroDoPeriodo(m.data, dataInicio, dataFim))
+    const entMes = entregas.filter((e) => estaDentroDoPeriodo(e.data, dataInicio, dataFim))
 
     // Aplicar filtros de Equipamento, Setor e Centro de Custo
     const veiculosFiltrados = veiculos.filter((v) => {
@@ -590,7 +587,8 @@ export default function Relatorios() {
     abastecimentos,
     manutencoes,
     entregas,
-    selectedMes,
+    dataInicio,
+    dataFim,
     frotasVeiculoFilter,
     frotasSetorFilter,
     frotasCentroCustoFilter,
@@ -710,23 +708,35 @@ export default function Relatorios() {
 
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight text-gray-900">Central de Relatórios</h1>
-          <p className="text-xs text-gray-500">
-            Inteligência financeira, demonstrativos consolidados e exportações de dados
-          </p>
+      {/* Header com Filtro de Período Geral */}
+      <div className="bg-white p-5 rounded-2xl border border-[#ECEAE4] shadow-xs space-y-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div>
+            <h1 className="text-2xl font-bold tracking-tight text-gray-900">
+              Central de Relatórios
+            </h1>
+            <p className="text-xs text-gray-500">
+              Inteligência financeira, demonstrativos consolidados e exportações de dados
+            </p>
+          </div>
         </div>
 
-        <div className="w-full sm:w-56">
-          <Input
-            type="month"
-            value={selectedMes}
-            onChange={(e) => setSelectedMes(e.target.value)}
-            className="bg-white border-[#ECEAE4] font-mono text-xs"
-          />
-        </div>
+        {/* Filtro de Período padrão Contas a Pagar/Receber */}
+        <FiltroPeriodoBar
+          rotulo="Período dos relatórios:"
+          opcaoPeriodo={opcaoPeriodo}
+          onOpcaoChange={setOpcaoPeriodo}
+          dataInicio={dataInicio}
+          onDataInicioChange={setDataInicio}
+          dataFim={dataFim}
+          onDataFimChange={setDataFim}
+          mostrarLimpar={opcaoPeriodo !== 'todos' || Boolean(dataInicio || dataFim)}
+          onLimpar={() => {
+            setOpcaoPeriodo('todos')
+            setDataInicio('')
+            setDataFim('')
+          }}
+        />
       </div>
 
       {/* Grid of Report Cards */}
@@ -775,7 +785,7 @@ export default function Relatorios() {
                   onClick={() => {
                     if (activeReport === 'fluxo_caixa') {
                       exportCSV(
-                        `Fluxo_Caixa_${selectedMes}`,
+                        `Fluxo_Caixa_${rotuloPeriodoArquivo}`,
                         ['Data', 'Descrição', 'Tipo', 'Valor', 'Conciliado'],
                         filteredMovimentos.map((m) => [
                           formatDate(m.data),
@@ -788,7 +798,7 @@ export default function Relatorios() {
                     } else if (activeReport === 'pagar_fornecedor') {
                       const suffix = pagarFornecedorFilter !== 'todos' ? `_Filtrado` : ''
                       exportCSV(
-                        `Pagar_Fornecedor_${selectedMes}${suffix}`,
+                        `Pagar_Fornecedor_${rotuloPeriodoArquivo}${suffix}`,
                         [
                           'Fornecedor',
                           'Qtd Títulos',
@@ -807,7 +817,7 @@ export default function Relatorios() {
                     } else if (activeReport === 'receber_cliente') {
                       const suffix = receberClienteFilter !== 'todos' ? `_Filtrado` : ''
                       exportCSV(
-                        `Receber_Cliente_${selectedMes}${suffix}`,
+                        `Receber_Cliente_${rotuloPeriodoArquivo}${suffix}`,
                         [
                           'Cliente',
                           'Qtd Títulos',
@@ -825,7 +835,7 @@ export default function Relatorios() {
                       )
                     } else if (activeReport === 'resultado_categoria') {
                       exportCSV(
-                        `Resultado_Categoria_${selectedMes}`,
+                        `Resultado_Categoria_${rotuloPeriodoArquivo}`,
                         ['Categoria', 'Tipo', 'Total'],
                         resultadoPorCategoria.map((cat) => [
                           cat.nome,
@@ -835,7 +845,7 @@ export default function Relatorios() {
                       )
                     } else if (activeReport === 'resultado_centros_custos') {
                       exportCSV(
-                        `Centros_Custo_${selectedMes}`,
+                        `Centros_Custo_${rotuloPeriodoArquivo}`,
                         ['Código', 'Centro de Custo', 'Receitas', 'Despesas', 'Saldo'],
                         resultadoPorCentrosCusto.map((item) => [
                           item.centro.codigo,
@@ -853,7 +863,7 @@ export default function Relatorios() {
                           ? '_Filtrado'
                           : ''
                       exportCSV(
-                        `Frotas_Pedreira_${selectedMes}${suffix}`,
+                        `Frotas_Pedreira_${rotuloPeriodoArquivo}${suffix}`,
                         [
                           'Código',
                           'Modelo',
@@ -887,7 +897,7 @@ export default function Relatorios() {
                       )
                     } else {
                       exportCSV(
-                        `Ledger_${selectedMes}`,
+                        `Ledger_${rotuloPeriodoArquivo}`,
                         ['Data', 'Descrição', 'Tipo', 'Origem', 'Valor'],
                         filteredMovimentos.map((m) => [
                           formatDate(m.data),
@@ -927,7 +937,7 @@ export default function Relatorios() {
                     <BarChart
                       data={[
                         {
-                          name: selectedMes,
+                          name: rotuloPeriodoArquivo,
                           Entradas: filteredMovimentos
                             .filter((m) => m.tipo === 'Entrada')
                             .reduce((acc, m) => acc + (m.valor || 0), 0),

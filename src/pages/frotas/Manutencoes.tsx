@@ -3,6 +3,8 @@ import { useCompany } from '@/contexts/CompanyContext'
 import pb from '@/lib/pocketbase/client'
 import { useRealtime } from '@/hooks/use-realtime'
 import { formatCurrency, formatDate } from '@/lib/formatters'
+import { calcularDatasPeriodoRapido, estaDentroDoPeriodo } from '@/lib/periodo'
+import FiltroPeriodoBar from '@/components/financeiro/FiltroPeriodoBar'
 import type { Manutencao, Veiculo, Fornecedor, PlanoConta } from '@/types/erp'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -47,6 +49,15 @@ export default function Manutencoes() {
   const [tipoFilter, setTipoFilter] = useState<string>('todos')
   const [statusFilter, setStatusFilter] = useState<string>('todos')
   const [searchQuery, setSearchQuery] = useState('')
+
+  // Filtro de Período padrão Contas a Pagar / Dashboard
+  const [opcaoPeriodo, setOpcaoPeriodo] = useState<string>('este_mes')
+  const [dataInicio, setDataInicio] = useState<string>(() => {
+    return calcularDatasPeriodoRapido('este_mes').inicio
+  })
+  const [dataFim, setDataFim] = useState<string>(() => {
+    return calcularDatasPeriodoRapido('este_mes').fim
+  })
 
   // Drawer Form
   const [isDrawerOpen, setIsDrawerOpen] = useState(false)
@@ -355,6 +366,7 @@ export default function Manutencoes() {
     return manutencoes.filter((m) => {
       if (tipoFilter !== 'todos' && m.tipo !== tipoFilter) return false
       if (statusFilter !== 'todos' && m.status !== statusFilter) return false
+      if (!estaDentroDoPeriodo(m.data, dataInicio, dataFim)) return false
       if (searchQuery.trim()) {
         const q = searchQuery.toLowerCase()
         const cod = m.expand?.veiculo_id?.codigo_interno?.toLowerCase() || ''
@@ -365,12 +377,20 @@ export default function Manutencoes() {
       }
       return true
     })
-  }, [manutencoes, tipoFilter, statusFilter, searchQuery])
+  }, [manutencoes, tipoFilter, statusFilter, searchQuery, dataInicio, dataFim])
 
-  // KPIs
-  const totalGastoManutencao = manutencoes.reduce((acc, m) => acc + (m.custo || 0), 0)
-  const totalPreventivas = manutencoes.filter((m) => m.tipo === 'preventiva').length
-  const totalCorretivas = manutencoes.filter((m) => m.tipo === 'corretiva').length
+  // KPIs recalculados de acordo com os filtros selecionados
+  const totalGastoManutencao = useMemo(() => {
+    return filteredManutencoes.reduce((acc, m) => acc + (m.custo || 0), 0)
+  }, [filteredManutencoes])
+
+  const totalPreventivas = useMemo(() => {
+    return filteredManutencoes.filter((m) => m.tipo === 'preventiva').length
+  }, [filteredManutencoes])
+
+  const totalCorretivas = useMemo(() => {
+    return filteredManutencoes.filter((m) => m.tipo === 'corretiva').length
+  }, [filteredManutencoes])
 
   return (
     <div className="space-y-6">
@@ -446,7 +466,9 @@ export default function Manutencoes() {
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
         <Card className="rounded-2xl border-[#ECEAE4] bg-white shadow-xs p-4">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold text-gray-500 uppercase">Custo Total</span>
+            <span className="text-xs font-semibold text-gray-500 uppercase">
+              Custo ({filteredManutencoes.length} ordens)
+            </span>
             <div className="w-8 h-8 rounded-lg bg-red-50 text-red-600 flex items-center justify-center">
               <DollarSign className="w-4 h-4" />
             </div>
@@ -454,7 +476,7 @@ export default function Manutencoes() {
           <div className="text-2xl font-bold text-red-600 mt-2 font-mono tabular-nums">
             {formatCurrency(totalGastoManutencao)}
           </div>
-          <p className="text-[11px] text-gray-400 mt-0.5">Total de serviços e peças</p>
+          <p className="text-[11px] text-gray-400 mt-0.5">Total no período filtrado</p>
         </Card>
 
         <Card className="rounded-2xl border-[#ECEAE4] bg-white shadow-xs p-4">
@@ -494,7 +516,7 @@ export default function Manutencoes() {
       </div>
 
       {/* Filter and Search */}
-      <Card className="rounded-2xl border-[#ECEAE4] bg-white shadow-xs p-4">
+      <Card className="rounded-2xl border-[#ECEAE4] bg-white shadow-xs p-4 space-y-3">
         <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
           <div className="flex flex-wrap items-center gap-2">
             <Select value={tipoFilter} onValueChange={setTipoFilter}>
@@ -520,21 +542,6 @@ export default function Manutencoes() {
                 <SelectItem value="cancelada">Cancelada</SelectItem>
               </SelectContent>
             </Select>
-
-            {(tipoFilter !== 'todos' || statusFilter !== 'todos' || searchQuery) && (
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => {
-                  setTipoFilter('todos')
-                  setStatusFilter('todos')
-                  setSearchQuery('')
-                }}
-                className="h-9 text-xs text-gray-500"
-              >
-                Limpar filtros
-              </Button>
-            )}
           </div>
 
           <div className="relative w-full sm:w-72">
@@ -547,6 +554,32 @@ export default function Manutencoes() {
             />
           </div>
         </div>
+
+        {/* Filtro de Período Bar */}
+        <FiltroPeriodoBar
+          rotulo="Data da manutenção:"
+          opcaoPeriodo={opcaoPeriodo}
+          onOpcaoChange={setOpcaoPeriodo}
+          dataInicio={dataInicio}
+          onDataInicioChange={setDataInicio}
+          dataFim={dataFim}
+          onDataFimChange={setDataFim}
+          mostrarLimpar={
+            opcaoPeriodo !== 'todos' ||
+            Boolean(dataInicio || dataFim) ||
+            tipoFilter !== 'todos' ||
+            statusFilter !== 'todos' ||
+            Boolean(searchQuery.trim())
+          }
+          onLimpar={() => {
+            setOpcaoPeriodo('todos')
+            setDataInicio('')
+            setDataFim('')
+            setTipoFilter('todos')
+            setStatusFilter('todos')
+            setSearchQuery('')
+          }}
+        />
       </Card>
 
       {/* Table */}

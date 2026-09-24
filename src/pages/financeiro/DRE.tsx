@@ -3,7 +3,9 @@ import { useCompany } from '@/contexts/CompanyContext'
 import pb from '@/lib/pocketbase/client'
 import { useRealtime } from '@/hooks/use-realtime'
 import { formatCurrency, formatDate } from '@/lib/formatters'
-import type { MovimentoFinanceiro, PlanoConta, CentroCusto } from '@/types/erp'
+import { calcularDatasPeriodoRapido, estaDentroDoPeriodo } from '@/lib/periodo'
+import FiltroPeriodoBar from '@/components/financeiro/FiltroPeriodoBar'
+import type { MovimentoFinanceiro, CentroCusto } from '@/types/erp'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -24,13 +26,16 @@ import {
 export default function DRE() {
   const { currentEmpresa } = useCompany()
 
-  const [selectedMes, setSelectedMes] = useState<string>(() => {
-    const d = new Date()
-    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+  // Filtro de período padrão Contas a Pagar/Receber
+  const [opcaoPeriodo, setOpcaoPeriodo] = useState<string>('este_mes')
+  const [dataInicio, setDataInicio] = useState<string>(() => {
+    return calcularDatasPeriodoRapido('este_mes').inicio
+  })
+  const [dataFim, setDataFim] = useState<string>(() => {
+    return calcularDatasPeriodoRapido('este_mes').fim
   })
 
-  const [movimentosAtual, setMovimentosAtual] = useState<MovimentoFinanceiro[]>([])
-  const [movimentosAnterior, setMovimentosAnterior] = useState<MovimentoFinanceiro[]>([])
+  const [allMovimentos, setAllMovimentos] = useState<MovimentoFinanceiro[]>([])
   const [centrosCusto, setCentrosCusto] = useState<CentroCusto[]>([])
   const [selectedCentroCusto, setSelectedCentroCusto] = useState<string>('todos')
   const [visaoQuebraCentro, setVisaoQuebraCentro] = useState(false)
@@ -43,31 +48,13 @@ export default function DRE() {
   useRealtime('movimentos_financeiros', () => loadDREData())
 
   const loadDREData = async () => {
-    if (!currentEmpresa || !selectedMes) return
+    if (!currentEmpresa) return
 
     try {
       setLoading(true)
-      const [year, month] = selectedMes.split('-').map(Number)
-
-      // Current Period
-      const startCurrent = new Date(Date.UTC(year, month - 1, 1)).toISOString()
-      const endCurrent = new Date(Date.UTC(year, month, 0, 23, 59, 59)).toISOString()
-
-      // Previous Period (previous month)
-      const prevDate = new Date(year, month - 2, 1)
-      const prevYear = prevDate.getFullYear()
-      const prevMonth = prevDate.getMonth() + 1
-      const startPrev = new Date(Date.UTC(prevYear, prevMonth - 1, 1)).toISOString()
-      const endPrev = new Date(Date.UTC(prevYear, prevMonth, 0, 23, 59, 59)).toISOString()
-
-      const [resCurrent, resPrev, ccList] = await Promise.all([
+      const [movList, ccList] = await Promise.all([
         pb.collection('movimentos_financeiros').getFullList<MovimentoFinanceiro>({
-          filter: `empresa_id = '${currentEmpresa.id}' && data >= '${startCurrent}' && data <= '${endCurrent}'`,
-          expand: 'categoria_id,centro_custo_id',
-          sort: '-data',
-        }),
-        pb.collection('movimentos_financeiros').getFullList<MovimentoFinanceiro>({
-          filter: `empresa_id = '${currentEmpresa.id}' && data >= '${startPrev}' && data <= '${endPrev}'`,
+          filter: `empresa_id = '${currentEmpresa.id}'`,
           expand: 'categoria_id,centro_custo_id',
           sort: '-data',
         }),
@@ -77,8 +64,7 @@ export default function DRE() {
         }),
       ])
 
-      setMovimentosAtual(resCurrent)
-      setMovimentosAnterior(resPrev)
+      setAllMovimentos(movList)
       setCentrosCusto(ccList)
     } catch (err) {
       console.error('Error loading DRE:', err)
@@ -89,7 +75,37 @@ export default function DRE() {
 
   useEffect(() => {
     loadDREData()
-  }, [currentEmpresa, selectedMes])
+  }, [currentEmpresa])
+
+  // Cálculo das datas do período anterior para comparação proporcional
+  const { dataInicioAnt, dataFimAnt } = useMemo(() => {
+    if (!dataInicio || !dataFim) {
+      return { dataInicioAnt: '', dataFimAnt: '' }
+    }
+    const dIni = new Date(dataInicio + 'T00:00:00')
+    const dFim = new Date(dataFim + 'T23:59:59')
+    const diffMs = dFim.getTime() - dIni.getTime()
+
+    // Período anterior com a mesma duração imediatamente antes
+    const dFimAntDate = new Date(dIni.getTime() - 1000 * 3600 * 24)
+    const dIniAntDate = new Date(dFimAntDate.getTime() - diffMs)
+
+    const formatYMD = (d: Date) => d.toISOString().slice(0, 10)
+    return {
+      dataInicioAnt: formatYMD(dIniAntDate),
+      dataFimAnt: formatYMD(dFimAntDate),
+    }
+  }, [dataInicio, dataFim])
+
+  // Movimentos do período atual e do anterior
+  const movimentosAtual = useMemo(() => {
+    return allMovimentos.filter((m) => estaDentroDoPeriodo(m.data, dataInicio, dataFim))
+  }, [allMovimentos, dataInicio, dataFim])
+
+  const movimentosAnterior = useMemo(() => {
+    if (!dataInicioAnt && !dataFimAnt) return []
+    return allMovimentos.filter((m) => estaDentroDoPeriodo(m.data, dataInicioAnt, dataFimAnt))
+  }, [allMovimentos, dataInicioAnt, dataFimAnt])
 
   // Aggregate structure for a list of movements
   const calculateSections = (movs: MovimentoFinanceiro[]) => {
@@ -283,10 +299,11 @@ export default function DRE() {
       csv += `"${l.label}";"${l.current.toFixed(2)}";"${l.prev.toFixed(2)}";"${calcVariation(l.current, l.prev)}"\r\n`
     })
 
+    const periodoNome = dataInicio && dataFim ? `${dataInicio}_a_${dataFim}` : 'Geral'
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
     const link = document.createElement('a')
     link.href = URL.createObjectURL(blob)
-    link.download = `DRE_${currentEmpresa?.nome_fantasia}_${selectedMes}.csv`
+    link.download = `DRE_${currentEmpresa?.nome_fantasia}_${periodoNome}.csv`
     link.click()
     toast({ title: 'Exportação CSV gerada com sucesso!' })
   }
@@ -336,25 +353,29 @@ export default function DRE() {
       </div>
 
       {/* Period Selector Card */}
-      <Card className="rounded-2xl border-[#ECEAE4] bg-white shadow-xs p-4">
+      <Card className="rounded-2xl border-[#ECEAE4] bg-white shadow-xs p-4 space-y-3">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div className="flex items-center space-x-3">
             <Calendar className="w-4 h-4 text-teal-700" />
             <div>
-              <div className="text-xs font-semibold text-gray-700">Seletor de Período</div>
+              <div className="text-xs font-semibold text-gray-700">
+                Demonstrativo de Resultado Gerencial
+              </div>
               <div className="text-[11px] text-gray-400">
-                Comparação automática com o mês imediatamente anterior
+                {dataInicio && dataFim
+                  ? `Comparação com período anterior correspondente (${formatDate(dataInicioAnt)} a ${formatDate(dataFimAnt)})`
+                  : 'Visualização consolidada de todo o histórico'}
               </div>
             </div>
           </div>
 
-          <div className="flex flex-col sm:flex-row items-center gap-2.5 w-full sm:w-auto">
+          <div className="flex flex-wrap items-center gap-2.5">
             {/* Filtro Centro de Custo */}
-            <div className="w-full sm:w-56">
+            <div className="w-56">
               <select
                 value={selectedCentroCusto}
                 onChange={(e) => setSelectedCentroCusto(e.target.value)}
-                className="w-full h-9 rounded-xl bg-[#FAF9F7] border border-[#ECEAE4] text-xs px-2.5 text-gray-700 font-medium"
+                className="w-full h-8 rounded-lg bg-[#FAF9F7] border border-[#ECEAE4] text-xs px-2.5 text-gray-700 font-medium"
               >
                 <option value="todos">Todos os Centros de Custo</option>
                 {centrosCusto.map((cc) => (
@@ -365,20 +386,11 @@ export default function DRE() {
               </select>
             </div>
 
-            <div className="w-full sm:w-44">
-              <Input
-                type="month"
-                value={selectedMes}
-                onChange={(e) => setSelectedMes(e.target.value)}
-                className="bg-[#FAF9F7] border-[#ECEAE4] font-mono text-xs h-9"
-              ></Input>
-            </div>
-
             <Button
               size="sm"
               variant={visaoQuebraCentro ? 'default' : 'outline'}
               onClick={() => setVisaoQuebraCentro(!visaoQuebraCentro)}
-              className={`h-9 text-xs rounded-xl shadow-xs ${
+              className={`h-8 text-xs rounded-lg shadow-xs ${
                 visaoQuebraCentro
                   ? 'bg-teal-700 hover:bg-teal-800 text-white'
                   : 'border-[#ECEAE4] text-gray-700'
@@ -389,6 +401,28 @@ export default function DRE() {
             </Button>
           </div>
         </div>
+
+        {/* Filtro de Período padrão Contas a Pagar/Receber */}
+        <FiltroPeriodoBar
+          rotulo="Período de Competência do DRE:"
+          opcaoPeriodo={opcaoPeriodo}
+          onOpcaoChange={setOpcaoPeriodo}
+          dataInicio={dataInicio}
+          onDataInicioChange={setDataInicio}
+          dataFim={dataFim}
+          onDataFimChange={setDataFim}
+          mostrarLimpar={
+            opcaoPeriodo !== 'todos' ||
+            Boolean(dataInicio || dataFim) ||
+            selectedCentroCusto !== 'todos'
+          }
+          onLimpar={() => {
+            setOpcaoPeriodo('todos')
+            setDataInicio('')
+            setDataFim('')
+            setSelectedCentroCusto('todos')
+          }}
+        />
       </Card>
 
       {/* Visão Quebra por Centro de Custo */}
@@ -397,7 +431,10 @@ export default function DRE() {
           <CardHeader className="bg-[#FAF9F7] border-b border-[#ECEAE4] py-3.5 px-6">
             <CardTitle className="text-sm font-bold text-gray-900 flex items-center gap-2">
               <Layers className="w-4 h-4 text-teal-700" />
-              Visão Gerencial por Centro de Custo ({selectedMes})
+              Visão Gerencial por Centro de Custo{' '}
+              {dataInicio && dataFim
+                ? `(${formatDate(dataInicio)} a ${formatDate(dataFim)})`
+                : '(Todo o Período)'}
             </CardTitle>
           </CardHeader>
           <div className="overflow-x-auto">
@@ -465,8 +502,18 @@ export default function DRE() {
             <thead>
               <tr className="bg-[#FAF9F7] border-b border-[#ECEAE4] text-gray-500 uppercase font-semibold">
                 <th className="py-3 px-6">Estrutura de Contas</th>
-                <th className="py-3 px-6 text-right">Período Atual ({selectedMes})</th>
-                <th className="py-3 px-6 text-right">Período Anterior</th>
+                <th className="py-3 px-6 text-right">
+                  Período Atual{' '}
+                  {dataInicio && dataFim
+                    ? `(${formatDate(dataInicio)} - ${formatDate(dataFim)})`
+                    : ''}
+                </th>
+                <th className="py-3 px-6 text-right">
+                  Período Anterior{' '}
+                  {dataInicioAnt && dataFimAnt
+                    ? `(${formatDate(dataInicioAnt)} - ${formatDate(dataFimAnt)})`
+                    : ''}
+                </th>
                 <th className="py-3 px-6 text-right">Variação %</th>
               </tr>
             </thead>

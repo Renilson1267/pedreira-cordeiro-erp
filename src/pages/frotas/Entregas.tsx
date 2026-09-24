@@ -3,6 +3,8 @@ import { useCompany } from '@/contexts/CompanyContext'
 import pb from '@/lib/pocketbase/client'
 import { useRealtime } from '@/hooks/use-realtime'
 import { formatCurrency, formatDate } from '@/lib/formatters'
+import { calcularDatasPeriodoRapido, estaDentroDoPeriodo } from '@/lib/periodo'
+import FiltroPeriodoBar from '@/components/financeiro/FiltroPeriodoBar'
 import type {
   Entrega,
   Veiculo,
@@ -113,14 +115,19 @@ export default function Entregas() {
   const [, setLoading] = useState(false)
 
   // Filtros da listagem
-  const [selectedPeriodo, setSelectedPeriodo] = useState<string>(() => {
-    const now = new Date()
-    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
-  })
   const [selectedVeiculoFilter, setSelectedVeiculoFilter] = useState('todos')
   const [selectedProdutoFilter, setSelectedProdutoFilter] = useState('todos')
   const [selectedStatusFilter, setSelectedStatusFilter] = useState('todos')
   const [searchQuery, setSearchQuery] = useState('')
+
+  // Filtro de período padrão Contas a Pagar/Receber
+  const [opcaoPeriodo, setOpcaoPeriodo] = useState<string>('este_mes')
+  const [dataInicio, setDataInicio] = useState<string>(() => {
+    return calcularDatasPeriodoRapido('este_mes').inicio
+  })
+  const [dataFim, setDataFim] = useState<string>(() => {
+    return calcularDatasPeriodoRapido('este_mes').fim
+  })
 
   // Modal de Detalhes da Entrega
   const [selectedEntregaDetalhe, setSelectedEntregaDetalhe] = useState<Entrega | null>(null)
@@ -909,13 +916,9 @@ export default function Entregas() {
   // Filtragem de entregas
   const filteredEntregas = useMemo(() => {
     return entregas.filter((ent) => {
-      // Filtro de período (mês/ano)
-      if (selectedPeriodo) {
-        const [y, m] = selectedPeriodo.split('-')
-        const d = new Date(ent.data)
-        if (d.getFullYear() !== Number(y) || d.getMonth() + 1 !== Number(m)) {
-          return false
-        }
+      // Filtro de período padrão
+      if (!estaDentroDoPeriodo(ent.data, dataInicio, dataFim)) {
+        return false
       }
 
       // Filtro de veículo
@@ -959,7 +962,8 @@ export default function Entregas() {
     })
   }, [
     entregas,
-    selectedPeriodo,
+    dataInicio,
+    dataFim,
     selectedVeiculoFilter,
     selectedProdutoFilter,
     selectedStatusFilter,
@@ -1173,19 +1177,9 @@ export default function Entregas() {
       </div>
 
       {/* Barra de Filtros */}
-      <Card className="rounded-2xl border-[#ECEAE4] bg-white shadow-xs p-4">
+      <Card className="rounded-2xl border-[#ECEAE4] bg-white shadow-xs p-4 space-y-3">
         <div className="flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-3">
           <div className="flex flex-wrap items-center gap-2">
-            {/* Mês / Período */}
-            <div className="flex items-center gap-1.5">
-              <Input
-                type="month"
-                value={selectedPeriodo}
-                onChange={(e) => setSelectedPeriodo(e.target.value)}
-                className="w-36 bg-[#FAF9F7] border-[#ECEAE4] text-xs h-9 rounded-xl font-mono"
-              />
-            </div>
-
             {/* Veículo */}
             <Select value={selectedVeiculoFilter} onValueChange={setSelectedVeiculoFilter}>
               <SelectTrigger className="w-[220px] bg-[#FAF9F7] border-[#ECEAE4] text-xs h-9 rounded-xl">
@@ -1228,25 +1222,6 @@ export default function Entregas() {
                 <SelectItem value="cancelada">Cancelada</SelectItem>
               </SelectContent>
             </Select>
-
-            {(selectedVeiculoFilter !== 'todos' ||
-              selectedProdutoFilter !== 'todos' ||
-              selectedStatusFilter !== 'todos' ||
-              searchQuery) && (
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => {
-                  setSelectedVeiculoFilter('todos')
-                  setSelectedProdutoFilter('todos')
-                  setSelectedStatusFilter('todos')
-                  setSearchQuery('')
-                }}
-                className="h-9 text-xs text-gray-500 hover:text-gray-900"
-              >
-                Limpar filtros
-              </Button>
-            )}
           </div>
 
           {/* Busca textual */}
@@ -1260,6 +1235,34 @@ export default function Entregas() {
             />
           </div>
         </div>
+
+        {/* Filtro de Período padrão Contas a Pagar/Receber */}
+        <FiltroPeriodoBar
+          rotulo="Data da entrega / romaneio:"
+          opcaoPeriodo={opcaoPeriodo}
+          onOpcaoChange={setOpcaoPeriodo}
+          dataInicio={dataInicio}
+          onDataInicioChange={setDataInicio}
+          dataFim={dataFim}
+          onDataFimChange={setDataFim}
+          mostrarLimpar={
+            opcaoPeriodo !== 'todos' ||
+            Boolean(dataInicio || dataFim) ||
+            selectedVeiculoFilter !== 'todos' ||
+            selectedProdutoFilter !== 'todos' ||
+            selectedStatusFilter !== 'todos' ||
+            Boolean(searchQuery)
+          }
+          onLimpar={() => {
+            setOpcaoPeriodo('todos')
+            setDataInicio('')
+            setDataFim('')
+            setSelectedVeiculoFilter('todos')
+            setSelectedProdutoFilter('todos')
+            setSelectedStatusFilter('todos')
+            setSearchQuery('')
+          }}
+        />
       </Card>
 
       {/* Painéis de Inteligência Rápida: Rotas Mais Frequentes e Resumo por Veículo */}
