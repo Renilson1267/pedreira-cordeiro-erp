@@ -66,6 +66,7 @@ export default function Dashboard() {
   const [totalPrevistoReceberPeriodo, setTotalPrevistoReceberPeriodo] = useState(0)
   const [resultadoPeriodo, setResultadoPeriodo] = useState(0)
   const [saldoGeralAcumulado, setSaldoGeralAcumulado] = useState(0)
+  const [totalContasBancarias, setTotalContasBancarias] = useState<number | null>(null)
 
   const [movimentosRecentes, setMovimentosRecentes] = useState<any[]>([])
   const [proximosVencimentos, setProximosVencimentos] = useState<any[]>([])
@@ -102,6 +103,7 @@ export default function Dashboard() {
       const contasBancarias = await pb.collection('bancos_contas').getFullList({
         filter: `empresa_id = '${currentEmpresa.id}'`,
       })
+      setTotalContasBancarias(contasBancarias.length)
       const saldoInicialTotal = contasBancarias.reduce((acc, c) => acc + (c.saldo_inicial || 0), 0)
 
       // 2. All Movimentos for cash position and monthly result
@@ -708,6 +710,19 @@ export default function Dashboard() {
                 </span>
               ) : null}
             </p>
+            {totalContasBancarias === 0 && (
+              <div
+                onClick={() => navigate('/financeiro/conciliacao')}
+                className="mt-2.5 p-2 rounded-lg bg-amber-50/90 border border-amber-200/90 text-amber-900 text-[11px] leading-snug cursor-pointer hover:bg-amber-100/90 transition-colors flex items-start gap-1.5"
+              >
+                <AlertTriangle className="w-3.5 h-3.5 text-amber-600 shrink-0 mt-0.5" />
+                <span>
+                  <strong>Nenhuma conta bancária cadastrada</strong> — cadastre suas contas com o
+                  saldo inicial em{' '}
+                  <span className="underline font-medium">Bancos &amp; Caixas</span>.
+                </span>
+              </div>
+            )}
           </CardContent>
         </Card>
 

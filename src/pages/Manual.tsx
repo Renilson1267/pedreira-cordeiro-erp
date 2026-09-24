@@ -827,7 +827,7 @@ export default function ManualPage() {
             </p>
           </div>
           <div className="text-right text-[11px] font-mono text-gray-500">
-            Documento de Treinamento v0.0.96
+            Documento de Treinamento v0.0.97
           </div>
         </div>
       </div>
