@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-09-24T22:07:21.878Z",
+  "generatedAt": "2026-09-24T22:19:37.972Z",
   "collections": [
     {
       "name": "users",
@@ -37,6 +37,12 @@
           "required": false,
           "system": false,
           "autodateTriggers": ["onCreate", "onUpdate"]
+        },
+        {
+          "name": "ativo",
+          "type": "bool",
+          "required": false,
+          "system": false
         }
       ],
       "indexes": [
@@ -2493,7 +2499,7 @@
           "type": "select",
           "required": true,
           "system": false,
-          "selectValues": ["contas_pagar", "contas_receber", "outros"]
+          "selectValues": ["contas_pagar", "contas_receber", "outros", "operadores"]
         },
         {
           "name": "registro_id",

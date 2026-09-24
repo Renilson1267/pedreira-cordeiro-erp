@@ -54,26 +54,31 @@ export const CompanyProvider: React.FC<{ children: React.ReactNode }> = ({ child
         }
       })
 
-      // If user is admin in system or has no specific expand, fetch all companies if list allowed
-      if (emps.length === 0) {
-        const allEmps = await pb.collection('empresas').getFullList<Empresa>({
-          sort: 'nome_fantasia',
-        })
-        setEmpresas(allEmps)
-        if (allEmps.length > 0) {
-          const savedId = localStorage.getItem(LOCAL_STORAGE_KEY)
-          const matched = allEmps.find((e) => e.id === savedId) || allEmps[0]
-          setCurrentEmpresa(matched)
-          setCurrentRole('admin')
-        }
-      } else {
-        setEmpresas(emps)
+      // Também garantir que todas as empresas autorizadas (incluindo Treinamento) sejam exibidas se o usuário for admin ou tiver acesso
+      const allEmps = await pb.collection('empresas').getFullList<Empresa>({
+        sort: 'nome_fantasia',
+      })
+
+      // Se o usuário tem papel admin em qualquer empresa, ele pode ver e navegar em todas as empresas cadastradas (matriz, filiais e treinamento)
+      const userIsAdminSomewhere = userMembros.some((m) => m.role === 'admin')
+      const empresasParaExibir = userIsAdminSomewhere || emps.length === 0 ? allEmps : emps
+
+      setEmpresas(empresasParaExibir)
+
+      if (empresasParaExibir.length > 0) {
         const savedId = localStorage.getItem(LOCAL_STORAGE_KEY)
-        const matched = emps.find((e) => e.id === savedId) || emps[0]
+        const matched = empresasParaExibir.find((e) => e.id === savedId) || empresasParaExibir[0]
         setCurrentEmpresa(matched)
 
         const activeMembro = userMembros.find((m) => m.empresa_id === matched.id)
-        setCurrentRole(activeMembro?.role || 'leitura')
+        if (activeMembro) {
+          setCurrentRole(activeMembro.role)
+        } else if (userIsAdminSomewhere) {
+          // Se é admin no sistema e entrou em uma filial/treinamento sem membro explícito ainda
+          setCurrentRole('admin')
+        } else {
+          setCurrentRole('leitura')
+        }
       }
     } catch (err) {
       console.error('Error fetching companies:', err)
@@ -92,7 +97,12 @@ export const CompanyProvider: React.FC<{ children: React.ReactNode }> = ({ child
       setCurrentEmpresa(found)
       localStorage.setItem(LOCAL_STORAGE_KEY, found.id)
       const activeMembro = membros.find((m) => m.empresa_id === found.id)
-      setCurrentRole(activeMembro?.role || 'admin')
+      if (activeMembro) {
+        setCurrentRole(activeMembro.role)
+      } else {
+        const userIsAdmin = membros.some((m) => m.role === 'admin')
+        setCurrentRole(userIsAdmin ? 'admin' : 'leitura')
+      }
     }
   }
 

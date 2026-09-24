@@ -45,12 +45,16 @@ import {
 
 export default function Layout() {
   const { user, logout } = useAuth()
-  const { currentEmpresa, currentRole, isReadOnly } = useCompany()
+  const { currentEmpresa, currentRole, isReadOnly, isAdmin } = useCompany()
   const [switcherOpen, setSwitcherOpen] = useState(false)
   const [searchOpen, setSearchOpen] = useState(false)
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const navigate = useNavigate()
   const location = useLocation()
+
+  const isTreinamento =
+    currentEmpresa?.cnpj === '99.999.999/0001-99' ||
+    currentEmpresa?.nome_fantasia?.toUpperCase().includes('TREINAMENTO')
 
   const handleLogout = () => {
     logout()
@@ -100,6 +104,9 @@ export default function Layout() {
         { label: 'Produtos e Serviços', path: '/cadastros/produtos', icon: Package },
         { label: 'Plano de Contas', path: '/cadastros/plano-de-contas', icon: Layers },
         { label: 'Centros de Custo', path: '/cadastros/centros-de-custo', icon: PieChart },
+        ...(isAdmin
+          ? [{ label: 'Operadores (Usuários)', path: '/cadastros/operadores', icon: Shield }]
+          : []),
       ],
     },
     {
@@ -174,8 +181,15 @@ export default function Layout() {
                 {getInitials(currentEmpresa?.nome_fantasia)}
               </div>
               <div className="overflow-hidden">
-                <div className="text-xs font-semibold text-gray-900 truncate">
-                  {currentEmpresa?.nome_fantasia || 'Grupo Pedreira Cordeiro'}
+                <div className="text-xs font-semibold text-gray-900 truncate flex items-center gap-1.5">
+                  <span className="truncate">
+                    {currentEmpresa?.nome_fantasia || 'Grupo Pedreira Cordeiro'}
+                  </span>
+                  {isTreinamento && (
+                    <span className="shrink-0 text-[9px] bg-amber-500 text-white font-bold px-1.5 py-0.2 rounded">
+                      Treino
+                    </span>
+                  )}
                 </div>
                 <div className="text-[10px] text-gray-500 font-mono truncate">
                   {currentEmpresa?.cnpj || '05.581.899/0001-05'}
@@ -358,6 +372,24 @@ export default function Layout() {
             )}
           </div>
         </header>
+
+        {/* Banner Fixo de Treinamento */}
+        {isTreinamento && (
+          <div className="bg-amber-500 text-white px-4 py-2.5 text-xs font-semibold shadow-xs flex items-center justify-between shrink-0 border-b border-amber-600 animate-fade-in">
+            <div className="flex items-center space-x-2">
+              <span className="bg-amber-700/60 px-2 py-0.5 rounded text-[10px] tracking-wider uppercase font-bold">
+                Ambiente de Simulação
+              </span>
+              <span>MODO TREINAMENTO — dados fictícios, nada disso afeta a empresa real</span>
+            </div>
+            <button
+              onClick={() => setSwitcherOpen(true)}
+              className="bg-amber-600 hover:bg-amber-700 text-white px-2.5 py-1 rounded-lg text-[11px] font-medium transition-colors cursor-pointer"
+            >
+              Trocar de Empresa
+            </button>
+          </div>
+        )}
 
         {/* Scrollable Page Body */}
         <main className="flex-1 overflow-y-auto px-4 sm:px-6 py-6 min-w-0">

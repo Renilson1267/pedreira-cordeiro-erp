@@ -190,41 +190,112 @@ export const CompanySwitcherModal: React.FC<CompanySwitcherModalProps> = ({
               />
             </div>
 
-            <div className="max-h-[320px] overflow-y-auto space-y-2 pr-1">
-              {filteredEmpresas.map((emp) => {
-                const isSelected = currentEmpresa?.id === emp.id
-                return (
-                  <div
-                    key={emp.id}
-                    onClick={() => handleSelect(emp.id)}
-                    className={`flex items-center justify-between p-3 rounded-xl border cursor-pointer transition-all ${
-                      isSelected
-                        ? 'border-teal-600 bg-teal-50/50'
-                        : 'border-[#ECEAE4] hover:bg-[#FAF9F7] hover:border-gray-300'
-                    }`}
-                  >
-                    <div className="flex items-center space-x-3">
+            <div className="max-h-[360px] overflow-y-auto space-y-3 pr-1">
+              {/* Empresas de Produção / Reais */}
+              <div className="space-y-1.5">
+                <div className="text-[11px] font-semibold text-gray-400 uppercase tracking-wider px-1">
+                  Empresas do Grupo (Produção)
+                </div>
+                {filteredEmpresas
+                  .filter(
+                    (e) =>
+                      !e.nome_fantasia.toUpperCase().includes('TREINAMENTO') &&
+                      e.cnpj !== '99.999.999/0001-99',
+                  )
+                  .map((emp) => {
+                    const isSelected = currentEmpresa?.id === emp.id
+                    return (
                       <div
-                        className="w-10 h-10 rounded-lg flex items-center justify-center font-bold text-white text-sm shadow-sm"
-                        style={{ backgroundColor: emp.cor || '#0F766E' }}
+                        key={emp.id}
+                        onClick={() => handleSelect(emp.id)}
+                        className={`flex items-center justify-between p-3 rounded-xl border cursor-pointer transition-all ${
+                          isSelected
+                            ? 'border-teal-600 bg-teal-50/50'
+                            : 'border-[#ECEAE4] hover:bg-[#FAF9F7] hover:border-gray-300'
+                        }`}
                       >
-                        {getInitials(emp.nome_fantasia)}
-                      </div>
-                      <div>
-                        <div className="font-semibold text-gray-900 text-sm">
-                          {emp.nome_fantasia}
+                        <div className="flex items-center space-x-3">
+                          <div
+                            className="w-10 h-10 rounded-lg flex items-center justify-center font-bold text-white text-sm shadow-sm"
+                            style={{ backgroundColor: emp.cor || '#0F766E' }}
+                          >
+                            {getInitials(emp.nome_fantasia)}
+                          </div>
+                          <div>
+                            <div className="font-semibold text-gray-900 text-sm">
+                              {emp.nome_fantasia}
+                            </div>
+                            <div className="text-xs text-gray-500 font-mono">{emp.cnpj}</div>
+                          </div>
                         </div>
-                        <div className="text-xs text-gray-500 font-mono">{emp.cnpj}</div>
+                        {isSelected && (
+                          <div className="w-6 h-6 rounded-full bg-teal-700 text-white flex items-center justify-center">
+                            <Check className="w-3.5 h-3.5" />
+                          </div>
+                        )}
                       </div>
-                    </div>
-                    {isSelected && (
-                      <div className="w-6 h-6 rounded-full bg-teal-700 text-white flex items-center justify-center">
-                        <Check className="w-3.5 h-3.5" />
-                      </div>
-                    )}
+                    )
+                  })}
+              </div>
+
+              {/* Ambiente de Treinamento e Simulação */}
+              {filteredEmpresas.some(
+                (e) =>
+                  e.nome_fantasia.toUpperCase().includes('TREINAMENTO') ||
+                  e.cnpj === '99.999.999/0001-99',
+              ) && (
+                <div className="pt-2 border-t border-amber-200/80 space-y-1.5">
+                  <div className="text-[11px] font-bold text-amber-700 uppercase tracking-wider px-1 flex items-center gap-1.5">
+                    <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse" />
+                    Ambiente de Simulação & Treinamento
                   </div>
-                )
-              })}
+                  {filteredEmpresas
+                    .filter(
+                      (e) =>
+                        e.nome_fantasia.toUpperCase().includes('TREINAMENTO') ||
+                        e.cnpj === '99.999.999/0001-99',
+                    )
+                    .map((emp) => {
+                      const isSelected = currentEmpresa?.id === emp.id
+                      return (
+                        <div
+                          key={emp.id}
+                          onClick={() => handleSelect(emp.id)}
+                          className={`flex items-center justify-between p-3 rounded-xl border-2 cursor-pointer transition-all ${
+                            isSelected
+                              ? 'border-amber-600 bg-amber-50 shadow-xs'
+                              : 'border-amber-200 bg-amber-50/40 hover:bg-amber-50 hover:border-amber-400'
+                          }`}
+                        >
+                          <div className="flex items-center space-x-3">
+                            <div
+                              className="w-10 h-10 rounded-lg flex items-center justify-center font-bold text-white text-sm shadow-sm"
+                              style={{ backgroundColor: '#D97706' }}
+                            >
+                              TR
+                            </div>
+                            <div>
+                              <div className="font-bold text-amber-950 text-sm flex items-center gap-2">
+                                <span>{emp.nome_fantasia}</span>
+                                <span className="bg-amber-600 text-white text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wider shadow-2xs">
+                                  Treinamento
+                                </span>
+                              </div>
+                              <div className="text-xs text-amber-800/80 font-medium">
+                                Prática segura de operadores sem risco à produção
+                              </div>
+                            </div>
+                          </div>
+                          {isSelected && (
+                            <div className="w-6 h-6 rounded-full bg-amber-600 text-white flex items-center justify-center">
+                              <Check className="w-3.5 h-3.5" />
+                            </div>
+                          )}
+                        </div>
+                      )
+                    })}
+                </div>
+              )}
 
               {filteredEmpresas.length === 0 && (
                 <div className="text-center py-8 text-gray-500 text-sm">
