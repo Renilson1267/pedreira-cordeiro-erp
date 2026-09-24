@@ -7,7 +7,6 @@ import {
   BookOpen,
   Printer,
   Search,
-  CheckCircle2,
   AlertTriangle,
   Lightbulb,
   Building,
@@ -17,20 +16,12 @@ import {
   Truck,
   ArrowDownLeft,
   ArrowUpRight,
-  Landmark,
   LineChart,
   Users,
-  Package,
-  Layers,
-  PieChart,
-  Clock,
   Construction,
-  Fuel,
-  Wrench,
   FileBarChart2,
-  ChevronRight,
-  ExternalLink,
   ShieldCheck,
+  History,
 } from 'lucide-react'
 
 interface ManualSection {
@@ -147,18 +138,31 @@ const MANUAL_SECTIONS: ManualSection[] = [
     id: 'financeiro-pagar',
     title: '4. Financeiro — Contas a Pagar',
     subtitle:
-      'Lançamentos, parcelamentos automáticos (7/15/21/28 dias), baixas parciais e conciliação de planilhas.',
+      'Lançamentos com Data de Emissão, filtros de período inteligentes, parcelamentos (7/15/21/28 dias), baixas parciais, estornos e confirmação de segurança.',
     icon: ArrowDownLeft,
     tag: 'Financeiro',
     steps: [
       {
-        title: 'Lançar uma Nova Conta a Pagar',
-        description: 'Clique no botão "Nova Conta a Pagar" no canto superior direito.',
+        title: 'Filtros de Período e Base de Data Inteligente',
+        description:
+          'A tela conta com barra de filtros temporais no topo que recalcula instantaneamente os 4 cartões de totais (Total em Aberto, Vencidas, Pagas no Período e Valor Total):',
         substeps: [
-          'Selecione o Fornecedor cadastrado.',
-          'Preencha a Descrição da despesa (ex: Óleo Diesel S10, Peças Britador).',
-          'Informe o Plano de Contas (categoria) e o Centro de Custo apropriado.',
-          'Digite o Valor Total e a Data de Vencimento.',
+          'Botões de atalho rápido: "Todo o período", "Este mês", "Mês passado" e "Este ano".',
+          'Intervalo personalizado: selecione o botão "Personalizado" e preencha as caixas de data "De" e "Até".',
+          'Seletor "Filtrar por data": escolha a referência temporal desejada — "Data de Vencimento" (padrão operacional), "Data de Emissão" (competência do documento fiscal) ou "Data do Pagamento" (fluxo financeiro realizado).',
+          'Os cartões e a tabela são sincronizados imediatamente após a escolha do filtro.',
+        ],
+      },
+      {
+        title: 'Lançar Nova Conta a Pagar com Campo "Data de Emissão"',
+        description:
+          'Clique no botão "+ Nova Conta a Pagar" no canto superior direito para abrir o formulário:',
+        substeps: [
+          'Combobox pesquisável de Fornecedor: comece a digitar o nome fantasia, razão social ou CNPJ para filtrar a lista instantaneamente.',
+          'Descrição da despesa (ex: Óleo Diesel S10, Peças Britador Metso, Locação Caminhão Pipa).',
+          'Comboboxes de Plano de Contas (categoria) e Centro de Custo: busca digitável facilitada para encontrar a rubrica contábil exata.',
+          'Valor Total e Data de Vencimento (campo obrigatório que define se o título está no prazo ou vencido).',
+          'Campo opcional "Data de Emissão": informe a data em que a nota fiscal ou boleto foi faturado pelo fornecedor. Essa data aparece na listagem, no modal de edição e no painel lateral de detalhes.',
         ],
       },
       {
@@ -181,49 +185,196 @@ const MANUAL_SECTIONS: ManualSection[] = [
         ],
       },
       {
-        title: 'Importar Planilha XLSX e Conferir / Comparar',
-        description: 'Ferramenta avançada para conciliação em massa:',
+        title: 'Estorno de Pagamento com Reversão Automática de Caixa',
+        description:
+          'Quando um pagamento for lançado por engano ou cancelado pelo banco, utilize o recurso de Estorno:',
         substeps: [
-          'Clique em "Importar Planilha XLSX" para carregar extratos ou controles externos.',
-          'O sistema reconhece abas de competência (Jan a Dez) e mapeia colunas de fornecedor, valor, vencimento e status.',
-          'Utilize a opção "Conferir Planilha" para comparar registros existentes com a planilha e apontar divergências sem duplicar dados.',
+          'Disponível para qualquer título com status "Paga" ou "Parcial" (tanto na tabela quanto no painel de detalhes).',
+          'Clique no botão "Estornar" (ícone de seta circular / rotação).',
+          'O que o sistema faz: retorna o título para o status "Aberta", zera o valor pago e a data de pagamento.',
+          'Segurança financeira: gera automaticamente um movimento de caixa inverso de Entrada/Estorno de mesmo valor, garantindo que o saldo bancário e o DRE não fiquem descompassados.',
+          'Histórico preservado: nada é apagado — a operação fica gravada no histórico de auditoria com data, autor e valor estornado.',
+        ],
+      },
+      {
+        title: 'Confirmação Obrigatória em Toda Modificação',
+        description:
+          'Toda ação que altera ou grava dados (criação de conta, edição, exclusão, baixa de pagamento e estorno) abre um diálogo modal de confirmação:',
+        substeps: [
+          'O modal exibe um resumo claro do que está prestes a ser gravado (fornecedor, valor, datas e ação).',
+          'Evita cliques acidentais e erros operacionais em rotinas críticas.',
+          'Somente após o clique em "Confirmar" a gravação no banco de dados e a auditoria são efetivadas.',
+        ],
+      },
+      {
+        title: 'Importar Planilha XLSX e Conferir / Comparar',
+        description: 'Ferramenta avançada para conciliação em massa de contas da pedreira:',
+        substeps: [
+          'Clique em "Importar Planilha XLSX" para carregar planilhas de controle externo.',
+          'O sistema reconhece abas de competência (Jan a Dez) e mapeia colunas de fornecedor, valor, emissão, vencimento e status.',
+          'Utilize a opção "Conferir Planilha (Comparar)" para validar as abas sem gravar dados no banco, identificando previamente títulos novos e possíveis divergências.',
         ],
       },
     ],
     tips: [
-      '💡 O status da conta muda automaticamente para "Vencida" se a data passar do dia de hoje sem registro de pagamento.',
+      '💡 O status da conta muda automaticamente para "Vencida" se a data de vencimento passar do dia atual sem confirmação de pagamento integral.',
+      '💡 Os comboboxes pesquisáveis aceitam digitação em maiúsculas ou minúsculas e filtram mesmo com nomes incompletos.',
     ],
     warnings: [
-      '⚠️ Ao excluir uma conta a pagar vinculada a uma entrega de frota ou manutenção, certifique-se de validar se o serviço também precisa de cancelamento.',
+      '⚠️ O Estorno reverte o saldo do caixa imediatamente gerando movimento de estorno. Utilize-o exclusivamente quando houver lançamento indevido ou devolução real de pagamento.',
+      '⚠️ Ao excluir uma conta vinculada a despesas de veículos ou manutenção de frota, certifique-se de validar se o serviço na oficina também foi cancelado.',
     ],
   },
   {
     id: 'financeiro-receber',
     title: '5. Financeiro — Contas a Receber',
-    subtitle: 'Controle de recebimentos, clientes depositantes, baixa parcial e comprovante A4.',
+    subtitle:
+      'Controle de cobranças, filtros por vencimento/emissão/recebimento, estorno com reversão de caixa, importador mensal inteligente de XLSX e conferência prévia.',
     icon: ArrowUpRight,
     tag: 'Financeiro',
     steps: [
       {
-        title: 'Lançamento Manual ou Automático via Venda',
+        title: 'Filtros de Período e Base de Data Inteligente',
         description:
-          'Títulos podem nascer automaticamente a partir de uma Venda (recomendado) ou serem lançados manualmente para receitas avulsas.',
+          'Controle de fluxo de recebimentos por período com recálculo automático dos cards de totais (Total em Aberto, Vencidas, Recebidas no Período e Valor Total):',
+        substeps: [
+          'Botões rápidos: "Todo o período", "Este mês", "Mês passado" e "Este ano", além do seletor "Personalizado (De/Até)".',
+          'Escolha a base de data: "Data de Vencimento" (previsão de entrada), "Data de Emissão" (faturamento da nota/venda) ou "Data do Recebimento" (entradas efetivas no extrato bancário).',
+          'Todos os indicadores e a listagem de clientes atualizam em tempo real conforme o recorte escolhido.',
+        ],
       },
       {
-        title: 'Cliente Depositante (para Pagamentos por Terceiros ou Antecipações)',
+        title: 'Lançamento Manual ou Automático com Campo "Data de Emissão"',
         description:
-          'Quando o pagamento for efetuado por pessoa física ou empresa diferente do cliente faturado, utilize o campo "Cliente Depositante" para rastrear a origem real do depósito bancário sem desvincular o faturamento do cliente contratante.',
+          'Títulos podem nascer automaticamente a partir de uma Venda (recomendado) ou serem cadastrados manualmente para receitas avulsas:',
+        substeps: [
+          'Combobox pesquisável de Cliente: digite o nome do cliente ou razão social para localização imediata.',
+          'Campo "Data de Emissão": registre a data em que o faturamento ocorreu (opcional, além da data de vencimento). Exibido na tabela, na edição e na aba de detalhes.',
+          'Comboboxes de Plano de Contas e Centro de Custo para classificação contábil correta da receita.',
+          'Campo "Cliente Depositante": essencial quando o pagamento é transferido por terceiros ou sócios do cliente, permitindo rastrear quem depositou sem perder o vínculo da venda original.',
+        ],
       },
       {
         title: 'Baixa Parcial e Emissão de Comprovante A4',
-        description:
-          'Assim como no Contas a Pagar, o Contas a Receber aceita quitações parciais registrando o saldo remanescente. Ao receber, clique em "Imprimir Comprovante" para gerar recibo formal em formato A4.',
+        description: 'Quitação integral ou parcial de recebimentos com geração de recibo oficial:',
+        substeps: [
+          'Na quitação total, informe a data, conta bancária de destino e a forma (Pix, Boleto, Ted, Dinheiro).',
+          'Na baixa parcial, registre o valor recebido e o saldo remanescente continua em aberto automaticamente com status "Parcial".',
+          'Clique em "Imprimir Comprovante" para gerar o recibo timbrado em formato A4 com identificação do cliente e discriminação do pagamento.',
+        ],
       },
+      {
+        title: 'Estorno de Recebimento com Reversão Automática de Caixa',
+        description:
+          'Procedimento seguro para anular recebimentos lançados por engano ou cheques devolvidos:',
+        substeps: [
+          'Localize o título com status "Recebida" ou "Parcial" e clique no botão "Estornar" (ícone circular de rotação).',
+          'O sistema retorna o título para a situação "Aberta", zera o valor recebido e a data de recebimento.',
+          'Gera um movimento financeiro inverso de Saída/Estorno no caixa da empresa de igual valor, mantendo a integridade da conciliação bancária.',
+          'A operação fica permanentemente registrada no Histórico de Alterações para auditoria.',
+        ],
+      },
+      {
+        title: 'Confirmação em Toda Modificação',
+        description:
+          'Todas as operações que gravam dados em Contas a Receber (novo título, edição de valores/datas, exclusão, baixa de recebimento e estorno) acionam um diálogo modal de confirmação:',
+        substeps: [
+          'Apresenta o resumo detalhado do cliente, valor e ação pretendida.',
+          'Evita baixas em clientes homônimos ou exclusões acidentais.',
+        ],
+      },
+      {
+        title: 'Importação de Planilha XLSX por Mês (Reconciliação Inteligente)',
+        description:
+          'Mecanismo de alta performance para importação e conciliação de recebimentos a partir de planilhas Excel da empresa:',
+        substeps: [
+          'Clique em "Importar Planilha XLSX": selecione o arquivo com as abas dos meses (ex: JANEIRO_26, FEVEREIRO_26 até DEZEMBRO_26).',
+          'Seletor de Competência por Mês: filtre a lista de abas pelo mês desejado (Janeiro a Dezembro) ou selecione a opção "Todos os meses (automático)".',
+          'Botões "Marcar Todos" e "Desmarcar Todos": respeitam o mês filtrado na tela, permitindo importar apenas a competência desejada com um clique.',
+          'Reconciliação e Não Duplicação: o importador casa as linhas da planilha com os títulos já existentes no sistema — classificando os registros em "Novos", "Atualizados" e detectando "Duplicadas da própria planilha", sem inflar o faturamento.',
+          'Respeito à Situação da Planilha: linhas anotadas na planilha como "Já paga" entram como Recebida/Quitada, enquanto linhas com "Conta vencida" entram como Aberta.',
+          'Regras Rigorosas de Segurança: o valor é lido EXCLUSIVAMENTE da coluna "VALOR DA COMPRA" (o importador ignora colunas de número de cheque ou número de nota fiscal). Datas exigem valor explícito no arquivo (o sistema nunca inventa datas).',
+          'Tratamento de Divergências Cadastrais: linhas com problemas (sem data legível, sem valor ou com texto no lugar de números) NÃO são gravadas no banco de dados e aparecem nominalmente como "divergências cadastrais" no resumo final com indicação da linha e aba para conferência.',
+        ],
+      },
+      {
+        title: 'Conferir Planilha (Comparar) Sem Gravar Dados',
+        description:
+          'Ao lado do botão de importar, o recurso "Conferir Planilha" permite auditoria prévia do arquivo Excel:',
+        substeps: [
+          'Carregue a planilha e navegue aba por aba.',
+          'O sistema compara em memória com o banco de dados e aponta previamente quais títulos já constam, quais são novos e se existem inconsistências cadastrais.',
+          'Modo 100% seguro de consulta: nenhuma linha é gravada ou alterada no banco durante a conferência.',
+        ],
+      },
+    ],
+    tips: [
+      '💡 Ao importar grandes planilhas de recebimentos anuais, faça antes a conferência no botão "Conferir Planilha" para ter certeza das competências mapeadas.',
+      '💡 O campo "Cliente Depositante" aceita busca pelo Combobox pesquisável, agilizando depósitos feitos por construtoras parceiras.',
+    ],
+    warnings: [
+      '⚠️ Nunca utilize a coluna de número de cheque como valor do recebimento. O importador do ERP protege contra isso automaticamente, exigindo a coluna "VALOR DA COMPRA".',
+    ],
+  },
+  {
+    id: 'historico-auditoria',
+    title: '6. Histórico de Alterações e Auditoria',
+    subtitle:
+      'Rastreabilidade completa de todas as modificações no Financeiro: quem fez, quando, diff campo a campo e movimentações de caixa.',
+    icon: History,
+    tag: 'Auditoria & Segurança',
+    steps: [
+      {
+        title: 'Registro Automático e Transparente',
+        description:
+          'Toda modificação realizada nas telas de Contas a Pagar e Contas a Receber é auditada automaticamente em tempo real sem demandar ação manual do operador:',
+        substeps: [
+          'Identificação do autor: grava o nome e o ID do usuário atualmente conectado no sistema.',
+          'Registro temporal: data e hora exata da modificação segundo o servidor.',
+          'Tipo de Ação: identificado por badges visuais coloridos — Criação, Edição, Baixa/Pagamento, Estorno e Exclusão.',
+        ],
+      },
+      {
+        title: 'Diff Inteligente Campo a Campo nas Edições',
+        description:
+          'Quando qualquer usuário edita um título existente, o sistema compara os dados anteriores com os novos e grava o detalhamento exato do que mudou:',
+        substeps: [
+          'Formato legível em português: exibe o nome do campo com seta de transição, por exemplo: "Valor Total: R$ 1.000,00 → R$ 1.200,00" ou "Vencimento: 10/03/2026 → 25/03/2026".',
+          'Campos monitorados: valor total, valor pago/recebido, data de vencimento, data de emissão, data de pagamento/recebimento, fornecedor/cliente, forma de pagamento, categoria e centro de custo.',
+          'Garante conformidade para prestação de contas com a diretoria e controladoria.',
+        ],
+      },
+      {
+        title: 'Visualização no Painel de Detalhes de Cada Título',
+        description:
+          'Ao clicar no botão "Ver Detalhes" de qualquer conta a pagar ou receber, o painel lateral exibe a seção dedicada "Histórico":',
+        substeps: [
+          'Lista cronológica completa das ocorrências daquele título específico.',
+          'Exibe o badge de cada ação, quem operou e o diff de valores/datas.',
+          'Se o título passou por estorno, exibe também os dados do movimento financeiro reverso criado.',
+        ],
+      },
+      {
+        title: 'Modal de "Histórico Geral" com Visão Consolidada',
+        description:
+          'No topo das páginas de Contas a Pagar e Contas a Receber, clique no botão "Histórico Geral" (ícone de histórico) para abrir a visão ampla de auditoria:',
+        substeps: [
+          'Lista paginada com as alterações recentes de todas as movimentações da empresa ativa.',
+          'Filtros por módulo (Contas a Pagar / Contas a Receber) e por tipo de ação (Criação, Edição, Baixa, Estorno, Exclusão).',
+          'Permite à gerência financeira inspecionar rapidamente as movimentações do dia e detectar incongruências.',
+        ],
+      },
+    ],
+    tips: [
+      '💡 O Histórico de Alterações funciona em conjunto com os perfis de usuário do sistema: colaboradores com perfil de Leitura podem consultar a auditoria para conferência, mas não têm permissão de realizar alterações.',
+    ],
+    warnings: [
+      '⚠️ Importante: O Histórico de Alterações passa a registrar as modificações a partir da entrada em vigor desta funcionalidade de auditoria. Alterações realizadas em versões anteriores à sua implantação não possuem registros retroativos.',
     ],
   },
   {
     id: 'financeiro-conciliacao-dre',
-    title: '6. Conciliação Bancária & DRE Gerencial',
+    title: '7. Conciliação Bancária & DRE Gerencial',
     subtitle: 'Confronto de extratos bancários e demonstração de resultados da pedreira.',
     icon: LineChart,
     tag: 'Controladoria',
@@ -242,7 +393,7 @@ const MANUAL_SECTIONS: ManualSection[] = [
   },
   {
     id: 'vendas',
-    title: '7. Módulo de Vendas da Pedreira',
+    title: '8. Módulo de Vendas da Pedreira',
     subtitle: 'Venda dos 5 agregados oficiais, cálculo automático e geração de título a receber.',
     icon: ShoppingCart,
     tag: 'Comercial',
@@ -262,7 +413,7 @@ const MANUAL_SECTIONS: ManualSection[] = [
         title: 'Cadastrar uma Nova Venda',
         description: 'No menu Financeiro > Vendas, clique em "Nova Venda":',
         substeps: [
-          'Selecione o Cliente cadastrado (ou digite o nome).',
+          'Selecione o Cliente cadastrado (ou digite no combobox pesquisável).',
           'Escolha o Produto da pedreira.',
           'Informe a Unidade (m³, ton ou viagem) e a Quantidade.',
           'O sistema sugere o preço de tabela do produto; informe ou ajuste o Preço Unitário e o ERP calcula o Valor Total instantaneamente.',
@@ -286,7 +437,7 @@ const MANUAL_SECTIONS: ManualSection[] = [
   },
   {
     id: 'entrega-vinculo',
-    title: '8. Controle de Entregas & Vínculo com a Frota',
+    title: '9. Controle de Entregas & Vínculo com a Frota',
     subtitle: 'Total integração entre Financeiro e Frotas, cálculo de custos e Romaneio A4.',
     icon: Truck,
     tag: 'Operação Integrada',
@@ -306,8 +457,8 @@ const MANUAL_SECTIONS: ManualSection[] = [
         substeps: [
           'No formulário de cadastro, abra o campo "Venda Vinculada".',
           'Selecione a venda desejada na lista. O ERP preenche automaticamente o cliente, produto, quantidade, unidade e valor de venda.',
-          'Selecione o Veículo / Caçamba da frota e o Motorista responsável.',
-          'A rota sugerida puxa a Pedreira como origem e a cidade do cliente como destino.',
+          'Selecione o Veículo / Caçamba da frota e o Motorista responsável nos comboboxes pesquisáveis.',
+          'A rota sugerida puxa a Pedreira como origem e a cidade do cliente como destino com cálculo automático de km.',
         ],
       },
       {
@@ -322,13 +473,25 @@ const MANUAL_SECTIONS: ManualSection[] = [
   },
   {
     id: 'cadastros',
-    title: '9. Cadastros Gerais',
-    subtitle: 'Clientes, Fornecedores, Produtos, Centros de Custo e Plano de Contas.',
+    title: '10. Cadastros Gerais & Seleções Pesquisáveis',
+    subtitle:
+      'Clientes, Fornecedores, Produtos, Centros de Custo e Plano de Contas com busca instantânea.',
     icon: Users,
     tag: 'Cadastros',
     steps: [
       {
-        title: 'Clientes e Fornecedores com Busca Automática',
+        title: 'Comboboxes Pesquisáveis em Todos os Módulos',
+        description:
+          'Para agilizar a operação diária e evitar rolagem em listas extensas, todos os campos de seleção contam com busca instantânea digitável (ComboboxPesquisavel):',
+        substeps: [
+          'Clientes e Fornecedores: busque por razão social, nome fantasia ou documento.',
+          'Produtos da Pedreira: digite qualquer trecho do nome (ex: "brita", "rachão").',
+          'Plano de Contas e Centros de Custo: localize contas contábeis e setores digitando o código ou nome.',
+          'Veículos e Motoristas: encontre caminhões por placa, modelo ou setor da pedreira.',
+        ],
+      },
+      {
+        title: 'Clientes e Fornecedores com Busca Automática por CNPJ',
         description:
           'Ao digitar o CNPJ do parceiro, o sistema realiza consulta automática aos dados públicos da Receita Federal (BrasilAPI), preenchendo Razão Social, Nome Fantasia, Logradouro, Bairro, Cidade e UF sem esforço de digitação.',
       },
@@ -350,8 +513,8 @@ const MANUAL_SECTIONS: ManualSection[] = [
   },
   {
     id: 'rh',
-    title: '10. Recursos Humanos (RH) e Horas Extras',
-    subtitle: 'Gestão da equipe de 63 colaboradores, folha mensal e horas extras CLT.',
+    title: '11. Recursos Humanos (RH) e Horas Extras',
+    subtitle: 'Gestão da equipe de colaboradores, folha mensal e horas extras CLT.',
     icon: Users,
     tag: 'RH',
     steps: [
@@ -374,7 +537,7 @@ const MANUAL_SECTIONS: ManualSection[] = [
   },
   {
     id: 'frotas',
-    title: '11. Gestão de Frotas & Equipamentos Pesados',
+    title: '12. Gestão de Frotas & Equipamentos Pesados',
     subtitle: 'Veículos, abastecimentos, manutenções preventivas/corretivas e extrato por placa.',
     icon: Construction,
     tag: 'Frotas',
@@ -417,7 +580,7 @@ const MANUAL_SECTIONS: ManualSection[] = [
   },
   {
     id: 'relatorios',
-    title: '12. Relatórios Estratégicos',
+    title: '13. Relatórios Estratégicos',
     subtitle: 'Consolidados executivos para tomada de decisão pela diretoria.',
     icon: FileBarChart2,
     tag: 'Estratégico',
@@ -664,7 +827,7 @@ export default function ManualPage() {
             </p>
           </div>
           <div className="text-right text-[11px] font-mono text-gray-500">
-            Documento de Treinamento v1.0
+            Documento de Treinamento v0.0.96
           </div>
         </div>
       </div>
