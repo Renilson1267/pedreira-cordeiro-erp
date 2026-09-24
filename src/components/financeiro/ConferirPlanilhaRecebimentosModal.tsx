@@ -257,6 +257,12 @@ export function ConferirPlanilhaRecebimentosModal({
         let dataCol = findCol(REGEX_COL_DATA) || headers[0] || ''
         let cliCol = findCol(REGEX_COL_CLIENTE)
         let descCol = findCol(REGEX_COL_DESCRICAO)
+        // Se houver coluna DESCRIÇÃO e NÃO houver coluna de SACADO/CLIENTE separada (ou forem iguais),
+        // mapeia DESCRIÇÃO para cliente
+        if (!cliCol && descCol) {
+          cliCol = descCol
+          descCol = ''
+        }
         let valCol = findCol(REGEX_COL_VALOR)
         let valRecCol = findCol(REGEX_COL_VALOR_RECEBIDO)
         let dataRecCol = findCol(REGEX_COL_DATA_RECEBIMENTO)

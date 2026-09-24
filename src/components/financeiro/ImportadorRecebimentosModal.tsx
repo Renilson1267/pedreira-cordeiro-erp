@@ -45,6 +45,7 @@ import {
   inferirMesPorDatasDaPlanilha,
   extrairCidadeENota,
   classificarStatusRecebimento,
+  normalizarFormaRecebimento,
   REGEX_COL_DATA,
   REGEX_COL_CLIENTE,
   REGEX_COL_DESCRICAO,
@@ -378,24 +379,31 @@ export function ImportadorRecebimentosModal({
     setPreviewRows(preview)
 
     // Heurística de sugestão de mapeamento inteligente com normalização profunda
+    // Suporta TANTO a estrutura antiga (coluna de sacado/cliente separada)
+    // QUANTO a nova estrutura (cliente via coluna DESCRIÇÃO, forma via TIPO DE PAGAMENTO, status via SITUAÇÃO)
     const findCol = (regex: RegExp) =>
       headers.find((h) => regex.test(normalizarNomeColuna(h)) || regex.test(h)) || ''
     const descColFound = findCol(REGEX_COL_DESCRICAO) || ''
     const cliColFound = findCol(REGEX_COL_CLIENTE) || ''
+    const formaColFound = findCol(REGEX_COL_FORMA_RECEBIMENTO) || ''
+    const statusColFound = findCol(REGEX_COL_STATUS) || ''
+
+    // Se houver coluna DESCRIÇÃO e NÃO houver coluna de cliente/sacado separada (ou forem a mesma),
+    // a nova regra mapeia DESCRIÇÃO -> cliente e deixa o campo de descrição limpo/vazio
+    const clienteSugerido = cliColFound || descColFound || ''
 
     setMapping((prev) => ({
       data:
         prev.data && headers.includes(prev.data)
           ? prev.data
           : findCol(REGEX_COL_DATA) || headers[0] || '',
-      cliente:
-        prev.cliente && headers.includes(prev.cliente)
-          ? prev.cliente
-          : cliColFound || descColFound || '',
+      cliente: prev.cliente && headers.includes(prev.cliente) ? prev.cliente : clienteSugerido,
       descricao:
         prev.descricao && headers.includes(prev.descricao)
           ? prev.descricao
-          : descColFound || cliColFound || '',
+          : cliColFound && descColFound && cliColFound !== descColFound
+            ? descColFound
+            : '',
       valor:
         prev.valor && headers.includes(prev.valor) ? prev.valor : findCol(REGEX_COL_VALOR) || '',
       valorRecebido:
@@ -409,11 +417,8 @@ export function ImportadorRecebimentosModal({
       formaRecebimento:
         prev.formaRecebimento && headers.includes(prev.formaRecebimento)
           ? prev.formaRecebimento
-          : findCol(REGEX_COL_FORMA_RECEBIMENTO) || '',
-      status:
-        prev.status && headers.includes(prev.status)
-          ? prev.status
-          : findCol(REGEX_COL_STATUS) || '',
+          : formaColFound || '',
+      status: prev.status && headers.includes(prev.status) ? prev.status : statusColFound || '',
       centroCusto:
         prev.centroCusto && headers.includes(prev.centroCusto)
           ? prev.centroCusto
@@ -731,16 +736,21 @@ export function ImportadorRecebimentosModal({
           findColInSheet(REGEX_COL_DATA) || currentSheetHeaders[0] || '',
         )
 
+        const rawCliColFound = findColInSheet(REGEX_COL_CLIENTE)
+        const rawDescColFound = findColInSheet(REGEX_COL_DESCRICAO)
+
         const cliCol = matchColWithFallback(
           mapping.cliente,
           REGEX_COL_CLIENTE,
-          findColInSheet(REGEX_COL_CLIENTE),
+          rawCliColFound || rawDescColFound || '',
         )
 
         const descCol = matchColWithFallback(
           mapping.descricao,
           REGEX_COL_DESCRICAO,
-          findColInSheet(REGEX_COL_DESCRICAO),
+          rawCliColFound && rawDescColFound && rawCliColFound !== rawDescColFound
+            ? rawDescColFound
+            : '',
         )
 
         let valCol = matchColWithFallback(
@@ -893,15 +903,20 @@ export function ImportadorRecebimentosModal({
               REGEX_COL_DATA,
               findColInBlock(REGEX_COL_DATA) || activeHeaders[0] || '',
             )
+            const blockCliFound = findColInBlock(REGEX_COL_CLIENTE)
+            const blockDescFound = findColInBlock(REGEX_COL_DESCRICAO)
+
             activeCliCol = matchColInBlock(
               mapping.cliente,
               REGEX_COL_CLIENTE,
-              findColInBlock(REGEX_COL_CLIENTE),
+              blockCliFound || blockDescFound || '',
             )
             activeDescCol = matchColInBlock(
               mapping.descricao,
               REGEX_COL_DESCRICAO,
-              findColInBlock(REGEX_COL_DESCRICAO),
+              blockCliFound && blockDescFound && blockCliFound !== blockDescFound
+                ? blockDescFound
+                : '',
             )
             activeValCol = matchColInBlock(
               mapping.valor,
@@ -1325,15 +1340,15 @@ export function ImportadorRecebimentosModal({
           }
 
           // 3. Descrição e extração de cidade e nota
-          // O usuário solicitou que o sistema não gere texto automático de descrição.
-          // Se a planilha tiver uma coluna de descrição preenchida manualmente (rawDesc), mantemos;
-          // caso contrário, gravamos vazio ("").
-          // Para extrair cidade e nota caso venham no texto do cliente ou em rawDesc:
-          const textoParaExtracao = rawDesc || `${rawCli || ''}${rawDoc ? ` [Doc: ${rawDoc}]` : ''}`
+          // Regra do usuário ("descrição limpa"): a descrição gravada permanece VAZIA (""),
+          // exceto se houver uma coluna de descrição dedicada DIFERENTE da coluna de cliente.
+          // A cidade identificada vai para o campo Endereço e o número de nota vai para o campo Nota.
+          const textoParaExtracao = `${rawCli || ''} ${rawDesc || ''}${rawDoc ? ` [Doc: ${rawDoc}]` : ''}`
           const extraidos = extrairCidadeENota(textoParaExtracao)
           const notaFinal = (rawDoc || extraidos.nota || '').trim()
           const enderecoFinal = (extraidos.cidade || '').trim()
-          const descFinal = (rawDesc || '').trim()
+          // Se rawDesc for igual a rawCli (ou não houver coluna de descrição dedicada), grava vazio ("")
+          const descFinal = (rawDesc && rawDesc !== rawCli ? rawDesc : '').trim()
 
           const dateOnly = dataVencimentoISO.slice(0, 10)
           const cliNorm = normalizarTextoComparacao(rawCli || sheetCfg.name).slice(0, 30)
@@ -1515,37 +1530,12 @@ export function ImportadorRecebimentosModal({
                   ? parseDataReceber(rawRecebimentoParaParse, sheetCfg.ano, sheetCfg.mes)
                   : null
 
-              // 6. Forma de Pagamento / Recebimento
-              let finalForma: 'Dinheiro' | 'Pix' | 'Cartão' | 'Boleto' | 'Transferência' = 'Pix'
-              const lowerForma = item.rawForma.toLowerCase()
-              const lowerDescricaoGeral = item.descFinal.toLowerCase()
-              if (lowerForma.includes('bol') || lowerDescricaoGeral.includes('boleto')) {
-                finalForma = 'Boleto'
-              } else if (
-                lowerForma.includes('ted') ||
-                lowerForma.includes('doc') ||
-                lowerForma.includes('transf') ||
-                lowerDescricaoGeral.includes('ted') ||
-                lowerDescricaoGeral.includes('transf')
-              ) {
-                finalForma = 'Transferência'
-              } else if (
-                lowerForma.includes('cart') ||
-                lowerForma.includes('deb') ||
-                lowerForma.includes('cred')
-              ) {
-                finalForma = 'Cartão'
-              } else if (lowerForma.includes('dinh') || lowerForma.includes('espec')) {
-                finalForma = 'Dinheiro'
-              } else if (
-                lowerForma.includes('santander') ||
-                lowerForma.includes('bradesco') ||
-                lowerDescricaoGeral.includes('santander') ||
-                lowerDescricaoGeral.includes('bradesco') ||
-                lowerDescricaoGeral.includes('banco')
-              ) {
-                finalForma = 'Boleto'
-              }
+              // 6. Forma de Pagamento / Recebimento (Coluna "TIPO DE PAGAMENTO" mapeada)
+              // Normaliza valores da planilha ("PIX", "BOLETO", "TED", "CARTÃO", etc.) para o select do schema
+              const finalForma = normalizarFormaRecebimento(
+                item.rawForma,
+                item.descFinal || item.rawCli,
+              )
 
               // 7. Centro de Custo
               let finalCentroCustoId: string | null =

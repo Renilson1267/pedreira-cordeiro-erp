@@ -217,8 +217,9 @@ export const REGEX_COL_VALOR =
 export const REGEX_COL_VALOR_RECEBIDO = /VALOR\s*RECEBIDO|RECEBIDO|REC|LIQUID|PAGO|VALOR\s*PAGO/i
 export const REGEX_COL_DATA_RECEBIMENTO =
   /DT\s*REC|DATA\s*REC|RECEB|BAIXA|DATA\s*BAIXA|LIQUID|QUITAC/i
-export const REGEX_COL_FORMA_RECEBIMENTO = /FORMA|MEIO|TIPO\s*RECEB|TIPO\s*PAG|FORMA\s*PAG/i
-export const REGEX_COL_STATUS = /STATUS|SITUACAO|CONDICAO|ESTADO/i
+export const REGEX_COL_FORMA_RECEBIMENTO =
+  /TIPO\s*DE\s*PAGAMENTO|FORMA\s*DE\s*PAGAMENTO|TIPO\s*PAGAMENTO|FORMA\s*PAGAMENTO|FORMA|MEIO|TIPO\s*RECEB|TIPO\s*PAG|FORMA\s*PAG/i
+export const REGEX_COL_STATUS = /SITUACAO|STATUS|SITUAC|CONDICAO|ESTADO/i
 export const REGEX_COL_CENTRO_CUSTO = /CENTRO|CC|CUSTO|FRENTE|SETOR/i
 export const REGEX_COL_CATEGORIA = /CATEG|PLANO|CONTA|NATUREZA/i
 export const REGEX_COL_DOCUMENTO = /DOC|NF|NOTA|DUPLICATA|FATURA|PEDIDO|RECIBO/i
@@ -988,6 +989,84 @@ export function classificarStatusRecebimento(params: {
     valorEfetivoRecebido: 0,
     situacaoExplicitamenteAberta: false,
   }
+}
+
+/**
+ * Normaliza e mapeia o valor da coluna "TIPO DE PAGAMENTO" ou "FORMA" da planilha
+ * para os valores aceitos no select do schema de Contas a Receber:
+ * 'Dinheiro' | 'Pix' | 'Cartão' | 'Boleto' | 'Transferência' (fallback: 'Pix')
+ */
+export function normalizarFormaRecebimento(
+  forma: string | null | undefined,
+  descricaoFallback: string = '',
+): 'Dinheiro' | 'Pix' | 'Cartão' | 'Boleto' | 'Transferência' {
+  const normForma = normalizarTextoStatus(forma)
+  const normDesc = normalizarTextoStatus(descricaoFallback)
+
+  // Boleto
+  if (
+    normForma.includes('BOLETO') ||
+    normForma.includes('BOL') ||
+    normDesc.includes('BOLETO') ||
+    normDesc.includes('BOL')
+  ) {
+    return 'Boleto'
+  }
+
+  // Pix
+  if (normForma.includes('PIX') || normForma.includes('CHAVE') || normDesc.includes('PIX')) {
+    return 'Pix'
+  }
+
+  // Transferência / TED / DOC / Depósito em conta / Bancos típicos
+  if (
+    normForma.includes('TRANSF') ||
+    normForma.includes('TED') ||
+    normForma.includes('DOC') ||
+    normForma.includes('DEPOSITO') ||
+    normForma.includes('DEPOS') ||
+    normDesc.includes('TRANSF') ||
+    normDesc.includes('TED') ||
+    normDesc.includes('DOC')
+  ) {
+    return 'Transferência'
+  }
+
+  // Cartão (Débito/Crédito)
+  if (
+    normForma.includes('CART') ||
+    normForma.includes('DEBITO') ||
+    normForma.includes('CREDITO') ||
+    normDesc.includes('CARTAO') ||
+    normDesc.includes('DEBITO')
+  ) {
+    return 'Cartão'
+  }
+
+  // Dinheiro / Espécie
+  if (
+    normForma.includes('DINHEIRO') ||
+    normForma.includes('ESPECIE') ||
+    normForma.includes('CASH') ||
+    normDesc.includes('DINHEIRO') ||
+    normDesc.includes('ESPECIE')
+  ) {
+    return 'Dinheiro'
+  }
+
+  // Menção a bancos na forma ou descrição (Santander, Bradesco, etc.) costumam ser boletos/cobrança bancária
+  if (
+    normForma.includes('SANTANDER') ||
+    normForma.includes('BRADESCO') ||
+    normForma.includes('BANCO') ||
+    normDesc.includes('SANTANDER') ||
+    normDesc.includes('BRADESCO')
+  ) {
+    return 'Boleto'
+  }
+
+  // Padrão do ERP da pedreira
+  return 'Pix'
 }
 
 export function extrairCidadeENota(descricao: string | null | undefined): {
