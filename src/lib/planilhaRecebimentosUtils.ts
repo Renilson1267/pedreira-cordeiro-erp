@@ -224,6 +224,7 @@ export const REGEX_COL_STATUS = /SITUACAO|STATUS|SITUAC|CONDICAO|ESTADO/i
 export const REGEX_COL_CENTRO_CUSTO = /CENTRO|CC|CUSTO|FRENTE|SETOR/i
 export const REGEX_COL_CATEGORIA = /CATEG|PLANO|CONTA|NATUREZA/i
 export const REGEX_COL_DOCUMENTO = /DOC|NF|NOTA|DUPLICATA|FATURA|PEDIDO|RECIBO/i
+export const REGEX_COL_PARCELA = /PARCELA|PARC|N[ºO°]?\s*(?:DE\s*)?PARCELA/i
 export const REGEX_COL_TELEFONE_OU_DOC =
   /TEL|TELEFONE|FONE|CELULAR|WHATS|CONTATO|CPF|CNPJ|INSCRIC|CHAVE/i
 
@@ -421,6 +422,26 @@ export interface ParseValorResult {
  * 1) Números inteiros sem separador decimal com 10 ou mais dígitos (típicos números de telefone/celular com DDD, CNPJs, códigos de barras/boletos)
  * 2) Valores individuais que ultrapassam a barreira de R$ 2.000.000 em recebimento de pedra (viram divergência cadastral)
  */
+/**
+ * Verifica se um valor bruto corresponde ao formato/conteúdo de número de parcela
+ * (número entre 0 e 12 com exatamente 1 casa decimal, ex: "1.1", "2.2", "1,1", "2,2").
+ */
+export function isPadraoNumeroParcela(val: any): boolean {
+  if (val === null || val === undefined) return false
+  if (typeof val === 'number') {
+    if (val > 0 && val < 13 && !Number.isInteger(val)) {
+      // Exatamente uma casa decimal: Math.round(val * 10) / 10 === val
+      const decStr = val.toString().split('.')[1] || ''
+      return decStr.length === 1
+    }
+    return false
+  }
+  const str = String(val).trim()
+  if (!str) return false
+  const match = str.match(/^([0-9]|1[0-2])[.,](\d)$/)
+  return Boolean(match)
+}
+
 export function parseValorReceberDetalhado(val: any): ParseValorResult {
   if (val === null || val === undefined || val === '') {
     return { valor: 0, invalidoOuAbsurdo: false }
@@ -863,65 +884,18 @@ export function classificarStatusRecebimento(params: {
   // Devem ser avaliadas ANTES de qualquer heurística por valor pago.
   // A comparação normaliza acentos, caixa alta/baixa e espaços extras.
 
-  // 1. Situações em Aberto / Não pagas:
-  // "Vencida", "Vencido", "Aberta", "Em aberto", "Próximo de vencer", "Proximo de vencer", "A receber", "Pendente", etc.
-  // -> Status "Aberta", SEM gerar movimento de caixa, data_recebimento = null e valor_recebido = 0.
-  const isStatusAbertaOuVencida =
-    normStatus === 'VENCIDA' ||
-    normStatus === 'VENCIDO' ||
-    normStatus === 'ABERTA' ||
-    normStatus === 'ABERTO' ||
-    normStatus === 'EM ABERTO' ||
-    normStatus === 'PROXIMO DE VENCER' ||
-    normStatus === 'PROXIMO A VENCER' ||
-    normStatus === 'PROXIMA DE VENCER' ||
-    normStatus === 'PROXIMA A VENCER' ||
-    normStatus === 'A VENCER' ||
-    normStatus === 'A RECEBER' ||
-    normStatus === 'PENDENTE' ||
-    normStatus === 'PENDENTES' ||
-    normStatus === 'NAO PAGO' ||
-    normStatus === 'NAO PAGA' ||
-    normStatus === 'NAO RECEBIDO' ||
-    normStatus === 'NAO RECEBIDA' ||
-    normStatus.includes('ABERT') ||
-    normStatus.includes('VENC') ||
-    normStatus.includes('PEND') ||
-    normStatus.includes('A VENCER') ||
-    normStatus.includes('A RECEBER')
+  // 1. Situações Recebidas / Pagas Explícitas:
+  // "Já paga", "Já pago", "Ja paga", "JA PAGA", "Recebida", "Recebido", "Pago", "Paga", "Quitada", "Liquidada", "Baixada".
+  // AVALIADO ANTES de qualquer branch para evitar sobrescritas ou falsos positivos.
+  const isJaPaga =
+    normStatus === 'JA PAGA' ||
+    normStatus === 'JA PAGO' ||
+    normStatus.startsWith('JA PAG') ||
+    normStatus.includes('JA PAGA') ||
+    normStatus.includes('JA PAGO')
 
-  if (isStatusAbertaOuVencida) {
-    return {
-      status: 'Aberta',
-      valorEfetivoRecebido: 0,
-      situacaoExplicitamenteAberta: true,
-    }
-  }
-
-  // 2. Situações Parciais:
-  // "Parcial", "Pago parcial", "Parcialmente pago" -> status "Parcial" com valor pago gravado.
-  const isStatusParcial =
-    normStatus === 'PARCIAL' ||
-    normStatus === 'PAGO PARCIAL' ||
-    normStatus === 'PAGA PARCIAL' ||
-    normStatus === 'PARCIALMENTE PAGO' ||
-    normStatus === 'PARCIALMENTE PAGA' ||
-    normStatus === 'RECEBIDO PARCIAL' ||
-    normStatus === 'RECEBIDA PARCIAL' ||
-    normStatus.includes('PARCIAL')
-
-  if (isStatusParcial) {
-    const valEfetivo = valorRecebido > 0 ? valorRecebido : 0
-    return {
-      status: 'Parcial',
-      valorEfetivoRecebido: valEfetivo,
-      situacaoExplicitamenteAberta: false,
-    }
-  }
-
-  // 3. Situações Recebidas / Pagas:
-  // "Recebida", "Recebido", "Pago", "Quitada", "Baixada", "Liquidada", etc. -> status "Recebida" com movimento de caixa.
   const isStatusQuitada =
+    isJaPaga ||
     normStatus === 'RECEBIDA' ||
     normStatus === 'RECEBIDO' ||
     normStatus === 'PAGO' ||
@@ -939,10 +913,75 @@ export function classificarStatusRecebimento(params: {
     normStatus.includes('PAGO') ||
     normStatus.includes('PAGA')
 
-  if (isStatusQuitada) {
+  // Se NÃO for "NÃO PAGO" / "NÃO PAGA" e for quitada:
+  const isNaoPago =
+    normStatus === 'NAO PAGO' ||
+    normStatus === 'NAO PAGA' ||
+    normStatus === 'NAO RECEBIDO' ||
+    normStatus === 'NAO RECEBIDA' ||
+    normStatus.includes('NAO PAG') ||
+    normStatus.includes('NAO RECEB')
+
+  if (isStatusQuitada && !isNaoPago) {
     const valEfetivo = valorRecebido > 0 ? valorRecebido : valorPrevisto
     return {
       status: 'Recebida',
+      valorEfetivoRecebido: valEfetivo,
+      situacaoExplicitamenteAberta: false,
+    }
+  }
+
+  // 2. Situações em Aberto / Não pagas / Conta vencida:
+  // "Conta vencida", "Conta vencida.", "Vencida", "Vencido", "Aberta", "Em aberto", "Próximo de vencer", "A receber", "Pendente", etc.
+  // -> Status "Aberta", SEM gerar movimento de caixa, data_recebimento = null e valor_recebido = 0.
+  const isStatusAbertaOuVencida =
+    normStatus === 'CONTA VENCIDA' ||
+    normStatus.startsWith('CONTA VENCID') ||
+    normStatus.includes('CONTA VENCID') ||
+    normStatus === 'VENCIDA' ||
+    normStatus === 'VENCIDO' ||
+    normStatus === 'ABERTA' ||
+    normStatus === 'ABERTO' ||
+    normStatus === 'EM ABERTO' ||
+    normStatus === 'PROXIMO DE VENCER' ||
+    normStatus === 'PROXIMO A VENCER' ||
+    normStatus === 'PROXIMA DE VENCER' ||
+    normStatus === 'PROXIMA A VENCER' ||
+    normStatus === 'A VENCER' ||
+    normStatus === 'A RECEBER' ||
+    normStatus === 'PENDENTE' ||
+    normStatus === 'PENDENTES' ||
+    isNaoPago ||
+    normStatus.includes('ABERT') ||
+    normStatus.includes('VENC') ||
+    normStatus.includes('PEND') ||
+    normStatus.includes('A VENCER') ||
+    normStatus.includes('A RECEBER')
+
+  if (isStatusAbertaOuVencida) {
+    return {
+      status: 'Aberta',
+      valorEfetivoRecebido: 0,
+      situacaoExplicitamenteAberta: true,
+    }
+  }
+
+  // 3. Situações Parciais:
+  // "Parcial", "Pago parcial", "Parcialmente pago" -> status "Parcial" com valor pago gravado.
+  const isStatusParcial =
+    normStatus === 'PARCIAL' ||
+    normStatus === 'PAGO PARCIAL' ||
+    normStatus === 'PAGA PARCIAL' ||
+    normStatus === 'PARCIALMENTE PAGO' ||
+    normStatus === 'PARCIALMENTE PAGA' ||
+    normStatus === 'RECEBIDO PARCIAL' ||
+    normStatus === 'RECEBIDA PARCIAL' ||
+    normStatus.includes('PARCIAL')
+
+  if (isStatusParcial) {
+    const valEfetivo = valorRecebido > 0 ? valorRecebido : 0
+    return {
+      status: 'Parcial',
       valorEfetivoRecebido: valEfetivo,
       situacaoExplicitamenteAberta: false,
     }
