@@ -44,6 +44,8 @@ import {
   parseValorReceberDetalhado,
   parseDataReceber,
   isPadraoNumeroParcela,
+  isNumeroChequeOuSerieBancaria,
+  LIMIAR_VALOR_SUSPEITO_RECEBER,
   normalizarNomeColuna,
   inferirMesPorDatasDaPlanilha,
   extrairCidadeENota,
@@ -615,6 +617,11 @@ export function ImportadorRecebimentosModal({
           if (!existingFlexRecords.has(flexKeyGlobalDoc)) {
             existingFlexRecords.set(flexKeyGlobalDoc, c)
           }
+          // Indexar somente pela nota (sem amarrar a valor) para reconciliar alterações
+          const flexKeyOnlyDoc = `onlydoc_${notaNorm}`
+          if (!existingFlexRecords.has(flexKeyOnlyDoc)) {
+            existingFlexRecords.set(flexKeyOnlyDoc, c)
+          }
         }
 
         // Extração de documento(s) a partir de c.observacoes quando c.nota vazio ou complementar
@@ -630,6 +637,10 @@ export function ImportadorRecebimentosModal({
             const flexKeyObsGlobalDoc = `globaldoc_${valorStr}_${docCandNorm}`
             if (!existingFlexRecords.has(flexKeyObsGlobalDoc)) {
               existingFlexRecords.set(flexKeyObsGlobalDoc, c)
+            }
+            const flexKeyObsOnlyDoc = `onlydoc_${docCandNorm}`
+            if (!existingFlexRecords.has(flexKeyObsOnlyDoc)) {
+              existingFlexRecords.set(flexKeyObsOnlyDoc, c)
             }
           }
         })
@@ -1370,6 +1381,75 @@ export function ImportadorRecebimentosModal({
             }
           }
 
+          // Barreira anti-cheque e anti-série bancária (faixa 800.000–865.000 / datas compactas)
+          const chequeCheck = isNumeroChequeOuSerieBancaria(valorFinal)
+          if (chequeCheck.ehCheque) {
+            // Tenta buscar valor financeiro alternativo plausível na linha (< 100.000)
+            let valorSubstitutoPlausivel = 0
+            for (let cIdx = 0; cIdx < row.length; cIdx++) {
+              if (cIdx === activeDataColIdx || cIdx === activeDocColIdx) continue
+              const cRaw = row[cIdx]
+              if (cRaw === null || cRaw === undefined || cRaw === '') continue
+              if (isPadraoNumeroParcela(cRaw)) continue
+              const cDet = parseValorReceberDetalhado(cRaw)
+              if (cDet.invalidoOuAbsurdo) continue
+              if (cDet.valor > 0 && cDet.valor < LIMIAR_VALOR_SUSPEITO_RECEBER) {
+                valorSubstitutoPlausivel = cDet.valor
+                break
+              }
+            }
+
+            if (valorSubstitutoPlausivel > 0) {
+              valorFinal = valorSubstitutoPlausivel
+            } else {
+              sheetDivergenciasCount += 1
+              resultSummary.erros.push({
+                aba: sheetCfg.name,
+                linha: numLinha,
+                tipo: 'divergencia',
+                motivo: `Aba ${sheetCfg.name}: Linha ${numLinha}: Valor suspeito (${valorFinal}) identificado como número de cheque/série bancária — não é valor de título. Registro não gravado.`,
+              })
+              continue
+            }
+          }
+
+          // Barreira de valor suspeito >= R$ 100.000 sem corroboração explícita
+          if (valorFinal >= LIMIAR_VALOR_SUSPEITO_RECEBER) {
+            const rawValStr = String(rawValCell ?? '')
+            const temCorroboracao =
+              /R\$/i.test(rawValStr) ||
+              /,\d{2}$/.test(rawValStr.trim()) ||
+              /\bMIL\b/i.test(rawValStr)
+            if (!temCorroboracao) {
+              // Tentar ler valor alternativo plausível na linha (< 100.000)
+              let altPlausivel = 0
+              for (let cIdx = 0; cIdx < row.length; cIdx++) {
+                if (cIdx === activeDataColIdx || cIdx === activeDocColIdx) continue
+                const cRaw = row[cIdx]
+                if (cRaw === null || cRaw === undefined || cRaw === '') continue
+                if (isPadraoNumeroParcela(cRaw)) continue
+                const cDet = parseValorReceberDetalhado(cRaw)
+                if (cDet.invalidoOuAbsurdo) continue
+                if (cDet.valor > 0 && cDet.valor < LIMIAR_VALOR_SUSPEITO_RECEBER) {
+                  altPlausivel = cDet.valor
+                  break
+                }
+              }
+              if (altPlausivel > 0) {
+                valorFinal = altPlausivel
+              } else {
+                sheetDivergenciasCount += 1
+                resultSummary.erros.push({
+                  aba: sheetCfg.name,
+                  linha: numLinha,
+                  tipo: 'divergencia',
+                  motivo: `Aba ${sheetCfg.name}: Linha ${numLinha}: Valor de R$ ${valorFinal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })} suspeito (>= 100k sem corroboração monetária explícita). Registro não gravado.`,
+                })
+                continue
+              }
+            }
+          }
+
           // Barreira anti-parcela definitiva e incondicional sobre qualquer extração de valor
           if (isPadraoNumeroParcela(valorFinal)) {
             sheetDivergenciasCount += 1
@@ -1551,18 +1631,20 @@ export function ImportadorRecebimentosModal({
         }
 
         // FASE 1.5: Pré-deduplicação interna dos itens da própria planilha
-        // Se a planilha contiver duas ou mais linhas idênticas na mesma aba (mesma data, cliente/desc, nota e valor),
-        // mantemos apenas a primeira e contabilizamos as subsequentes como duplicadas internas da própria planilha
+        // Duplicatas na mesma aba: mesma nota (se nota presente) OU mesma data+valor+cliente/desc
         const itensUnicosParaGravar: PreparedItemReceber[] = []
         if (detectarDuplicados) {
           const preBatchKeys = new Set<string>()
+          const preBatchDocs = new Set<string>()
           for (const item of preparedItems) {
             const batchKey = `${item.dateOnly}_${item.valorStr}_${item.cliNorm}_${item.descNorm}_${item.notaNorm}`
-            if (preBatchKeys.has(batchKey)) {
+            const docKey = item.notaNorm ? `doc_${item.notaNorm}` : null
+            if (preBatchKeys.has(batchKey) || (docKey && preBatchDocs.has(docKey))) {
               sheetDuplicadosInternos += 1
               resultSummary.duplicadosInternos += 1
             } else {
               preBatchKeys.add(batchKey)
+              if (docKey) preBatchDocs.add(docKey)
               itensUnicosParaGravar.push(item)
             }
           }
@@ -1587,12 +1669,14 @@ export function ImportadorRecebimentosModal({
               const docLockKey = item.notaNorm
                 ? `lock_doc_${clienteId || ''}_${item.valorStr}_${item.notaNorm}`
                 : null
+              const globalDocLockKey = item.notaNorm ? `lock_globaldoc_${item.notaNorm}` : null
 
               // Se existir EXATAMENTE com mesma data, cliente, valor e descrição => duplicata real já gravada no banco
               if (detectarDuplicados) {
                 if (
                   existingExactKeys.has(exactKey) ||
-                  (docLockKey && existingExactKeys.has(docLockKey))
+                  (docLockKey && existingExactKeys.has(docLockKey)) ||
+                  (globalDocLockKey && existingExactKeys.has(globalDocLockKey))
                 ) {
                   resultSummary.duplicadosBanco += 1
                   return
@@ -1601,6 +1685,7 @@ export function ImportadorRecebimentosModal({
                 // Garante que se outra promise em voo do mesmo lote tentar a mesma linha, ela já encontra a chave reservada
                 existingExactKeys.add(exactKey)
                 if (docLockKey) existingExactKeys.add(docLockKey)
+                if (globalDocLockKey) existingExactKeys.add(globalDocLockKey)
               }
 
               // Determinar Situação e valores preliminares para uso em caso de criação OU reconciliação/atualização
@@ -1660,9 +1745,13 @@ export function ImportadorRecebimentosModal({
                 // (a) Por nota/doc (com cliente_id ou global na empresa)
                 if (item.notaNorm) {
                   const flexKeyDoc = `doc_${clienteId || ''}_${item.valorStr}_${item.notaNorm}`
+                  const flexKeyOnlyDoc = `onlydoc_${item.notaNorm}`
                   if (existingFlexRecords.has(flexKeyDoc)) {
                     existingRecordToUpdate = existingFlexRecords.get(flexKeyDoc)!
                     matchedFlexKey = flexKeyDoc
+                  } else if (existingFlexRecords.has(flexKeyOnlyDoc)) {
+                    existingRecordToUpdate = existingFlexRecords.get(flexKeyOnlyDoc)!
+                    matchedFlexKey = flexKeyOnlyDoc
                   } else {
                     const flexKeyGlobalDoc = `globaldoc_${item.valorStr}_${item.notaNorm}`
                     if (existingFlexRecords.has(flexKeyGlobalDoc)) {
@@ -1840,6 +1929,7 @@ export function ImportadorRecebimentosModal({
                       `doc_${clienteId || ''}_${item.valorStr}_${item.notaNorm}`,
                     )
                     existingFlexRecords.delete(`globaldoc_${item.valorStr}_${item.notaNorm}`)
+                    existingFlexRecords.delete(`onlydoc_${item.notaNorm}`)
                   }
                   if (item.descNorm) {
                     existingFlexRecords.delete(
@@ -1922,6 +2012,15 @@ export function ImportadorRecebimentosModal({
                 },
               )
 
+              // Registra nos índices em memória para evitar duplicações subsequentes no mesmo lote
+              if (item.notaNorm) {
+                existingFlexRecords.set(
+                  `doc_${clienteId || ''}_${item.valorStr}_${item.notaNorm}`,
+                  createdConta,
+                )
+                existingFlexRecords.set(`globaldoc_${item.valorStr}_${item.notaNorm}`, createdConta)
+                existingFlexRecords.set(`onlydoc_${item.notaNorm}`, createdConta)
+              }
               // 10. Se for Recebimento Antecipado, gera crédito correspondente para o cliente
               if (finalStatus === 'Recebimento Antecipado' && clienteId) {
                 try {

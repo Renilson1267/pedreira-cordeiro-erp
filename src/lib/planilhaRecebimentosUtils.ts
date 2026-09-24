@@ -406,15 +406,91 @@ export function detectarLinhaCabecalho(
 }
 
 export const VALOR_MAXIMO_RECEBIMENTO = 2_000_000 // R$ 2 milhões para título individual de pedreira
+export const LIMIAR_VALOR_SUSPEITO_RECEBER = 100_000 // Valores >= 100k exigem validação rigorosa no ERP de pedreira
+
+/**
+ * Detecta se um número ou string numérica corresponde a um número de cheque ou série bancária
+ * e NÃO a um valor financeiro de título:
+ * 1) Números inteiros na faixa de cheques do banco (800.000 a 865.000, ex: 850xxx, 851xxx, 852xxx, 855xxx)
+ * 2) Números inteiros de 5 ou 6 dígitos que formam padrões de data compacta (DDMMAA / DMMAA)
+ *    frequentemente lidos de colunas de compensação/data de compensação de cheque
+ *    (ex: 120226 = 12/02/26, 250226 = 25/02/26, 70226, 80126, 200126, 131125, 41225)
+ */
+export function isNumeroChequeOuSerieBancaria(val: any): { ehCheque: boolean; motivo?: string } {
+  if (val === null || val === undefined) return { ehCheque: false }
+
+  let numVal: number
+  let isInt = false
+
+  if (typeof val === 'number') {
+    if (isNaN(val) || !isFinite(val)) return { ehCheque: false }
+    numVal = Math.abs(val)
+    isInt = Number.isInteger(numVal)
+  } else {
+    const raw = String(val)
+      .replace(/\u00A0/g, ' ')
+      .replace(/R\$/gi, '')
+      .replace(/\s+/g, '')
+      .trim()
+    if (!raw) return { ehCheque: false }
+
+    const parsed = parseFloat(raw.replace(/\./g, '').replace(',', '.'))
+    if (isNaN(parsed)) return { ehCheque: false }
+    numVal = Math.abs(parsed)
+    isInt = Number.isInteger(numVal) || Math.abs(numVal - Math.round(numVal)) < 0.001
+  }
+
+  // 1. Faixa explícita de série de talão de cheques do banco: 800.000 a 865.000
+  // Padrão identificado: 850xxx, 851xxx, 852xxx, 855xxx
+  if (numVal >= 800_000 && numVal <= 865_000) {
+    return {
+      ehCheque: true,
+      motivo: `Número ${Math.round(numVal)} pertence à série de cheques do banco (faixa 800.000–865.000)`,
+    }
+  }
+
+  // 2. Números inteiros de 5 a 6 dígitos que representam datas compactas de compensação de cheque
+  // Ex: 120226 (12/02/26), 250226 (25/02/26), 70226 (07/02/26), 80126 (08/01/26), 200126 (20/01/26), 131125 (13/11/25)
+  if (isInt && numVal >= 40_000 && numVal <= 311_228) {
+    const s = String(Math.round(numVal))
+    // Padrão DDMMAA (6 dígitos: DD 01..31, MM 01..12, AA 24..28)
+    if (s.length === 6) {
+      const d = parseInt(s.slice(0, 2), 10)
+      const m = parseInt(s.slice(2, 4), 10)
+      const y = parseInt(s.slice(4, 6), 10)
+      if (d >= 1 && d <= 31 && m >= 1 && m <= 12 && y >= 24 && y <= 28) {
+        return {
+          ehCheque: true,
+          motivo: `Número inteiro ${s} representa data de compensação de cheque (formato ${d.toString().padStart(2, '0')}/${m.toString().padStart(2, '0')}/20${y})`,
+        }
+      }
+    }
+    // Padrão DMMAA (5 dígitos: D 1..9, MM 01..12, AA 24..28)
+    if (s.length === 5) {
+      const d = parseInt(s.slice(0, 1), 10)
+      const m = parseInt(s.slice(1, 3), 10)
+      const y = parseInt(s.slice(3, 5), 10)
+      if (d >= 1 && d <= 9 && m >= 1 && m <= 12 && y >= 24 && y <= 28) {
+        return {
+          ehCheque: true,
+          motivo: `Número inteiro ${s} representa data de compensação de cheque (formato 0${d}/${m.toString().padStart(2, '0')}/20${y})`,
+        }
+      }
+    }
+  }
+
+  return { ehCheque: false }
+}
 
 /**
  * Valida se um número representa um valor monetário plausível no ERP da pedreira.
- * Rejeita valores acima de 2.000.000 ou NaN/Infinity.
+ * Rejeita valores acima de 2.000.000, números de cheque/série bancária e NaN/Infinity.
  */
 export function isValorPlausivel(num: number | null | undefined): boolean {
   if (num === null || num === undefined || typeof num !== 'number') return false
   if (isNaN(num) || !isFinite(num)) return false
   if (num <= 0 || num > VALOR_MAXIMO_RECEBIMENTO) return false
+  if (isNumeroChequeOuSerieBancaria(num).ehCheque) return false
   return true
 }
 
@@ -514,6 +590,18 @@ export function parseValorReceberDetalhado(val: any): ParseValorResult {
       }
     }
 
+    // Barreira anti-cheque / série bancária / datas de compensação
+    const chequeNumCheck = isNumeroChequeOuSerieBancaria(absVal)
+    if (chequeNumCheck.ehCheque) {
+      return {
+        valor: 0,
+        invalidoOuAbsurdo: true,
+        motivo:
+          chequeNumCheck.motivo ||
+          `Número ${absVal} lido como valor, mas pertence à série de cheques/compensação`,
+      }
+    }
+
     // Se tiver 10+ dígitos inteiros
     if (Number.isInteger(absVal) && absVal >= 10_000_000_000) {
       return {
@@ -600,6 +688,18 @@ export function parseValorReceberDetalhado(val: any): ParseValorResult {
 
   const absNum = Math.abs(num)
   if (absNum === 0) return { valor: 0, invalidoOuAbsurdo: false }
+
+  // Barreira anti-cheque / série bancária / datas de compensação
+  const chequeStrCheck = isNumeroChequeOuSerieBancaria(absNum)
+  if (chequeStrCheck.ehCheque) {
+    return {
+      valor: 0,
+      invalidoOuAbsurdo: true,
+      motivo:
+        chequeStrCheck.motivo ||
+        `Número ${absNum} lido como valor, mas pertence à série de cheques/compensação`,
+    }
+  }
 
   // Barreira anti-parcela sobre o número resultante do parse
   if (isPadraoNumeroParcela(absNum)) {
@@ -1363,7 +1463,7 @@ export function isNotaValida(str: string | null | undefined): boolean {
   // Padrão aceito: dígitos com barras, hífens, letras 'A'/'a' indicando intervalo, ou prefixos NF/NFe/Doc
   // Aceita prefixo com separador opcional (ex.: "NF9482/90570 A 92", "NF-1234", "DOC 5543", "90569")
   const docPattern =
-    /^(?:(?:NF|NF-e|NFe|Nota|Doc|Duplicata|Fatura|Ch|Cheque)[\s.:#-]*|)[\d\s/\-–Aa,.]+$/i
+    /^(?:(?:NF|NF-e|NFe|Nota|Doc|Duplicata|Fatura|Ch|Cheque)[\s.:#-]*|)[\d\s/\-–Aa,.&]+$/i
   return docPattern.test(trimmed)
 }
 
@@ -1399,7 +1499,7 @@ export function extrairCidadeENota(descricao: string | null | undefined): {
   } else {
     // Padrão inline com "Doc" / "NF" / "NF-e" seguido pelo número até o fim ou antes de colchetes
     const inlineDocMatch = desc.match(
-      /\b(?:Doc|NF|NF-e|NFe|Nota|Duplicata)[\s.:#-]+([A-Z0-9/\s\-–]+)$/i,
+      /\b(?:Doc|NF|NF-e|NFe|Nota|Duplicata)[\s.:#-]+([A-Z0-9/\s\-–]+?)(?:\s+às?\s+|\s*\[|$)/i,
     )
     if (inlineDocMatch && inlineDocMatch[1].trim()) {
       rawNotaCandidate = inlineDocMatch[1].trim().replace(/\s+$/, '')
