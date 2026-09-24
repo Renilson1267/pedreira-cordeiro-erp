@@ -77,7 +77,10 @@ import {
   X,
   Filter,
   History,
+  Tag,
+  Percent,
 } from 'lucide-react'
+import type { TipoDesconto } from '@/types/erp'
 
 export default function ContasReceber() {
   const { currentEmpresa, canEdit, isReadOnly } = useCompany()
@@ -117,7 +120,11 @@ export default function ContasReceber() {
   const [clienteDepositante, setClienteDepositante] = useState('')
   const [descricao, setDescricao] = useState('')
   const [categoriaId, setCategoriaId] = useState('')
-  const [valor, setValor] = useState<number>(0)
+  const [valor, setValor] = useState<number>(0) // Valor Líquido final
+  const [valorBruto, setValorBruto] = useState<number>(0) // Valor Bruto digitado
+  const [tipoDesconto, setTipoDesconto] = useState<TipoDesconto>('percentual')
+  const [descontoPercentual, setDescontoPercentual] = useState<number>(0)
+  const [descontoValor, setDescontoValor] = useState<number>(0)
   const [vencimento, setVencimento] = useState('')
   const [dataEmissao, setDataEmissao] = useState('')
   const [parcelas, setParcelas] = useState<number>(1)
@@ -226,6 +233,23 @@ export default function ContasReceber() {
 
   const [centroCustoId, setCentroCustoId] = useState('')
 
+  // Cálculos de desconto para Contas a Receber
+  const valorDescontoCalc = useMemo(() => {
+    const vb = Math.max(0, Number(valorBruto || 0))
+    if (tipoDesconto === 'percentual') {
+      const perc = Math.min(100, Math.max(0, Number(descontoPercentual || 0)))
+      return Number(((vb * perc) / 100).toFixed(2))
+    } else {
+      const vd = Math.max(0, Number(descontoValor || 0))
+      return Number(Math.min(vb, vd).toFixed(2))
+    }
+  }, [valorBruto, tipoDesconto, descontoPercentual, descontoValor])
+
+  const valorLiquidoCalc = useMemo(() => {
+    const vb = Math.max(0, Number(valorBruto || 0))
+    return Number(Math.max(0, vb - valorDescontoCalc).toFixed(2))
+  }, [valorBruto, valorDescontoCalc])
+
   const openCreateModal = () => {
     const hoje = toInputDate(new Date().toISOString())
     setEditingId(null)
@@ -234,6 +258,10 @@ export default function ContasReceber() {
     setCentroCustoId('')
     setDescricao('')
     setCategoriaId(categorias[0]?.id || '')
+    setValorBruto(0)
+    setTipoDesconto('percentual')
+    setDescontoPercentual(0)
+    setDescontoValor(0)
     setValor(0)
     setVencimento(hoje)
     setDataEmissao('')
@@ -251,12 +279,21 @@ export default function ContasReceber() {
   const handleEdit = (c: ContaReceber) => {
     const venc = toInputDate(c.vencimento)
     const numP = c.parcelas || 1
+    const vBrutoInit = Number(c.valor_bruto || c.valor || 0)
+    const tipoDescInit = c.tipo_desconto || 'percentual'
+    const descPercInit = Number(c.desconto_percentual || 0)
+    const descValInit = Number(c.valor_desconto || 0)
+
     setEditingId(c.id)
     setClienteId(c.cliente_id || '')
     setClienteDepositante(c.cliente_depositante || '')
     setCentroCustoId(c.centro_custo_id || '')
     setDescricao(c.descricao)
     setCategoriaId(c.categoria_id || '')
+    setValorBruto(vBrutoInit)
+    setTipoDesconto(tipoDescInit)
+    setDescontoPercentual(descPercInit)
+    setDescontoValor(descValInit)
     setValor(c.valor)
     setVencimento(venc)
     setDataEmissao(c.data_emissao ? toInputDate(c.data_emissao) : '')
@@ -283,17 +320,48 @@ export default function ContasReceber() {
     }
   }
 
-  const handleChangeValorTotal = (novoValor: number) => {
-    setValor(novoValor)
+  const handleChangeValorBruto = (novoBruto: number) => {
+    setValorBruto(novoBruto)
+    // Recalcula o valor líquido com o desconto atual
+    let desc = 0
+    if (tipoDesconto === 'percentual') {
+      const perc = Math.min(100, Math.max(0, Number(descontoPercentual || 0)))
+      desc = Number(((novoBruto * perc) / 100).toFixed(2))
+    } else {
+      desc = Number(Math.min(novoBruto, Math.max(0, Number(descontoValor || 0))).toFixed(2))
+    }
+    const liq = Number(Math.max(0, novoBruto - desc).toFixed(2))
+    setValor(liq)
+
     if (!editingId && gradeParcelas.length > 0) {
       const n = gradeParcelas.length
-      const unit = novoValor > 0 ? Number((novoValor / n).toFixed(2)) : 0
+      const unit = liq > 0 ? Number((liq / n).toFixed(2)) : 0
       setGradeParcelas((prev) =>
         prev.map((item, idx) => {
           let v = unit
-          if (idx === n - 1 && novoValor > 0) {
+          if (idx === n - 1 && liq > 0) {
             const somaAnt = unit * (n - 1)
-            const diff = Number((novoValor - somaAnt).toFixed(2))
+            const diff = Number((liq - somaAnt).toFixed(2))
+            if (diff > 0) v = diff
+          }
+          return { ...item, valor: v }
+        }),
+      )
+    }
+  }
+
+  // Atualizar grade quando o desconto ou valor líquido mudar
+  const sincronizarGradeComLiquido = (liq: number) => {
+    setValor(liq)
+    if (!editingId && gradeParcelas.length > 0) {
+      const n = gradeParcelas.length
+      const unit = liq > 0 ? Number((liq / n).toFixed(2)) : 0
+      setGradeParcelas((prev) =>
+        prev.map((item, idx) => {
+          let v = unit
+          if (idx === n - 1 && liq > 0) {
+            const somaAnt = unit * (n - 1)
+            const diff = Number((liq - somaAnt).toFixed(2))
             if (diff > 0) v = diff
           }
           return { ...item, valor: v }
@@ -329,17 +397,64 @@ export default function ContasReceber() {
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!descricao.trim() || valor <= 0 || !vencimento) {
-      toast({ title: 'Preencha todos os campos obrigatórios', variant: 'destructive' })
+    const valorFinalLiquido = valorLiquidoCalc
+    const valorFinalBruto = Number(valorBruto || 0)
+    const valorFinalDesconto = valorDescontoCalc
+
+    if (valorFinalBruto <= 0) {
+      toast({ title: 'Informe um valor bruto válido', variant: 'destructive' })
       return
     }
 
+    if (tipoDesconto === 'percentual') {
+      if (descontoPercentual < 0 || descontoPercentual > 100) {
+        toast({
+          title: 'Desconto inválido',
+          description: 'O desconto percentual deve estar entre 0% e 100%.',
+          variant: 'destructive',
+        })
+        return
+      }
+    } else {
+      if (descontoValor < 0) {
+        toast({
+          title: 'Desconto inválido',
+          description: 'O valor do desconto não pode ser negativo.',
+          variant: 'destructive',
+        })
+        return
+      }
+      if (descontoValor > valorFinalBruto) {
+        toast({
+          title: 'Desconto excede o valor bruto',
+          description: `O desconto (${formatCurrency(descontoValor)}) não pode exceder o valor bruto (${formatCurrency(valorFinalBruto)}).`,
+          variant: 'destructive',
+        })
+        return
+      }
+    }
+
+    if (valorFinalLiquido <= 0) {
+      toast({
+        title: 'Valor líquido inválido',
+        description: 'O valor líquido do título deve ser maior que zero.',
+        variant: 'destructive',
+      })
+      return
+    }
+
+    if (!vencimento) {
+      toast({ title: 'Preencha a data de vencimento', variant: 'destructive' })
+      return
+    }
+
+    const descFinal = descricao.trim() || 'Título a Receber'
     const isEdit = Boolean(editingId)
     setConfirmDialogData({
       title: isEdit ? 'Confirmar alteração de título' : 'Confirmar inclusão de título a receber',
       description: isEdit
-        ? `Deseja salvar as alterações no título "${descricao.trim()}" no valor de ${formatCurrency(valor)}?`
-        : `Deseja criar ${parcelas > 1 ? `${parcelas} parcelas` : 'o título'} de "${descricao.trim()}" no valor total de ${formatCurrency(valor)}?`,
+        ? `Deseja salvar as alterações no título "${descFinal}"? Valor Bruto: ${formatCurrency(valorFinalBruto)}, Desconto: ${formatCurrency(valorFinalDesconto)}, Valor Líquido: ${formatCurrency(valorFinalLiquido)}.`
+        : `Deseja criar ${parcelas > 1 ? `${parcelas} parcelas` : 'o título'} de "${descFinal}" no valor líquido total de ${formatCurrency(valorFinalLiquido)}?${valorFinalDesconto > 0 ? ` (Desconto: ${formatCurrency(valorFinalDesconto)})` : ''}`,
       confirmLabel: isEdit ? 'Confirmar Alteração' : 'Criar Título',
       confirmVariant: 'default',
       action: async () => {
@@ -352,12 +467,19 @@ export default function ContasReceber() {
           if (editingId) {
             const registroAntes = contas.find((c) => c.id === editingId)
             const novoObj = {
-              descricao: descricao.trim(),
+              descricao: descFinal,
               cliente_id: clienteId === 'none' || !clienteId ? null : clienteId,
               cliente_depositante: clienteDepositante.trim() || '',
               categoria_id: categoriaId === 'none' || !categoriaId ? null : categoriaId,
               centro_custo_id: centroCustoId === 'none' || !centroCustoId ? null : centroCustoId,
-              valor: Number(valor),
+              valor_bruto: valorFinalBruto,
+              tipo_desconto: valorFinalDesconto > 0 ? tipoDesconto : null,
+              desconto_percentual:
+                valorFinalDesconto > 0 && tipoDesconto === 'percentual'
+                  ? Number(descontoPercentual)
+                  : null,
+              valor_desconto: valorFinalDesconto > 0 ? valorFinalDesconto : 0,
+              valor: valorFinalLiquido, // Grava líquido no título
               vencimento: new Date(vencimento).toISOString(),
               data_emissao: dataEmissaoIso,
               parcelas: Number(parcelas),
@@ -374,7 +496,7 @@ export default function ContasReceber() {
               const diffs = calcularDiffAlteracoes(registroAntes, novoObj, CAMPOS_CONFIG_RECEBER)
               const clienteNomeNovo =
                 clientes.find((cli) => cli.id === (clienteId === 'none' ? '' : clienteId))?.nome ||
-                descricao.trim()
+                descFinal
 
               await historicoService.registrar({
                 empresaId: currentEmpresa!.id,
@@ -383,10 +505,16 @@ export default function ContasReceber() {
                 acao: 'editar',
                 usuarioId: user?.id,
                 usuarioNome: user?.name || user?.email || 'Usuário',
-                descricao: `Título a receber atualizado para "${descricao.trim()}" (${formatCurrency(Number(valor))}) - Cliente: ${clienteNomeNovo}. ${diffs.length > 0 ? `${diffs.length} campo(s) modificado(s).` : 'Sem alteração de campos chave.'}`,
+                descricao: `Título a receber atualizado para "${descFinal}" (Líquido: ${formatCurrency(valorFinalLiquido)}${valorFinalDesconto > 0 ? `, Desconto: ${formatCurrency(valorFinalDesconto)}` : ''}) - Cliente: ${clienteNomeNovo}. ${diffs.length > 0 ? `${diffs.length} campo(s) modificado(s).` : 'Sem alteração de campos chave.'}`,
                 detalhes: {
                   alteracoes: diffs,
-                  valor: Number(valor),
+                  valor: valorFinalLiquido,
+                  extra: {
+                    valor_bruto: valorFinalBruto,
+                    valor_desconto: valorFinalDesconto,
+                    desconto_percentual: descontoPercentual,
+                    tipo_desconto: tipoDesconto,
+                  },
                 },
               })
             }
@@ -397,11 +525,11 @@ export default function ContasReceber() {
             const parcelasParaSalvar =
               gradeParcelas.length === numParcelas
                 ? gradeParcelas
-                : gerarGradeParcelas(vencimento, numParcelas, prazoSelecionado, valor)
+                : gerarGradeParcelas(vencimento, numParcelas, prazoSelecionado, valorFinalLiquido)
 
             const clienteNomeCriado =
               clientes.find((cli) => cli.id === (clienteId === 'none' ? '' : clienteId))?.nome ||
-              descricao.trim()
+              descFinal
 
             for (let i = 0; i < parcelasParaSalvar.length; i++) {
               const item = parcelasParaSalvar[i]
@@ -410,10 +538,13 @@ export default function ContasReceber() {
                 : new Date(vencimento).toISOString()
 
               const parcelValue =
-                Number(item.valor) || Number(valor) / (numParcelas > 1 ? numParcelas : 1)
+                Number(item.valor) ||
+                Number(valorFinalLiquido) / (numParcelas > 1 ? numParcelas : 1)
 
-              const desc =
-                numParcelas > 1 ? `${descricao.trim()} (${i + 1}/${numParcelas})` : descricao.trim()
+              const parcelBruto = Number((valorFinalBruto / numParcelas).toFixed(2))
+              const parcelDesconto = Number((valorFinalDesconto / numParcelas).toFixed(2))
+
+              const desc = numParcelas > 1 ? `${descFinal} (${i + 1}/${numParcelas})` : descFinal
 
               const createdConta = await pb.collection('contas_receber').create<ContaReceber>({
                 empresa_id: currentEmpresa!.id,
@@ -422,7 +553,14 @@ export default function ContasReceber() {
                 cliente_depositante: clienteDepositante.trim() || '',
                 categoria_id: categoriaId === 'none' || !categoriaId ? null : categoriaId,
                 centro_custo_id: centroCustoId === 'none' || !centroCustoId ? null : centroCustoId,
-                valor: parcelValue,
+                valor_bruto: parcelBruto,
+                tipo_desconto: valorFinalDesconto > 0 ? tipoDesconto : null,
+                desconto_percentual:
+                  valorFinalDesconto > 0 && tipoDesconto === 'percentual'
+                    ? Number(descontoPercentual)
+                    : null,
+                valor_desconto: parcelDesconto,
+                valor: parcelValue, // Valor líquido
                 vencimento: dataVencIso,
                 data_emissao: dataEmissaoIso || undefined,
                 parcelas: numParcelas,
@@ -441,13 +579,15 @@ export default function ContasReceber() {
                 acao: 'criar',
                 usuarioId: user?.id,
                 usuarioNome: user?.name || user?.email || 'Usuário',
-                descricao: `Título a receber criado no valor de ${formatCurrency(parcelValue)} com vencimento em ${formatDate(dataVencIso)} para "${clienteNomeCriado}".`,
+                descricao: `Título a receber criado no valor de ${formatCurrency(parcelValue)} (Bruto: ${formatCurrency(parcelBruto)}${parcelDesconto > 0 ? `, Desc: ${formatCurrency(parcelDesconto)}` : ''}) com vencimento em ${formatDate(dataVencIso)} para "${clienteNomeCriado}".`,
                 detalhes: {
                   valor: parcelValue,
                   extra: {
                     parcela: `${i + 1}/${numParcelas}`,
                     nota: nota.trim() || undefined,
                     descricao: desc,
+                    valor_bruto: parcelBruto,
+                    valor_desconto: parcelDesconto,
                   },
                 },
               })
@@ -651,6 +791,13 @@ export default function ContasReceber() {
     const clienteDepositanteTexto = c.cliente_depositante?.trim() || ''
     const documento = c.nota?.trim() || '—'
     const vencimentoFormatado = formatDate(c.vencimento)
+    const valorBrutoFormatado = formatCurrency(c.valor_bruto || c.valor)
+    const valorDescontoFormatado =
+      c.valor_desconto && c.valor_desconto > 0 ? formatCurrency(c.valor_desconto) : null
+    const descontoInfoTexto =
+      c.valor_desconto && c.valor_desconto > 0
+        ? `${formatCurrency(c.valor_desconto)} (${c.desconto_percentual ? `${c.desconto_percentual}%` : c.tipo_desconto === 'percentual' ? '%' : 'R$'})`
+        : 'Sem desconto'
     const valorTotalFormatado = formatCurrency(c.valor)
     const displayStatus = getContaStatusReal(c)
     const recebimentoFormatado = c.data_recebimento ? formatDate(c.data_recebimento) : '—'
@@ -919,7 +1066,21 @@ export default function ContasReceber() {
     </div>
 
     <div class="field">
-      <div class="field-label">Valor Total do Título</div>
+      <div class="field-label">Valor Bruto</div>
+      <div class="field-value mono">${valorBrutoFormatado}</div>
+    </div>
+
+    ${
+      valorDescontoFormatado
+        ? `<div class="field">
+            <div class="field-label">Desconto Concedido</div>
+            <div class="field-value mono" style="color: #b45309; font-weight: 700;">− ${descontoInfoTexto}</div>
+          </div>`
+        : ''
+    }
+
+    <div class="field">
+      <div class="field-label">Valor Líquido (A Receber)</div>
       <div class="field-value destaque mono">${valorTotalFormatado}</div>
     </div>
 
@@ -1610,9 +1771,19 @@ export default function ContasReceber() {
                         )}
                       </td>
 
-                      {/* Valor Total */}
+                      {/* Valor Total / Líquido */}
                       <td className="py-2 px-2.5 text-right font-medium text-gray-800 tabular-nums whitespace-nowrap text-xs">
-                        {formatCurrency(c.valor)}
+                        <div>{formatCurrency(c.valor)}</div>
+                        {c.valor_desconto && c.valor_desconto > 0 ? (
+                          <div className="text-[10px] text-amber-700 font-normal flex items-center justify-end gap-1">
+                            <span>Desc: -{formatCurrency(c.valor_desconto)}</span>
+                            {c.desconto_percentual ? (
+                              <span className="text-[9px] bg-amber-100 text-amber-800 px-1 rounded font-semibold">
+                                {c.desconto_percentual}%
+                              </span>
+                            ) : null}
+                          </div>
+                        ) : null}
                       </td>
 
                       {/* Já Recebido */}
@@ -1883,17 +2054,18 @@ export default function ContasReceber() {
               </div>
             </div>
 
+            {/* Valor Bruto e Datas */}
             <div className="grid grid-cols-3 gap-3">
               <div>
-                <Label className="text-xs font-semibold text-gray-700">Valor Total (R$) *</Label>
+                <Label className="text-xs font-semibold text-gray-700">Valor Bruto (R$) *</Label>
                 <Input
                   type="number"
                   step="0.01"
                   required
-                  value={valor || ''}
-                  onChange={(e) => handleChangeValorTotal(parseFloat(e.target.value) || 0)}
+                  value={valorBruto || ''}
+                  onChange={(e) => handleChangeValorBruto(parseFloat(e.target.value) || 0)}
                   placeholder="0,00"
-                  className="mt-1 font-mono"
+                  className="mt-1 font-mono font-bold"
                 />
               </div>
 
@@ -1921,6 +2093,149 @@ export default function ContasReceber() {
               </div>
             </div>
 
+            {/* Bloco de Desconto */}
+            <div className="p-3 bg-amber-50/40 rounded-xl border border-amber-200/80 space-y-2.5">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-1.5 font-semibold text-gray-800 text-xs">
+                  <Tag className="w-3.5 h-3.5 text-amber-600" />
+                  <span>Desconto no Título</span>
+                </div>
+                {/* Seletor Tipo: Percentual (%) ou Valor (R$) */}
+                <div className="inline-flex rounded-lg border border-amber-300 bg-white p-0.5 text-[11px]">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setTipoDesconto('percentual')
+                      const vb = Number(valorBruto || 0)
+                      if (vb > 0 && descontoValor > 0) {
+                        const perc = Number(((descontoValor / vb) * 100).toFixed(2))
+                        setDescontoPercentual(Math.min(100, perc))
+                      }
+                    }}
+                    className={`px-2 py-0.5 rounded-md font-medium transition-colors ${
+                      tipoDesconto === 'percentual'
+                        ? 'bg-amber-600 text-white font-semibold shadow-xs'
+                        : 'text-gray-600 hover:text-gray-900'
+                    }`}
+                  >
+                    Percentual (%)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setTipoDesconto('valor')
+                      const vb = Number(valorBruto || 0)
+                      if (vb > 0 && descontoPercentual > 0) {
+                        const val = Number(((vb * descontoPercentual) / 100).toFixed(2))
+                        setDescontoValor(Math.min(vb, val))
+                      }
+                    }}
+                    className={`px-2 py-0.5 rounded-md font-medium transition-colors ${
+                      tipoDesconto === 'valor'
+                        ? 'bg-amber-600 text-white font-semibold shadow-xs'
+                        : 'text-gray-600 hover:text-gray-900'
+                    }`}
+                  >
+                    Valor (R$)
+                  </button>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3 items-end">
+                {tipoDesconto === 'percentual' ? (
+                  <div className="space-y-1">
+                    <Label className="text-gray-700 font-medium text-[11px]">
+                      Percentual de Desconto (0–100%)
+                    </Label>
+                    <div className="relative">
+                      <Input
+                        type="number"
+                        step="0.01"
+                        min="0"
+                        max="100"
+                        value={descontoPercentual || ''}
+                        onChange={(e) => {
+                          const perc = parseFloat(e.target.value) || 0
+                          setDescontoPercentual(perc)
+                          const vb = Number(valorBruto || 0)
+                          const desc = Number(
+                            ((vb * Math.min(100, Math.max(0, perc))) / 100).toFixed(2),
+                          )
+                          const liq = Number(Math.max(0, vb - desc).toFixed(2))
+                          sincronizarGradeComLiquido(liq)
+                        }}
+                        placeholder="0.00"
+                        className="bg-white border-amber-300 text-xs h-8 font-mono pr-7"
+                      />
+                      <Percent className="w-3.5 h-3.5 text-gray-400 absolute right-2.5 top-2.5" />
+                    </div>
+                  </div>
+                ) : (
+                  <div className="space-y-1">
+                    <Label className="text-gray-700 font-medium text-[11px]">
+                      Valor do Desconto (R$)
+                    </Label>
+                    <div className="relative">
+                      <Input
+                        type="number"
+                        step="0.01"
+                        min="0"
+                        max={Number(valorBruto || 0)}
+                        value={descontoValor || ''}
+                        onChange={(e) => {
+                          const val = parseFloat(e.target.value) || 0
+                          setDescontoValor(val)
+                          const vb = Number(valorBruto || 0)
+                          const desc = Number(Math.min(vb, Math.max(0, val)).toFixed(2))
+                          const liq = Number(Math.max(0, vb - desc).toFixed(2))
+                          sincronizarGradeComLiquido(liq)
+                        }}
+                        placeholder="0,00"
+                        className="bg-white border-amber-300 text-xs h-8 font-mono"
+                      />
+                    </div>
+                  </div>
+                )}
+
+                <div className="text-right pb-1">
+                  <span className="text-[10px] text-gray-500 block uppercase">
+                    Desconto Concedido
+                  </span>
+                  <span className="text-xs font-mono font-bold text-amber-800">
+                    {valorDescontoCalc > 0 ? `− ${formatCurrency(valorDescontoCalc)}` : 'R$ 0,00'}
+                  </span>
+                </div>
+              </div>
+
+              {/* Box de Totais em Tempo Real */}
+              <div className="pt-2 border-t border-amber-200/80 grid grid-cols-3 gap-2 text-center">
+                <div className="bg-white/80 p-2 rounded-lg border border-gray-200">
+                  <span className="text-[10px] text-gray-500 uppercase block font-medium">
+                    Valor Bruto
+                  </span>
+                  <span className="text-xs font-mono font-semibold text-gray-800">
+                    {formatCurrency(Number(valorBruto || 0))}
+                  </span>
+                </div>
+                <div className="bg-amber-100/70 p-2 rounded-lg border border-amber-200">
+                  <span className="text-[10px] text-amber-800 uppercase block font-medium">
+                    Desconto
+                  </span>
+                  <span className="text-xs font-mono font-bold text-amber-900">
+                    {valorDescontoCalc > 0 ? `− ${formatCurrency(valorDescontoCalc)}` : 'R$ 0,00'}
+                  </span>
+                </div>
+                <div className="bg-teal-50 p-2 rounded-lg border border-teal-200">
+                  <span className="text-[10px] text-teal-800 uppercase block font-bold">
+                    Valor Líquido
+                  </span>
+                  <span className="text-xs font-mono font-bold text-teal-900">
+                    {formatCurrency(valorLiquidoCalc)}
+                  </span>
+                </div>
+              </div>
+            </div>
+
             {!editingId && (
               <SeletorParcelas
                 parcelas={parcelas}
@@ -1929,7 +2244,7 @@ export default function ContasReceber() {
                 onSelecionarPrazo={handleSelecionarPrazoRapido}
                 listaParcelas={gradeParcelas}
                 onChangeDataParcela={handleChangeDataParcelaIndividual}
-                valorTotal={valor}
+                valorTotal={valorLiquidoCalc}
               />
             )}
 
@@ -2210,7 +2525,7 @@ export default function ContasReceber() {
               <div className="grid grid-cols-3 gap-3 p-4 bg-teal-50/50 rounded-2xl border border-teal-100 text-center">
                 <div>
                   <span className="text-[10px] text-teal-700 font-semibold uppercase block">
-                    Valor Total
+                    Valor Líquido
                   </span>
                   <div className="text-lg font-bold text-teal-950 mt-0.5 tabular-nums">
                     {formatCurrency(detailItem.valor)}
@@ -2231,6 +2546,28 @@ export default function ContasReceber() {
                   <div className="text-lg font-bold text-amber-900 mt-0.5 tabular-nums">
                     {formatCurrency(getSaldoRestante(detailItem))}
                   </div>
+                </div>
+              </div>
+
+              {/* Informações de Desconto nos Detalhes */}
+              <div className="p-3 bg-amber-50/50 rounded-xl border border-amber-200/80 grid grid-cols-2 gap-2 text-xs">
+                <div>
+                  <span className="text-[10px] text-gray-500 uppercase block font-medium">
+                    Valor Bruto
+                  </span>
+                  <span className="font-semibold font-mono text-gray-900">
+                    {formatCurrency(detailItem.valor_bruto || detailItem.valor)}
+                  </span>
+                </div>
+                <div className="text-right">
+                  <span className="text-[10px] text-amber-800 uppercase block font-semibold">
+                    Desconto
+                  </span>
+                  <span className="font-bold font-mono text-amber-900">
+                    {detailItem.valor_desconto && detailItem.valor_desconto > 0
+                      ? `− ${formatCurrency(detailItem.valor_desconto)} (${detailItem.desconto_percentual ? `${detailItem.desconto_percentual}%` : detailItem.tipo_desconto === 'percentual' ? '%' : 'R$'})`
+                      : 'Nenhum'}
+                  </span>
                 </div>
               </div>
 

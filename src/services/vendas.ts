@@ -16,6 +16,10 @@ export interface CreateVendaPayload {
   nota_fiscal?: string | null
   conta_receber_id?: string | null
   observacoes?: string | null
+  tipo_desconto?: 'percentual' | 'valor' | null
+  valor_desconto?: number | null
+  desconto_percentual?: number | null
+  valor_bruto?: number | null
 }
 
 export interface UpdateVendaPayload extends Partial<CreateVendaPayload> {}

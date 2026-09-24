@@ -38,6 +38,16 @@ import {
   DialogTitle,
   DialogFooter,
 } from '@/components/ui/dialog'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
 import { toast } from '@/hooks/use-toast'
 import {
   ShoppingCart,
@@ -59,6 +69,8 @@ import {
   FileText,
   DollarSign,
   TrendingUp,
+  Percent,
+  Tag,
 } from 'lucide-react'
 
 // 5 Produtos padrão da Pedreira Cordeiro
@@ -105,6 +117,10 @@ export default function Vendas() {
   const [unidade, setUnidade] = useState<'m³' | 'ton' | 'un' | 'viagem'>('m³')
   const [precoUnitario, setPrecoUnitario] = useState<number>(0)
   const [valorTotal, setValorTotal] = useState<number>(0)
+  // Desconto
+  const [tipoDesconto, setTipoDesconto] = useState<'percentual' | 'valor'>('percentual')
+  const [descontoPercentual, setDescontoPercentual] = useState<number>(0)
+  const [descontoValor, setDescontoValor] = useState<number>(0)
   const [dataVenda, setDataVenda] = useState(() => toInputDate(new Date().toISOString()))
   const [formaPagamento, setFormaPagamento] = useState<FormaPagamentoVenda>('Pix')
   const [status, setStatus] = useState<StatusVenda>('Pendente')
@@ -112,6 +128,16 @@ export default function Vendas() {
   const [observacoes, setObservacoes] = useState('')
   const [gerarReceberAoSalvar, setGerarReceberAoSalvar] = useState(false)
   const [isSubmitting, setIsSubmitting] = useState(false)
+
+  // Diálogo de Confirmação
+  const [confirmDialogOpen, setConfirmDialogOpen] = useState(false)
+  const [confirmDialogData, setConfirmDialogData] = useState<{
+    title: string
+    description: string
+    confirmLabel?: string
+    confirmVariant?: 'default' | 'destructive'
+    action?: () => Promise<void>
+  } | null>(null)
 
   // Detalhes da Venda & Entregas Vinculadas Modal
   const [detalheVenda, setDetalheVenda] = useState<Venda | null>(null)
@@ -161,6 +187,25 @@ export default function Vendas() {
     loadData()
   }, [currentEmpresa])
 
+  // Cálculo de desconto da Venda
+  const valorBrutoCalc = useMemo(() => {
+    return Number((Number(quantidade || 0) * Number(precoUnitario || 0)).toFixed(2))
+  }, [quantidade, precoUnitario])
+
+  const valorDescontoEfetivo = useMemo(() => {
+    if (tipoDesconto === 'percentual') {
+      const perc = Math.min(100, Math.max(0, Number(descontoPercentual || 0)))
+      return Number(((valorBrutoCalc * perc) / 100).toFixed(2))
+    } else {
+      const v = Math.max(0, Number(descontoValor || 0))
+      return Number(Math.min(valorBrutoCalc, v).toFixed(2))
+    }
+  }, [valorBrutoCalc, tipoDesconto, descontoPercentual, descontoValor])
+
+  const valorLiquidoCalc = useMemo(() => {
+    return Number(Math.max(0, valorBrutoCalc - valorDescontoEfetivo).toFixed(2))
+  }, [valorBrutoCalc, valorDescontoEfetivo])
+
   // Abrir criação
   const openCreateModal = () => {
     setEditingId(null)
@@ -174,6 +219,9 @@ export default function Vendas() {
     const preco = pPadrao?.preco_venda || 95
     setPrecoUnitario(preco)
     setQuantidade(14) // Padrão comum de caçamba (14 m³ / ~20 ton)
+    setTipoDesconto('percentual')
+    setDescontoPercentual(0)
+    setDescontoValor(0)
     setValorTotal(Number((14 * preco).toFixed(2)))
     setDataVenda(toInputDate(new Date().toISOString()))
     setFormaPagamento('Pix')
@@ -193,19 +241,16 @@ export default function Vendas() {
       setUnidade((prod.unidade as any) || 'm³')
       const pUnit = prod.preco_venda || 0
       setPrecoUnitario(pUnit)
-      setValorTotal(Number((quantidade * pUnit).toFixed(2)))
     }
   }
 
   // Atualização dinâmica de quantidade e preço
   const handleQuantidadeChange = (novaQtd: number) => {
     setQuantidade(novaQtd)
-    setValorTotal(Number((novaQtd * precoUnitario).toFixed(2)))
   }
 
   const handlePrecoUnitarioChange = (novoPreco: number) => {
     setPrecoUnitario(novoPreco)
-    setValorTotal(Number((quantidade * novoPreco).toFixed(2)))
   }
 
   const handleEdit = (v: Venda) => {
@@ -216,6 +261,9 @@ export default function Vendas() {
     setQuantidade(v.quantidade)
     setUnidade(v.unidade)
     setPrecoUnitario(v.preco_unitario)
+    setTipoDesconto(v.tipo_desconto || 'percentual')
+    setDescontoPercentual(v.desconto_percentual || 0)
+    setDescontoValor(v.valor_desconto || 0)
     setValorTotal(v.valor_total)
     setDataVenda(toInputDate(v.data_venda))
     setFormaPagamento(v.forma_pagamento || 'Pix')
@@ -232,58 +280,117 @@ export default function Vendas() {
       toast({ title: 'Selecione um cliente cadastrado', variant: 'destructive' })
       return
     }
-    if (quantidade <= 0 || precoUnitario <= 0 || valorTotal <= 0) {
-      toast({ title: 'Informe quantidade e preços válidos', variant: 'destructive' })
+    if (quantidade <= 0 || precoUnitario <= 0) {
+      toast({ title: 'Informe quantidade e preço unitário válidos', variant: 'destructive' })
       return
     }
 
-    try {
-      setIsSubmitting(true)
-      const cli = clientes.find((c) => c.id === clienteId)
-      const dataIso = new Date(`${dataVenda}T12:00:00Z`).toISOString()
-
-      const payload = {
-        empresa_id: currentEmpresa!.id,
-        cliente_id: clienteId,
-        produto_id: produtoId || null,
-        produto_nome: produtoNome,
-        quantidade: Number(quantidade),
-        unidade,
-        preco_unitario: Number(precoUnitario),
-        valor_total: Number(valorTotal),
-        data_venda: dataIso,
-        forma_pagamento: formaPagamento,
-        status,
-        nota_fiscal: notaFiscal.trim() || null,
-        observacoes: observacoes.trim() || null,
+    // Validações de desconto
+    if (tipoDesconto === 'percentual') {
+      if (descontoPercentual < 0 || descontoPercentual > 100) {
+        toast({
+          title: 'Desconto inválido',
+          description: 'O desconto percentual deve estar entre 0% e 100%.',
+          variant: 'destructive',
+        })
+        return
       }
-
-      let vendaSalva: Venda
-      if (editingId) {
-        vendaSalva = await vendasService.atualizar(editingId, payload)
-        toast({ title: 'Venda atualizada com sucesso!' })
-      } else {
-        vendaSalva = await vendasService.criar(payload)
-
-        // Se marcou para gerar Conta a Receber automaticamente
-        if (gerarReceberAoSalvar) {
-          await criarContaReceberParaVenda(vendaSalva, dataVenda, 1)
-        }
-
-        toast({ title: 'Venda cadastrada com sucesso!' })
+    } else {
+      if (descontoValor < 0) {
+        toast({
+          title: 'Desconto inválido',
+          description: 'O valor do desconto não pode ser negativo.',
+          variant: 'destructive',
+        })
+        return
       }
+      if (descontoValor > valorBrutoCalc) {
+        toast({
+          title: 'Desconto excede valor bruto',
+          description: `O valor do desconto (${formatCurrency(descontoValor)}) não pode ser superior ao valor bruto (${formatCurrency(valorBrutoCalc)}).`,
+          variant: 'destructive',
+        })
+        return
+      }
+    }
 
-      setIsDrawerOpen(false)
-      await loadData()
-    } catch (err: any) {
+    const valorFinalLiquido = valorLiquidoCalc
+    if (valorFinalLiquido <= 0) {
       toast({
-        title: 'Erro ao salvar venda',
-        description: err.message,
+        title: 'Valor líquido inválido',
+        description: 'O valor líquido da venda deve ser superior a zero.',
         variant: 'destructive',
       })
-    } finally {
-      setIsSubmitting(false)
+      return
     }
+
+    const cli = clientes.find((c) => c.id === clienteId)
+    const isEdit = Boolean(editingId)
+
+    setConfirmDialogData({
+      title: isEdit ? 'Confirmar alteração da venda' : 'Confirmar gravação da venda',
+      description: isEdit
+        ? `Deseja atualizar a venda para "${cli?.nome || 'Cliente'}"? Valor Bruto: ${formatCurrency(valorBrutoCalc)}, Desconto: ${formatCurrency(valorDescontoEfetivo)}, Valor Líquido: ${formatCurrency(valorFinalLiquido)}.`
+        : `Deseja registrar a nova venda de ${quantidade} ${unidade} de ${produtoNome} para "${cli?.nome || 'Cliente'}" no valor líquido de ${formatCurrency(valorFinalLiquido)}?${valorDescontoEfetivo > 0 ? ` (Desconto aplicado: ${formatCurrency(valorDescontoEfetivo)})` : ''}`,
+      confirmLabel: isEdit ? 'Confirmar Alteração' : 'Gravar Venda',
+      confirmVariant: 'default',
+      action: async () => {
+        try {
+          setIsSubmitting(true)
+          const dataIso = new Date(`${dataVenda}T12:00:00Z`).toISOString()
+
+          const payload = {
+            empresa_id: currentEmpresa!.id,
+            cliente_id: clienteId,
+            produto_id: produtoId || null,
+            produto_nome: produtoNome,
+            quantidade: Number(quantidade),
+            unidade,
+            preco_unitario: Number(precoUnitario),
+            valor_bruto: Number(valorBrutoCalc),
+            tipo_desconto: valorDescontoEfetivo > 0 ? tipoDesconto : null,
+            desconto_percentual:
+              valorDescontoEfetivo > 0 && tipoDesconto === 'percentual'
+                ? Number(descontoPercentual)
+                : null,
+            valor_desconto: valorDescontoEfetivo > 0 ? Number(valorDescontoEfetivo) : 0,
+            valor_total: Number(valorFinalLiquido),
+            data_venda: dataIso,
+            forma_pagamento: formaPagamento,
+            status,
+            nota_fiscal: notaFiscal.trim() || null,
+            observacoes: observacoes.trim() || null,
+          }
+
+          let vendaSalva: Venda
+          if (editingId) {
+            vendaSalva = await vendasService.atualizar(editingId, payload)
+            toast({ title: 'Venda atualizada com sucesso!' })
+          } else {
+            vendaSalva = await vendasService.criar(payload)
+
+            // Se marcou para gerar Conta a Receber automaticamente
+            if (gerarReceberAoSalvar) {
+              await criarContaReceberParaVenda(vendaSalva, dataVenda, 1)
+            }
+
+            toast({ title: 'Venda cadastrada com sucesso!' })
+          }
+
+          setIsDrawerOpen(false)
+          await loadData()
+        } catch (err: any) {
+          toast({
+            title: 'Erro ao salvar venda',
+            description: err.message,
+            variant: 'destructive',
+          })
+        } finally {
+          setIsSubmitting(false)
+        }
+      },
+    })
+    setConfirmDialogOpen(true)
   }
 
   // Gerar Conta a Receber vinculada à Venda
@@ -309,14 +416,18 @@ export default function Vendas() {
         cliente_id: v.cliente_id || null,
         descricao: desc,
         categoria_id: catVendas?.id || null,
-        valor: v.valor_total,
+        valor: v.valor_total, // Valor líquido vai para o título e caixa
+        valor_bruto: v.valor_bruto || v.valor_total,
+        tipo_desconto: v.tipo_desconto || null,
+        desconto_percentual: v.desconto_percentual || null,
+        valor_desconto: v.valor_desconto || 0,
         vencimento: vencIso,
         parcelas: numParcelas,
         status: v.status === 'Paga' ? 'Recebida' : 'Aberta',
         forma_recebimento: v.forma_pagamento === 'Pix' ? 'Pix' : 'Boleto',
         venda_id: v.id,
         nota: v.nota_fiscal || '',
-        observacoes: `Título gerado a partir da Venda Pedreira #${v.id}. ${v.observacoes || ''}`,
+        observacoes: `Título gerado a partir da Venda Pedreira #${v.id}.${v.valor_desconto && v.valor_desconto > 0 ? ` [Desconto: ${formatCurrency(v.valor_desconto)}]` : ''} ${v.observacoes || ''}`,
       })
 
       // Atualizar venda gravando o conta_receber_id para rastreabilidade bidirecional
@@ -340,18 +451,26 @@ export default function Vendas() {
   }
 
   const handleDelete = async (v: Venda) => {
-    if (!confirm(`Deseja realmente remover esta venda de ${v.produto_nome}?`)) return
-    try {
-      await vendasService.remover(v.id)
-      toast({ title: 'Venda excluída com sucesso.' })
-      await loadData()
-    } catch (err: any) {
-      toast({
-        title: 'Erro ao excluir venda',
-        description: err.message,
-        variant: 'destructive',
-      })
-    }
+    setConfirmDialogData({
+      title: 'Confirmar exclusão da venda',
+      description: `Deseja realmente remover esta venda de ${v.produto_nome} (${formatCurrency(v.valor_total)})? Esta ação removerá o registro.`,
+      confirmLabel: 'Excluir Venda',
+      confirmVariant: 'destructive',
+      action: async () => {
+        try {
+          await vendasService.remover(v.id)
+          toast({ title: 'Venda excluída com sucesso.' })
+          await loadData()
+        } catch (err: any) {
+          toast({
+            title: 'Erro ao excluir venda',
+            description: err.message,
+            variant: 'destructive',
+          })
+        }
+      },
+    })
+    setConfirmDialogOpen(true)
   }
 
   // Filtragem
@@ -662,7 +781,17 @@ export default function Vendas() {
                         {formatCurrency(v.preco_unitario)}
                       </td>
                       <td className="py-3 px-4 text-right font-mono font-bold text-teal-800 tabular-nums">
-                        {formatCurrency(v.valor_total)}
+                        <div>{formatCurrency(v.valor_total)}</div>
+                        {v.valor_desconto && v.valor_desconto > 0 ? (
+                          <div className="text-[10px] text-amber-700 font-normal flex items-center justify-end gap-1">
+                            <span>Desc: -{formatCurrency(v.valor_desconto)}</span>
+                            {v.desconto_percentual ? (
+                              <span className="text-[9px] bg-amber-100 text-amber-800 px-1 py-0.2 rounded font-semibold">
+                                {v.desconto_percentual}%
+                              </span>
+                            ) : null}
+                          </div>
+                        ) : null}
                       </td>
                       <td className="py-3 px-4 text-center">
                         <Badge
@@ -848,7 +977,7 @@ export default function Vendas() {
             </div>
 
             {/* Quantidade e Preço Unitário */}
-            <div className="grid grid-cols-3 gap-3">
+            <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
                 <Label className="text-gray-700 font-medium">Quantidade *</Label>
                 <Input
@@ -872,17 +1001,140 @@ export default function Vendas() {
                   className="bg-[#FAF9F7] border-[#ECEAE4] text-xs h-9 font-mono"
                 />
               </div>
+            </div>
 
-              <div className="space-y-1.5">
-                <Label className="text-gray-700 font-medium">Valor Total (R$) *</Label>
-                <Input
-                  type="number"
-                  step="0.01"
-                  min="0"
-                  value={valorTotal}
-                  onChange={(e) => setValorTotal(parseFloat(e.target.value) || 0)}
-                  className="bg-teal-50/70 border-teal-200 text-teal-900 text-xs h-9 font-mono font-bold"
-                />
+            {/* Seção de Desconto */}
+            <div className="p-3 bg-amber-50/40 rounded-xl border border-amber-200/80 space-y-2.5">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-1.5 font-semibold text-gray-800 text-xs">
+                  <Tag className="w-3.5 h-3.5 text-amber-600" />
+                  <span>Desconto na Venda</span>
+                </div>
+                {/* Seletor Tipo: Percentual (%) ou Valor (R$) */}
+                <div className="inline-flex rounded-lg border border-amber-300 bg-white p-0.5 text-[11px]">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setTipoDesconto('percentual')
+                      if (valorBrutoCalc > 0 && descontoValor > 0) {
+                        const perc = Number(((descontoValor / valorBrutoCalc) * 100).toFixed(2))
+                        setDescontoPercentual(Math.min(100, perc))
+                      }
+                    }}
+                    className={`px-2 py-0.5 rounded-md font-medium transition-colors ${
+                      tipoDesconto === 'percentual'
+                        ? 'bg-amber-600 text-white font-semibold shadow-xs'
+                        : 'text-gray-600 hover:text-gray-900'
+                    }`}
+                  >
+                    Percentual (%)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setTipoDesconto('valor')
+                      if (valorBrutoCalc > 0 && descontoPercentual > 0) {
+                        const val = Number(((valorBrutoCalc * descontoPercentual) / 100).toFixed(2))
+                        setDescontoValor(Math.min(valorBrutoCalc, val))
+                      }
+                    }}
+                    className={`px-2 py-0.5 rounded-md font-medium transition-colors ${
+                      tipoDesconto === 'valor'
+                        ? 'bg-amber-600 text-white font-semibold shadow-xs'
+                        : 'text-gray-600 hover:text-gray-900'
+                    }`}
+                  >
+                    Valor (R$)
+                  </button>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3 items-end">
+                {tipoDesconto === 'percentual' ? (
+                  <div className="space-y-1">
+                    <Label className="text-gray-700 font-medium text-[11px]">
+                      Percentual de Desconto (0–100%)
+                    </Label>
+                    <div className="relative">
+                      <Input
+                        type="number"
+                        step="0.01"
+                        min="0"
+                        max="100"
+                        value={descontoPercentual || ''}
+                        onChange={(e) => {
+                          const v = parseFloat(e.target.value) || 0
+                          setDescontoPercentual(v)
+                        }}
+                        placeholder="0.00"
+                        className="bg-white border-amber-300 text-xs h-8 font-mono pr-7"
+                      />
+                      <Percent className="w-3.5 h-3.5 text-gray-400 absolute right-2.5 top-2.5" />
+                    </div>
+                  </div>
+                ) : (
+                  <div className="space-y-1">
+                    <Label className="text-gray-700 font-medium text-[11px]">
+                      Valor do Desconto (R$)
+                    </Label>
+                    <div className="relative">
+                      <Input
+                        type="number"
+                        step="0.01"
+                        min="0"
+                        max={valorBrutoCalc}
+                        value={descontoValor || ''}
+                        onChange={(e) => {
+                          const v = parseFloat(e.target.value) || 0
+                          setDescontoValor(v)
+                        }}
+                        placeholder="0,00"
+                        className="bg-white border-amber-300 text-xs h-8 font-mono"
+                      />
+                    </div>
+                  </div>
+                )}
+
+                <div className="text-right pb-1">
+                  <span className="text-[10px] text-gray-500 block uppercase">
+                    Desconto Aplicado
+                  </span>
+                  <span className="text-xs font-mono font-bold text-amber-800">
+                    {valorDescontoEfetivo > 0
+                      ? `− ${formatCurrency(valorDescontoEfetivo)}`
+                      : 'R$ 0,00'}
+                  </span>
+                </div>
+              </div>
+
+              {/* Box de Totais em Tempo Real */}
+              <div className="pt-2 border-t border-amber-200/80 grid grid-cols-3 gap-2 text-center">
+                <div className="bg-white/80 p-2 rounded-lg border border-gray-200">
+                  <span className="text-[10px] text-gray-500 uppercase block font-medium">
+                    Valor Bruto
+                  </span>
+                  <span className="text-xs font-mono font-semibold text-gray-800">
+                    {formatCurrency(valorBrutoCalc)}
+                  </span>
+                </div>
+                <div className="bg-amber-100/70 p-2 rounded-lg border border-amber-200">
+                  <span className="text-[10px] text-amber-800 uppercase block font-medium">
+                    Desconto
+                  </span>
+                  <span className="text-xs font-mono font-bold text-amber-900">
+                    {valorDescontoEfetivo > 0
+                      ? `− ${formatCurrency(valorDescontoEfetivo)}`
+                      : 'R$ 0,00'}
+                  </span>
+                </div>
+                <div className="bg-teal-50 p-2 rounded-lg border border-teal-200">
+                  <span className="text-[10px] text-teal-800 uppercase block font-bold">
+                    Valor Líquido
+                  </span>
+                  <span className="text-xs font-mono font-bold text-teal-900">
+                    {formatCurrency(valorLiquidoCalc)}
+                  </span>
+                </div>
               </div>
             </div>
 
@@ -1123,7 +1375,23 @@ export default function Vendas() {
                     </span>
                   </div>
                   <div>
-                    <span className="text-[10px] text-gray-400 block uppercase">Valor Total</span>
+                    <span className="text-[10px] text-gray-400 block uppercase">Valor Bruto</span>
+                    <span className="font-semibold font-mono text-gray-900">
+                      {formatCurrency(detalheVenda.valor_bruto || detalheVenda.valor_total)}
+                    </span>
+                  </div>
+                  <div>
+                    <span className="text-[10px] text-gray-400 block uppercase">Desconto</span>
+                    <span className="font-semibold font-mono text-amber-800">
+                      {detalheVenda.valor_desconto && detalheVenda.valor_desconto > 0
+                        ? `− ${formatCurrency(detalheVenda.valor_desconto)} (${detalheVenda.desconto_percentual ? `${detalheVenda.desconto_percentual}%` : detalheVenda.tipo_desconto === 'percentual' ? '%' : 'R$'})`
+                        : '—'}
+                    </span>
+                  </div>
+                  <div>
+                    <span className="text-[10px] text-teal-800 block uppercase font-bold">
+                      Valor Líquido
+                    </span>
                     <span className="font-bold font-mono text-teal-800 text-sm">
                       {formatCurrency(detalheVenda.valor_total)}
                     </span>
@@ -1221,6 +1489,42 @@ export default function Vendas() {
           )}
         </DialogContent>
       </Dialog>
+
+      {/* Diálogo de Confirmação Obrigatório */}
+      <AlertDialog open={confirmDialogOpen} onOpenChange={setConfirmDialogOpen}>
+        <AlertDialogContent className="bg-white rounded-2xl border-[#ECEAE4] max-w-[440px]">
+          <AlertDialogHeader>
+            <AlertDialogTitle className="text-base font-bold text-gray-900">
+              {confirmDialogData?.title || 'Confirmar ação'}
+            </AlertDialogTitle>
+            <AlertDialogDescription className="text-xs text-gray-600 leading-relaxed">
+              {confirmDialogData?.description}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter className="pt-2">
+            <AlertDialogCancel disabled={isSubmitting} className="text-xs rounded-xl">
+              Cancelar
+            </AlertDialogCancel>
+            <AlertDialogAction
+              disabled={isSubmitting}
+              onClick={async (e) => {
+                e.preventDefault()
+                if (confirmDialogData?.action) {
+                  await confirmDialogData.action()
+                }
+                setConfirmDialogOpen(false)
+              }}
+              className={`text-xs rounded-xl text-white ${
+                confirmDialogData?.confirmVariant === 'destructive'
+                  ? 'bg-red-600 hover:bg-red-700'
+                  : 'bg-teal-700 hover:bg-teal-800'
+              }`}
+            >
+              {isSubmitting ? 'Processando...' : confirmDialogData?.confirmLabel || 'Confirmar'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }

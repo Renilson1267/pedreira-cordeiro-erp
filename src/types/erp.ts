@@ -161,6 +161,8 @@ export type StatusContaReceber =
   | 'Recebimento Antecipado'
   | 'Parcial'
 
+export type TipoDesconto = 'percentual' | 'valor'
+
 export interface ContaReceber {
   id: string
   empresa_id: string
@@ -181,6 +183,10 @@ export interface ContaReceber {
   cliente_depositante?: string
   observacoes?: string
   venda_id?: string
+  tipo_desconto?: TipoDesconto
+  valor_desconto?: number
+  desconto_percentual?: number
+  valor_bruto?: number
   created: string
   updated: string
   expand?: {
@@ -441,6 +447,10 @@ export interface Venda {
   nota_fiscal?: string
   conta_receber_id?: string
   observacoes?: string
+  tipo_desconto?: TipoDesconto
+  valor_desconto?: number
+  desconto_percentual?: number
+  valor_bruto?: number
   created: string
   updated: string
   expand?: {

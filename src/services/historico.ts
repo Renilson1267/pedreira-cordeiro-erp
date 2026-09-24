@@ -58,7 +58,21 @@ export const CAMPOS_CONFIG_PAGAR: Record<string, CampoConfig> = {
 
 export const CAMPOS_CONFIG_RECEBER: Record<string, CampoConfig> = {
   descricao: { label: 'Descrição' },
-  valor: { label: 'Valor Total', format: (v) => formatCurrency(Number(v) || 0) },
+  valor: { label: 'Valor Líquido', format: (v) => formatCurrency(Number(v) || 0) },
+  valor_bruto: { label: 'Valor Bruto', format: (v) => formatCurrency(Number(v) || 0) },
+  tipo_desconto: {
+    label: 'Tipo de Desconto',
+    format: (v) => (v === 'percentual' ? 'Percentual (%)' : v === 'valor' ? 'Valor (R$)' : '—'),
+  },
+  desconto_percentual: {
+    label: 'Desconto (%)',
+    format: (v) => (v !== null && v !== undefined && v !== '' ? `${Number(v).toFixed(2)}%` : '—'),
+  },
+  valor_desconto: {
+    label: 'Valor do Desconto',
+    format: (v) =>
+      v !== null && v !== undefined && v !== '' ? formatCurrency(Number(v) || 0) : '—',
+  },
   valor_recebido: { label: 'Valor Recebido', format: (v) => formatCurrency(Number(v) || 0) },
   vencimento: { label: 'Data de Vencimento', format: (v) => (v ? formatDate(v) : '—') },
   data_emissao: { label: 'Data de Emissão', format: (v) => (v ? formatDate(v) : '—') },

@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-09-24T22:19:37.972Z",
+  "generatedAt": "2026-09-24T22:44:45.769Z",
   "collections": [
     {
       "name": "users",
@@ -800,6 +800,31 @@
         {
           "name": "data_emissao",
           "type": "date",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "tipo_desconto",
+          "type": "select",
+          "required": false,
+          "system": false,
+          "selectValues": ["percentual", "valor"]
+        },
+        {
+          "name": "valor_desconto",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "desconto_percentual",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "valor_bruto",
+          "type": "number",
           "required": false,
           "system": false
         }
@@ -2326,6 +2351,31 @@
           "required": false,
           "system": false,
           "autodateTriggers": ["onCreate", "onUpdate"]
+        },
+        {
+          "name": "tipo_desconto",
+          "type": "select",
+          "required": false,
+          "system": false,
+          "selectValues": ["percentual", "valor"]
+        },
+        {
+          "name": "valor_desconto",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "desconto_percentual",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "valor_bruto",
+          "type": "number",
+          "required": false,
+          "system": false
         }
       ],
       "indexes": [

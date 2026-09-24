@@ -293,6 +293,22 @@ export const RomaneioEntregaImpressaoModal: React.FC<RomaneioEntregaImpressaoMod
                     </td>
                   </tr>
 
+                  {/* DESCONTO SE HOUVER */}
+                  {venda && venda.valor_desconto && venda.valor_desconto > 0 ? (
+                    <tr className="bg-amber-50/60 print:bg-amber-50/40">
+                      <td
+                        colSpan={4}
+                        className="py-1.5 px-3 text-right font-semibold text-amber-900 text-xs"
+                      >
+                        Desconto Concedido na Venda{' '}
+                        {venda.desconto_percentual ? `(${venda.desconto_percentual}%)` : ''}:
+                      </td>
+                      <td className="py-1.5 px-3 text-right font-mono font-bold text-amber-900 tabular-nums text-xs">
+                        − {formatCurrency(venda.valor_desconto)}
+                      </td>
+                    </tr>
+                  ) : null}
+
                   {/* SUBTOTAIS E MARGEM */}
                   <tr className="bg-gray-50 print:bg-gray-100">
                     <td colSpan={4} className="py-2 px-3 text-right font-semibold text-gray-700">
