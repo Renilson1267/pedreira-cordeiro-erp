@@ -67,6 +67,9 @@ import {
   REGEX_COL_FORMA_RECEBIMENTO,
   REGEX_COL_STATUS,
   REGEX_COL_DOCUMENTO,
+  REGEX_COL_VALOR_COMPRA,
+  isColunaCheque,
+  isNumeroChequeOuSerieBancaria,
 } from '@/lib/planilhaRecebimentosUtils'
 
 export interface ConferirPlanilhaRecebimentosModalProps {
@@ -266,8 +269,20 @@ export function ConferirPlanilhaRecebimentosModal({
           cliCol = descCol
           descCol = ''
         }
-        let valCol = findCol(REGEX_COL_VALOR)
-        let valRecCol = findCol(REGEX_COL_VALOR_RECEBIDO)
+        // Localizar a coluna "VALOR DA COMPRA" e variações com prioridade máxima
+        // e IGNORAR qualquer coluna de cheque
+        let valCol =
+          headers.find(
+            (h) => !isColunaCheque(h) && REGEX_COL_VALOR_COMPRA.test(normalizarNomeColuna(h)),
+          ) ||
+          headers.find(
+            (h) => !isColunaCheque(h) && REGEX_COL_VALOR.test(normalizarNomeColuna(h)),
+          ) ||
+          ''
+        let valRecCol =
+          headers.find(
+            (h) => !isColunaCheque(h) && REGEX_COL_VALOR_RECEBIDO.test(normalizarNomeColuna(h)),
+          ) || ''
         let dataRecCol = findCol(REGEX_COL_DATA_RECEBIMENTO)
         let formaCol = findCol(REGEX_COL_FORMA_RECEBIMENTO)
         let statusCol = findCol(REGEX_COL_STATUS)
@@ -359,20 +374,28 @@ export function ConferirPlanilhaRecebimentosModal({
           const valRaw = getVal(valCol)
           const valRecRaw = getVal(valRecCol)
 
-          // Barreira anti-parcela: quando a célula contiver padrão de parcela (ex.: "1.1", "2.2"),
-          // apenas ZERA a leitura daquela célula e prossegue na linha, buscando o valor legítimo em VALOR PAGO; nunca descartar a linha.
+          // Barreira anti-parcela e anti-cheque:
           let valParsed = 0
-          if (!isPadraoNumeroParcela(valRaw)) {
+          if (!isPadraoNumeroParcela(valRaw) && !isNumeroChequeOuSerieBancaria(valRaw).ehCheque) {
             const valDet = parseValorReceberDetalhado(valRaw)
-            if (!valDet.invalidoOuAbsurdo) {
+            if (
+              !valDet.invalidoOuAbsurdo &&
+              !isNumeroChequeOuSerieBancaria(valDet.valor).ehCheque
+            ) {
               valParsed = valDet.valor
             }
           }
 
           let valRecParsed = 0
-          if (!isPadraoNumeroParcela(valRecRaw)) {
+          if (
+            !isPadraoNumeroParcela(valRecRaw) &&
+            !isNumeroChequeOuSerieBancaria(valRecRaw).ehCheque
+          ) {
             const valRecDet = parseValorReceberDetalhado(valRecRaw)
-            if (!valRecDet.invalidoOuAbsurdo) {
+            if (
+              !valRecDet.invalidoOuAbsurdo &&
+              !isNumeroChequeOuSerieBancaria(valRecDet.valor).ehCheque
+            ) {
               valRecParsed = valRecDet.valor
             }
           }
@@ -380,16 +403,26 @@ export function ConferirPlanilhaRecebimentosModal({
           let valorPlanilha = valParsed > 0 ? valParsed : valRecParsed
           const valorRecebidoPlanilha = valRecParsed
 
-          // Se nenhuma das colunas mapeadas tiver valor > 0, varrer outras células da linha
-          if (valorPlanilha <= 0) {
+          // Se a coluna de valor não foi encontrada na aba, varredura apenas como último recurso
+          // ignorando sempre colunas de cheque e mantendo todas as barreiras
+          if (valorPlanilha <= 0 && !valCol) {
             for (let cIdx = 0; cIdx < row.length; cIdx++) {
+              const h = headers[cIdx]
+              if (isColunaCheque(h)) continue
+
               const cellRaw = row[cIdx]
-              if (!cellRaw || isPadraoNumeroParcela(cellRaw)) continue
+              if (
+                !cellRaw ||
+                isPadraoNumeroParcela(cellRaw) ||
+                isNumeroChequeOuSerieBancaria(cellRaw).ehCheque
+              )
+                continue
               const cellDet = parseValorReceberDetalhado(cellRaw)
               if (
                 !cellDet.invalidoOuAbsurdo &&
                 cellDet.valor > 0 &&
-                !isPadraoNumeroParcela(cellDet.valor)
+                !isPadraoNumeroParcela(cellDet.valor) &&
+                !isNumeroChequeOuSerieBancaria(cellDet.valor).ehCheque
               ) {
                 valorPlanilha = cellDet.valor
                 break

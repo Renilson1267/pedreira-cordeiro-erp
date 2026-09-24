@@ -66,6 +66,9 @@ import {
   REGEX_COL_CENTRO_CUSTO,
   REGEX_COL_CATEGORIA,
   REGEX_COL_DOCUMENTO,
+  REGEX_COL_VALOR_COMPRA,
+  isColunaCheque,
+  extrairNumeroCheque,
 } from '@/lib/planilhaRecebimentosUtils'
 import { withRateLimitRetry, sleep, runParallelPool } from '@/lib/pocketbase/rateLimit'
 import { Progress } from '@/components/ui/progress'
@@ -404,6 +407,14 @@ export function ImportadorRecebimentosModal({
     const clienteSugerido = cliColFound || descColFound || ''
 
     const colDataSugerida = findCol(REGEX_COL_DATA) || ''
+    // Prioridade máxima para "VALOR DA COMPRA" e nunca selecionar coluna de cheque
+    const valorSugerido =
+      headers.find(
+        (h) => !isColunaCheque(h) && REGEX_COL_VALOR_COMPRA.test(normalizarNomeColuna(h)),
+      ) ||
+      headers.find((h) => !isColunaCheque(h) && REGEX_COL_VALOR.test(normalizarNomeColuna(h))) ||
+      ''
+
     setMapping((prev) => ({
       data: prev.data && headers.includes(prev.data) ? prev.data : colDataSugerida,
       cliente: prev.cliente && headers.includes(prev.cliente) ? prev.cliente : clienteSugerido,
@@ -414,9 +425,13 @@ export function ImportadorRecebimentosModal({
             ? descColFound
             : '',
       valor:
-        prev.valor && headers.includes(prev.valor) ? prev.valor : findCol(REGEX_COL_VALOR) || '',
+        prev.valor && headers.includes(prev.valor) && !isColunaCheque(prev.valor)
+          ? prev.valor
+          : valorSugerido,
       valorRecebido:
-        prev.valorRecebido && headers.includes(prev.valorRecebido)
+        prev.valorRecebido &&
+        headers.includes(prev.valorRecebido) &&
+        !isColunaCheque(prev.valorRecebido)
           ? prev.valorRecebido
           : findCol(REGEX_COL_VALOR_RECEBIDO) || '',
       dataRecebimento:
@@ -877,14 +892,28 @@ export function ImportadorRecebimentosModal({
             : '',
         )
 
+        // Localizar a coluna "VALOR DA COMPRA" e variações com prioridade máxima
+        // e IGNORAR qualquer coluna de cheque
+        const colValorIdentificada =
+          findColInSheet(REGEX_COL_VALOR_COMPRA) ||
+          currentSheetHeaders.find(
+            (h) => !isColunaCheque(h) && REGEX_COL_VALOR.test(normalizarNomeColuna(h)),
+          ) ||
+          ''
+
         let valCol = matchColWithFallback(
-          mapping.valor,
-          REGEX_COL_VALOR,
-          findColInSheet(REGEX_COL_VALOR),
+          mapping.valor && !isColunaCheque(mapping.valor) ? mapping.valor : '',
+          REGEX_COL_VALOR_COMPRA,
+          colValorIdentificada,
         )
+        if (isColunaCheque(valCol)) {
+          valCol = colValorIdentificada
+        }
 
         const valRecCol = matchColWithFallback(
-          mapping.valorRecebido,
+          mapping.valorRecebido && !isColunaCheque(mapping.valorRecebido)
+            ? mapping.valorRecebido
+            : '',
           REGEX_COL_VALOR_RECEBIDO,
           findColInSheet(REGEX_COL_VALOR_RECEBIDO),
         )
@@ -918,6 +947,7 @@ export function ImportadorRecebimentosModal({
             const h = currentSheetHeaders[cIdx]
             const hNorm = normalizarNomeColuna(h)
             if (
+              isColunaCheque(h) ||
               h === dataCol ||
               h === valRecCol ||
               h === docCol ||
@@ -934,7 +964,6 @@ export function ImportadorRecebimentosModal({
               melhorCol = h
             }
           }
-
           if (maiorDensidade > 0) {
             valCol = melhorCol
           }
@@ -1040,11 +1069,20 @@ export function ImportadorRecebimentosModal({
                 ? blockDescFound
                 : '',
             )
+            const blockValCompra =
+              findColInBlock(REGEX_COL_VALOR_COMPRA) ||
+              activeHeaders.find(
+                (h) => !isColunaCheque(h) && REGEX_COL_VALOR.test(normalizarNomeColuna(h)),
+              ) ||
+              ''
             activeValCol = matchColInBlock(
-              mapping.valor,
-              REGEX_COL_VALOR,
-              findColInBlock(REGEX_COL_VALOR),
+              mapping.valor && !isColunaCheque(mapping.valor) ? mapping.valor : '',
+              REGEX_COL_VALOR_COMPRA,
+              blockValCompra,
             )
+            if (isColunaCheque(activeValCol)) {
+              activeValCol = blockValCompra
+            }
             activeValRecCol = matchColInBlock(
               mapping.valorRecebido,
               REGEX_COL_VALOR_RECEBIDO,
@@ -1294,12 +1332,14 @@ export function ImportadorRecebimentosModal({
             rawCli = rawDesc
           }
 
-          // Parsing detalhado de valor para rejeitar números implausíveis (telefone/doc lido como valor ou padrão parcela)
-          // Barreira anti-parcela: quando a célula contiver padrão de parcela (ex.: "1.1", "2.2"),
-          // apenas ZERA a leitura daquela célula e prossegue na linha, buscando o valor legítimo em VALOR PAGO ou outras células; NUNCA descartar a linha inteira.
+          // Parsing primário de valor da coluna mapeada (ex.: "VALOR DA COMPRA")
+          // Barreira anti-parcela e anti-cheque: se a célula contiver padrão de parcela ou cheque, zera.
           const rawValCell = getVal(row, activeValCol)
           let rawValor = 0
-          if (isPadraoNumeroParcela(rawValCell)) {
+          if (
+            isPadraoNumeroParcela(rawValCell) ||
+            isNumeroChequeOuSerieBancaria(rawValCell).ehCheque
+          ) {
             rawValor = 0
           } else {
             const valParsed = parseValorReceberDetalhado(rawValCell)
@@ -1313,7 +1353,10 @@ export function ImportadorRecebimentosModal({
           let rawValorRec = 0
           if (activeValRecCol) {
             const rawRecCell = getVal(row, activeValRecCol)
-            if (isPadraoNumeroParcela(rawRecCell)) {
+            if (
+              isPadraoNumeroParcela(rawRecCell) ||
+              isNumeroChequeOuSerieBancaria(rawRecCell).ehCheque
+            ) {
               rawValorRec = 0
             } else {
               const recParsed = parseValorReceberDetalhado(rawRecCell)
@@ -1341,12 +1384,19 @@ export function ImportadorRecebimentosModal({
             continue
           }
 
-          // Descobrir valor final: coluna mapeada de valor ou valorRecebido ou varredura de linha
+          // Descobrir valor final: PRIMARIAMENTE da coluna mapeada ("VALOR DA COMPRA" ou "VALOR RECEBIDO").
+          // Apenas se a aba não tiver coluna de valor reconhecível e nenhum valor for lido, usa varredura como ÚLTIMO recurso
+          // NUNCA ler colunas de cheque (isColunaCheque) e manter todas as barreiras.
           let valorFinal = rawValor > 0 ? rawValor : rawValorRec
-          if (valorFinal <= 0) {
+
+          // Se a coluna de valor existir mas a célula estiver vazia/zerada, NÃO inventar valor de coluna de cheque
+          if (valorFinal <= 0 && !activeValCol) {
+            // Varredura de linha apenas quando NÃO HÁ coluna de cabeçalho reconhecível
             let maiorValorEncontrado = 0
             for (let colIdx = 0; colIdx < row.length; colIdx++) {
               if (colIdx === activeDataColIdx || colIdx === activeDocColIdx) continue
+              const hName = normalizarNomeColuna(activeHeaders[colIdx] || '')
+              if (isColunaCheque(hName) || isColunaCheque(activeHeaders[colIdx])) continue
 
               const cellRaw = row[colIdx]
               if (typeof cellRaw === 'string' && /^(?:NF|DOC|NOTA|DUPL)/i.test(cellRaw.trim()))
@@ -1354,12 +1404,14 @@ export function ImportadorRecebimentosModal({
               if (cellRaw instanceof Date) continue
 
               if (isPadraoNumeroParcela(cellRaw)) continue // ignora números de parcela na varredura
+              if (isNumeroChequeOuSerieBancaria(cellRaw).ehCheque) continue // ignora cheques
+
               const cellDet = parseValorReceberDetalhado(cellRaw)
               if (cellDet.invalidoOuAbsurdo) continue // ignora telefones/docs na varredura
               const cellVal = cellDet.valor
               if (cellVal > 0) {
                 if (isPadraoNumeroParcela(cellVal)) continue
-                const hName = normalizarNomeColuna(activeHeaders[colIdx] || '')
+                if (isNumeroChequeOuSerieBancaria(cellVal).ehCheque) continue
                 if (
                   hName.includes('VALOR') ||
                   hName.includes('RECEB') ||
@@ -1591,12 +1643,26 @@ export function ImportadorRecebimentosModal({
           rawCli = sanitizarNomeCliente(rawCli)
           rawDesc = sanitizarNomeCliente(rawDesc)
 
+          // Extrair informações de cheque se houver coluna de cheque ou célula com menção a cheque
+          let chequeInfoLinha: string = ''
+          for (let cIdx = 0; cIdx < row.length; cIdx++) {
+            const h = activeHeaders[cIdx]
+            if (isColunaCheque(h)) {
+              const chExt = extrairNumeroCheque(row[cIdx])
+              if (chExt && chExt.numero) {
+                chequeInfoLinha = chExt.textoCompleto
+                break
+              }
+            }
+          }
+
           const textoParaExtracao = `${rawCli || ''} ${rawDesc || ''}${rawDoc ? ` [Doc: ${rawDoc}]` : ''}`
           const extraidos = extrairCidadeENota(textoParaExtracao)
           const notaFinal = (rawDoc && isNotaValida(rawDoc) ? rawDoc : extraidos.nota || '').trim()
           const enderecoFinal = (extraidos.cidade || '').trim()
-          const textoLivreExtra =
+          const baseTextoLivre =
             extraidos.textoLivreObservacao || (!isNotaValida(rawDoc) ? rawDoc : '')
+          const textoLivreExtra = [baseTextoLivre, chequeInfoLinha].filter(Boolean).join(' | ')
           // Se rawDesc for igual a rawCli (ou não houver coluna de descrição dedicada), grava vazio ("")
           const descFinal = (rawDesc && rawDesc !== rawCli ? rawDesc : '').trim()
 

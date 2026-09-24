@@ -222,7 +222,9 @@ export const REGEX_COL_CLIENTE =
 export const REGEX_COL_DESCRICAO =
   /HISTORICO|DESCRICAO|DESC|SERV|PROD|REFERENCIA|ITEM|DISCRIM|DETALHE|OBS/i
 export const REGEX_COL_VALOR =
-  /^(?:VALOR\s*DA\s*COMPRA|VALOR\s*TOTAL|VALOR\s*BRUTO|VALOR\s*LIQUIDO|VALOR\s*A\s*RECEBER|VALOR\s*R\$?|VALOR\s*R|VALOR|TOTAL|LIQUIDO|BRUTO|CREDITO|CREDITOS|RECEITA|RECEITAS|ENTRADA|ENTRADAS)$/i
+  /^(?:VALOR\s*DA\s*COMPRA|VALOR\s*DA\s*NOTA|VALOR\s*TOTAL|VALOR\s*BRUTO|VALOR\s*LIQUIDO|VALOR\s*A\s*RECEBER|VALOR\s*R\$?|VALOR\s*R|VALOR|TOTAL|LIQUIDO|BRUTO|CREDITO|CREDITOS|RECEITA|RECEITAS|ENTRADA|ENTRADAS)$/i
+export const REGEX_COL_VALOR_COMPRA =
+  /^(?:VALOR\s*DA\s*COMPRA|VALOR\s*DA\s*NOTA|VALOR\s*TOTAL|VALOR\s*BRUTO|VALOR\s*LIQUIDO|VALOR\s*A\s*RECEBER|VALOR\s*R\$?|VALOR\s*R|VALOR)$/i
 export const REGEX_COL_VALOR_RECEBIDO =
   /^(?:VALOR\s*RECEBIDO|VALOR\s*PAGO|VALOR\s*LIQUID|RECEBIDO|REC|LIQUID|PAGO)$/i
 export const REGEX_COL_DATA_RECEBIMENTO =
@@ -233,6 +235,8 @@ export const REGEX_COL_STATUS = /SITUACAO|STATUS|SITUAC|CONDICAO|ESTADO/i
 export const REGEX_COL_CENTRO_CUSTO = /CENTRO|CC|CUSTO|FRENTE|SETOR/i
 export const REGEX_COL_CATEGORIA = /CATEG|PLANO|CONTA|NATUREZA/i
 export const REGEX_COL_DOCUMENTO = /DOC|NF|NOTA|DUPLICATA|FATURA|PEDIDO|RECIBO/i
+export const REGEX_COL_CHEQUE =
+  /^(?:N[ºO°]?\s*(?:DO\s*)?CHEQ(?:UE)?|NUMERO\s*(?:DO\s*)?CHEQUE|N\s*DO\s*CHEQUE|N\s*CHEQUE|CHEQUE|CH)$/i
 export const REGEX_COL_PARCELA = /PARCELA|PARC|N[ºO°]?\s*(?:DE\s*)?PARCELA/i
 export const REGEX_COL_TELEFONE_OU_DOC =
   /TEL|TELEFONE|FONE|CELULAR|WHATS|CONTATO|CPF|CNPJ|INSCRIC|CHAVE/i
@@ -342,7 +346,19 @@ export function detectarLinhaCabecalho(
       score += 4
       validHeaderCount++
     }
-    if (hasVal) {
+    // Colunas de cheque não contam como cabeçalho de valor
+    const hasValNonCheque = texts.some(
+      (t) =>
+        !isColunaCheque(t) &&
+        (t === 'VALOR' ||
+          t === 'VALOR DA COMPRA' ||
+          t === 'VALOR DA NOTA' ||
+          t === 'VALOR TOTAL' ||
+          t.includes('VALOR') ||
+          t.includes('RECEB') ||
+          t.includes('TOTAL')),
+    )
+    if (hasValNonCheque) {
       score += 4
       validHeaderCount++
     }
@@ -416,22 +432,82 @@ export const LIMIAR_VALOR_SUSPEITO_RECEBER = 100_000 // Valores >= 100k exigem v
  *    frequentemente lidos de colunas de compensação/data de compensação de cheque
  *    (ex: 120226 = 12/02/26, 250226 = 25/02/26, 70226, 80126, 200126, 131125, 41225)
  */
+/**
+ * Verifica se um nome de coluna corresponde a coluna de cheque (ex: "Nº DO CHEQUE", "CHEQUE", "N DO CHEQUE").
+ * Colunas de cheque NUNCA devem ser lidas como fonte de valor financeiro.
+ */
+export function isColunaCheque(colName: string | null | undefined): boolean {
+  if (!colName) return false
+  const norm = normalizarNomeColuna(colName)
+  return (
+    REGEX_COL_CHEQUE.test(norm) ||
+    norm.includes('CHEQUE') ||
+    norm.includes('CHEQ') ||
+    /^N[ºO°]?\s*(?:DO\s*)?CHEQ/i.test(norm)
+  )
+}
+
+/**
+ * Extrai apenas o número do cheque e prefixo bancário de células como "BB - 850255", "850255", "CH 850255".
+ * Retorna string limpa para gravação em observações/documentos, nunca como valor.
+ */
+export function extrairNumeroCheque(
+  val: any,
+): { numero: string; bancoPrefixo?: string; textoCompleto: string } | null {
+  if (val === null || val === undefined) return null
+  const str = String(val)
+    .replace(/\u00A0/g, ' ')
+    .trim()
+  if (!str) return null
+
+  // Padrão com banco e número (ex: "BB - 850255", "BRADESCO 851167", "CH - 850250")
+  const matchBanco = str.match(/^([A-Z]{2,10})\s*[-–/:]*\s*(\d{4,8})$/i)
+  if (matchBanco) {
+    return {
+      bancoPrefixo: matchBanco[1].toUpperCase(),
+      numero: matchBanco[2],
+      textoCompleto: `${matchBanco[1].toUpperCase()} - ${matchBanco[2]}`,
+    }
+  }
+
+  // Padrão numérico puro ou prefixo de cheque (ex: "850255", "CH 850255", "CHEQUE 850255")
+  const matchNum = str.match(/^(?:CH(?:EQUE)?[\s.:#-]*)?(\d{4,8})$/i)
+  if (matchNum) {
+    return {
+      numero: matchNum[1],
+      textoCompleto: `Cheque: ${matchNum[1]}`,
+    }
+  }
+
+  return {
+    numero: str.replace(/\D/g, '') || str,
+    textoCompleto: str,
+  }
+}
+
 export function isNumeroChequeOuSerieBancaria(val: any): { ehCheque: boolean; motivo?: string } {
   if (val === null || val === undefined) return { ehCheque: false }
 
   let numVal: number
   let isInt = false
 
+  const rawStr = String(val)
+    .replace(/\u00A0/g, ' ')
+    .trim()
+  // Prefixo bancário explícito com número: ex. "BB - 850255", "BRADESCO 850xxx"
+  if (/^(?:BB|BRADESCO|ITAU|SANTANDER|CAIXA|SICOOB|SICREDI|CH|CHEQUE)[\s\-–:/]+\d+/i.test(rawStr)) {
+    return {
+      ehCheque: true,
+      motivo: `Texto "${rawStr}" é uma identificação de cheque/banco`,
+    }
+  }
+
   if (typeof val === 'number') {
     if (isNaN(val) || !isFinite(val)) return { ehCheque: false }
     numVal = Math.abs(val)
     isInt = Number.isInteger(numVal)
   } else {
-    const raw = String(val)
-      .replace(/\u00A0/g, ' ')
-      .replace(/R\$/gi, '')
-      .replace(/\s+/g, '')
-      .trim()
+    const raw = rawStr.replace(/R\$/gi, '').replace(/\s+/g, '').trim()
     if (!raw) return { ehCheque: false }
 
     const parsed = parseFloat(raw.replace(/\./g, '').replace(',', '.'))
@@ -440,12 +516,12 @@ export function isNumeroChequeOuSerieBancaria(val: any): { ehCheque: boolean; mo
     isInt = Number.isInteger(numVal) || Math.abs(numVal - Math.round(numVal)) < 0.001
   }
 
-  // 1. Faixa explícita de série de talão de cheques do banco: 800.000 a 865.000
-  // Padrão identificado: 850xxx, 851xxx, 852xxx, 855xxx
-  if (numVal >= 800_000 && numVal <= 865_000) {
+  // 1. Faixa de série de cheques do banco: 800.000 a 899.999 (ampliada para cobrir todas as brechas de talões)
+  // Padrão identificado: 850xxx, 851xxx, 852xxx, 855xxx, talões 800k–899k
+  if (numVal >= 800_000 && numVal <= 899_999) {
     return {
       ehCheque: true,
-      motivo: `Número ${Math.round(numVal)} pertence à série de cheques do banco (faixa 800.000–865.000)`,
+      motivo: `Número ${Math.round(numVal)} pertence à série de cheques do banco (faixa 800.000–899.999)`,
     }
   }
 
