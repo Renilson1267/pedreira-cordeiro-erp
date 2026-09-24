@@ -132,12 +132,13 @@ export default function Layout() {
         }`}
       >
         {/* Brand Logo */}
-        <div className="h-16 px-5 border-b border-[#ECEAE4] flex items-center justify-between">
-          <div
-            className="flex items-center space-x-2.5 cursor-pointer"
-            onClick={() => navigate('/')}
-          >
-            <div className="w-9 h-9 rounded-xl bg-teal-700 flex items-center justify-center text-white shadow-sm shadow-teal-700/20">
+        <div className="min-h-16 py-3 px-5 border-b border-[#ECEAE4] flex items-center justify-between">
+          <div className="flex items-center space-x-2.5">
+            <div
+              className="w-9 h-9 rounded-xl bg-teal-700 flex items-center justify-center text-white shadow-sm shadow-teal-700/20 cursor-pointer shrink-0"
+              onClick={() => navigate('/')}
+              title="Ir para o Dashboard"
+            >
               <svg
                 className="w-5 h-5"
                 viewBox="0 0 24 24"
@@ -150,18 +151,35 @@ export default function Layout() {
                 <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" />
               </svg>
             </div>
-            <div>
-              <span className="font-bold text-lg text-gray-900 tracking-tight">
+            <div className="flex flex-col min-w-0">
+              <span
+                className="font-bold text-lg text-gray-900 tracking-tight cursor-pointer leading-tight"
+                onClick={() => navigate('/')}
+              >
                 Pedreira Cordeiro
               </span>
-              <span className="text-[10px] text-teal-700 font-semibold uppercase tracking-wider block -mt-1">
+              <span
+                className="text-[10px] text-teal-700 font-semibold uppercase tracking-wider block -mt-0.5 cursor-pointer leading-tight"
+                onClick={() => navigate('/')}
+              >
                 Grupo Pedreira Cordeiro
               </span>
+              <a
+                href="https://pedreiracordeiro.com.br"
+                target="_blank"
+                rel="noopener noreferrer"
+                onClick={(e) => e.stopPropagation()}
+                className="text-[11px] text-teal-600/80 hover:text-teal-700 hover:underline leading-tight transition-colors block mt-0.5 truncate"
+                title="Acessar pedreiracordeiro.com.br em nova aba"
+              >
+                pedreiracordeiro.com.br
+              </a>
             </div>
           </div>
           <button
             onClick={() => setMobileMenuOpen(false)}
-            className="lg:hidden text-gray-400 hover:text-gray-600 p-1 rounded-md"
+            className="lg:hidden text-gray-400 hover:text-gray-600 p-1 rounded-md shrink-0 ml-2"
+            title="Fechar menu"
           >
             <X className="w-5 h-5" />
           </button>
