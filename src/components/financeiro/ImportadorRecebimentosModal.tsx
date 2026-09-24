@@ -28,11 +28,13 @@ import {
   Upload,
   CheckCircle2,
   AlertTriangle,
+  AlertCircle,
   ArrowRight,
   ArrowLeft,
   Loader2,
   Check,
 } from 'lucide-react'
+import { extractFieldErrors } from '@/lib/pocketbase/errors'
 import {
   MESES_MAP,
   inferirCompetenciaAba,
@@ -101,8 +103,9 @@ export interface SheetReceberImportResult {
   linhasLidas: number
   importados: number
   atualizados: number
-  duplicados: number
-  errosCount: number
+  duplicadosInternos: number
+  divergenciasCount: number
+  errosGravacaoCount: number
   vaziaOuSemCabecalho?: boolean
   motivoVazia?: string
 }
@@ -111,13 +114,14 @@ export interface RecebimentosImportSummary {
   totalLidos: number
   importados: number
   atualizados: number
-  duplicadosPulados: number
+  duplicadosInternos: number
+  duplicadosBanco: number
   recebidasBaixadas: number
   emAberto: number
   antecipados: number
   clientesCriados: string[]
   creditosGerados: number
-  erros: { linha: number; aba: string; motivo: string }[]
+  erros: { linha: number; aba: string; motivo: string; tipo: 'gravacao' | 'divergencia' }[]
   detalhesPorAba: SheetReceberImportResult[]
 }
 
@@ -490,7 +494,8 @@ export function ImportadorRecebimentosModal({
       totalLidos: 0,
       importados: 0,
       atualizados: 0,
-      duplicadosPulados: 0,
+      duplicadosInternos: 0,
+      duplicadosBanco: 0,
       recebidasBaixadas: 0,
       emAberto: 0,
       antecipados: 0,
@@ -501,11 +506,37 @@ export function ImportadorRecebimentosModal({
     }
 
     try {
-      // 1. Caches para otimizar busca e evitar duplicidade
+      setProgressMsg('Consultando base de títulos e clientes no servidor...')
+
+      // Recarregar a lista de títulos existentes DIRETO do PocketBase para evitar cache desatualizado
+      let contasAtuaisDoBanco: ContaReceber[] = []
+      try {
+        contasAtuaisDoBanco = await pb.collection('contas_receber').getFullList<ContaReceber>({
+          filter: `empresa_id = "${empresaId}"`,
+          sort: '-created',
+        })
+      } catch (loadErr) {
+        console.warn(
+          'Não foi possível recarregar contas_receber do servidor, usando prop:',
+          loadErr,
+        )
+        contasAtuaisDoBanco = contasExistentes
+      }
+
+      // Recarregar clientes atualizados do banco para garantir cache fresco
       const clientesCache = new Map<string, Cliente>()
-      clientes.forEach((c) => {
-        clientesCache.set(c.nome.trim().toLowerCase(), c)
-      })
+      try {
+        const clientesDoBanco = await pb.collection('clientes').getFullList<Cliente>({
+          filter: `empresa_id = "${empresaId}"`,
+        })
+        clientesDoBanco.forEach((c) => {
+          clientesCache.set(c.nome.trim().toLowerCase(), c)
+        })
+      } catch (_) {
+        clientes.forEach((c) => {
+          clientesCache.set(c.nome.trim().toLowerCase(), c)
+        })
+      }
 
       // Centros de custo cache
       const centrosCache = new Map<string, CentroCusto>()
@@ -534,7 +565,7 @@ export function ImportadorRecebimentosModal({
           .replace(/[\s\-_/\\.,;:()]+/g, ' ')
           .trim()
 
-      contasExistentes.forEach((c) => {
+      contasAtuaisDoBanco.forEach((c) => {
         const d = c.vencimento.slice(0, 10)
         const descNorm = normalizarTextoComparacao(c.descricao).slice(0, 30)
         const notaNorm = normalizarTextoComparacao(c.nota || '')
@@ -667,8 +698,9 @@ export function ImportadorRecebimentosModal({
             linhasLidas: 0,
             importados: 0,
             atualizados: 0,
-            duplicados: 0,
-            errosCount: 0,
+            duplicadosInternos: 0,
+            divergenciasCount: 0,
+            errosGravacaoCount: 0,
             vaziaOuSemCabecalho: true,
             motivoVazia: 'Aba não encontrada no arquivo XLSX',
           })
@@ -687,8 +719,9 @@ export function ImportadorRecebimentosModal({
             linhasLidas: 0,
             importados: 0,
             atualizados: 0,
-            duplicados: 0,
-            errosCount: 0,
+            duplicadosInternos: 0,
+            divergenciasCount: 0,
+            errosGravacaoCount: 0,
             vaziaOuSemCabecalho: true,
             motivoVazia: 'Aba sem dados ou linhas em branco',
           })
@@ -870,8 +903,9 @@ export function ImportadorRecebimentosModal({
         let sheetLidos = 0
         let sheetImportados = 0
         let sheetAtualizados = 0
-        let sheetDuplicados = 0
-        let sheetErrosCount = 0
+        let sheetDuplicadosInternos = 0
+        let sheetDivergenciasCount = 0
+        let sheetErrosGravacaoCount = 0
 
         // Data herdada em bloco: se a linha tem descrição e valor válidos mas a célula de data está vazia (mesclagem),
         // herdar a data do lançamento anterior válido da mesma aba
@@ -1171,10 +1205,11 @@ export function ImportadorRecebimentosModal({
           const rawValCell = getVal(row, activeValCol)
           const valParsed = parseValorReceberDetalhado(rawValCell)
           if (valParsed.invalidoOuAbsurdo) {
-            sheetErrosCount += 1
+            sheetDivergenciasCount += 1
             resultSummary.erros.push({
               aba: sheetCfg.name,
               linha: numLinha,
+              tipo: 'divergencia',
               motivo: `Coluna de valor contém número inválido/implausível: ${valParsed.motivo || String(rawValCell)}. Linha não importada.`,
             })
             continue
@@ -1186,10 +1221,11 @@ export function ImportadorRecebimentosModal({
             const rawRecCell = getVal(row, activeValRecCol)
             const recParsed = parseValorReceberDetalhado(rawRecCell)
             if (recParsed.invalidoOuAbsurdo) {
-              sheetErrosCount += 1
+              sheetDivergenciasCount += 1
               resultSummary.erros.push({
                 aba: sheetCfg.name,
                 linha: numLinha,
+                tipo: 'divergencia',
                 motivo: `Coluna de valor recebido contém número implausível: ${recParsed.motivo || String(rawRecCell)}. Linha não importada.`,
               })
               continue
@@ -1311,10 +1347,11 @@ export function ImportadorRecebimentosModal({
               // Se for Planilha7 ou aba genérica sem mês plausível definido e sem data válida,
               // NUNCA inventar 31/12 nem primeiro do mês: deve virar erro visível e descartar
               if (isAbaGenericaPlanilha) {
-                sheetErrosCount += 1
+                sheetDivergenciasCount += 1
                 resultSummary.erros.push({
                   aba: sheetCfg.name,
                   linha: numLinha,
+                  tipo: 'divergencia',
                   motivo: `Aba ${sheetCfg.name}: Linha sem data plausível (2024–2028). Registro não importado.`,
                 })
                 continue
@@ -1330,10 +1367,11 @@ export function ImportadorRecebimentosModal({
 
           // Se for aba genérica como Planilha7 e não tiver cliente resolvível (nem cliente nem descrição válidos)
           if (isAbaGenericaPlanilha && !rawCli && !rawDesc) {
-            sheetErrosCount += 1
+            sheetDivergenciasCount += 1
             resultSummary.erros.push({
               aba: sheetCfg.name,
               linha: numLinha,
+              tipo: 'divergencia',
               motivo: `Aba ${sheetCfg.name}: Linha sem cliente resolvível nem descrição válida. Registro não importado.`,
             })
             continue
@@ -1380,15 +1418,15 @@ export function ImportadorRecebimentosModal({
 
         // FASE 1.5: Pré-deduplicação interna dos itens da própria planilha
         // Se a planilha contiver duas ou mais linhas idênticas na mesma aba (mesma data, cliente/desc, nota e valor),
-        // mantemos apenas a primeira e contabilizamos as subsequentes como duplicadas antes de despachar para o pool.
+        // mantemos apenas a primeira e contabilizamos as subsequentes como duplicadas internas da própria planilha
         const itensUnicosParaGravar: PreparedItemReceber[] = []
         if (detectarDuplicados) {
           const preBatchKeys = new Set<string>()
           for (const item of preparedItems) {
             const batchKey = `${item.dateOnly}_${item.valorStr}_${item.cliNorm}_${item.descNorm}_${item.notaNorm}`
             if (preBatchKeys.has(batchKey)) {
-              sheetDuplicados += 1
-              resultSummary.duplicadosPulados += 1
+              sheetDuplicadosInternos += 1
+              resultSummary.duplicadosInternos += 1
             } else {
               preBatchKeys.add(batchKey)
               itensUnicosParaGravar.push(item)
@@ -1416,14 +1454,13 @@ export function ImportadorRecebimentosModal({
                 ? `lock_doc_${clienteId || ''}_${item.valorStr}_${item.notaNorm}`
                 : null
 
-              // Se existir EXATAMENTE com mesma data, cliente, valor e descrição => duplicata real, pular
+              // Se existir EXATAMENTE com mesma data, cliente, valor e descrição => duplicata real já gravada no banco
               if (detectarDuplicados) {
                 if (
                   existingExactKeys.has(exactKey) ||
                   (docLockKey && existingExactKeys.has(docLockKey))
                 ) {
-                  resultSummary.duplicadosPulados += 1
-                  sheetDuplicados += 1
+                  resultSummary.duplicadosBanco += 1
                   return
                 }
                 // RESERVA ATÔMICA DA CHAVE ANTES DE GRAVAR NO BANCO:
@@ -1495,8 +1532,7 @@ export function ImportadorRecebimentosModal({
                   return
                 } else {
                   // Se não houve divergência, considerar duplicado idêntico
-                  resultSummary.duplicadosPulados += 1
-                  sheetDuplicados += 1
+                  resultSummary.duplicadosBanco += 1
                   return
                 }
               }
@@ -1666,11 +1702,23 @@ export function ImportadorRecebimentosModal({
                 resultSummary.emAberto += 1
               }
             } catch (rowErr: any) {
-              sheetErrosCount += 1
+              sheetErrosGravacaoCount += 1
+              // Extrair mensagem real do servidor / campos com falha de validação
+              const fieldErrs = extractFieldErrors(rowErr)
+              let detalheMsg = ''
+              if (Object.keys(fieldErrs).length > 0) {
+                detalheMsg = Object.entries(fieldErrs)
+                  .map(([f, m]) => `${f}: ${m}`)
+                  .join('; ')
+              } else {
+                detalheMsg = rowErr?.message || 'Falha ao gravar registro'
+              }
+
               resultSummary.erros.push({
                 aba: sheetCfg.name,
                 linha: item.numLinha,
-                motivo: rowErr.message || 'Falha ao processar linha',
+                tipo: 'gravacao',
+                motivo: `Erro de gravação no servidor: ${detalheMsg}`,
               })
             } finally {
               linhasProcessadasGlobal += 1
@@ -1697,8 +1745,9 @@ export function ImportadorRecebimentosModal({
           linhasLidas: sheetLidos,
           importados: sheetImportados,
           atualizados: sheetAtualizados,
-          duplicados: sheetDuplicados,
-          errosCount: sheetErrosCount,
+          duplicadosInternos: sheetDuplicadosInternos,
+          divergenciasCount: sheetDivergenciasCount,
+          errosGravacaoCount: sheetErrosGravacaoCount,
           vaziaOuSemCabecalho: isVazia,
           motivoVazia: isVazia
             ? `Nenhuma linha útil lida após a linha ${headerIdx}. Verifique se a linha do cabeçalho está correta.`
@@ -2589,43 +2638,52 @@ export function ImportadorRecebimentosModal({
               </div>
 
               {/* Cards de Métricas */}
-              <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
-                <div className="p-3 bg-white border border-[#ECEAE4] rounded-xl text-center">
+              <div className="grid grid-cols-2 sm:grid-cols-6 gap-2.5">
+                <div className="p-2.5 bg-white border border-[#ECEAE4] rounded-xl text-center">
                   <span className="text-[10px] text-gray-400 font-bold uppercase block">Lidos</span>
-                  <span className="text-lg font-bold text-gray-800 font-mono">
+                  <span className="text-base font-bold text-gray-800 font-mono">
                     {summary.totalLidos}
                   </span>
                 </div>
-                <div className="p-3 bg-white border border-[#ECEAE4] rounded-xl text-center">
-                  <span className="text-[10px] text-emerald-600 font-bold uppercase block">
+                <div className="p-2.5 bg-white border border-emerald-200 rounded-xl text-center bg-emerald-50/20">
+                  <span className="text-[10px] text-emerald-700 font-bold uppercase block">
                     Novos
                   </span>
-                  <span className="text-lg font-bold text-emerald-700 font-mono">
+                  <span className="text-base font-bold text-emerald-700 font-mono">
                     {summary.importados}
                   </span>
                 </div>
-                <div className="p-3 bg-white border border-[#ECEAE4] rounded-xl text-center">
-                  <span className="text-[10px] text-blue-600 font-bold uppercase block">
+                <div className="p-2.5 bg-white border border-blue-200 rounded-xl text-center bg-blue-50/20">
+                  <span className="text-[10px] text-blue-700 font-bold uppercase block">
                     Atualizados
                   </span>
-                  <span className="text-lg font-bold text-blue-700 font-mono">
+                  <span className="text-base font-bold text-blue-700 font-mono">
                     {summary.atualizados}
                   </span>
                 </div>
-                <div className="p-3 bg-white border border-[#ECEAE4] rounded-xl text-center">
-                  <span className="text-[10px] text-teal-600 font-bold uppercase block">
+                <div className="p-2.5 bg-white border border-[#ECEAE4] rounded-xl text-center">
+                  <span className="text-[10px] text-teal-700 font-bold uppercase block">
                     Baixados
                   </span>
-                  <span className="text-lg font-bold text-teal-700 font-mono">
+                  <span className="text-base font-bold text-teal-700 font-mono">
                     {summary.recebidasBaixadas}
                   </span>
                 </div>
-                <div className="p-3 bg-white border border-[#ECEAE4] rounded-xl text-center">
-                  <span className="text-[10px] text-amber-600 font-bold uppercase block">
-                    Duplicados
+                <div className="p-2.5 bg-white border border-amber-200 rounded-xl text-center bg-amber-50/20">
+                  <span
+                    className="text-[10px] text-amber-700 font-bold uppercase block"
+                    title="Linhas repetidas da própria planilha somadas na pré-deduplicação"
+                  >
+                    Duplicadas
                   </span>
-                  <span className="text-lg font-bold text-amber-700 font-mono">
-                    {summary.duplicadosPulados}
+                  <span className="text-base font-bold text-amber-700 font-mono">
+                    {summary.duplicadosInternos}
+                  </span>
+                </div>
+                <div className="p-2.5 bg-white border border-red-200 rounded-xl text-center bg-red-50/20">
+                  <span className="text-[10px] text-red-700 font-bold uppercase block">Erros</span>
+                  <span className="text-base font-bold text-red-700 font-mono">
+                    {summary.erros.filter((e) => e.tipo === 'gravacao').length}
                   </span>
                 </div>
               </div>
@@ -2637,56 +2695,77 @@ export function ImportadorRecebimentosModal({
                     Detalhamento por Aba Processada:
                   </span>
                   <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
-                    {summary.detalhesPorAba.map((item, idx) => (
-                      <div
-                        key={idx}
-                        className={`p-2 rounded-lg border text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-1.5 ${
-                          item.vaziaOuSemCabecalho
-                            ? 'bg-amber-50/80 border-amber-200 text-amber-950'
-                            : item.errosCount > 0
-                              ? 'bg-red-50/50 border-red-200 text-gray-800'
-                              : 'bg-[#FAF9F7] border-[#ECEAE4] text-gray-800'
-                        }`}
-                      >
-                        <div className="flex items-center gap-2">
-                          <span className="font-bold text-gray-900">{item.aba}</span>
+                    {summary.detalhesPorAba.map((item, idx) => {
+                      const temErroGravacao = item.errosGravacaoCount > 0
+                      const temDivergencia = item.divergenciasCount > 0
+
+                      return (
+                        <div
+                          key={idx}
+                          className={`p-2 rounded-lg border text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-1.5 ${
+                            item.vaziaOuSemCabecalho
+                              ? 'bg-amber-50/80 border-amber-200 text-amber-950'
+                              : temErroGravacao
+                                ? 'bg-red-50/50 border-red-200 text-gray-800'
+                                : temDivergencia
+                                  ? 'bg-amber-50/50 border-amber-200 text-gray-800'
+                                  : 'bg-[#FAF9F7] border-[#ECEAE4] text-gray-800'
+                          }`}
+                        >
+                          <div className="flex items-center gap-2">
+                            <span className="font-bold text-gray-900">{item.aba}</span>
+                            {item.vaziaOuSemCabecalho ? (
+                              <Badge
+                                variant="outline"
+                                className="text-[10px] bg-amber-100 text-amber-900 border-amber-300"
+                              >
+                                0 linhas lidas
+                              </Badge>
+                            ) : (
+                              <span className="text-[11px] text-gray-500">
+                                {item.linhasLidas} lidas • {item.importados} novos
+                                {item.atualizados > 0 && ` • ${item.atualizados} atualizados`}
+                                {item.duplicadosInternos > 0 &&
+                                  ` • ${item.duplicadosInternos} duplicadas (da própria planilha)`}
+                              </span>
+                            )}
+                          </div>
+
                           {item.vaziaOuSemCabecalho ? (
-                            <Badge
-                              variant="outline"
-                              className="text-[10px] bg-amber-100 text-amber-900 border-amber-300"
-                            >
-                              0 linhas lidas
-                            </Badge>
-                          ) : (
-                            <span className="text-[11px] text-gray-500">
-                              {item.linhasLidas} lidas • {item.importados} novos •{' '}
-                              {item.atualizados > 0 && `${item.atualizados} atualizados • `}
-                              {item.duplicados} duplicadas
+                            <span className="text-[11px] font-medium text-amber-800">
+                              {item.motivoVazia || 'Aba sem dados detectados'}
                             </span>
+                          ) : (
+                            <div className="flex items-center gap-1.5">
+                              {temErroGravacao && (
+                                <Badge
+                                  variant="outline"
+                                  className="text-[10px] bg-red-100 text-red-800 border-red-300 font-semibold"
+                                >
+                                  {item.errosGravacaoCount} erro(s) de gravação
+                                </Badge>
+                              )}
+                              {temDivergencia && (
+                                <Badge
+                                  variant="outline"
+                                  className="text-[10px] bg-amber-100 text-amber-800 border-amber-300"
+                                >
+                                  {item.divergenciasCount} divergência(s) cadastrais
+                                </Badge>
+                              )}
+                              {!temErroGravacao && !temDivergencia && (
+                                <Badge
+                                  variant="outline"
+                                  className="text-[10px] bg-emerald-50 text-emerald-700 border-emerald-300"
+                                >
+                                  100% OK
+                                </Badge>
+                              )}
+                            </div>
                           )}
                         </div>
-
-                        {item.vaziaOuSemCabecalho ? (
-                          <span className="text-[11px] font-medium text-amber-800">
-                            {item.motivoVazia || 'Aba sem dados detectados'}
-                          </span>
-                        ) : item.errosCount > 0 ? (
-                          <Badge
-                            variant="outline"
-                            className="text-[10px] bg-red-100 text-red-800 border-red-300"
-                          >
-                            {item.errosCount} divergência(s)
-                          </Badge>
-                        ) : (
-                          <Badge
-                            variant="outline"
-                            className="text-[10px] bg-emerald-50 text-emerald-700 border-emerald-300"
-                          >
-                            100% OK
-                          </Badge>
-                        )}
-                      </div>
-                    ))}
+                      )
+                    })}
                   </div>
                 </div>
               )}
@@ -2710,18 +2789,42 @@ export function ImportadorRecebimentosModal({
                 </div>
               )}
 
-              {summary.erros.length > 0 && (
+              {/* Erros de gravação no servidor */}
+              {summary.erros.filter((e) => e.tipo === 'gravacao').length > 0 && (
                 <div className="p-3 bg-red-50 rounded-xl border border-red-200">
                   <span className="font-semibold text-red-900 block mb-1 flex items-center gap-1">
-                    <AlertTriangle className="w-3.5 h-3.5 text-red-600" />
-                    Linhas com Divergências ({summary.erros.length}):
+                    <AlertCircle className="w-3.5 h-3.5 text-red-600" />
+                    Erros de Gravação no Servidor (
+                    {summary.erros.filter((e) => e.tipo === 'gravacao').length}):
                   </span>
                   <div className="space-y-1 max-h-36 overflow-y-auto text-[11px] text-red-800">
-                    {summary.erros.map((err, i) => (
-                      <div key={i}>
-                        [{err.aba}] Linha {err.linha}: {err.motivo}
-                      </div>
-                    ))}
+                    {summary.erros
+                      .filter((e) => e.tipo === 'gravacao')
+                      .map((err, i) => (
+                        <div key={i}>
+                          [{err.aba}] Linha {err.linha}: {err.motivo}
+                        </div>
+                      ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Divergências de validação cadastral / dados da planilha */}
+              {summary.erros.filter((e) => e.tipo === 'divergencia').length > 0 && (
+                <div className="p-3 bg-amber-50 rounded-xl border border-amber-200">
+                  <span className="font-semibold text-amber-900 block mb-1 flex items-center gap-1">
+                    <AlertTriangle className="w-3.5 h-3.5 text-amber-600" />
+                    Divergências Cadastrais da Planilha (
+                    {summary.erros.filter((e) => e.tipo === 'divergencia').length}):
+                  </span>
+                  <div className="space-y-1 max-h-36 overflow-y-auto text-[11px] text-amber-800">
+                    {summary.erros
+                      .filter((e) => e.tipo === 'divergencia')
+                      .map((err, i) => (
+                        <div key={i}>
+                          [{err.aba}] Linha {err.linha}: {err.motivo}
+                        </div>
+                      ))}
                   </div>
                 </div>
               )}
