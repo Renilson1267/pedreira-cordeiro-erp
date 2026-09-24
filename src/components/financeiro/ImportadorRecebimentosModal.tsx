@@ -46,6 +46,7 @@ import {
   normalizarNomeColuna,
   inferirMesPorDatasDaPlanilha,
   extrairCidadeENota,
+  isNotaValida,
   classificarStatusRecebimento,
   normalizarFormaRecebimento,
   REGEX_COL_DATA,
@@ -1014,6 +1015,7 @@ export function ImportadorRecebimentosModal({
           dataVencimentoISO: string
           notaFinal: string
           enderecoFinal: string
+          textoLivreExtra: string
           valorFinal: number
           rawValorRec: number
           rawDataRec: any
@@ -1293,6 +1295,18 @@ export function ImportadorRecebimentosModal({
             continue
           }
 
+          // Barreira: valores individuais > R$ 2 milhões em recebimento de pedra viram divergência cadastral visível no resumo
+          if (valorFinal > 2_000_000) {
+            sheetDivergenciasCount += 1
+            resultSummary.erros.push({
+              aba: sheetCfg.name,
+              linha: numLinha,
+              tipo: 'divergencia',
+              motivo: `Aba ${sheetCfg.name}: Valor de R$ ${valorFinal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })} excede o teto individual de R$ 2.000.000 para recebimento de pedra. Registro não gravado diretamente.`,
+            })
+            continue
+          }
+
           // Leitura estrita de data linha a linha:
           // 1º: A célula da coluna mapeada de data da linha atual
           // 2º: Outras colunas da linha atual que contenham data sanitária
@@ -1381,10 +1395,13 @@ export function ImportadorRecebimentosModal({
           // Regra do usuário ("descrição limpa"): a descrição gravada permanece VAZIA (""),
           // exceto se houver uma coluna de descrição dedicada DIFERENTE da coluna de cliente.
           // A cidade identificada vai para o campo Endereço e o número de nota vai para o campo Nota.
+          // Nota só aceita conteúdo numérico/documento; se for texto livre, vira observação.
           const textoParaExtracao = `${rawCli || ''} ${rawDesc || ''}${rawDoc ? ` [Doc: ${rawDoc}]` : ''}`
           const extraidos = extrairCidadeENota(textoParaExtracao)
-          const notaFinal = (rawDoc || extraidos.nota || '').trim()
+          const notaFinal = (rawDoc && isNotaValida(rawDoc) ? rawDoc : extraidos.nota || '').trim()
           const enderecoFinal = (extraidos.cidade || '').trim()
+          const textoLivreExtra =
+            extraidos.textoLivreObservacao || (!isNotaValida(rawDoc) ? rawDoc : '')
           // Se rawDesc for igual a rawCli (ou não houver coluna de descrição dedicada), grava vazio ("")
           const descFinal = (rawDesc && rawDesc !== rawCli ? rawDesc : '').trim()
 
@@ -1401,6 +1418,7 @@ export function ImportadorRecebimentosModal({
             dataVencimentoISO,
             notaFinal,
             enderecoFinal,
+            textoLivreExtra,
             valorFinal,
             rawValorRec,
             rawDataRec,
@@ -1611,7 +1629,7 @@ export function ImportadorRecebimentosModal({
                     forma_recebimento: finalStatus !== 'Aberta' ? finalForma : null,
                     endereco: item.enderecoFinal || undefined,
                     nota: item.notaFinal || undefined,
-                    observacoes: `Importado de planilha [Aba: ${sheetCfg.name}]${item.notaFinal ? ` | Doc: ${item.notaFinal}` : ''}${finalStatus === 'Parcial' ? ` | Recebimento parcial importado: ${valorEfetivoRecebido}` : ''}`,
+                    observacoes: `Importado de planilha [Aba: ${sheetCfg.name}]${item.notaFinal ? ` | Doc: ${item.notaFinal}` : ''}${item.textoLivreExtra ? ` | Obs: ${item.textoLivreExtra}` : ''}${finalStatus === 'Parcial' ? ` | Recebimento parcial importado: ${valorEfetivoRecebido}` : ''}`,
                   }),
                 {
                   maxRetries: 8,

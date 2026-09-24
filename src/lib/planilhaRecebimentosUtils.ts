@@ -213,8 +213,9 @@ export const REGEX_COL_CLIENTE =
 export const REGEX_COL_DESCRICAO =
   /HISTORICO|DESCRICAO|DESC|SERV|PROD|REFERENCIA|ITEM|DISCRIM|DETALHE|OBS/i
 export const REGEX_COL_VALOR =
-  /VALOR\s*RECEBIDO|VALOR\s*TOTAL|VALOR\s*A\s*RECEBER|VALOR\s*LIQUIDO|VALOR\s*BRUTO|VALOR\s*R\$?|VALOR\s*R|RECEBIDO|REALIZADO|PREVISTO|VALOR|TOTAL|LIQUIDO|BRUTO|R\$|CREDITO|CREDITOS|RECEITA|RECEITAS|ENTRADA|ENTRADAS/i
-export const REGEX_COL_VALOR_RECEBIDO = /VALOR\s*RECEBIDO|RECEBIDO|REC|LIQUID|PAGO|VALOR\s*PAGO/i
+  /^(?:VALOR\s*DA\s*COMPRA|VALOR\s*TOTAL|VALOR\s*BRUTO|VALOR\s*LIQUIDO|VALOR\s*A\s*RECEBER|VALOR\s*R\$?|VALOR\s*R|VALOR\s*RECEBIDO|VALOR|TOTAL|LIQUIDO|BRUTO|CREDITO|CREDITOS|RECEITA|RECEITAS|ENTRADA|ENTRADAS)$/i
+export const REGEX_COL_VALOR_RECEBIDO =
+  /^(?:VALOR\s*RECEBIDO|VALOR\s*PAGO|VALOR\s*LIQUID|RECEBIDO|REC|LIQUID|PAGO)$/i
 export const REGEX_COL_DATA_RECEBIMENTO =
   /DT\s*REC|DATA\s*REC|RECEB|BAIXA|DATA\s*BAIXA|LIQUID|QUITAC/i
 export const REGEX_COL_FORMA_RECEBIMENTO =
@@ -394,11 +395,11 @@ export function detectarLinhaCabecalho(
   return 1
 }
 
-export const VALOR_MAXIMO_RECEBIMENTO = 50_000_000 // R$ 50 milhões
+export const VALOR_MAXIMO_RECEBIMENTO = 2_000_000 // R$ 2 milhões para título individual de pedreira
 
 /**
  * Valida se um número representa um valor monetário plausível no ERP da pedreira.
- * Rejeita valores acima de 50.000.000 ou NaN/Infinity.
+ * Rejeita valores acima de 2.000.000 ou NaN/Infinity.
  */
 export function isValorPlausivel(num: number | null | undefined): boolean {
   if (num === null || num === undefined || typeof num !== 'number') return false
@@ -418,7 +419,7 @@ export interface ParseValorResult {
  * parênteses contábeis etc.
  * Rejeita explicitamente:
  * 1) Números inteiros sem separador decimal com 10 ou mais dígitos (típicos números de telefone/celular com DDD, CNPJs, códigos de barras/boletos)
- * 2) Valores que ultrapassam R$ 50.000.000 (valores absurdos como 101 bilhões)
+ * 2) Valores individuais que ultrapassam a barreira de R$ 2.000.000 em recebimento de pedra (viram divergência cadastral)
  */
 export function parseValorReceberDetalhado(val: any): ParseValorResult {
   if (val === null || val === undefined || val === '') {
@@ -433,12 +434,12 @@ export function parseValorReceberDetalhado(val: any): ParseValorResult {
     const absVal = Math.abs(val)
     if (absVal === 0) return { valor: 0, invalidoOuAbsurdo: false }
 
-    // Números inteiros enormes (ex: 101454102275) sem casas decimais são telefones ou documentos
+    // Números inteiros enormes sem casas decimais são telefones ou documentos
     if (absVal > VALOR_MAXIMO_RECEBIMENTO) {
       return {
         valor: 0,
         invalidoOuAbsurdo: true,
-        motivo: `Valor implausível (> R$ 50M) detectado como telefone/documento (${absVal})`,
+        motivo: `Valor de R$ ${absVal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })} ultrapassa o limite individual de R$ 2.000.000 (divergência cadastral)`,
       }
     }
 
@@ -488,16 +489,30 @@ export function parseValorReceberDetalhado(val: any): ParseValorResult {
 
   if (!str) return { valor: 0, invalidoOuAbsurdo: false }
 
+  // Parse estrito PT-BR / US respeitando pontos de milhar e vírgula decimal
   if (str.includes(',') && str.includes('.')) {
     const lastComma = str.lastIndexOf(',')
     const lastDot = str.lastIndexOf('.')
     if (lastComma > lastDot) {
+      // Padrão brasileiro: "1.234.567,89" -> pontos são milhar, vírgula é decimal
       str = str.replace(/\./g, '').replace(',', '.')
     } else {
+      // Padrão americano: "1,234,567.89" -> vírgulas são milhar, ponto é decimal
       str = str.replace(/,/g, '')
     }
   } else if (str.includes(',')) {
+    // Apenas vírgula: padrão PT-BR ("1234,56") -> vira decimal
     str = str.replace(',', '.')
+  } else if (str.includes('.')) {
+    // Apenas ponto: pode ser decimal "1234.56" ou ponto de milhar PT-BR sem decimais "1.234"
+    const parts = str.split('.')
+    if (parts.length > 2) {
+      // Múltiplos pontos ("1.234.567"): claramente separador de milhar brasileiro
+      str = str.replace(/\./g, '')
+    } else if (parts.length === 2 && parts[1].length === 3 && parseInt(parts[0], 10) > 0) {
+      // Um único ponto com exatamente 3 dígitos depois ("1.234"): se for número inteiro sem vírgula, avaliar milhar
+      // Mas para evitar ambiguidade se for valor monetário sem vírgula, mantemos decimal padrão a menos que venha formatado
+    }
   }
 
   const num = parseFloat(str)
@@ -506,11 +521,12 @@ export function parseValorReceberDetalhado(val: any): ParseValorResult {
   const absNum = Math.abs(num)
   if (absNum === 0) return { valor: 0, invalidoOuAbsurdo: false }
 
+  // Barreira de R$ 2 milhões para título individual de pedreira
   if (absNum > VALOR_MAXIMO_RECEBIMENTO) {
     return {
       valor: 0,
       invalidoOuAbsurdo: true,
-      motivo: `Valor R$ ${absNum.toLocaleString('pt-BR')} excede o limite máximo plausível de R$ 50.000.000`,
+      motivo: `Valor de R$ ${absNum.toLocaleString('pt-BR', { minimumFractionDigits: 2 })} excede o limite máximo plausível de R$ 2.000.000 para recebimento individual (divergência cadastral)`,
     }
   }
 
@@ -1069,9 +1085,85 @@ export function normalizarFormaRecebimento(
   return 'Pix'
 }
 
+// Lista de cidades/municípios conhecidos da região da pedreira para extração confiável
+export const CIDADES_CONHECIDAS_PEDREIRA = [
+  'CACIMBAS DE DESTERRO',
+  'SÃO JOSE DO BONFIM',
+  'SÃO JOSÉ DO BONFIM',
+  'SÃO JOSE DE ESPINHARAS',
+  'SÃO JOSÉ DE ESPINHARAS',
+  'SÃO JOSE CAIANA',
+  'SÃO JOSÉ CAIANA',
+  'SÃO SEBASTIÃO CAÇIMBAS',
+  'SÃO SEBASTIAO CACIMBAS',
+  'SANTA TEREZINHA',
+  'SANTANA DOS GARROTES',
+  'VISTA SERRANA',
+  "OLHO D'AGUA",
+  'OLHO DAGUA',
+  'NOVA OLINDA',
+  'PATOS',
+  'TEIXEIRA',
+  'COREMAS',
+  'ITAPORANGA',
+  'PIANCO',
+  'PIANCÓ',
+  'DESTERRO',
+  'LAGOINHA',
+  'MALTA',
+  'PASSAGEM',
+  'IMACULADA',
+  'IGARACY',
+  'AGUIAR',
+  'EMAS',
+  'SJE',
+  'CONDADO',
+  'CATURITE',
+  'POMBAL',
+  'SOUSA',
+  'JUAZEIRINHO',
+  'CAAPORA',
+]
+
+/**
+ * Valida se uma string é um documento/número fiscal legítimo (ex: "90569", "86716 A 91585", "NF 1234", "90559 a 93000", "87205/91484").
+ * Rejeita textos livres explicativos como "PAGAMENTO DE BRITA", "ADIANTAMENTO", "VENDA DE BRITADOR" etc.
+ */
+export function isNotaValida(str: string | null | undefined): boolean {
+  if (!str || typeof str !== 'string') return false
+  const trimmed = str.trim()
+  if (!trimmed) return false
+
+  // Se tiver palavras-chave de texto descritivo livre, NÃO é nota fiscal
+  const textoLivre =
+    /PAGAMENTO|BRITA|ADIANTAMENTO|VENDA|SERVIÇO|SERVICO|VIGILANCIA|VIGILÂNCIA|BRITADOR|MENSALIDADE|VALE|ABASTECIMENTO|DIARIA|PEDREIRA/i
+  if (textoLivre.test(trimmed)) {
+    return false
+  }
+
+  // Uma nota/documento fiscal precisa conter pelo menos um dígito
+  if (!/\d/.test(trimmed)) {
+    return false
+  }
+
+  // Padrão aceito: dígitos com barras, hífens, letras 'A'/'a' indicando intervalo, ou prefixos NF/NFe/Doc
+  // Ex: "90569", "86716 A 91585", "87205/87278/92623", "NF-1234", "DOC 5543"
+  const docPattern =
+    /^(?:(?:NF|NF-e|NFe|Nota|Doc|Duplicata|Fatura|Ch|Cheque)[\s.:#-]+)?[\d\s/\-–Aa,.]+$/i
+  return docPattern.test(trimmed)
+}
+
+/**
+ * Extrai cidade e número de nota a partir da descrição ou texto consolidado da linha da planilha.
+ * Regras:
+ * - Nota só aceita conteúdo numérico/documento fiscal (rejeita texto livre como "PAGAMENTO DE BRITA").
+ * - Cidade/endereço nunca engole nomes entre parênteses (ex: "(JOSE VIEIRA DE SOUSA)", "(C PINHEIROS & CIA LTDA)").
+ * - Parênteses com nome de cliente ou empresa NÃO são cidades; na dúvida, deixa endereço vazio.
+ */
 export function extrairCidadeENota(descricao: string | null | undefined): {
   cidade: string
   nota: string
+  textoLivreObservacao?: string
 } {
   if (!descricao || typeof descricao !== 'string') {
     return { cidade: '', nota: '' }
@@ -1082,59 +1174,88 @@ export function extrairCidadeENota(descricao: string | null | undefined): {
     return { cidade: '', nota: '' }
   }
 
-  let nota = ''
-  let cidade = ''
+  let rawNotaCandidate = ''
+  let textoLivreObservacao = ''
 
   // 1. Extração da Nota / Documento
   // Padrões com colchetes: [Doc: 90566], [Doc: NF9436/91679 A 92219], [NF: 1234]
   const bracketDocMatch = desc.match(/\[(?:Doc|NF|NF-e|NFe|Nota|Duplicata|Fatura)[\s:]*([^\]]+)\]/i)
   if (bracketDocMatch && bracketDocMatch[1].trim()) {
-    nota = bracketDocMatch[1].trim()
+    rawNotaCandidate = bracketDocMatch[1].trim()
   } else {
     // Padrão inline com "Doc" / "NF" / "NF-e" seguido pelo número até o fim ou antes de colchetes
     const inlineDocMatch = desc.match(
       /\b(?:Doc|NF|NF-e|NFe|Nota|Duplicata)[\s.:#-]+([A-Z0-9/\s\-–]+)$/i,
     )
     if (inlineDocMatch && inlineDocMatch[1].trim()) {
-      nota = inlineDocMatch[1].trim().replace(/\s+$/, '')
+      rawNotaCandidate = inlineDocMatch[1].trim().replace(/\s+$/, '')
     } else {
       // Padrão com dígitos no final após traço ou "Doc": ex "... - 90566" ou "... Doc 90566"
       const endDigitsMatch = desc.match(/(?:Doc|NF|\s[-–])\s*(\d{3,8}(?:\s*[/\-A]\s*\d{3,8})*)$/i)
       if (endDigitsMatch && endDigitsMatch[1].trim()) {
-        nota = endDigitsMatch[1].trim()
+        rawNotaCandidate = endDigitsMatch[1].trim()
       }
     }
   }
 
+  // Normalizar nota removendo prefixo "Doc: " se existir
+  if (rawNotaCandidate) {
+    rawNotaCandidate = rawNotaCandidate.replace(/^(?:Doc|NF|NF-e|NFe|Nota)[\s.:#-]+/i, '').trim()
+  }
+
+  // Validar se o candidato a nota é documento fiscal ou texto livre
+  let nota = ''
+  if (isNotaValida(rawNotaCandidate)) {
+    nota = rawNotaCandidate
+  } else if (rawNotaCandidate) {
+    // Se era texto descritivo como "PAGAMENTO DE BRITA", vira observação e nota fica vazia
+    textoLivreObservacao = rawNotaCandidate
+  }
+
   // 2. Extração da Cidade / Endereço
-  // Remove a parte do documento para isolar o trecho do cliente e cidade
+  // Remover qualquer trecho entre colchetes [Doc: ...] ou inline Doc/NF
   let textWithoutDoc = desc
     .replace(/\[(?:Doc|NF|NF-e|NFe|Nota|Duplicata|Fatura)[\s:]*[^\]]+\]/gi, '')
     .replace(/\b(?:Doc|NF|NF-e|NFe|Nota|Duplicata)[\s.:#-]+.*$/i, '')
     .trim()
 
-  // Se houver " - " separando partes:
-  // ex: "Recebimento ELDORADO PRE MOLDADO - PATOS - SANTANDER"
-  // ex: "Recebimento ADRIANO HELIO DE BRITO - SJE - BRADESCO"
-  // ex: "Recebimento WALBER DE ALMEIDA - DESTERRO"
-  // ex: "Recebimento KERLY CONSTRUÇÕES/ADRIANO - VISTA SERRANA- SANTADER"
-  // ex: "Recebimento ECO FORTE - SÃO JOSE DO BONFIM - SANTANDER"
-  if (textWithoutDoc.includes('-') || textWithoutDoc.includes('–')) {
-    // Normalizar separadores com espaço ao redor para facilitar split
-    const parts = textWithoutDoc
+  // REGRA ESTRITA DE PARÊNTESES:
+  // Parênteses contendo nome de cliente, sócios, razão social ou apelidos (ex: "(JOSE VIEIRA DE SOUSA)",
+  // "(C PINHEIROS & CIA LTDA)", "(SUNCITY EMPREENDIMENTOS)", "JOSE HENRIUE AMORIM DE SOUZA)")
+  // NUNCA devem ser capturados como endereço/cidade.
+  // Removemos qualquer conteúdo entre parênteses e caracteres de parênteses soltos antes de procurar a cidade.
+  const textoSemParenteses = textWithoutDoc
+    .replace(/\(.*?\)/g, ' ')
+    .replace(/[()]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+
+  let cidade = ''
+
+  // Verificar se alguma cidade conhecida da região ocorre no texto
+  const upperSemParenteses = textoSemParenteses.toUpperCase()
+  for (const cid of CIDADES_CONHECIDAS_PEDREIRA) {
+    // Procura por palavra inteira correspondente à cidade
+    const regexCidade = new RegExp(`(?:^|[\\s\\-_/])${cid}(?:$|[\\s\\-_/])`, 'i')
+    if (regexCidade.test(upperSemParenteses)) {
+      cidade = cid
+      break
+    }
+  }
+
+  // Se não encontrou cidade conhecida da lista, tentar analisar padrão de partes separadas por hífen
+  if (!cidade && (textoSemParenteses.includes('-') || textoSemParenteses.includes('–'))) {
+    const parts = textoSemParenteses
       .replace(/[-–]/g, ' - ')
       .split(/\s+-\s+/)
       .map((p) => p.trim())
       .filter(Boolean)
 
     if (parts.length >= 2) {
-      // Remover termos de banco/forma do final se houver (ex: SANTANDER, BRADESCO, BANCO, PIX, BOLETO)
       const bancosOuFormas =
         /^(?:SANTANDER|SANTADER|BRADESCO|BANCO|ITAU|BB|BRASIL|CAIXA|SICOOB|SICREDI|NUBANK|INTER|PIX|BOLETO|TED|DOC|CHEQUE)$/i
 
-      // A cidade normalmente é a parte entre o cliente e o banco, ou a última parte após o cliente
-      let candidateParts = parts.slice(1) // ignora a primeira parte que contém "Recebimento [cliente]"
-      // Se a última parte for banco, retira
+      let candidateParts = parts.slice(1)
       if (
         candidateParts.length > 1 &&
         bancosOuFormas.test(candidateParts[candidateParts.length - 1])
@@ -1144,24 +1265,23 @@ export function extrairCidadeENota(descricao: string | null | undefined): {
 
       if (candidateParts.length > 0) {
         let cand = candidateParts[candidateParts.length - 1]
-        // Se ainda tiver um banco grudado no final (ex "VISTA SERRANA- SANTADER" que foi splitado)
         cand = cand
           .replace(
             /\b(?:SANTANDER|SANTADER|BRADESCO|BANCO|ITAU|BB|BRASIL|CAIXA|SICOOB|SICREDI|PIX|BOLETO)\b/gi,
             '',
           )
           .trim()
-        if (cand && cand.length >= 2 && !/^\d+$/.test(cand)) {
+
+        // Barreira sanitária de cidade: não pode ser número, nem nome próprio longo (> 35 chars ou 4+ palavras)
+        const candWords = cand.split(/\s+/).filter(Boolean)
+        const pareceNomeProprio =
+          candWords.length >= 4 || /\b(?:LTDA|ME|EPP|EIRELI|S\/A|CIA)\b/i.test(cand)
+        if (cand && cand.length >= 2 && !/^\d+$/.test(cand) && !pareceNomeProprio) {
           cidade = cand
         }
       }
     }
   }
 
-  // Normalizar nota removendo prefixo "Doc: " redundante se existir
-  if (nota) {
-    nota = nota.replace(/^(?:Doc|NF|NF-e|NFe|Nota)[\s.:#-]+/i, '').trim()
-  }
-
-  return { cidade, nota }
+  return { cidade, nota, textoLivreObservacao }
 }

@@ -55,6 +55,7 @@ import {
   parseDataReceber,
   classificarStatusRecebimento,
   extrairCidadeENota,
+  isNotaValida,
   REGEX_COL_DATA,
   REGEX_COL_CLIENTE,
   REGEX_COL_DESCRICAO,
@@ -378,7 +379,9 @@ export function ConferirPlanilhaRecebimentosModal({
 
           // Resolução de nota/doc e endereço
           const extraido = extrairCidadeENota(rawDesc || rawCli)
-          const notaPlanilha = rawDoc || extraido.nota || ''
+          const notaPlanilha = (
+            rawDoc && isNotaValida(rawDoc) ? rawDoc : extraido.nota || ''
+          ).trim()
 
           // Determinar status na planilha
           const rawStatus = String(getVal(statusCol) || '').trim()
