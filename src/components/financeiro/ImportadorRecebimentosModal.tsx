@@ -69,6 +69,9 @@ import {
   REGEX_COL_VALOR_COMPRA,
   isColunaCheque,
   extrairNumeroCheque,
+  isSuspeitoNumeroNotaFiscal,
+  temCorroboracaoMonetariaExplicita,
+  isColunaNaoMonetaria,
 } from '@/lib/planilhaRecebimentosUtils'
 import { withRateLimitRetry, sleep, runParallelPool } from '@/lib/pocketbase/rateLimit'
 import { Progress } from '@/components/ui/progress'
@@ -1385,18 +1388,32 @@ export function ImportadorRecebimentosModal({
           }
 
           // Descobrir valor final: PRIMARIAMENTE da coluna mapeada ("VALOR DA COMPRA" ou "VALOR RECEBIDO").
-          // Apenas se a aba não tiver coluna de valor reconhecível e nenhum valor for lido, usa varredura como ÚLTIMO recurso
-          // NUNCA ler colunas de cheque (isColunaCheque) e manter todas as barreiras.
+          // REGRA ESTRITA: Se a coluna de "VALOR DA COMPRA" (activeValCol) existir na aba mas a célula da linha estiver vazia/zerada:
+          // NÃO deve inventar valor por varredura quando existir qualquer coluna de documento/nota na linha.
+          // Nesse caso vira divergência explícita no resumo ("valor vazio — linha X, cliente Y"), NUNCA grava.
           let valorFinal = rawValor > 0 ? rawValor : rawValorRec
 
-          // Se a coluna de valor existir mas a célula estiver vazia/zerada, NÃO inventar valor de coluna de cheque
-          if (valorFinal <= 0 && !activeValCol) {
-            // Varredura de linha apenas quando NÃO HÁ coluna de cabeçalho reconhecível
+          const temAlgumaColunaDocumentoNaLinha = Boolean(
+            activeDocCol ||
+            activeHeaders.some((h) => {
+              const hn = normalizarNomeColuna(h)
+              return REGEX_COL_DOCUMENTO.test(hn) || hn.includes('NOTA') || hn.includes('NF')
+            }),
+          )
+
+          // Se a coluna de valor foi mapeada (ex.: "VALOR DA COMPRA") mas a célula desta linha está vazia:
+          // Se houver qualquer coluna de documento/nota na linha, PROIBIDO fazer varredura de fallback.
+          const linhaComValorCompraMapeadoMasVazio = Boolean(activeValCol && valorFinal <= 0)
+
+          if (valorFinal <= 0 && !activeValCol && !linhaComValorCompraMapeadoMasVazio) {
+            // Varredura de linha apenas quando NÃO HÁ coluna de cabeçalho de valor reconhecível na aba
             let maiorValorEncontrado = 0
             for (let colIdx = 0; colIdx < row.length; colIdx++) {
               if (colIdx === activeDataColIdx || colIdx === activeDocColIdx) continue
-              const hName = normalizarNomeColuna(activeHeaders[colIdx] || '')
-              if (isColunaCheque(hName) || isColunaCheque(activeHeaders[colIdx])) continue
+              const rawH = activeHeaders[colIdx] || ''
+              const hName = normalizarNomeColuna(rawH)
+              // O fallback de varredura só pode considerar células que não sejam colunas de nota/documento/cheque/parcela/data/telefone
+              if (isColunaNaoMonetaria(rawH) || isColunaNaoMonetaria(hName)) continue
 
               const cellRaw = row[colIdx]
               if (typeof cellRaw === 'string' && /^(?:NF|DOC|NOTA|DUPL)/i.test(cellRaw.trim()))
@@ -1405,13 +1422,15 @@ export function ImportadorRecebimentosModal({
 
               if (isPadraoNumeroParcela(cellRaw)) continue // ignora números de parcela na varredura
               if (isNumeroChequeOuSerieBancaria(cellRaw).ehCheque) continue // ignora cheques
+              if (isSuspeitoNumeroNotaFiscal(cellRaw, rawH).ehNota) continue // ignora números de NF na varredura
 
-              const cellDet = parseValorReceberDetalhado(cellRaw)
+              const cellDet = parseValorReceberDetalhado(cellRaw, rawH)
               if (cellDet.invalidoOuAbsurdo) continue // ignora telefones/docs na varredura
               const cellVal = cellDet.valor
               if (cellVal > 0) {
                 if (isPadraoNumeroParcela(cellVal)) continue
                 if (isNumeroChequeOuSerieBancaria(cellVal).ehCheque) continue
+                if (isSuspeitoNumeroNotaFiscal(cellVal, rawH).ehNota) continue
                 if (
                   hName.includes('VALOR') ||
                   hName.includes('RECEB') ||
@@ -1433,33 +1452,48 @@ export function ImportadorRecebimentosModal({
             }
           }
 
-          // Barreira anti-cheque e anti-série bancária (faixa 800.000–865.000 / datas compactas)
+          // Se a linha tem a célula de VALOR DA COMPRA vazia e tem documento/nota na linha,
+          // registrar divergência explícita e NUNCA inventar valor
+          if (
+            linhaComValorCompraMapeadoMasVazio &&
+            temAlgumaColunaDocumentoNaLinha &&
+            valorFinal <= 0
+          ) {
+            sheetDivergenciasCount += 1
+            resultSummary.erros.push({
+              aba: sheetCfg.name,
+              linha: numLinha,
+              tipo: 'divergencia',
+              motivo: `Aba ${sheetCfg.name}: valor vazio — linha ${numLinha}, cliente: "${rawCli || rawDesc || 'não informado'}" (documento presente na linha, valor não inventado por varredura). Registro não gravado.`,
+            })
+            continue
+          }
+
+          // Barreira anti-cheque e anti-série bancária (faixa 800.000–899.999 / datas compactas)
           const chequeCheck = isNumeroChequeOuSerieBancaria(valorFinal)
           if (chequeCheck.ehCheque) {
-            // Tenta buscar valor financeiro alternativo plausível na linha (< 100.000)
-            let valorSubstitutoPlausivel = 0
-            for (let cIdx = 0; cIdx < row.length; cIdx++) {
-              if (cIdx === activeDataColIdx || cIdx === activeDocColIdx) continue
-              const cRaw = row[cIdx]
-              if (cRaw === null || cRaw === undefined || cRaw === '') continue
-              if (isPadraoNumeroParcela(cRaw)) continue
-              const cDet = parseValorReceberDetalhado(cRaw)
-              if (cDet.invalidoOuAbsurdo) continue
-              if (cDet.valor > 0 && cDet.valor < LIMIAR_VALOR_SUSPEITO_RECEBER) {
-                valorSubstitutoPlausivel = cDet.valor
-                break
-              }
-            }
+            sheetDivergenciasCount += 1
+            resultSummary.erros.push({
+              aba: sheetCfg.name,
+              linha: numLinha,
+              tipo: 'divergencia',
+              motivo: `Aba ${sheetCfg.name}: Linha ${numLinha}: Valor suspeito (${valorFinal}) identificado como número de cheque/série bancária — não é valor de título. Registro não gravado.`,
+            })
+            continue
+          }
 
-            if (valorSubstitutoPlausivel > 0) {
-              valorFinal = valorSubstitutoPlausivel
-            } else {
+          // Barreira anti-nota fiscal na faixa 80.000 a 99.999 sem corroboração monetária explícita
+          const notaSuspeitaCheck = isSuspeitoNumeroNotaFiscal(valorFinal, activeValCol)
+          if (notaSuspeitaCheck.ehNota) {
+            const rawValStr = String(rawValCell ?? '')
+            const temCorroboracao = temCorroboracaoMonetariaExplicita(rawValStr, activeValCol)
+            if (!temCorroboracao) {
               sheetDivergenciasCount += 1
               resultSummary.erros.push({
                 aba: sheetCfg.name,
                 linha: numLinha,
                 tipo: 'divergencia',
-                motivo: `Aba ${sheetCfg.name}: Linha ${numLinha}: Valor suspeito (${valorFinal}) identificado como número de cheque/série bancária — não é valor de título. Registro não gravado.`,
+                motivo: `Aba ${sheetCfg.name}: Linha ${numLinha}: Valor ${valorFinal} suspeito de número de nota fiscal (faixa 80k–99k sem corroboração monetária explícita). Registro não gravado.`,
               })
               continue
             }
@@ -1468,37 +1502,16 @@ export function ImportadorRecebimentosModal({
           // Barreira de valor suspeito >= R$ 100.000 sem corroboração explícita
           if (valorFinal >= LIMIAR_VALOR_SUSPEITO_RECEBER) {
             const rawValStr = String(rawValCell ?? '')
-            const temCorroboracao =
-              /R\$/i.test(rawValStr) ||
-              /,\d{2}$/.test(rawValStr.trim()) ||
-              /\bMIL\b/i.test(rawValStr)
+            const temCorroboracao = temCorroboracaoMonetariaExplicita(rawValStr, activeValCol)
             if (!temCorroboracao) {
-              // Tentar ler valor alternativo plausível na linha (< 100.000)
-              let altPlausivel = 0
-              for (let cIdx = 0; cIdx < row.length; cIdx++) {
-                if (cIdx === activeDataColIdx || cIdx === activeDocColIdx) continue
-                const cRaw = row[cIdx]
-                if (cRaw === null || cRaw === undefined || cRaw === '') continue
-                if (isPadraoNumeroParcela(cRaw)) continue
-                const cDet = parseValorReceberDetalhado(cRaw)
-                if (cDet.invalidoOuAbsurdo) continue
-                if (cDet.valor > 0 && cDet.valor < LIMIAR_VALOR_SUSPEITO_RECEBER) {
-                  altPlausivel = cDet.valor
-                  break
-                }
-              }
-              if (altPlausivel > 0) {
-                valorFinal = altPlausivel
-              } else {
-                sheetDivergenciasCount += 1
-                resultSummary.erros.push({
-                  aba: sheetCfg.name,
-                  linha: numLinha,
-                  tipo: 'divergencia',
-                  motivo: `Aba ${sheetCfg.name}: Linha ${numLinha}: Valor de R$ ${valorFinal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })} suspeito (>= 100k sem corroboração monetária explícita). Registro não gravado.`,
-                })
-                continue
-              }
+              sheetDivergenciasCount += 1
+              resultSummary.erros.push({
+                aba: sheetCfg.name,
+                linha: numLinha,
+                tipo: 'divergencia',
+                motivo: `Aba ${sheetCfg.name}: Linha ${numLinha}: Valor de R$ ${valorFinal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })} suspeito (>= 100k sem corroboração monetária explícita). Registro não gravado.`,
+              })
+              continue
             }
           }
 

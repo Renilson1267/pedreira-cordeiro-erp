@@ -70,6 +70,9 @@ import {
   REGEX_COL_VALOR_COMPRA,
   isColunaCheque,
   isNumeroChequeOuSerieBancaria,
+  isSuspeitoNumeroNotaFiscal,
+  temCorroboracaoMonetariaExplicita,
+  isColunaNaoMonetaria,
 } from '@/lib/planilhaRecebimentosUtils'
 
 export interface ConferirPlanilhaRecebimentosModalProps {
@@ -374,13 +377,18 @@ export function ConferirPlanilhaRecebimentosModal({
           const valRaw = getVal(valCol)
           const valRecRaw = getVal(valRecCol)
 
-          // Barreira anti-parcela e anti-cheque:
+          // Barreira anti-parcela, anti-cheque e anti-nota:
           let valParsed = 0
-          if (!isPadraoNumeroParcela(valRaw) && !isNumeroChequeOuSerieBancaria(valRaw).ehCheque) {
-            const valDet = parseValorReceberDetalhado(valRaw)
+          if (
+            !isPadraoNumeroParcela(valRaw) &&
+            !isNumeroChequeOuSerieBancaria(valRaw).ehCheque &&
+            !isSuspeitoNumeroNotaFiscal(valRaw, valCol).ehNota
+          ) {
+            const valDet = parseValorReceberDetalhado(valRaw, valCol)
             if (
               !valDet.invalidoOuAbsurdo &&
-              !isNumeroChequeOuSerieBancaria(valDet.valor).ehCheque
+              !isNumeroChequeOuSerieBancaria(valDet.valor).ehCheque &&
+              !isSuspeitoNumeroNotaFiscal(valDet.valor, valCol).ehNota
             ) {
               valParsed = valDet.valor
             }
@@ -389,12 +397,14 @@ export function ConferirPlanilhaRecebimentosModal({
           let valRecParsed = 0
           if (
             !isPadraoNumeroParcela(valRecRaw) &&
-            !isNumeroChequeOuSerieBancaria(valRecRaw).ehCheque
+            !isNumeroChequeOuSerieBancaria(valRecRaw).ehCheque &&
+            !isSuspeitoNumeroNotaFiscal(valRecRaw, valRecCol).ehNota
           ) {
-            const valRecDet = parseValorReceberDetalhado(valRecRaw)
+            const valRecDet = parseValorReceberDetalhado(valRecRaw, valRecCol)
             if (
               !valRecDet.invalidoOuAbsurdo &&
-              !isNumeroChequeOuSerieBancaria(valRecDet.valor).ehCheque
+              !isNumeroChequeOuSerieBancaria(valRecDet.valor).ehCheque &&
+              !isSuspeitoNumeroNotaFiscal(valRecDet.valor, valRecCol).ehNota
             ) {
               valRecParsed = valRecDet.valor
             }
@@ -403,26 +413,39 @@ export function ConferirPlanilhaRecebimentosModal({
           let valorPlanilha = valParsed > 0 ? valParsed : valRecParsed
           const valorRecebidoPlanilha = valRecParsed
 
-          // Se a coluna de valor não foi encontrada na aba, varredura apenas como último recurso
-          // ignorando sempre colunas de cheque e mantendo todas as barreiras
-          if (valorPlanilha <= 0 && !valCol) {
+          // REGRA ESTRITA: Se a coluna de valor existia mas estava vazia na linha,
+          // NUNCA inventar valor por varredura quando houver documento/nota na linha.
+          const temColunaDocNaLinha = Boolean(
+            docCol ||
+            headers.some((h) => {
+              const hn = normalizarNomeColuna(h)
+              return REGEX_COL_DOCUMENTO.test(hn) || hn.includes('NOTA') || hn.includes('NF')
+            }),
+          )
+          const linhaComValorMapeadoMasVazio = Boolean(valCol && valorPlanilha <= 0)
+
+          // Se a coluna de valor não foi mapeada na aba, varredura apenas como último recurso
+          // ignorando sempre colunas de cheque, notas/documentos e colunas não monetárias
+          if (valorPlanilha <= 0 && !valCol && !linhaComValorMapeadoMasVazio) {
             for (let cIdx = 0; cIdx < row.length; cIdx++) {
               const h = headers[cIdx]
-              if (isColunaCheque(h)) continue
+              if (isColunaCheque(h) || isColunaNaoMonetaria(h)) continue
 
               const cellRaw = row[cIdx]
               if (
                 !cellRaw ||
                 isPadraoNumeroParcela(cellRaw) ||
-                isNumeroChequeOuSerieBancaria(cellRaw).ehCheque
+                isNumeroChequeOuSerieBancaria(cellRaw).ehCheque ||
+                isSuspeitoNumeroNotaFiscal(cellRaw, h).ehNota
               )
                 continue
-              const cellDet = parseValorReceberDetalhado(cellRaw)
+              const cellDet = parseValorReceberDetalhado(cellRaw, h)
               if (
                 !cellDet.invalidoOuAbsurdo &&
                 cellDet.valor > 0 &&
                 !isPadraoNumeroParcela(cellDet.valor) &&
-                !isNumeroChequeOuSerieBancaria(cellDet.valor).ehCheque
+                !isNumeroChequeOuSerieBancaria(cellDet.valor).ehCheque &&
+                !isSuspeitoNumeroNotaFiscal(cellDet.valor, h).ehNota
               ) {
                 valorPlanilha = cellDet.valor
                 break

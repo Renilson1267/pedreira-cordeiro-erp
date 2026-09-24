@@ -485,6 +485,140 @@ export function extrairNumeroCheque(
   }
 }
 
+/**
+ * Verifica se um valor bruto possui corroboração monetária explícita na célula:
+ * - Prefixo/sufixo "R$" (ex.: "R$ 95.000,00", "R$ 85000", "95000 R$")
+ * - Formatação com ponto de milhar E vírgula de centavos (ex.: "85.000,00") ou vírgula de centavos (ex.: "85000,00", "94676,55")
+ * - Notação monetária contábil com centavos decimais não zerados (ex.: 94676.55)
+ */
+export function temCorroboracaoMonetariaExplicita(val: any, colHeader?: string | null): boolean {
+  if (val === null || val === undefined) return false
+
+  // Se o cabeçalho tiver indicação monetária explícita "R$"
+  const hNorm = colHeader ? normalizarNomeColuna(colHeader) : ''
+  const colTemRS = hNorm.includes('R$')
+
+  // Se já for número
+  if (typeof val === 'number') {
+    if (isNaN(val) || !isFinite(val)) return false
+    const num = Math.abs(val)
+    // Se tiver centavos explícitos (não inteiro)
+    const centavos = Math.round((num - Math.floor(num)) * 100)
+    if (centavos > 0) return true
+    // Se for inteiro e a coluna tiver R$ explícito
+    if (colTemRS) return true
+    return false
+  }
+
+  const s = String(val)
+    .replace(/\u00A0/g, ' ')
+    .trim()
+  if (!s) return false
+
+  // 1. Prefixo ou sufixo R$
+  if (/R\$/i.test(s)) return true
+
+  // 2. Notação brasileira com vírgula de centavos (ex: "85.000,00" ou "85000,00" ou "94.676,55")
+  if (/,\d{2}$/.test(s)) return true
+
+  // 3. Ponto de milhar + vírgula de centavos: "1.234,56" ou "85.000"
+  if (/\b\d{1,3}\.\d{3},\d{2}\b/.test(s)) return true
+
+  // 4. Palavra MIL ou centavos textuais
+  if (/\bMIL\b/i.test(s)) return true
+
+  // 5. Se o cabeçalho tiver R$ explícito e a célula tiver separador monetário
+  if (colTemRS && (s.includes(',') || s.includes('.'))) return true
+
+  return false
+}
+
+/**
+ * Detecta se um valor na faixa 80.000 a 99.999 é suspeito de ser número de nota fiscal / documento
+ * e NÃO valor de título (a menos que possua corroboração monetária explícita na própria célula).
+ */
+export function isSuspeitoNumeroNotaFiscal(
+  val: any,
+  colHeader?: string | null,
+): { ehNota: boolean; motivo?: string } {
+  if (val === null || val === undefined) return { ehNota: false }
+
+  let numVal: number
+  let isInt = false
+
+  if (typeof val === 'number') {
+    if (isNaN(val) || !isFinite(val)) return { ehNota: false }
+    numVal = Math.abs(val)
+    isInt = Number.isInteger(numVal) || Math.abs(numVal - Math.round(numVal)) < 0.001
+  } else {
+    const rawStr = String(val)
+      .replace(/\u00A0/g, ' ')
+      .trim()
+    if (!rawStr) return { ehNota: false }
+
+    // Se já tiver corroboração monetária explícita
+    if (temCorroboracaoMonetariaExplicita(rawStr, colHeader)) {
+      return { ehNota: false }
+    }
+
+    const cleaned = rawStr.replace(/R\$/gi, '').replace(/\s+/g, '').trim()
+    const parsed = parseFloat(cleaned.replace(/\./g, '').replace(',', '.'))
+    if (isNaN(parsed)) return { ehNota: false }
+    numVal = Math.abs(parsed)
+    isInt = Number.isInteger(numVal) || Math.abs(numVal - Math.round(numVal)) < 0.001
+  }
+
+  // Se não estiver na faixa de notas 80.000 a 99.999
+  if (numVal < 80_000 || numVal > 99_999) {
+    return { ehNota: false }
+  }
+
+  // Se não for número inteiro (ou seja, tem centavos legítimos como 94676.55 ou 89123.45)
+  if (!isInt) {
+    return { ehNota: false }
+  }
+
+  // Se tiver corroboração monetária explícita na própria célula/cabeçalho
+  if (temCorroboracaoMonetariaExplicita(val, colHeader)) {
+    return { ehNota: false }
+  }
+
+  const intNum = Math.round(numVal)
+  return {
+    ehNota: true,
+    motivo: `Número inteiro ${intNum} está na faixa de notas fiscais (80.000–99.999) sem corroboração monetária explícita (provável número de NF gravado como valor)`,
+  }
+}
+
+/**
+ * Verifica se uma coluna do cabeçalho corresponde a coluna de documento/nota/cheque/parcela/data/telefone.
+ * O fallback de varredura NUNCA deve ler valores de colunas desse tipo.
+ */
+export function isColunaNaoMonetaria(colName: string | null | undefined): boolean {
+  if (!colName) return false
+  const norm = normalizarNomeColuna(colName)
+  if (isColunaCheque(colName)) return true
+  if (REGEX_COL_DOCUMENTO.test(norm)) return true
+  if (REGEX_COL_PARCELA.test(norm)) return true
+  if (REGEX_COL_DATA.test(norm)) return true
+  if (REGEX_COL_DATA_RECEBIMENTO.test(norm)) return true
+  if (REGEX_COL_TELEFONE_OU_DOC.test(norm)) return true
+  if (
+    norm.includes('NOTA') ||
+    norm.includes('DOC') ||
+    norm.includes('NF') ||
+    norm.includes('CHEQUE') ||
+    norm.includes('PARC') ||
+    norm.includes('FONE') ||
+    norm.includes('TEL') ||
+    norm.includes('DATA') ||
+    norm.includes('VENC')
+  ) {
+    return true
+  }
+  return false
+}
+
 export function isNumeroChequeOuSerieBancaria(val: any): { ehCheque: boolean; motivo?: string } {
   if (val === null || val === undefined) return { ehCheque: false }
 
@@ -562,11 +696,15 @@ export function isNumeroChequeOuSerieBancaria(val: any): { ehCheque: boolean; mo
  * Valida se um número representa um valor monetário plausível no ERP da pedreira.
  * Rejeita valores acima de 2.000.000, números de cheque/série bancária e NaN/Infinity.
  */
-export function isValorPlausivel(num: number | null | undefined): boolean {
+export function isValorPlausivel(
+  num: number | null | undefined,
+  colHeader?: string | null,
+): boolean {
   if (num === null || num === undefined || typeof num !== 'number') return false
   if (isNaN(num) || !isFinite(num)) return false
   if (num <= 0 || num > VALOR_MAXIMO_RECEBIMENTO) return false
   if (isNumeroChequeOuSerieBancaria(num).ehCheque) return false
+  if (isSuspeitoNumeroNotaFiscal(num, colHeader).ehNota) return false
   return true
 }
 
@@ -635,7 +773,7 @@ export function isPadraoNumeroParcela(val: any): boolean {
   return false
 }
 
-export function parseValorReceberDetalhado(val: any): ParseValorResult {
+export function parseValorReceberDetalhado(val: any, colHeader?: string | null): ParseValorResult {
   if (val === null || val === undefined || val === '') {
     return { valor: 0, invalidoOuAbsurdo: false }
   }
@@ -646,6 +784,16 @@ export function parseValorReceberDetalhado(val: any): ParseValorResult {
       valor: 0,
       invalidoOuAbsurdo: true,
       motivo: `Número de parcela ("${val}") lido como valor monetário (padrão anti-parcela X.Y)`,
+    }
+  }
+
+  // Barreira anti-nota fiscal sobre o dado bruto (faixa 80k-99k inteiro sem corroboração monetária)
+  const notaBrutaCheck = isSuspeitoNumeroNotaFiscal(val, colHeader)
+  if (notaBrutaCheck.ehNota) {
+    return {
+      valor: 0,
+      invalidoOuAbsurdo: true,
+      motivo: notaBrutaCheck.motivo,
     }
   }
 
@@ -675,6 +823,16 @@ export function parseValorReceberDetalhado(val: any): ParseValorResult {
         motivo:
           chequeNumCheck.motivo ||
           `Número ${absVal} lido como valor, mas pertence à série de cheques/compensação`,
+      }
+    }
+
+    // Barreira anti-nota fiscal (faixa 80k–99k inteira sem centavos)
+    const notaNumCheck = isSuspeitoNumeroNotaFiscal(absVal, colHeader)
+    if (notaNumCheck.ehNota) {
+      return {
+        valor: 0,
+        invalidoOuAbsurdo: true,
+        motivo: notaNumCheck.motivo,
       }
     }
 
@@ -777,6 +935,16 @@ export function parseValorReceberDetalhado(val: any): ParseValorResult {
     }
   }
 
+  // Barreira anti-nota fiscal (faixa 80k–99k inteira sem centavos e sem corroboração na string original)
+  const notaStrCheck = isSuspeitoNumeroNotaFiscal(val, colHeader)
+  if (notaStrCheck.ehNota) {
+    return {
+      valor: 0,
+      invalidoOuAbsurdo: true,
+      motivo: notaStrCheck.motivo,
+    }
+  }
+
   // Barreira anti-parcela sobre o número resultante do parse
   if (isPadraoNumeroParcela(absNum)) {
     return {
@@ -804,8 +972,8 @@ export function parseValorReceberDetalhado(val: any): ParseValorResult {
  * Converte valores monetários aceitando R$, pontuação brasileira/americana, parênteses contábeis etc.
  * Retorna 0 se o valor for nulo ou se for detectado número implausível (> 50M ou telefone).
  */
-export function parseValorReceber(val: any): number {
-  return parseValorReceberDetalhado(val).valor
+export function parseValorReceber(val: any, colHeader?: string | null): number {
+  return parseValorReceberDetalhado(val, colHeader).valor
 }
 
 /**
