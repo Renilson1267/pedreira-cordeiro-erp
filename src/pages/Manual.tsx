@@ -22,6 +22,7 @@ import {
   FileBarChart2,
   ShieldCheck,
   History,
+  Smartphone,
 } from 'lucide-react'
 
 interface ManualSection {
@@ -599,6 +600,67 @@ const MANUAL_SECTIONS: ManualSection[] = [
         description:
           'Km total rodado por caminhão, consumo médio de combustível e custo de frete por tonelada entregue.',
       },
+    ],
+  },
+  {
+    id: 'pwa-celular',
+    title: '14. Instalar no Celular (Aplicativo PWA)',
+    subtitle:
+      'Como adicionar o ERP Pedreira Cordeiro (NovaGest) na tela inicial do Android ou iPhone e utilizá-lo como aplicativo sem precisar de loja.',
+    icon: Smartphone,
+    tag: 'App Mobile',
+    steps: [
+      {
+        title: 'O que é o App PWA (Progressive Web App)?',
+        description:
+          'O ERP Pedreira Cordeiro funciona como um aplicativo direto no seu celular: abre em tela cheia (sem barra de endereço do navegador), carrega instantaneamente com cache inteligente do sistema e fica com ícone oficial "NovaGest" na sua tela de início.',
+        substeps: [
+          'Não precisa baixar nada da Google Play Store nem da Apple App Store.',
+          'Atualizações automáticas: sempre que o sistema recebe novidades, o app atualiza sozinho em segundo plano.',
+          'Acesso rápido: basta tocar no ícone na tela inicial para entrar direto no sistema de frotas e financeiro.',
+        ],
+      },
+      {
+        title: 'Como Instalar no Celular Android (Google Chrome)',
+        description:
+          'Siga o passo a passo abaixo utilizando o navegador Google Chrome no seu aparelho Android:',
+        substeps: [
+          '1. Abra o navegador Google Chrome no celular e acesse o endereço do ERP Pedreira Cordeiro.',
+          '2. Toque no botão de menu do Chrome (ícone de três pontinhos verticais ⋮ no canto superior direito).',
+          '3. No menu que abrir, toque na opção "Adicionar à tela inicial" ou "Instalar aplicativo".',
+          '4. Uma janela de confirmação surgirá com o nome "NovaGest - Pedreira Cordeiro ERP". Toque em "Instalar" ou "Adicionar".',
+          '5. Pronto! O ícone do NovaGest aparecerá automaticamente junto aos outros aplicativos do seu celular.',
+        ],
+      },
+      {
+        title: 'Como Instalar no iPhone ou iPad (Safari)',
+        description:
+          'Nos dispositivos Apple iOS, a instalação é realizada de forma simples pelo navegador Safari:',
+        substeps: [
+          '1. Abra o navegador Safari (navegador padrão da Apple) e acesse o endereço do ERP Pedreira Cordeiro.',
+          '2. Na barra inferior do Safari, toque no botão de Compartilhar (o ícone de um quadrado com uma seta apontando para cima ⎋).',
+          '3. Role as opções para cima e toque em "Adicionar à Tela de Início" (ícone com um sinal de mais +).',
+          '4. O sistema sugerirá o nome "NovaGest". Toque no botão "Adicionar" no canto superior direito.',
+          '5. Concluído! O aplicativo já estará pronto na sua tela de início do iPhone com tela cheia.',
+        ],
+      },
+      {
+        title: 'Dicas de Uso Diário no Celular',
+        description:
+          'Recomendações para operadores de pátio, motoristas e encarregados que utilizam o ERP em campo:',
+        substeps: [
+          'Mantenha sua conexão 4G/5G ou Wi-Fi ativa para registrar baixas, abastecimentos e manutenções.',
+          'O app salva as telas principais na memória do aparelho, permitindo navegação rápida mesmo em áreas com sinal oscilante da pedreira.',
+          'Ao fazer login pela primeira vez, você pode optar por salvar a senha no gerenciador do seu celular para agilizar acessos futuros.',
+        ],
+      },
+    ],
+    tips: [
+      '💡 O app no celular possui exatamente os mesmos módulos, permissões e segurança da versão para computador. Ao cadastrar um abastecimento ou entrega no celular, os dados aparecem instantaneamente para a diretoria.',
+      '💡 Para desinstalar caso troque de aparelho, basta segurar o dedo sobre o ícone do NovaGest na tela inicial e selecionar "Remover da Tela de Início" ou "Desinstalar".',
+    ],
+    warnings: [
+      '⚠️ No iPhone, a instalação DEVE ser feita pelo navegador Safari. Outros navegadores no iOS (como Chrome para iPhone) não possuem a permissão do sistema operacional para fixar apps na tela inicial.',
     ],
   },
 ]

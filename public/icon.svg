@@ -1,0 +1,43 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0F766E" />
+      <stop offset="60%" stop-color="#115E59" />
+      <stop offset="100%" stop-color="#0D4B47" />
+    </linearGradient>
+    <linearGradient id="accentGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#F59E0B" />
+      <stop offset="100%" stop-color="#D97706" />
+    </linearGradient>
+    <linearGradient id="layerGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#FFFFFF" />
+      <stop offset="100%" stop-color="#CCFBF1" />
+    </linearGradient>
+    <filter id="shadow" x="-10%" y="-10%" width="130%" height="130%">
+      <feDropShadow dx="0" dy="12" stdDeviation="16" flood-color="#042F2E" flood-opacity="0.4" />
+    </filter>
+  </defs>
+
+  <!-- Background with smooth rounded squircle corners -->
+  <rect width="512" height="512" rx="112" fill="url(#bgGrad)" />
+
+  <!-- Subtle inner border highlight -->
+  <rect x="8" y="8" width="496" height="496" rx="104" fill="none" stroke="#FFFFFF" stroke-opacity="0.12" stroke-width="4" />
+
+  <!-- Ambient glow circle -->
+  <circle cx="256" cy="180" r="140" fill="#14B8A6" fill-opacity="0.22" />
+
+  <!-- Geometric Layered Icon (matching login brand symbol: layers of quarry / stone / aggregate) -->
+  <g filter="url(#shadow)" transform="translate(256, 195)">
+    <!-- Top Layer -->
+    <path d="M0 -90 L130 -30 L0 30 L-130 -30 Z" fill="url(#layerGrad)" stroke="#115E59" stroke-width="3" />
+    <!-- Middle Layer -->
+    <path d="M-130 0 L0 60 L130 0 L130 25 L0 85 L-130 25 Z" fill="#99F6E4" />
+    <!-- Bottom Layer (Warm Amber Accent) -->
+    <path d="M-130 55 L0 115 L130 55 L130 80 L0 140 L-130 80 Z" fill="url(#accentGrad)" />
+  </g>
+
+  <!-- Brand Typography -->
+  <text x="256" y="380" text-anchor="middle" font-family="system-ui, -apple-system, 'Inter', 'Segoe UI', sans-serif" font-size="52" font-weight="800" fill="#FFFFFF" letter-spacing="2">NovaGest</text>
+  <text x="256" y="420" text-anchor="middle" font-family="system-ui, -apple-system, 'Inter', 'Segoe UI', sans-serif" font-size="20" font-weight="600" fill="#99F6E4" letter-spacing="4">PEDREIRA CORDEIRO</text>
+</svg>
