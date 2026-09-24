@@ -1,10 +1,14 @@
 import React, { useEffect, useState, useMemo } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { useCompany } from '@/contexts/CompanyContext'
+import { useAuth } from '@/contexts/AuthContext'
 import pb from '@/lib/pocketbase/client'
 import { useRealtime } from '@/hooks/use-realtime'
 import { formatCurrency, formatDate, toInputDate } from '@/lib/formatters'
 import type { ContaPagar, Fornecedor, PlanoConta, CentroCusto, StatusContaPagar } from '@/types/erp'
+import { historicoService, calcularDiffAlteracoes, CAMPOS_CONFIG_PAGAR } from '@/services/historico'
+import { HistoricoSecao } from '@/components/financeiro/HistoricoSecao'
+import { HistoricoGeralModal } from '@/components/financeiro/HistoricoGeralModal'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -41,6 +45,7 @@ import {
   FileSpreadsheet,
   RotateCcw,
   X,
+  History,
 } from 'lucide-react'
 import {
   AlertDialog,
@@ -63,6 +68,7 @@ import {
 
 export default function ContasPagar() {
   const { currentEmpresa, canEdit, isReadOnly } = useCompany()
+  const { user } = useAuth()
   const [searchParams, setSearchParams] = useSearchParams()
 
   const [contas, setContas] = useState<ContaPagar[]>([])
@@ -88,6 +94,8 @@ export default function ContasPagar() {
   const [importModalOpen, setImportModalOpen] = useState(false)
   // Conferência Modal
   const [conferirModalOpen, setConferirModalOpen] = useState(false)
+  // Histórico Geral Modal
+  const [historicoModalOpen, setHistoricoModalOpen] = useState(false)
 
   // Drawer Create / Edit
   const [isDrawerOpen, setIsDrawerOpen] = useState(false)
@@ -361,7 +369,8 @@ export default function ContasPagar() {
 
           if (editingId) {
             // Update single record
-            await pb.collection('contas_pagar').update(editingId, {
+            const registroAntes = contas.find((c) => c.id === editingId)
+            const novoObj = {
               descricao: descricao.trim(),
               fornecedor_id: finalFornecedorId,
               categoria_id: categoriaId === 'none' || !categoriaId ? null : categoriaId,
@@ -372,7 +381,33 @@ export default function ContasPagar() {
               parcelas: Number(parcelas),
               status: status,
               observacoes: observacoes.trim(),
-            })
+            }
+
+            const updatedRecord = await pb
+              .collection('contas_pagar')
+              .update<ContaPagar>(editingId, novoObj)
+
+            // Gravar histórico de alteração com diff
+            if (registroAntes) {
+              const diffs = calcularDiffAlteracoes(registroAntes, novoObj, CAMPOS_CONFIG_PAGAR)
+              const fornecedorNomeNovo =
+                fornecedores.find((f) => f.id === finalFornecedorId)?.nome || descricao.trim()
+
+              await historicoService.registrar({
+                empresaId: currentEmpresa!.id,
+                colecaoOrigem: 'contas_pagar',
+                registroId: editingId,
+                acao: 'editar',
+                usuarioId: user?.id,
+                usuarioNome: user?.name || user?.email || 'Usuário',
+                descricao: `Título atualizado para "${descricao.trim()}" (${formatCurrency(Number(valor))}) - Fornecedor: ${fornecedorNomeNovo}. ${diffs.length > 0 ? `${diffs.length} campo(s) modificado(s).` : 'Sem alteração de campos chave.'}`,
+                detalhes: {
+                  alteracoes: diffs,
+                  valor: Number(valor),
+                },
+              })
+            }
+
             toast({ title: 'Conta a pagar atualizada!' })
           } else {
             // Multiple installments support com datas digitadas/calculadas
@@ -383,6 +418,9 @@ export default function ContasPagar() {
                 ? gradeParcelas
                 : gerarGradeParcelas(vencimento, numParcelas, prazoSelecionado, valor)
 
+            const fornecedorNomeCriado =
+              fornecedores.find((f) => f.id === finalFornecedorId)?.nome || descricao.trim()
+
             for (let i = 0; i < parcelasParaSalvar.length; i++) {
               const item = parcelasParaSalvar[i]
               const dataVencIso = item.vencimento
@@ -392,18 +430,39 @@ export default function ContasPagar() {
               const desc =
                 numParcelas > 1 ? `${descricao.trim()} (${i + 1}/${numParcelas})` : descricao.trim()
 
-              await pb.collection('contas_pagar').create({
+              const valorParcelaNum =
+                Number(item.valor) || Number(valor) / (numParcelas > 1 ? numParcelas : 1)
+
+              const createdRecord = await pb.collection('contas_pagar').create<ContaPagar>({
                 empresa_id: currentEmpresa!.id,
                 descricao: desc,
                 fornecedor_id: finalFornecedorId,
                 categoria_id: categoriaId === 'none' || !categoriaId ? null : categoriaId,
                 centro_custo_id: centroCustoId === 'none' || !centroCustoId ? null : centroCustoId,
-                valor: Number(item.valor) || Number(valor) / (numParcelas > 1 ? numParcelas : 1),
+                valor: valorParcelaNum,
                 vencimento: dataVencIso,
                 data_emissao: dataEmissaoIso || undefined,
                 parcelas: numParcelas,
                 status: status,
                 observacoes: observacoes.trim(),
+              })
+
+              // Gravar histórico de criação
+              await historicoService.registrar({
+                empresaId: currentEmpresa!.id,
+                colecaoOrigem: 'contas_pagar',
+                registroId: createdRecord.id,
+                acao: 'criar',
+                usuarioId: user?.id,
+                usuarioNome: user?.name || user?.email || 'Usuário',
+                descricao: `Título a pagar criado no valor de ${formatCurrency(valorParcelaNum)} com vencimento em ${formatDate(dataVencIso)} para "${fornecedorNomeCriado}".`,
+                detalhes: {
+                  valor: valorParcelaNum,
+                  extra: {
+                    parcela: `${i + 1}/${numParcelas}`,
+                    descricao: desc,
+                  },
+                },
               })
             }
             toast({ title: 'Conta a pagar criada com sucesso!' })
@@ -423,13 +482,35 @@ export default function ContasPagar() {
   }
 
   const handleDelete = (id: string, descricaoAlvo?: string) => {
+    const itemAlvo = contas.find((c) => c.id === id)
+    const descNome = descricaoAlvo || itemAlvo?.descricao || 'Título a pagar'
+    const valTotal = itemAlvo?.valor || 0
+
     setConfirmDialogData({
       title: 'Confirmar exclusão de conta a pagar',
-      description: `Deseja realmente excluir o título ${descricaoAlvo ? `"${descricaoAlvo}"` : ''}? Esta ação removerá o registro e não poderá ser desfeita.`,
+      description: `Deseja realmente excluir o título "${descNome}"? Esta ação removerá o registro e não poderá ser desfeita.`,
       confirmLabel: 'Excluir Título',
       confirmVariant: 'destructive',
       action: async () => {
         try {
+          // Registrar histórico de exclusão antes de deletar
+          await historicoService.registrar({
+            empresaId: currentEmpresa!.id,
+            colecaoOrigem: 'contas_pagar',
+            registroId: id,
+            acao: 'excluir',
+            usuarioId: user?.id,
+            usuarioNome: user?.name || user?.email || 'Usuário',
+            descricao: `Título "${descNome}" no valor de ${formatCurrency(valTotal)} foi excluído do sistema.`,
+            detalhes: {
+              valor: valTotal,
+              extra: {
+                descricao: descNome,
+                fornecedor: itemAlvo?.expand?.fornecedor_id?.nome,
+              },
+            },
+          })
+
           await pb.collection('contas_pagar').delete(id)
           toast({ title: 'Lançamento excluído com sucesso.' })
           if (detailItem?.id === id) setDetailItem(null)
@@ -486,8 +567,9 @@ export default function ContasPagar() {
           })
 
           // 2. Criar movimento financeiro inverso (Entrada no caixa revertendo a saída original)
+          let movInversoId: string | undefined
           if (valorPagoAtual > 0) {
-            await pb.collection('movimentos_financeiros').create({
+            const mov = await pb.collection('movimentos_financeiros').create({
               empresa_id: currentEmpresa!.id,
               tipo: 'Entrada',
               descricao: `Estorno de pagamento: ${c.descricao || fornecedorNome}${c.expand?.centro_custo_id ? ` [${c.expand.centro_custo_id.codigo}]` : ''}`,
@@ -499,7 +581,27 @@ export default function ContasPagar() {
               referencia_id: c.id,
               conciliado: false,
             })
+            movInversoId = mov.id
           }
+
+          // 3. Registrar histórico de alteração (estorno)
+          await historicoService.registrar({
+            empresaId: currentEmpresa!.id,
+            colecaoOrigem: 'contas_pagar',
+            registroId: c.id,
+            acao: 'estorno',
+            usuarioId: user?.id,
+            usuarioNome: user?.name || user?.email || 'Usuário',
+            descricao: `Pagamento estornado no valor de ${formatCurrency(valorPagoAtual)}. O título retornou para "Aberta" e foi gerado movimento de Entrada no caixa para manter os saldos consistentes.`,
+            detalhes: {
+              valor: valorPagoAtual,
+              movimento_inverso: {
+                tipo: 'Entrada',
+                valor: valorPagoAtual,
+                movimento_id: movInversoId,
+              },
+            },
+          })
 
           toast({
             title: 'Pagamento estornado com sucesso!',
@@ -574,7 +676,7 @@ export default function ContasPagar() {
           })
 
           // 2. Create financial movement with the exact partial payment amount
-          await pb.collection('movimentos_financeiros').create({
+          const mov = await pb.collection('movimentos_financeiros').create({
             empresa_id: currentEmpresa!.id,
             tipo: 'Saida',
             descricao: `Pagamento${novoStatus === 'Parcial' ? ' parcial' : ''}: ${settlingConta.descricao}${settlingConta.expand?.centro_custo_id ? ` [${settlingConta.expand.centro_custo_id.codigo}]` : ''}`,
@@ -585,6 +687,26 @@ export default function ContasPagar() {
             origem: 'ContaPagar',
             referencia_id: settlingConta.id,
             conciliado: false,
+          })
+
+          // 3. Registrar histórico de alteração (baixa)
+          await historicoService.registrar({
+            empresaId: currentEmpresa!.id,
+            colecaoOrigem: 'contas_pagar',
+            registroId: settlingConta.id,
+            acao: 'baixa',
+            usuarioId: user?.id,
+            usuarioNome: user?.name || user?.email || 'Usuário',
+            descricao: `Baixa ${novoStatus === 'Paga' ? 'total' : 'parcial'} de ${formatCurrency(valorBaixa)} via ${formaPagamento} em ${formatDate(payDateISO)}. Saldo restante a pagar: ${formatCurrency(Math.max(0, valorTituloTotal - novoTotalPago))}.`,
+            detalhes: {
+              valor: valorBaixa,
+              extra: {
+                forma_pagamento: formaPagamento,
+                data_pagamento: payDateISO,
+                status_resultante: novoStatus,
+                movimento_financeiro_id: mov.id,
+              },
+            },
           })
 
           toast({
@@ -752,6 +874,16 @@ export default function ContasPagar() {
         </div>
 
         <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            onClick={() => setHistoricoModalOpen(true)}
+            className="border-gray-200 text-gray-700 hover:bg-gray-100 rounded-xl shadow-xs"
+            title="Ver trilha de auditoria e histórico de todas as modificações"
+          >
+            <History className="w-4 h-4 mr-1.5 text-teal-700" />
+            Trilha de Auditoria
+          </Button>
+
           {canEdit && (
             <Button
               variant="outline"
@@ -1618,10 +1750,19 @@ export default function ContasPagar() {
 
               {detailItem.observacoes && (
                 <div className="p-3 bg-[#FAF9F7] rounded-xl border border-[#ECEAE4] mt-4">
-                  <span className="font-semibold text-gray-700 block mb-1">
-                    Observações e Histórico:
-                  </span>
+                  <span className="font-semibold text-gray-700 block mb-1">Observações:</span>
                   <p className="text-gray-600 whitespace-pre-wrap">{detailItem.observacoes}</p>
+                </div>
+              )}
+
+              {/* Seção de Histórico de Alterações do Título */}
+              {detailItem && (
+                <div className="border-t border-[#ECEAE4] pt-4 mt-2">
+                  <HistoricoSecao
+                    registroId={detailItem.id}
+                    colecaoOrigem="contas_pagar"
+                    tituloDescricao={detailItem.descricao}
+                  />
                 </div>
               )}
 
@@ -1737,6 +1878,14 @@ export default function ContasPagar() {
         centrosCusto={centrosCusto}
         contasExistentes={contas}
         onDataChanged={loadData}
+      />
+
+      {/* Modal de Trilha de Auditoria Geral */}
+      <HistoricoGeralModal
+        open={historicoModalOpen}
+        onOpenChange={setHistoricoModalOpen}
+        empresaId={currentEmpresa?.id || ''}
+        colecaoPadrao="contas_pagar"
       />
     </div>
   )

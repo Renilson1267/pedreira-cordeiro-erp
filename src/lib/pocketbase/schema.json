@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-09-24T17:49:33.629Z",
+  "generatedAt": "2026-09-24T18:27:23.174Z",
   "collections": [
     {
       "name": "users",
@@ -2468,6 +2468,90 @@
         "CREATE INDEX idx_desp_frota_setor ON despesas_frota (setor)",
         "CREATE INDEX idx_desp_frota_data ON despesas_frota (data)",
         "CREATE INDEX idx_desp_frota_natureza ON despesas_frota (natureza)"
+      ]
+    },
+    {
+      "name": "historico_alteracoes",
+      "type": "base",
+      "apiRules": {
+        "list": "@request.auth.id != ''",
+        "view": "@request.auth.id != ''",
+        "create": "@request.auth.id != ''",
+        "update": "@request.auth.id != ''",
+        "delete": "@request.auth.id != ''"
+      },
+      "fields": [
+        {
+          "name": "empresa_id",
+          "type": "relation",
+          "required": true,
+          "system": false,
+          "collectionRef": "empresas"
+        },
+        {
+          "name": "colecao_origem",
+          "type": "select",
+          "required": true,
+          "system": false,
+          "selectValues": ["contas_pagar", "contas_receber", "outros"]
+        },
+        {
+          "name": "registro_id",
+          "type": "text",
+          "required": true,
+          "system": false
+        },
+        {
+          "name": "acao",
+          "type": "select",
+          "required": true,
+          "system": false,
+          "selectValues": ["criar", "editar", "excluir", "baixa", "estorno"]
+        },
+        {
+          "name": "usuario_id",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "usuario_nome",
+          "type": "text",
+          "required": true,
+          "system": false
+        },
+        {
+          "name": "descricao",
+          "type": "text",
+          "required": true,
+          "system": false
+        },
+        {
+          "name": "detalhes",
+          "type": "json",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "created",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate"]
+        },
+        {
+          "name": "updated",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate", "onUpdate"]
+        }
+      ],
+      "indexes": [
+        "CREATE INDEX idx_hist_empresa ON historico_alteracoes (empresa_id)",
+        "CREATE INDEX idx_hist_registro ON historico_alteracoes (registro_id)",
+        "CREATE INDEX idx_hist_colecao ON historico_alteracoes (colecao_origem)",
+        "CREATE INDEX idx_hist_acao ON historico_alteracoes (acao)"
       ]
     }
   ]

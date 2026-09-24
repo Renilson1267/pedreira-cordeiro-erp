@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useMemo } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { useCompany } from '@/contexts/CompanyContext'
+import { useAuth } from '@/contexts/AuthContext'
 import pb from '@/lib/pocketbase/client'
 import { useRealtime } from '@/hooks/use-realtime'
 import { formatCurrency, formatDate, toInputDate } from '@/lib/formatters'
@@ -9,9 +10,16 @@ import type {
   Cliente,
   PlanoConta,
   CentroCusto,
-  CreditoCliente,
   StatusContaReceber,
+  CreditoCliente,
 } from '@/types/erp'
+import {
+  historicoService,
+  calcularDiffAlteracoes,
+  CAMPOS_CONFIG_RECEBER,
+} from '@/services/historico'
+import { HistoricoSecao } from '@/components/financeiro/HistoricoSecao'
+import { HistoricoGeralModal } from '@/components/financeiro/HistoricoGeralModal'
 import { ImportadorRecebimentosModal } from '@/components/financeiro/ImportadorRecebimentosModal'
 import {
   SeletorParcelas,
@@ -68,12 +76,13 @@ import {
   RotateCcw,
   X,
   Filter,
+  History,
 } from 'lucide-react'
 
 export default function ContasReceber() {
-  const { currentEmpresa, canEdit } = useCompany()
+  const { currentEmpresa, canEdit, isReadOnly } = useCompany()
+  const { user } = useAuth()
   const [searchParams, setSearchParams] = useSearchParams()
-
   const [contas, setContas] = useState<ContaReceber[]>([])
   const [clientes, setClientes] = useState<Cliente[]>([])
   const [categorias, setCategorias] = useState<PlanoConta[]>([])
@@ -96,6 +105,8 @@ export default function ContasReceber() {
 
   // Import Modal
   const [importModalOpen, setImportModalOpen] = useState(false)
+  // Histórico Geral Modal
+  const [historicoModalOpen, setHistoricoModalOpen] = useState(false)
 
   // Drawer Create / Edit
   const [isDrawerOpen, setIsDrawerOpen] = useState(false)
@@ -339,7 +350,8 @@ export default function ContasReceber() {
             : null
 
           if (editingId) {
-            await pb.collection('contas_receber').update(editingId, {
+            const registroAntes = contas.find((c) => c.id === editingId)
+            const novoObj = {
               descricao: descricao.trim(),
               cliente_id: clienteId === 'none' || !clienteId ? null : clienteId,
               cliente_depositante: clienteDepositante.trim() || '',
@@ -353,7 +365,32 @@ export default function ContasReceber() {
               endereco: endereco.trim(),
               nota: nota.trim(),
               observacoes: observacoes.trim(),
-            })
+            }
+
+            await pb.collection('contas_receber').update(editingId, novoObj)
+
+            // Gravar histórico de alteração com diff
+            if (registroAntes) {
+              const diffs = calcularDiffAlteracoes(registroAntes, novoObj, CAMPOS_CONFIG_RECEBER)
+              const clienteNomeNovo =
+                clientes.find((cli) => cli.id === (clienteId === 'none' ? '' : clienteId))?.nome ||
+                descricao.trim()
+
+              await historicoService.registrar({
+                empresaId: currentEmpresa!.id,
+                colecaoOrigem: 'contas_receber',
+                registroId: editingId,
+                acao: 'editar',
+                usuarioId: user?.id,
+                usuarioNome: user?.name || user?.email || 'Usuário',
+                descricao: `Título a receber atualizado para "${descricao.trim()}" (${formatCurrency(Number(valor))}) - Cliente: ${clienteNomeNovo}. ${diffs.length > 0 ? `${diffs.length} campo(s) modificado(s).` : 'Sem alteração de campos chave.'}`,
+                detalhes: {
+                  alteracoes: diffs,
+                  valor: Number(valor),
+                },
+              })
+            }
+
             toast({ title: 'Conta a receber atualizada!' })
           } else {
             const numParcelas = Math.max(1, Number(parcelas))
@@ -361,6 +398,10 @@ export default function ContasReceber() {
               gradeParcelas.length === numParcelas
                 ? gradeParcelas
                 : gerarGradeParcelas(vencimento, numParcelas, prazoSelecionado, valor)
+
+            const clienteNomeCriado =
+              clientes.find((cli) => cli.id === (clienteId === 'none' ? '' : clienteId))?.nome ||
+              descricao.trim()
 
             for (let i = 0; i < parcelasParaSalvar.length; i++) {
               const item = parcelasParaSalvar[i]
@@ -390,6 +431,25 @@ export default function ContasReceber() {
                 nota: nota.trim(),
                 observacoes: observacoes.trim(),
                 data_recebimento: status === 'Recebimento Antecipado' ? dataVencIso : undefined,
+              })
+
+              // Gravar histórico de criação
+              await historicoService.registrar({
+                empresaId: currentEmpresa!.id,
+                colecaoOrigem: 'contas_receber',
+                registroId: createdConta.id,
+                acao: 'criar',
+                usuarioId: user?.id,
+                usuarioNome: user?.name || user?.email || 'Usuário',
+                descricao: `Título a receber criado no valor de ${formatCurrency(parcelValue)} com vencimento em ${formatDate(dataVencIso)} para "${clienteNomeCriado}".`,
+                detalhes: {
+                  valor: parcelValue,
+                  extra: {
+                    parcela: `${i + 1}/${numParcelas}`,
+                    nota: nota.trim() || undefined,
+                    descricao: desc,
+                  },
+                },
               })
 
               if (status === 'Recebimento Antecipado' && clienteId && clienteId !== 'none') {
@@ -423,13 +483,36 @@ export default function ContasReceber() {
   }
 
   const handleDelete = (id: string, descricaoAlvo?: string) => {
+    const itemAlvo = contas.find((c) => c.id === id)
+    const descNome = descricaoAlvo || itemAlvo?.descricao || 'Título a receber'
+    const valTotal = itemAlvo?.valor || 0
+
     setConfirmDialogData({
-      title: 'Confirmar exclusão de título',
-      description: `Deseja realmente excluir o título a receber ${descricaoAlvo ? `"${descricaoAlvo}"` : ''}? Esta ação removerá o registro e não poderá ser desfeita.`,
+      title: 'Confirmar exclusão de conta a receber',
+      description: `Deseja realmente excluir o título "${descNome}"? Esta ação removerá o registro e não poderá ser desfeita.`,
       confirmLabel: 'Excluir Título',
       confirmVariant: 'destructive',
       action: async () => {
         try {
+          // Gravar histórico de exclusão antes de deletar
+          await historicoService.registrar({
+            empresaId: currentEmpresa!.id,
+            colecaoOrigem: 'contas_receber',
+            registroId: id,
+            acao: 'excluir',
+            usuarioId: user?.id,
+            usuarioNome: user?.name || user?.email || 'Usuário',
+            descricao: `Título "${descNome}" no valor de ${formatCurrency(valTotal)} foi excluído do sistema.`,
+            detalhes: {
+              valor: valTotal,
+              extra: {
+                descricao: descNome,
+                cliente: itemAlvo?.expand?.cliente_id?.nome,
+                nota: itemAlvo?.nota,
+              },
+            },
+          })
+
           await pb.collection('contas_receber').delete(id)
           toast({ title: 'Lançamento excluído com sucesso.' })
           if (detailItem?.id === id) setDetailItem(null)
@@ -441,7 +524,6 @@ export default function ContasReceber() {
     })
     setConfirmDialogOpen(true)
   }
-
   const handleEstorno = (c: ContaReceber) => {
     const valorRecebidoAtual = getValorRecebidoEfetivo(c)
     if (valorRecebidoAtual <= 0 && c.status === 'Aberta') {
@@ -473,8 +555,9 @@ export default function ContasReceber() {
           })
 
           // 2. Criar movimento financeiro inverso (Saída no valor estornado)
+          let movInversoId: string | undefined
           if (valorRecebidoAtual > 0) {
-            await pb.collection('movimentos_financeiros').create({
+            const mov = await pb.collection('movimentos_financeiros').create({
               empresa_id: currentEmpresa!.id,
               tipo: 'Saida',
               descricao: `Estorno de recebimento: ${c.descricao || clienteNome}${c.nota ? ` [Doc: ${c.nota}]` : ''}`,
@@ -486,7 +569,27 @@ export default function ContasReceber() {
               referencia_id: c.id,
               conciliado: false,
             })
+            movInversoId = mov.id
           }
+
+          // 3. Registrar histórico de alteração (estorno)
+          await historicoService.registrar({
+            empresaId: currentEmpresa!.id,
+            colecaoOrigem: 'contas_receber',
+            registroId: c.id,
+            acao: 'estorno',
+            usuarioId: user?.id,
+            usuarioNome: user?.name || user?.email || 'Usuário',
+            descricao: `Recebimento estornado no valor de ${formatCurrency(valorRecebidoAtual)}. O título retornou para "Aberta" e foi gerado movimento de Saída no caixa para manter a conciliação consistente.`,
+            detalhes: {
+              valor: valorRecebidoAtual,
+              movimento_inverso: {
+                tipo: 'Saida',
+                valor: valorRecebidoAtual,
+                movimento_id: movInversoId,
+              },
+            },
+          })
 
           toast({
             title: 'Recebimento estornado com sucesso!',
@@ -949,7 +1052,7 @@ export default function ContasReceber() {
             ? `${settlingConta.descricao}${clienteNomeTitulo ? ` [${clienteNomeTitulo}]` : ''}`
             : clienteNomeTitulo || 'Recebimento'
 
-          await pb.collection('movimentos_financeiros').create({
+          const mov = await pb.collection('movimentos_financeiros').create({
             empresa_id: currentEmpresa!.id,
             tipo: 'Entrada',
             descricao: `Recebimento${novoStatus === 'Parcial' ? ' parcial' : ''}: ${rotuloTitulo}${usarCreditoCliente ? ' (Compensado via Crédito)' : ''}${settlingConta.expand?.centro_custo_id ? ` [${settlingConta.expand.centro_custo_id.codigo}]` : ''}`,
@@ -960,6 +1063,28 @@ export default function ContasReceber() {
             origem: 'ContaReceber',
             referencia_id: settlingConta.id,
             conciliado: false,
+          })
+
+          // 3. Registrar histórico de baixa
+          await historicoService.registrar({
+            empresaId: currentEmpresa!.id,
+            colecaoOrigem: 'contas_receber',
+            registroId: settlingConta.id,
+            acao: 'baixa',
+            usuarioId: user?.id,
+            usuarioNome: user?.name || user?.email || 'Usuário',
+            descricao: `Baixa ${novoStatus === 'Recebida' ? 'total' : 'parcial'} de ${formatCurrency(valorBaixa)} via ${formaFinal} em ${formatDate(recDateISO)}${usarCreditoCliente ? ` (Crédito usado: ${formatCurrency(valorCreditoUsado)})` : ''}. Saldo restante: ${formatCurrency(Math.max(0, valorTituloTotal - novoTotalRecebido))}.`,
+            detalhes: {
+              valor: valorBaixa,
+              extra: {
+                forma_recebimento: formaFinal,
+                data_recebimento: recDateISO,
+                status_resultante: novoStatus,
+                usar_credito_cliente: usarCreditoCliente,
+                valor_credito_usado: valorCreditoUsado,
+                movimento_financeiro_id: mov.id,
+              },
+            },
           })
 
           toast({
@@ -1133,6 +1258,16 @@ export default function ContasReceber() {
         </div>
 
         <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            onClick={() => setHistoricoModalOpen(true)}
+            className="border-gray-200 text-gray-700 hover:bg-gray-100 rounded-xl shadow-xs"
+            title="Ver trilha de auditoria e histórico de todas as modificações"
+          >
+            <History className="w-4 h-4 mr-1.5 text-teal-700" />
+            Trilha de Auditoria
+          </Button>
+
           {canEdit && (
             <Button
               variant="outline"
@@ -2174,10 +2309,19 @@ export default function ContasReceber() {
 
               {detailItem.observacoes && (
                 <div className="p-3 bg-[#FAF9F7] rounded-xl border border-[#ECEAE4] mt-4">
-                  <span className="font-semibold text-gray-700 block mb-1">
-                    Observações e Histórico:
-                  </span>
+                  <span className="font-semibold text-gray-700 block mb-1">Observações:</span>
                   <p className="text-gray-600 whitespace-pre-wrap">{detailItem.observacoes}</p>
+                </div>
+              )}
+
+              {/* Seção de Histórico de Alterações do Título */}
+              {detailItem && (
+                <div className="border-t border-[#ECEAE4] pt-4 mt-2">
+                  <HistoricoSecao
+                    registroId={detailItem.id}
+                    colecaoOrigem="contas_receber"
+                    tituloDescricao={detailItem.descricao}
+                  />
                 </div>
               )}
 
@@ -2303,6 +2447,14 @@ export default function ContasReceber() {
         centrosCusto={centrosCusto}
         contasExistentes={contas}
         onImportComplete={loadData}
+      />
+
+      {/* Modal de Trilha de Auditoria Geral */}
+      <HistoricoGeralModal
+        open={historicoModalOpen}
+        onOpenChange={setHistoricoModalOpen}
+        empresaId={currentEmpresa?.id || ''}
+        colecaoPadrao="contas_receber"
       />
     </div>
   )

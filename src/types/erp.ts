@@ -462,6 +462,42 @@ export type TipoDespesaFrota =
   | 'Abatimento / Desconto'
   | 'Outros'
 
+export type AcaoHistorico = 'criar' | 'editar' | 'excluir' | 'baixa' | 'estorno'
+export type ColecaoOrigemHistorico = 'contas_pagar' | 'contas_receber' | 'outros'
+
+export interface DetalheAlteracaoCampo {
+  campo: string
+  campo_label: string
+  valor_anterior: any
+  valor_novo: any
+  valor_anterior_formatado?: string
+  valor_novo_formatado?: string
+}
+
+export interface HistoricoAlteracao {
+  id: string
+  empresa_id: string
+  colecao_origem: ColecaoOrigemHistorico
+  registro_id: string
+  acao: AcaoHistorico
+  usuario_id?: string
+  usuario_nome: string
+  descricao: string
+  detalhes?: {
+    alteracoes?: DetalheAlteracaoCampo[]
+    movimento_inverso?: {
+      tipo: 'Entrada' | 'Saida'
+      valor: number
+      movimento_id?: string
+    }
+    documento?: string
+    valor?: number
+    extra?: Record<string, any>
+  }
+  created: string
+  updated: string
+}
+
 export interface DespesaFrota {
   id: string
   empresa_id: string
