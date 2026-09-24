@@ -59,7 +59,11 @@ export default function Dashboard() {
   const [entradasPeriodoTotal, setEntradasPeriodoTotal] = useState(0)
   const [saidasPeriodoTotal, setSaidasPeriodoTotal] = useState(0)
   const [pagarPeriodo, setPagarPeriodo] = useState(0)
+  const [pagoPeriodo, setPagoPeriodo] = useState(0)
+  const [totalPrevistoPagarPeriodo, setTotalPrevistoPagarPeriodo] = useState(0)
   const [receberPeriodo, setReceberPeriodo] = useState(0)
+  const [recebidoPeriodo, setRecebidoPeriodo] = useState(0)
+  const [totalPrevistoReceberPeriodo, setTotalPrevistoReceberPeriodo] = useState(0)
   const [resultadoPeriodo, setResultadoPeriodo] = useState(0)
   const [saldoGeralAcumulado, setSaldoGeralAcumulado] = useState(0)
 
@@ -147,13 +151,17 @@ export default function Dashboard() {
         (movimentosNoPeriodo.length > 0 ? movimentosNoPeriodo : allMovimentos).slice(0, 6),
       )
 
-      // 3. Contas a Pagar do Período (considerando saldo em aberto)
+      // 3. Contas a Pagar do Período (competência e vencimento)
       const allCp = await pb.collection('contas_pagar').getFullList({
         filter: `empresa_id = '${currentEmpresa.id}'`,
       })
+
+      // Títulos que competem ao período (por vencimento)
       const cpNoPeriodo = allCp.filter((cp) =>
         estaDentroDoPeriodo(cp.vencimento, dataInicio, dataFim),
       )
+
+      // Saldo em aberto dos títulos com vencimento no período
       const totalPagarPeriodo = cpNoPeriodo
         .filter((cp) => cp.status !== 'Paga')
         .reduce((sum, cp) => {
@@ -162,20 +170,81 @@ export default function Dashboard() {
         }, 0)
       setPagarPeriodo(totalPagarPeriodo)
 
-      // 4. Contas a Receber do Período (considerando saldo em aberto)
+      // Total pago dos títulos do período (pago nos títulos filtrados por vencimento + pagamentos baixados no período)
+      const totalPagoTitulosPeriodo = cpNoPeriodo.reduce((sum, cp) => {
+        if (cp.status === 'Paga') {
+          return sum + (cp.valor_pago && cp.valor_pago > 0 ? cp.valor_pago : cp.valor || 0)
+        }
+        return sum + (cp.valor_pago || 0)
+      }, 0)
+      setPagoPeriodo(totalPagoTitulosPeriodo)
+
+      // Total geral previsto a pagar que compete ao período (abertos + pagos)
+      const totalGeralCompetePagar = cpNoPeriodo.reduce((sum, cp) => sum + (cp.valor || 0), 0)
+      setTotalPrevistoPagarPeriodo(totalGeralCompetePagar)
+
+      // 4. Contas a Receber do Período (competência e recebimento)
+      // Conforme o padrão das demais telas e requisito do usuário:
+      // O card de Contas a Receber soma o que compete ao período filtrado (abertos no período + recebidos no período),
+      // e o "Recebido" contabiliza todos os recebimentos reais do período (incluindo títulos Recebida vindos da planilha com data_recebimento vazia).
       const allCr = await pb.collection('contas_receber').getFullList({
         filter: `empresa_id = '${currentEmpresa.id}'`,
       })
+
+      const getValorRecebidoEfetivoCr = (cr: any) => {
+        if (cr.status === 'Recebida') {
+          return cr.valor_recebido && cr.valor_recebido > 0 ? cr.valor_recebido : cr.valor || 0
+        }
+        return cr.valor_recebido || 0
+      }
+
+      const getSaldoRestanteCr = (cr: any) => {
+        if (cr.status === 'Recebida') return 0
+        const jaRec = getValorRecebidoEfetivoCr(cr)
+        return Math.max(0, (cr.valor || 0) - jaRec)
+      }
+
+      // Função para obter a data efetiva de liquidação/recebimento:
+      // Se data_recebimento estiver preenchida usa ela; se estiver vazia (importados da planilha),
+      // adota vencimento ou data_emissao como competência de recebimento, nunca deixando fora da apuração.
+      const getDataEfetivaRecebimento = (cr: any): string => {
+        return (cr.data_recebimento || cr.vencimento || cr.data_emissao || '').slice(0, 10)
+      }
+
+      // Títulos com vencimento no período filtrado
       const crNoPeriodo = allCr.filter((cr) =>
         estaDentroDoPeriodo(cr.vencimento, dataInicio, dataFim),
       )
-      const totalReceberPeriodo = crNoPeriodo
-        .filter((cr) => cr.status !== 'Recebida' && cr.status !== 'Recebimento Antecipado')
-        .reduce((sum, cr) => {
-          const jaRecebido = cr.valor_recebido || 0
-          return sum + Math.max(0, (cr.valor || 0) - jaRecebido)
-        }, 0)
-      setReceberPeriodo(totalReceberPeriodo)
+
+      // Total apurado que compete ao período selecionado (abertos no período + recebidos no período)
+      const totalCompetenciaReceber = crNoPeriodo.reduce((sum, cr) => sum + (cr.valor || 0), 0)
+      setTotalPrevistoReceberPeriodo(totalCompetenciaReceber)
+
+      // Total em aberto restante dos títulos do período (pendente de recebimento)
+      const totalAbertoReceberPeriodo = crNoPeriodo.reduce(
+        (sum, cr) => sum + getSaldoRestanteCr(cr),
+        0,
+      )
+      setReceberPeriodo(totalAbertoReceberPeriodo)
+
+      // Total Recebido Efetivo Competente ao Período:
+      // Títulos cujo recebimento efetivo ocorreu dentro do período (usando data_recebimento ou vencimento de fallback para importados)
+      // OU títulos cuja competência de vencimento é do período e foram quitados/baixados
+      const totalRecebidoCalculado = allCr.reduce((sum, cr) => {
+        const valRecebido = getValorRecebidoEfetivoCr(cr)
+        if (valRecebido <= 0) return sum
+
+        const dataRecebimentoEfetiva = getDataEfetivaRecebimento(cr)
+        const recNoPeriodo = estaDentroDoPeriodo(dataRecebimentoEfetiva, dataInicio, dataFim)
+        const vencNoPeriodo = estaDentroDoPeriodo(cr.vencimento, dataInicio, dataFim)
+
+        // Se o recebimento ocorreu no período filtrado OU o vencimento é do período e o título foi recebido
+        if (recNoPeriodo || vencNoPeriodo) {
+          return sum + valRecebido
+        }
+        return sum
+      }, 0)
+      setRecebidoPeriodo(totalRecebidoCalculado)
 
       // 5. Aging Overdue Summary (saldo restante das vencidas hoje)
       const allCpAbertas = allCp.filter((c) => c.status !== 'Paga')
@@ -642,12 +711,22 @@ export default function Dashboard() {
           </CardContent>
         </Card>
 
-        {/* KPI 2: Contas a Pagar no Período */}
-        <Card className="rounded-2xl border-[#ECEAE4] shadow-xs bg-white">
+        {/* KPI 2: Contas a Pagar no Período (Abertas + Pagas / Saldo em Aberto) */}
+        <Card
+          onClick={() => navigate('/financeiro/pagar')}
+          className="rounded-2xl border-[#ECEAE4] shadow-xs bg-white cursor-pointer hover:border-red-300 transition-colors"
+        >
           <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-xs font-semibold text-gray-500 uppercase tracking-wider">
-              A Pagar no Período
-            </CardTitle>
+            <div>
+              <CardTitle className="text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                {opcaoPeriodo === 'este_mes'
+                  ? 'Contas a Pagar no Mês'
+                  : 'Contas a Pagar no Período'}
+              </CardTitle>
+              <span className="text-[10px] text-gray-400 font-medium">
+                Compete ao período: {formatCurrency(totalPrevistoPagarPeriodo)}
+              </span>
+            </div>
             <div className="w-8 h-8 rounded-lg bg-red-50 text-red-600 flex items-center justify-center">
               <ArrowDownLeft className="w-4 h-4" />
             </div>
@@ -656,19 +735,37 @@ export default function Dashboard() {
             <div className="text-2xl font-bold tracking-tight text-red-600 tabular-nums">
               {formatCurrency(pagarPeriodo)}
             </div>
-            <p className="text-[11px] text-gray-400 mt-1 flex items-center">
-              <Calendar className="w-3 h-3 mr-1 text-gray-400" />
-              Vencimentos no filtro ativo
-            </p>
+            <div className="text-[11px] text-gray-500 mt-1 flex items-center justify-between">
+              <span className="flex items-center text-gray-500">
+                <Calendar className="w-3 h-3 mr-1 text-gray-400" />
+                Saldo pendente a pagar
+              </span>
+              <span
+                className="text-[10px] text-emerald-600 font-mono font-medium"
+                title="Valor já pago dos títulos deste período"
+              >
+                Pago: {formatCurrency(pagoPeriodo)}
+              </span>
+            </div>
           </CardContent>
         </Card>
 
-        {/* KPI 3: Contas a Receber no Período */}
-        <Card className="rounded-2xl border-[#ECEAE4] shadow-xs bg-white">
+        {/* KPI 3: Contas a Receber no Período (Abertos + Recebidos do período com valor Recebido destacado) */}
+        <Card
+          onClick={() => navigate('/financeiro/receber')}
+          className="rounded-2xl border-[#ECEAE4] shadow-xs bg-white cursor-pointer hover:border-teal-300 transition-colors"
+        >
           <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-xs font-semibold text-gray-500 uppercase tracking-wider">
-              A Receber no Período
-            </CardTitle>
+            <div>
+              <CardTitle className="text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                {opcaoPeriodo === 'este_mes'
+                  ? 'Contas a Receber no Mês'
+                  : 'Contas a Receber no Período'}
+              </CardTitle>
+              <span className="text-[10px] text-gray-400 font-medium">
+                Compete ao período: {formatCurrency(totalPrevistoReceberPeriodo)}
+              </span>
+            </div>
             <div className="w-8 h-8 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center">
               <ArrowUpRight className="w-4 h-4" />
             </div>
@@ -677,10 +774,18 @@ export default function Dashboard() {
             <div className="text-2xl font-bold tracking-tight text-teal-700 tabular-nums">
               {formatCurrency(receberPeriodo)}
             </div>
-            <p className="text-[11px] text-gray-400 mt-1 flex items-center">
-              <Calendar className="w-3 h-3 mr-1 text-gray-400" />
-              Previsão de faturamento
-            </p>
+            <div className="text-[11px] text-gray-500 mt-1 flex items-center justify-between">
+              <span className="flex items-center text-gray-500">
+                <Calendar className="w-3 h-3 mr-1 text-gray-400" />
+                Pendente a receber
+              </span>
+              <span
+                className="text-[10px] text-emerald-700 font-mono font-bold bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200/60"
+                title="Total recebido apurado para o período selecionado"
+              >
+                Recebido: {formatCurrency(recebidoPeriodo)}
+              </span>
+            </div>
           </CardContent>
         </Card>
 
