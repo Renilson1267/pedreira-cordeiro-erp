@@ -182,6 +182,15 @@ export function desdobrarCelulasMescladas(ws: XLSX.WorkSheet): void {
       return
     }
 
+    // Regra: Células mescladas propagam APENAS dentro do bloco visual mesclado
+    // Se a mesclagem for vertical excessiva (ex: cobrindo a coluna inteira da aba com 100+ linhas),
+    // não propaga arbitrariamente para evitar falsas datas idênticas em toda a planilha.
+    const alturaMesclagem = range.e.r - range.s.r + 1
+    if (alturaMesclagem > 60) {
+      // Mesclagem acidental de coluna inteira — ignora preenchimento automático em massa
+      return
+    }
+
     for (let r = range.s.r; r <= range.e.r; r++) {
       for (let c = range.s.c; c <= range.e.c; c++) {
         if (r === range.s.r && c === range.s.c) continue
@@ -207,17 +216,17 @@ export function desdobrarCelulasMescladas(ws: XLSX.WorkSheet): void {
 
 // Regex padronizadas para identificação de colunas em recebimentos
 export const REGEX_COL_DATA =
-  /^(?:DT\s*REC|DATA\s*REC|DT\s*VENC|DATA\s*VENC|RECEBIMENTO|VENCIMENTO|VENC|DATA|DT|DIA|PREVISAO|EMISSAO)\b|RECEB|LIQUID|PAGAM|VENC|DT\s*VENC|DATA\s*VENC|PREVISAO/i
+  /^(?:DATA\s*DE\s*VENCIMENTO|DATA\s*VENCIMENTO|DATA\s*VENC|DT\s*VENC|VENCIMENTO|VENC|DATA\s*DA\s*COMPRA|DATA\s*COMPRA|DATA|DT|DIA|PREVISAO|EMISSAO)\b|VENCIMENTO|DATA\s*VENC|DT\s*VENC|VENC/i
 export const REGEX_COL_CLIENTE =
   /CLIENTE|SACADO|DEVEDOR|NOME|DESTINATARIO|COMPRADOR|RAZAO\s*SOCIAL|FAVORECIDO|HISTORICO\s*CLIENTE/i
 export const REGEX_COL_DESCRICAO =
   /HISTORICO|DESCRICAO|DESC|SERV|PROD|REFERENCIA|ITEM|DISCRIM|DETALHE|OBS/i
 export const REGEX_COL_VALOR =
-  /^(?:VALOR\s*DA\s*COMPRA|VALOR\s*TOTAL|VALOR\s*BRUTO|VALOR\s*LIQUIDO|VALOR\s*A\s*RECEBER|VALOR\s*R\$?|VALOR\s*R|VALOR\s*RECEBIDO|VALOR|TOTAL|LIQUIDO|BRUTO|CREDITO|CREDITOS|RECEITA|RECEITAS|ENTRADA|ENTRADAS)$/i
+  /^(?:VALOR\s*DA\s*COMPRA|VALOR\s*TOTAL|VALOR\s*BRUTO|VALOR\s*LIQUIDO|VALOR\s*A\s*RECEBER|VALOR\s*R\$?|VALOR\s*R|VALOR|TOTAL|LIQUIDO|BRUTO|CREDITO|CREDITOS|RECEITA|RECEITAS|ENTRADA|ENTRADAS)$/i
 export const REGEX_COL_VALOR_RECEBIDO =
   /^(?:VALOR\s*RECEBIDO|VALOR\s*PAGO|VALOR\s*LIQUID|RECEBIDO|REC|LIQUID|PAGO)$/i
 export const REGEX_COL_DATA_RECEBIMENTO =
-  /DT\s*REC|DATA\s*REC|RECEB|BAIXA|DATA\s*BAIXA|LIQUID|QUITAC/i
+  /DATA\s*(?:DE\s*)?PAG(?:AMENTO)?|DT\s*(?:DE\s*)?PAG(?:AMENTO)?|DATA\s*PAG|DT\s*PAG|DT\s*REC|DATA\s*REC|RECEBIMENTO|RECEB|BAIXA|DATA\s*BAIXA|LIQUID|QUITAC/i
 export const REGEX_COL_FORMA_RECEBIMENTO =
   /TIPO\s*DE\s*PAGAMENTO|FORMA\s*DE\s*PAGAMENTO|TIPO\s*PAGAMENTO|FORMA\s*PAGAMENTO|FORMA|MEIO|TIPO\s*RECEB|TIPO\s*PAG|FORMA\s*PAG/i
 export const REGEX_COL_STATUS = /SITUACAO|STATUS|SITUAC|CONDICAO|ESTADO/i
@@ -429,22 +438,63 @@ export interface ParseValorResult {
 export function isPadraoNumeroParcela(val: any): boolean {
   if (val === null || val === undefined) return false
   if (typeof val === 'number') {
-    if (val > 0 && val < 13 && !Number.isInteger(val)) {
-      // Exatamente uma casa decimal: Math.round(val * 10) / 10 === val
-      const decStr = val.toString().split('.')[1] || ''
-      return decStr.length === 1
+    if (isNaN(val) || !isFinite(val)) return false
+    // Se for número com 1 casa decimal entre 0.5 e 24 (ex: 1.1, 2.2, 1.10, 2.20)
+    if (val >= 0.5 && val <= 24 && !Number.isInteger(val)) {
+      const arredondado1Casa = Math.round(val * 10) / 10
+      if (Math.abs(val - arredondado1Casa) < 1e-6 && !Number.isInteger(arredondado1Casa)) {
+        return true
+      }
     }
     return false
   }
-  const str = String(val).trim()
+  const str = String(val)
+    .replace(/\u00A0/g, ' ')
+    .replace(/R\$/gi, '')
+    .trim()
   if (!str) return false
-  const match = str.match(/^([0-9]|1[0-2])[.,](\d)$/)
-  return Boolean(match)
+
+  // Detecta padrões textuais de parcela: N.N, N.NN, N,N, N,NN, N/N, N-N, N.N.N (ex: "1.1", "2.2", "1.10", "2.20", "1/3", "01/10", "1.1.1")
+  if (/^(?:[0-9]|1[0-9]|2[0-4])[.,/\\-](?:[0-9]|1[0-9]|2[0-4])(?:[.,/\\-]\d+)?$/.test(str)) {
+    return true
+  }
+
+  // Detecta "1.1", "1,1", "1.10", "1,10", "2.2", "2,2", "2.20", "2,20"
+  const matchDec = str.match(/^([0-9]|1[0-9]|2[0-4])[.,](\d{1,2})$/)
+  if (matchDec) {
+    const p1 = parseInt(matchDec[1], 10)
+    const p2Str = matchDec[2]
+    // Se a segunda parte for d (ex: 1) ou d0 (ex: 10), equivale a 1.1 ou 1.10
+    const num = parseFloat(`${p1}.${p2Str}`)
+    if (num >= 0.5 && num <= 24 && !Number.isInteger(num)) {
+      // Rejeita valores que são claramente parcelas quando p2 for um dígito ou p2Str terminar em 0 com valor equivalente a 1 casa
+      const arredondado = Math.round(num * 10) / 10
+      if (Math.abs(num - arredondado) < 1e-6) {
+        return true
+      }
+    }
+  }
+
+  // Strings com prefixo ou sufixo explícito de parcela: ex: "PARC 1", "P 1/3", "1ª"
+  if (/^(?:PARC(?:ELA)?\.?|P\.?)\s*\d+/i.test(str)) {
+    return true
+  }
+
+  return false
 }
 
 export function parseValorReceberDetalhado(val: any): ParseValorResult {
   if (val === null || val === undefined || val === '') {
     return { valor: 0, invalidoOuAbsurdo: false }
+  }
+
+  // Barreira anti-parcela prévia sobre o dado bruto (número ou texto)
+  if (isPadraoNumeroParcela(val)) {
+    return {
+      valor: 0,
+      invalidoOuAbsurdo: true,
+      motivo: `Número de parcela ("${val}") lido como valor monetário (padrão anti-parcela X.Y)`,
+    }
   }
 
   // Se já for número
@@ -470,6 +520,15 @@ export function parseValorReceberDetalhado(val: any): ParseValorResult {
         valor: 0,
         invalidoOuAbsurdo: true,
         motivo: `Número de 11+ dígitos lido como valor monetário (${absVal})`,
+      }
+    }
+
+    // Barreira anti-parcela sobre valor numérico
+    if (isPadraoNumeroParcela(absVal)) {
+      return {
+        valor: 0,
+        invalidoOuAbsurdo: true,
+        motivo: `Número de parcela (${absVal}) lido como valor monetário (padrão anti-parcela X.Y)`,
       }
     }
 
@@ -541,6 +600,15 @@ export function parseValorReceberDetalhado(val: any): ParseValorResult {
 
   const absNum = Math.abs(num)
   if (absNum === 0) return { valor: 0, invalidoOuAbsurdo: false }
+
+  // Barreira anti-parcela sobre o número resultante do parse
+  if (isPadraoNumeroParcela(absNum)) {
+    return {
+      valor: 0,
+      invalidoOuAbsurdo: true,
+      motivo: `Número de parcela (${absNum}) lido como valor monetário (padrão anti-parcela X.Y)`,
+    }
+  }
 
   // Barreira de R$ 2 milhões para título individual de pedreira
   if (absNum > VALOR_MAXIMO_RECEBIMENTO) {
@@ -618,11 +686,7 @@ export function parseDataReceber(val: any, anoFallback?: number, mesFallback?: n
   }
 
   if (val === null || val === undefined || val === '') {
-    if (anoFallback && mesFallback) {
-      return toUtcNoon(fallbackYear, fallbackMonth, 10)
-    }
-    const now = new Date()
-    return toUtcNoon(now.getUTCFullYear(), now.getUTCMonth() + 1, now.getUTCDate())
+    return ''
   }
 
   if (val instanceof Date) {
@@ -632,11 +696,7 @@ export function parseDataReceber(val: any, anoFallback?: number, mesFallback?: n
       const d = val.getUTCDate()
       return toUtcNoon(y, m, d)
     }
-    if (anoFallback && mesFallback) {
-      return toUtcNoon(fallbackYear, fallbackMonth, 10)
-    }
-    const now = new Date()
-    return toUtcNoon(now.getUTCFullYear(), now.getUTCMonth() + 1, now.getUTCDate())
+    return ''
   }
 
   if (typeof val === 'number') {
@@ -656,11 +716,7 @@ export function parseDataReceber(val: any, anoFallback?: number, mesFallback?: n
 
   const str = String(val).trim()
   if (!str) {
-    if (anoFallback && mesFallback) {
-      return toUtcNoon(fallbackYear, fallbackMonth, 10)
-    }
-    const now = new Date()
-    return toUtcNoon(now.getUTCFullYear(), now.getUTCMonth() + 1, now.getUTCDate())
+    return ''
   }
 
   const textDateMatch = str.match(
@@ -677,11 +733,14 @@ export function parseDataReceber(val: any, anoFallback?: number, mesFallback?: n
     }
   }
 
+  // Proibido interpretar número avulso puro como dia do mês sem contexto explícito de coluna de data
   if (/^\d{1,2}$/.test(str)) {
     const dia = parseInt(str, 10)
-    if (dia >= 1 && dia <= 31) {
+    // Se for dia do mês entre 1 e 31, aceita apenas se for número sanitário com mês/ano de fallback
+    if (dia >= 1 && dia <= 31 && fallbackMonth && fallbackYear) {
       return toUtcNoon(fallbackYear, fallbackMonth, dia)
     }
+    return ''
   }
 
   const brMatch = str.match(/^(\d{1,2})\s*[/.-]\s*(\d{1,2})(?:\s*[/.-]\s*(\d{2,4}))?/)
@@ -732,15 +791,12 @@ export function parseDataReceber(val: any, anoFallback?: number, mesFallback?: n
     const y = isIsoDateOnly ? parsed.getUTCFullYear() : parsed.getFullYear()
     const m = isIsoDateOnly ? parsed.getUTCMonth() + 1 : parsed.getMonth() + 1
     const d = isIsoDateOnly ? parsed.getUTCDate() : parsed.getDate()
-    return toUtcNoon(y, m, d)
+    if (isAnoDataSanitario(y, fallbackYear)) {
+      return toUtcNoon(y, m, d)
+    }
   }
 
-  if (anoFallback && mesFallback) {
-    return toUtcNoon(fallbackYear, fallbackMonth, 1)
-  }
-
-  const now = new Date()
-  return toUtcNoon(now.getUTCFullYear(), now.getUTCMonth() + 1, now.getUTCDate())
+  return ''
 }
 
 /**

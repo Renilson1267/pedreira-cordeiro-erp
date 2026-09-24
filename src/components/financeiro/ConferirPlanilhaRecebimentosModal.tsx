@@ -53,6 +53,8 @@ import {
   detectarLinhaCabecalho,
   parseValorReceberDetalhado,
   parseDataReceber,
+  isPadraoNumeroParcela,
+  isIsoDataSanitaria,
   classificarStatusRecebimento,
   extrairCidadeENota,
   isNotaValida,
@@ -255,7 +257,7 @@ export function ConferirPlanilhaRecebimentosModal({
         const findCol = (pattern: RegExp) =>
           headers.find((h) => pattern.test(normalizarNomeColuna(h)) || pattern.test(h)) || ''
 
-        let dataCol = findCol(REGEX_COL_DATA) || headers[0] || ''
+        let dataCol = findCol(REGEX_COL_DATA) || ''
         let cliCol = findCol(REGEX_COL_CLIENTE)
         let descCol = findCol(REGEX_COL_DESCRICAO)
         // Se houver coluna DESCRIÇÃO e NÃO houver coluna de SACADO/CLIENTE separada (ou forem iguais),
@@ -354,8 +356,60 @@ export function ConferirPlanilhaRecebimentosModal({
             rawCli = rawDesc
           }
 
-          const valDet = parseValorReceberDetalhado(getVal(valCol))
-          const valRecDet = parseValorReceberDetalhado(getVal(valRecCol))
+          const valRaw = getVal(valCol)
+          const valRecRaw = getVal(valRecCol)
+
+          if (isPadraoNumeroParcela(valRaw) || isPadraoNumeroParcela(valRecRaw)) {
+            // Se for número de parcela (1.1, 2.2 etc.), vira divergência e não processa
+            todosItens.push({
+              id: `item_pl_parcela_${sheetName}_${r}`,
+              numLinhaPlanilha: numLinha,
+              tipo: 'planilha_apenas',
+              aba: sheetName,
+              clienteNome: rawCli || 'Cliente não identificado',
+              documentoNota: '',
+              descricao: rawDesc || rawCli,
+              vencimentoPlanilha: '',
+              valorPlanilha: 0,
+              valorRecebidoPlanilha: 0,
+              statusPlanilha: 'Aberta',
+              divergencias: [
+                {
+                  campo: 'Valor Previsto',
+                  valorPlanilha: `Número de parcela ("${valRaw || valRecRaw}") identificado na coluna de valor`,
+                  valorSistema: 'Rejeitado pela barreira anti-parcela X.Y',
+                },
+              ],
+            })
+            continue
+          }
+
+          const valDet = parseValorReceberDetalhado(valRaw)
+          const valRecDet = parseValorReceberDetalhado(valRecRaw)
+          if (valDet.invalidoOuAbsurdo || valRecDet.invalidoOuAbsurdo) {
+            todosItens.push({
+              id: `item_pl_invalido_${sheetName}_${r}`,
+              numLinhaPlanilha: numLinha,
+              tipo: 'planilha_apenas',
+              aba: sheetName,
+              clienteNome: rawCli || 'Cliente não identificado',
+              documentoNota: '',
+              descricao: rawDesc || rawCli,
+              vencimentoPlanilha: '',
+              valorPlanilha: 0,
+              valorRecebidoPlanilha: 0,
+              statusPlanilha: 'Aberta',
+              divergencias: [
+                {
+                  campo: 'Valor Previsto',
+                  valorPlanilha: valDet.motivo || valRecDet.motivo || 'Valor monetário inválido',
+                  valorSistema: 'Rejeitado',
+                },
+              ],
+            })
+            continue
+          }
+
           const valorPlanilha = valDet.valor > 0 ? valDet.valor : valRecDet.valor
           const valorRecebidoPlanilha = valRecDet.valor
 
@@ -366,15 +420,37 @@ export function ConferirPlanilhaRecebimentosModal({
           // Resolução de data de vencimento com a mesma lógica do importador
           let dataVencPlanilhaISO = ''
           const rawDataStr = String(rawData ?? '').trim()
-          if (rawDataStr) {
+          if (
+            rawDataStr &&
+            isIsoDataSanitaria(parseDataReceber(rawData, comp.ano, comp.mes), comp.ano)
+          ) {
             dataVencPlanilhaISO = parseDataReceber(rawData, comp.ano, comp.mes)
             ultimaDataValida = rawData
           } else if (ultimaDataValida) {
             dataVencPlanilhaISO = parseDataReceber(ultimaDataValida, comp.ano, comp.mes)
           } else {
-            const y = comp.ano || 2026
-            const m = comp.mes || 1
-            dataVencPlanilhaISO = `${y}-${String(m).padStart(2, '0')}-01T12:00:00.000Z`
+            // Se a linha não tiver data legível nem data contígua, vira divergência
+            todosItens.push({
+              id: `item_pl_sem_data_${sheetName}_${r}`,
+              numLinhaPlanilha: numLinha,
+              tipo: 'planilha_apenas',
+              aba: sheetName,
+              clienteNome: rawCli || 'Cliente não identificado',
+              documentoNota: '',
+              descricao: rawDesc || rawCli,
+              vencimentoPlanilha: '',
+              valorPlanilha,
+              valorRecebidoPlanilha: 0,
+              statusPlanilha: 'Aberta',
+              divergencias: [
+                {
+                  campo: 'Data de Vencimento',
+                  valorPlanilha: 'Data ilegível ou ausente na planilha',
+                  valorSistema: 'Requer conferência manual (não associado a 01/01)',
+                },
+              ],
+            })
+            continue
           }
 
           // Resolução de nota/doc e endereço
@@ -399,7 +475,7 @@ export function ConferirPlanilhaRecebimentosModal({
           const statusPlanilhaCalculado = statusClass.status
           const dataRecebimentoPlanilhaISO =
             statusClass.status === 'Recebida' || statusClass.status === 'Parcial'
-              ? parseDataReceber(rawDataRec || rawData, comp.ano, comp.mes)
+              ? parseDataReceber(rawDataRec || rawData, comp.ano, comp.mes) || dataVencPlanilhaISO
               : undefined
 
           // BUSCA DE CASAMENTO COM CONTAS DO SISTEMA

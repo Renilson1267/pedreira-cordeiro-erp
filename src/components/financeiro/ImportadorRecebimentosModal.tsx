@@ -43,6 +43,7 @@ import {
   parseValorReceber,
   parseValorReceberDetalhado,
   parseDataReceber,
+  isPadraoNumeroParcela,
   normalizarNomeColuna,
   inferirMesPorDatasDaPlanilha,
   extrairCidadeENota,
@@ -397,11 +398,9 @@ export function ImportadorRecebimentosModal({
     // a nova regra mapeia DESCRIÇÃO -> cliente e deixa o campo de descrição limpo/vazio
     const clienteSugerido = cliColFound || descColFound || ''
 
+    const colDataSugerida = findCol(REGEX_COL_DATA) || ''
     setMapping((prev) => ({
-      data:
-        prev.data && headers.includes(prev.data)
-          ? prev.data
-          : findCol(REGEX_COL_DATA) || headers[0] || '',
+      data: prev.data && headers.includes(prev.data) ? prev.data : colDataSugerida,
       cliente: prev.cliente && headers.includes(prev.cliente) ? prev.cliente : clienteSugerido,
       descricao:
         prev.descricao && headers.includes(prev.descricao)
@@ -764,11 +763,8 @@ export function ImportadorRecebimentosModal({
           return findColInSheet(pattern) || fallbackDefault
         }
 
-        const dataCol = matchColWithFallback(
-          mapping.data,
-          REGEX_COL_DATA,
-          findColInSheet(REGEX_COL_DATA) || currentSheetHeaders[0] || '',
-        )
+        const dataColFound = findColInSheet(REGEX_COL_DATA)
+        const dataCol = matchColWithFallback(mapping.data, REGEX_COL_DATA, dataColFound || '')
 
         const rawCliColFound = findColInSheet(REGEX_COL_CLIENTE)
         const rawDescColFound = findColInSheet(REGEX_COL_DESCRICAO)
@@ -909,8 +905,8 @@ export function ImportadorRecebimentosModal({
         let sheetErrosGravacaoCount = 0
 
         // Data herdada em bloco: se a linha tem descrição e valor válidos mas a célula de data está vazia (mesclagem),
-        // herdar a data do lançamento anterior válido da mesma aba
-        let ultimaDataValida: any = null
+        // herdar a data do lançamento anterior válido da mesma aba (apenas dentro do bloco visual imediato)
+        let ultimaDataValida: { val: any; r: number } | null = null
 
         // Função para recalcular mapeamento de colunas em um novo bloco
         const recalcularMapeamentoBloco = (novoHeaderRow: any[]) => {
@@ -933,11 +929,8 @@ export function ImportadorRecebimentosModal({
               return findColInBlock(pattern) || fallback
             }
 
-            activeDataCol = matchColInBlock(
-              mapping.data,
-              REGEX_COL_DATA,
-              findColInBlock(REGEX_COL_DATA) || activeHeaders[0] || '',
-            )
+            const blockDataFound = findColInBlock(REGEX_COL_DATA)
+            activeDataCol = matchColInBlock(mapping.data, REGEX_COL_DATA, blockDataFound || '')
             const blockCliFound = findColInBlock(REGEX_COL_CLIENTE)
             const blockDescFound = findColInBlock(REGEX_COL_DESCRICAO)
 
@@ -999,6 +992,9 @@ export function ImportadorRecebimentosModal({
         // Helper de checagem sanitária para aceitar célula como data
         const isValidaSanitaria = (val: any) => {
           if (val === null || val === undefined || String(val).trim() === '') return false
+          // Células com números de telefone, celular ou strings longas sem separador não são datas
+          const strVal = String(val).trim()
+          if (/\(\d{2}\)/.test(strVal) || /^\d{10,}$/.test(strVal)) return false
           const parsed = parseDataReceber(val, sheetCfg.ano, sheetCfg.mes)
           if (!parsed || parsed.startsWith('1970')) return false
           const yMatch = parsed.match(/^(\d{4})/)
@@ -1203,8 +1199,19 @@ export function ImportadorRecebimentosModal({
             rawCli = rawDesc
           }
 
-          // Parsing detalhado de valor para rejeitar números implausíveis (telefone/doc lido como valor)
+          // Parsing detalhado de valor para rejeitar números implausíveis (telefone/doc lido como valor ou padrão parcela)
           const rawValCell = getVal(row, activeValCol)
+          if (isPadraoNumeroParcela(rawValCell)) {
+            sheetDivergenciasCount += 1
+            resultSummary.erros.push({
+              aba: sheetCfg.name,
+              linha: numLinha,
+              tipo: 'divergencia',
+              motivo: `Aba ${sheetCfg.name}: Linha ${numLinha}: Coluna de valor contém número de parcela ("${rawValCell}"). Linha não importada (barreira anti-parcela X.Y).`,
+            })
+            continue
+          }
+
           const valParsed = parseValorReceberDetalhado(rawValCell)
           if (valParsed.invalidoOuAbsurdo) {
             sheetDivergenciasCount += 1
@@ -1212,7 +1219,7 @@ export function ImportadorRecebimentosModal({
               aba: sheetCfg.name,
               linha: numLinha,
               tipo: 'divergencia',
-              motivo: `Coluna de valor contém número inválido/implausível: ${valParsed.motivo || String(rawValCell)}. Linha não importada.`,
+              motivo: `Aba ${sheetCfg.name}: Linha ${numLinha}: Coluna de valor contém número inválido/implausível: ${valParsed.motivo || String(rawValCell)}. Linha não importada.`,
             })
             continue
           }
@@ -1221,6 +1228,17 @@ export function ImportadorRecebimentosModal({
           let rawValorRec = 0
           if (activeValRecCol) {
             const rawRecCell = getVal(row, activeValRecCol)
+            if (isPadraoNumeroParcela(rawRecCell)) {
+              sheetDivergenciasCount += 1
+              resultSummary.erros.push({
+                aba: sheetCfg.name,
+                linha: numLinha,
+                tipo: 'divergencia',
+                motivo: `Aba ${sheetCfg.name}: Linha ${numLinha}: Coluna de valor recebido contém número de parcela ("${rawRecCell}"). Linha não importada (barreira anti-parcela X.Y).`,
+              })
+              continue
+            }
+
             const recParsed = parseValorReceberDetalhado(rawRecCell)
             if (recParsed.invalidoOuAbsurdo) {
               sheetDivergenciasCount += 1
@@ -1228,7 +1246,7 @@ export function ImportadorRecebimentosModal({
                 aba: sheetCfg.name,
                 linha: numLinha,
                 tipo: 'divergencia',
-                motivo: `Coluna de valor recebido contém número implausível: ${recParsed.motivo || String(rawRecCell)}. Linha não importada.`,
+                motivo: `Aba ${sheetCfg.name}: Linha ${numLinha}: Coluna de valor recebido contém número implausível: ${recParsed.motivo || String(rawRecCell)}. Linha não importada.`,
               })
               continue
             }
@@ -1265,10 +1283,12 @@ export function ImportadorRecebimentosModal({
                 continue
               if (cellRaw instanceof Date) continue
 
+              if (isPadraoNumeroParcela(cellRaw)) continue // ignora números de parcela na varredura
               const cellDet = parseValorReceberDetalhado(cellRaw)
               if (cellDet.invalidoOuAbsurdo) continue // ignora telefones/docs na varredura
               const cellVal = cellDet.valor
               if (cellVal > 0) {
+                if (isPadraoNumeroParcela(cellVal)) continue
                 const hName = normalizarNomeColuna(activeHeaders[colIdx] || '')
                 if (
                   hName.includes('VALOR') ||
@@ -1291,6 +1311,18 @@ export function ImportadorRecebimentosModal({
             }
           }
 
+          // Barreira anti-parcela definitiva e incondicional sobre qualquer extração de valor
+          if (isPadraoNumeroParcela(valorFinal)) {
+            sheetDivergenciasCount += 1
+            resultSummary.erros.push({
+              aba: sheetCfg.name,
+              linha: numLinha,
+              tipo: 'divergencia',
+              motivo: `Aba ${sheetCfg.name}: Linha ${numLinha}: Valor final extraído (${valorFinal}) corresponde a número de parcela (padrão anti-parcela X.Y). Registro não gravado.`,
+            })
+            continue
+          }
+
           if (valorFinal <= 0) {
             continue
           }
@@ -1311,23 +1343,26 @@ export function ImportadorRecebimentosModal({
           // 1º: A célula da coluna mapeada de data da linha atual
           // 2º: Outras colunas da linha atual que contenham data sanitária
           // 3º: Células mescladas já foram desdobradas (desdobrarCelulasMescladas).
-          // Se a linha ainda assim não tiver data própria, herdamos APENAS dentro do bloco contíguo imediato
-          // (se houver lançamento anterior recente válido sem corte de separador/cabeçalho).
-          // NUNCA herdar data global do primeiro dia do mês se houver data na linha.
+          // Se a linha ainda assim não tiver data legível na própria linha:
+          // PROIBIDO usar "1º dia do mês da aba" como data de título — linha sem data legível vira divergência no resumo.
+          // Herança entre linhas só é permitida se houver bloco contíguo IMEDIATO com distância visual máxima de 5 linhas.
           let teveDataPropriaNaLinha = false
           let dataVencimentoISO = ''
 
           const rawDataStr = String(rawData ?? '').trim()
           if (rawDataStr && isValidaSanitaria(rawData)) {
-            teveDataPropriaNaLinha = true
-            dataVencimentoISO = parseDataReceber(rawData, sheetCfg.ano, sheetCfg.mes)
-            ultimaDataValida = rawData
+            const parsed = parseDataReceber(rawData, sheetCfg.ano, sheetCfg.mes)
+            if (parsed && !parsed.startsWith('1970')) {
+              teveDataPropriaNaLinha = true
+              dataVencimentoISO = parsed
+              ultimaDataValida = { val: rawData, r }
+            }
           }
 
           // Se a coluna de data mapeada não continha data válida, inspecionar colunas alternativas na PRÓPRIA linha
           if (!teveDataPropriaNaLinha) {
             for (let colIdx = 0; colIdx < row.length; colIdx++) {
-              if (colIdx === activeDocColIdx) continue
+              if (colIdx === activeDocColIdx || colIdx === activeValCol) continue
               const colHeader = normalizarNomeColuna(activeHeaders[colIdx] || '')
               if (
                 colHeader.includes('VALOR') ||
@@ -1336,47 +1371,51 @@ export function ImportadorRecebimentosModal({
                 colHeader.includes('DOC') ||
                 colHeader.includes('NOTA') ||
                 colHeader.includes('TEL') ||
-                colHeader.includes('FONE')
+                colHeader.includes('FONE') ||
+                colHeader.includes('SITUACAO') ||
+                colHeader.includes('STATUS') ||
+                colHeader.includes('FORMA') ||
+                colHeader.includes('TIPO DE PAG')
               ) {
                 continue
               }
               const candVal = row[colIdx]
               if (candVal !== null && candVal !== undefined && String(candVal).trim() !== '') {
                 if (isValidaSanitaria(candVal)) {
-                  dataVencimentoISO = parseDataReceber(candVal, sheetCfg.ano, sheetCfg.mes)
-                  rawData = candVal
-                  teveDataPropriaNaLinha = true
-                  ultimaDataValida = candVal
-                  break
+                  const parsed = parseDataReceber(candVal, sheetCfg.ano, sheetCfg.mes)
+                  if (parsed && !parsed.startsWith('1970')) {
+                    dataVencimentoISO = parsed
+                    rawData = candVal
+                    teveDataPropriaNaLinha = true
+                    ultimaDataValida = { val: candVal, r }
+                    break
+                  }
                 }
               }
             }
           }
 
-          // Se ainda não tiver data própria na linha mas houver última data válida do bloco contíguo
+          // Se ainda não tiver data própria na linha mas houver última data válida do bloco contíguo visual imediato (<= 5 linhas)
           if (!teveDataPropriaNaLinha) {
-            if (ultimaDataValida && isValidaSanitaria(ultimaDataValida)) {
-              dataVencimentoISO = parseDataReceber(ultimaDataValida, sheetCfg.ano, sheetCfg.mes)
+            if (
+              ultimaDataValida &&
+              ultimaDataValida.val &&
+              r - ultimaDataValida.r <= 5 &&
+              isValidaSanitaria(ultimaDataValida.val)
+            ) {
+              dataVencimentoISO = parseDataReceber(ultimaDataValida.val, sheetCfg.ano, sheetCfg.mes)
             } else {
-              // Se for Planilha7 ou aba genérica sem mês plausível definido e sem data válida,
-              // NUNCA inventar 31/12 nem primeiro do mês: deve virar erro visível e descartar
-              if (isAbaGenericaPlanilha) {
-                sheetDivergenciasCount += 1
-                resultSummary.erros.push({
-                  aba: sheetCfg.name,
-                  linha: numLinha,
-                  tipo: 'divergencia',
-                  motivo: `Aba ${sheetCfg.name}: Linha sem data plausível (2024–2028). Registro não importado.`,
-                })
-                continue
-              }
-
-              const y = sheetCfg.ano || 2026
-              const m = sheetCfg.mes || 1
-              dataVencimentoISO = `${y}-${String(m).padStart(2, '0')}-01T12:00:00.000Z`
+              // NUNCA usar "primeiro dia do mês da aba" como data de um título se a linha não tiver data legível:
+              // PROIBIDO usar "1º dia do mês da aba" como fallback — vira divergência no resumo.
+              sheetDivergenciasCount += 1
+              resultSummary.erros.push({
+                aba: sheetCfg.name,
+                linha: numLinha,
+                tipo: 'divergencia',
+                motivo: `Aba ${sheetCfg.name}: Linha ${numLinha} sem data de vencimento legível na linha. Registro não importado para evitar vencimento arbitrário no dia 01.`,
+              })
+              continue
             }
-          } else if (rawData && isValidaSanitaria(rawData)) {
-            ultimaDataValida = rawData
           }
 
           // Se for aba genérica como Planilha7 e não tiver cliente resolvível (nem cliente nem descrição válidos)
@@ -1487,77 +1526,7 @@ export function ImportadorRecebimentosModal({
                 if (docLockKey) existingExactKeys.add(docLockKey)
               }
 
-              // Se existir registro prévio com mesma nota/doc ou mesma desc + cliente + valor,
-              // mas com DATA DIFERENTE (ex: data saneada genericamente em 07/04), ATUALIZAR a data correta no banco
-              let existingRecordToUpdate: ContaReceber | null = null
-              if (detectarDuplicados) {
-                if (item.notaNorm) {
-                  const flexKeyDoc = `doc_${clienteId || ''}_${item.valorStr}_${item.notaNorm}`
-                  if (existingFlexRecords.has(flexKeyDoc)) {
-                    existingRecordToUpdate = existingFlexRecords.get(flexKeyDoc)!
-                  }
-                }
-                if (!existingRecordToUpdate && item.descNorm) {
-                  const flexKeyDesc = `desc_${clienteId || ''}_${item.valorStr}_${item.descNorm}`
-                  if (existingFlexRecords.has(flexKeyDesc)) {
-                    existingRecordToUpdate = existingFlexRecords.get(flexKeyDesc)!
-                  }
-                }
-              }
-
-              if (existingRecordToUpdate) {
-                const prevDateOnly = existingRecordToUpdate.vencimento.slice(0, 10)
-                const dataMudou = prevDateOnly !== item.dateOnly
-                const notaDiverge = Boolean(
-                  item.notaFinal && item.notaFinal !== (existingRecordToUpdate.nota || ''),
-                )
-                const enderecoDiverge = Boolean(
-                  item.enderecoFinal &&
-                  item.enderecoFinal !== (existingRecordToUpdate.endereco || ''),
-                )
-
-                // Evitar update desnecessário se data, nota e endereço forem idênticos ao registro existente
-                if (dataMudou || notaDiverge || enderecoDiverge) {
-                  await withRateLimitRetry(
-                    () =>
-                      pb.collection('contas_receber').update(existingRecordToUpdate!.id, {
-                        ...(dataMudou ? { vencimento: item.dataVencimentoISO } : {}),
-                        ...(notaDiverge ? { nota: item.notaFinal } : {}),
-                        ...(enderecoDiverge ? { endereco: item.enderecoFinal } : {}),
-                        observacoes: `Atualizado via reimportação de planilha [Aba: ${sheetCfg.name}]${item.notaFinal ? ` | Doc: ${item.notaFinal}` : ''}`,
-                      }),
-                    {
-                      maxRetries: 8,
-                      initialDelayMs: 400,
-                      maxDelayMs: 8000,
-                      onRetry: (tentativa, delayMs) => {
-                        setProgressMsg(
-                          `Aguardando servidor... limite temporário (429) na atualização do título "${item.descFinal.slice(0, 25)}...". Tentativa ${tentativa} em ${(delayMs / 1000).toFixed(1)}s`,
-                        )
-                      },
-                    },
-                  )
-
-                  existingFlexRecords.delete(
-                    `doc_${clienteId || ''}_${item.valorStr}_${item.notaNorm}`,
-                  )
-                  existingFlexRecords.delete(
-                    `desc_${clienteId || ''}_${item.valorStr}_${item.descNorm}`,
-                  )
-
-                  resultSummary.atualizados += 1
-                  sheetAtualizados += 1
-                  return
-                } else {
-                  // Se não houve divergência, considerar duplicado idêntico
-                  resultSummary.duplicadosBanco += 1
-                  return
-                }
-              }
-
-              // 5. Determinar Situação (Recebida, Aberta, Parcial, Recebimento Antecipado)
-              // Utiliza a função unificada classificarStatusRecebimento que prioriza a coluna SITUAÇÃO
-              // antes de qualquer heurística por valor pago, tratando acentos, maiúsculas/minúsculas e espaços.
+              // Determinar Situação e valores preliminares para uso em caso de criação OU reconciliação/atualização
               const classificacaoResult = classificarStatusRecebimento({
                 rawStatus: item.rawStatus,
                 descFinal: item.descFinal,
@@ -1578,18 +1547,127 @@ export function ImportadorRecebimentosModal({
                 ? item.rawDataRec
                 : item.dataVencimentoISO
 
-              // Situação "Aberta" / "Vencida" / "Pendente" etc. NUNCA deve ter data_recebimento preenchida nem movimento de caixa
               const dataRecebimentoISO =
                 finalStatus !== 'Aberta'
-                  ? parseDataReceber(rawRecebimentoParaParse, sheetCfg.ano, sheetCfg.mes)
+                  ? parseDataReceber(rawRecebimentoParaParse, sheetCfg.ano, sheetCfg.mes) ||
+                    item.dataVencimentoISO
                   : null
 
-              // 6. Forma de Pagamento / Recebimento (Coluna "TIPO DE PAGAMENTO" mapeada)
-              // Normaliza valores da planilha ("PIX", "BOLETO", "TED", "CARTÃO", etc.) para o select do schema
               const finalForma = normalizarFormaRecebimento(
                 item.rawForma,
                 item.descFinal || item.rawCli,
               )
+
+              // Se existir registro prévio com mesma nota/doc ou mesma desc/cli + cliente + valor,
+              // reconciliar e atualizar vencimento, data_recebimento, forma, status, nota e endereço quando divergirem
+              let existingRecordToUpdate: ContaReceber | null = null
+              if (detectarDuplicados) {
+                if (item.notaNorm) {
+                  const flexKeyDoc = `doc_${clienteId || ''}_${item.valorStr}_${item.notaNorm}`
+                  if (existingFlexRecords.has(flexKeyDoc)) {
+                    existingRecordToUpdate = existingFlexRecords.get(flexKeyDoc)!
+                  }
+                }
+                if (!existingRecordToUpdate && item.descNorm) {
+                  const flexKeyDesc = `desc_${clienteId || ''}_${item.valorStr}_${item.descNorm}`
+                  if (existingFlexRecords.has(flexKeyDesc)) {
+                    existingRecordToUpdate = existingFlexRecords.get(flexKeyDesc)!
+                  }
+                }
+                if (!existingRecordToUpdate && item.cliNorm) {
+                  const flexKeyCli = `cli_${clienteId || ''}_${item.valorStr}_${item.cliNorm}`
+                  if (existingFlexRecords.has(flexKeyCli)) {
+                    existingRecordToUpdate = existingFlexRecords.get(flexKeyCli)!
+                  }
+                }
+              }
+
+              if (existingRecordToUpdate) {
+                const prevDateOnly = (existingRecordToUpdate.vencimento || '').slice(0, 10)
+                const dataMudou = prevDateOnly !== item.dateOnly
+                const notaDiverge = Boolean(
+                  item.notaFinal && item.notaFinal !== (existingRecordToUpdate.nota || ''),
+                )
+                const enderecoDiverge = Boolean(
+                  item.enderecoFinal &&
+                  item.enderecoFinal !== (existingRecordToUpdate.endereco || ''),
+                )
+
+                const prevStatus = existingRecordToUpdate.status
+                const statusDiverge = finalStatus !== prevStatus
+
+                const prevForma = existingRecordToUpdate.forma_recebimento || null
+                const formaDiverge =
+                  finalStatus !== 'Aberta' && finalForma && finalForma !== prevForma
+
+                const prevDataRecOnly = (existingRecordToUpdate.data_recebimento || '').slice(0, 10)
+                const targetDataRecOnly = (dataRecebimentoISO || '').slice(0, 10)
+                const dataRecDiverge = targetDataRecOnly !== prevDataRecOnly
+
+                const prevValorRec = Number(existingRecordToUpdate.valor_recebido || 0)
+                const valorRecDiverge = Math.abs(prevValorRec - valorEfetivoRecebido) > 0.01
+
+                // Se houver qualquer divergência em vencimento, status, data de pagamento, forma, nota ou endereço, ATUALIZAR
+                if (
+                  dataMudou ||
+                  notaDiverge ||
+                  enderecoDiverge ||
+                  statusDiverge ||
+                  formaDiverge ||
+                  dataRecDiverge ||
+                  valorRecDiverge
+                ) {
+                  await withRateLimitRetry(
+                    () =>
+                      pb.collection('contas_receber').update(existingRecordToUpdate!.id, {
+                        ...(dataMudou ? { vencimento: item.dataVencimentoISO } : {}),
+                        ...(notaDiverge ? { nota: item.notaFinal } : {}),
+                        ...(enderecoDiverge ? { endereco: item.enderecoFinal } : {}),
+                        ...(statusDiverge ? { status: finalStatus } : {}),
+                        ...(formaDiverge ? { forma_recebimento: finalForma } : {}),
+                        ...(dataRecDiverge ? { data_recebimento: dataRecebimentoISO } : {}),
+                        ...(valorRecDiverge ? { valor_recebido: valorEfetivoRecebido } : {}),
+                        observacoes: `Atualizado via reimportação de planilha [Aba: ${sheetCfg.name}]${item.notaFinal ? ` | Doc: ${item.notaFinal}` : ''}`,
+                      }),
+                    {
+                      maxRetries: 8,
+                      initialDelayMs: 400,
+                      maxDelayMs: 8000,
+                      onRetry: (tentativa, delayMs) => {
+                        setProgressMsg(
+                          `Aguardando servidor... limite temporário (429) na atualização do título "${item.descFinal.slice(0, 25)}...". Tentativa ${tentativa} em ${(delayMs / 1000).toFixed(1)}s`,
+                        )
+                      },
+                    },
+                  )
+
+                  if (item.notaNorm) {
+                    existingFlexRecords.delete(
+                      `doc_${clienteId || ''}_${item.valorStr}_${item.notaNorm}`,
+                    )
+                  }
+                  if (item.descNorm) {
+                    existingFlexRecords.delete(
+                      `desc_${clienteId || ''}_${item.valorStr}_${item.descNorm}`,
+                    )
+                  }
+                  if (item.cliNorm) {
+                    existingFlexRecords.delete(
+                      `cli_${clienteId || ''}_${item.valorStr}_${item.cliNorm}`,
+                    )
+                  }
+
+                  resultSummary.atualizados += 1
+                  sheetAtualizados += 1
+                  return
+                } else {
+                  // Se não houve divergência, considerar duplicado idêntico
+                  resultSummary.duplicadosBanco += 1
+                  return
+                }
+              }
+
+              // (Passos 5 e 6 já foram avaliados acima para a lógica de reconciliação e criação)
 
               // 7. Centro de Custo
               let finalCentroCustoId: string | null =
