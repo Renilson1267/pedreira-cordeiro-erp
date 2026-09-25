@@ -484,6 +484,8 @@ export interface Venda {
   desconto_percentual?: number
   valor_bruto?: number
   tipo_entrega?: TipoEntregaVenda
+  sequencial_romaneio?: string
+  numero_sequencial?: number
   created: string
   updated: string
   expand?: {
@@ -603,6 +605,8 @@ export interface Entrega {
   status: StatusEntrega
   conta_pagar_id?: string
   observacoes?: string
+  sequencial_romaneio?: string
+  numero_sequencial?: number
   created: string
   updated: string
   expand?: {

@@ -13,6 +13,7 @@ import {
   type ColunaRelatorioImpressao,
   type TotalizadorRelatorioImpressao,
 } from '@/components/financeiro/RelatorioListagemImpressaoModal'
+import { RomaneioEntregaImpressaoModal } from '@/components/frotas/RomaneioEntregaImpressaoModal'
 import type {
   Venda,
   Cliente,
@@ -84,6 +85,8 @@ import {
   TrendingUp,
   Percent,
   Tag,
+  Printer,
+  Hash,
 } from 'lucide-react'
 
 // 5 Produtos padrão da Pedreira Cordeiro
@@ -159,6 +162,13 @@ export default function Vendas() {
     action?: () => Promise<void>
   } | null>(null)
 
+  // Romaneio A4 Impressão (2 vias: Cliente & Empresa)
+  const [romaneioModalOpen, setRomaneioModalOpen] = useState(false)
+  const [vendaRomaneio, setVendaRomaneio] = useState<Venda | null>(null)
+
+  // Previsão do próximo sequencial (somente leitura na UI)
+  const [proximoSequencialPrevisto, setProximoSequencialPrevisto] = useState<string>('')
+
   // Detalhes da Venda & Entregas Vinculadas Modal
   const [detalheVenda, setDetalheVenda] = useState<Venda | null>(null)
 
@@ -229,6 +239,14 @@ export default function Vendas() {
   // Abrir criação
   const openCreateModal = () => {
     setEditingId(null)
+    if (currentEmpresa) {
+      vendasService
+        .obterProximoSequencial(currentEmpresa.id)
+        .then((seq) => setProximoSequencialPrevisto(seq))
+        .catch(() => setProximoSequencialPrevisto(''))
+    } else {
+      setProximoSequencialPrevisto('')
+    }
     setClienteId(clientes[0]?.id || '')
 
     // Produto padrão Brita 12
@@ -251,6 +269,11 @@ export default function Vendas() {
     setObservacoes('')
     setGerarReceberAoSalvar(false)
     setIsDrawerOpen(true)
+  }
+
+  const handleAbrirRomaneioVenda = (v: Venda) => {
+    setVendaRomaneio(v)
+    setRomaneioModalOpen(true)
   }
 
   // Quando seleciona produto no cadastro de venda
@@ -276,6 +299,7 @@ export default function Vendas() {
 
   const handleEdit = (v: Venda) => {
     setEditingId(v.id)
+    setProximoSequencialPrevisto(v.sequencial_romaneio || '')
     setClienteId(v.cliente_id || '')
     setProdutoId(v.produto_id || '')
     setProdutoNome(v.produto_nome || '')
@@ -1089,6 +1113,7 @@ export default function Vendas() {
                 <th className="py-3 px-4 text-right">Qtd</th>
                 <th className="py-3 px-4 text-right">Preço Unit.</th>
                 <th className="py-3 px-4 text-right">Valor Total</th>
+                <th className="py-3 px-4">Romaneio</th>
                 <th className="py-3 px-4 text-center">Entrega</th>
                 <th className="py-3 px-4 text-center">Status</th>
                 <th className="py-3 px-4 text-center">Entregas</th>
@@ -1169,6 +1194,16 @@ export default function Vendas() {
                           </div>
                         ) : null}
                       </td>
+                      <td className="py-3 px-4 whitespace-nowrap">
+                        {v.sequencial_romaneio ? (
+                          <div className="inline-flex items-center gap-1 font-mono font-bold text-[11px] text-teal-950 bg-teal-50 border border-teal-200 px-2 py-0.5 rounded shadow-2xs">
+                            <Hash className="w-3 h-3 text-teal-700" />
+                            <span>{v.sequencial_romaneio}</span>
+                          </div>
+                        ) : (
+                          <span className="text-[10px] text-gray-400 font-mono">—</span>
+                        )}
+                      </td>
                       <td className="py-3 px-4 text-center whitespace-nowrap">
                         {isFrota ? (
                           <Badge className="bg-teal-100 text-teal-900 border-teal-300 text-[10px] font-semibold flex items-center gap-1 mx-auto w-fit">
@@ -1246,6 +1281,15 @@ export default function Vendas() {
                           <Button
                             variant="ghost"
                             size="icon"
+                            onClick={() => handleAbrirRomaneioVenda(v)}
+                            title="Imprimir Romaneio A4 (2 Vias: Cliente & Empresa)"
+                            className="h-7 w-7 text-teal-700 hover:text-teal-900 hover:bg-teal-50"
+                          >
+                            <Printer className="w-3.5 h-3.5" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="icon"
                             onClick={() => setDetalheVenda(v)}
                             title="Ver detalhes e entregas vinculadas"
                             className="h-7 w-7 text-gray-500 hover:text-teal-700"
@@ -1313,6 +1357,28 @@ export default function Vendas() {
           </SheetHeader>
 
           <form onSubmit={handleSave} className="space-y-4 py-4 text-xs">
+            {/* SEQUENCIAL NUMERAL DO ROMANEIO (SOMENTE LEITURA - SEM POSSIBILIDADE DE ALTERAÇÃO) */}
+            <div className="p-3 rounded-xl bg-gray-50 border border-gray-200 flex items-center justify-between">
+              <div>
+                <Label className="text-gray-600 block text-[11px] font-semibold uppercase tracking-wider">
+                  Nº Sequencial do Romaneio
+                </Label>
+                <div className="text-[10px] text-gray-500">
+                  Gerado automaticamente pelo sistema (imutável)
+                </div>
+              </div>
+              <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-white border border-teal-300 rounded-lg shadow-2xs font-mono font-black text-sm text-teal-950">
+                <Hash className="w-4 h-4 text-teal-700" />
+                <span>
+                  {editingId
+                    ? proximoSequencialPrevisto || 'RMD-AUTOMÁTICO'
+                    : proximoSequencialPrevisto
+                      ? `${proximoSequencialPrevisto} (previsto)`
+                      : 'RMD-AUTOMÁTICO'}
+                </span>
+              </div>
+            </div>
+
             {/* Cliente */}
             <div className="space-y-1.5">
               <Label className="text-gray-700 font-medium">Cliente *</Label>
@@ -1785,6 +1851,13 @@ export default function Vendas() {
                 {/* Resumo da Venda */}
                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 p-3 bg-[#FAF9F7] rounded-xl border border-[#ECEAE4]">
                   <div>
+                    <span className="text-[10px] text-gray-400 block uppercase">Nº Romaneio</span>
+                    <span className="font-bold font-mono text-teal-900 flex items-center gap-1">
+                      <Hash className="w-3.5 h-3.5 text-teal-700" />
+                      {detalheVenda.sequencial_romaneio || 'RMD-AUTOMÁTICO'}
+                    </span>
+                  </div>
+                  <div>
                     <span className="text-[10px] text-gray-400 block uppercase">Cliente</span>
                     <span className="font-semibold text-gray-900">
                       {detalheVenda.expand?.cliente_id?.nome || 'Cliente'}
@@ -1919,7 +1992,15 @@ export default function Vendas() {
                 </div>
               </div>
 
-              <DialogFooter className="pt-3 border-t border-[#ECEAE4]">
+              <DialogFooter className="pt-3 border-t border-[#ECEAE4] flex items-center justify-between sm:justify-between w-full">
+                <Button
+                  type="button"
+                  onClick={() => handleAbrirRomaneioVenda(detalheVenda)}
+                  className="bg-teal-700 hover:bg-teal-800 text-white text-xs h-8 px-3 rounded-lg"
+                >
+                  <Printer className="w-3.5 h-3.5 mr-1.5" />
+                  Imprimir Romaneio (2 Vias A4)
+                </Button>
                 <Button
                   type="button"
                   variant="outline"
@@ -1969,6 +2050,17 @@ export default function Vendas() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+      {/* Modal Romaneio A4 (2 Vias: Cliente e Empresa) com sequencial imutável */}
+      <RomaneioEntregaImpressaoModal
+        venda={vendaRomaneio}
+        entrega={
+          vendaRomaneio ? entregas.find((e) => e.venda_id === vendaRomaneio.id) || null : null
+        }
+        empresa={currentEmpresa}
+        open={romaneioModalOpen}
+        onOpenChange={setRomaneioModalOpen}
+      />
+
       {/* Relatório de Impressão A4 de Vendas */}
       <RelatorioListagemImpressaoModal
         open={relatorioImpressaoOpen}

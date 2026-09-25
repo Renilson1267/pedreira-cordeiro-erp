@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-09-25T02:16:20.054Z",
+  "generatedAt": "2026-09-25T02:32:26.082Z",
   "collections": [
     {
       "name": "users",
@@ -2225,6 +2225,18 @@
           "type": "text",
           "required": false,
           "system": false
+        },
+        {
+          "name": "sequencial_romaneio",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "numero_sequencial",
+          "type": "number",
+          "required": false,
+          "system": false
         }
       ],
       "indexes": []
@@ -2383,6 +2395,18 @@
           "required": false,
           "system": false,
           "selectValues": ["frota_propria", "terceiro"]
+        },
+        {
+          "name": "sequencial_romaneio",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "numero_sequencial",
+          "type": "number",
+          "required": false,
+          "system": false
         }
       ],
       "indexes": [
@@ -2761,6 +2785,61 @@
         "CREATE INDEX idx_cheques_titulo ON cheques_predatados (titulo_id)",
         "CREATE INDEX idx_cheques_data ON cheques_predatados (data)",
         "CREATE INDEX idx_cheques_status ON cheques_predatados (status)"
+      ]
+    },
+    {
+      "name": "contadores_sequenciais",
+      "type": "base",
+      "apiRules": {
+        "list": "@request.auth.id != ''",
+        "view": "@request.auth.id != ''",
+        "create": "@request.auth.id != ''",
+        "update": "@request.auth.id != ''",
+        "delete": "@request.auth.id != ''"
+      },
+      "fields": [
+        {
+          "name": "empresa_id",
+          "type": "relation",
+          "required": true,
+          "system": false,
+          "collectionRef": "empresas"
+        },
+        {
+          "name": "tipo",
+          "type": "text",
+          "required": true,
+          "system": false
+        },
+        {
+          "name": "ano",
+          "type": "number",
+          "required": true,
+          "system": false
+        },
+        {
+          "name": "ultimo_numero",
+          "type": "number",
+          "required": true,
+          "system": false
+        },
+        {
+          "name": "created",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate"]
+        },
+        {
+          "name": "updated",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate", "onUpdate"]
+        }
+      ],
+      "indexes": [
+        "CREATE UNIQUE INDEX idx_contadores_empresa_tipo_ano ON contadores_sequenciais (empresa_id, tipo, ano)"
       ]
     }
   ]

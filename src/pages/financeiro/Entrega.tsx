@@ -813,6 +813,7 @@ export default function EntregaPage() {
                 <th className="py-3 px-4">Data</th>
                 <th className="py-3 px-4">Venda Vinculada</th>
                 <th className="py-3 px-4">Cliente / Destino</th>
+                <th className="py-3 px-4">Romaneio</th>
                 <th className="py-3 px-4">Equipamento / Placa</th>
                 <th className="py-3 px-4">Motorista</th>
                 <th className="py-3 px-4 text-right">Qtd Entregue</th>
@@ -915,6 +916,16 @@ export default function EntregaPage() {
                           <span className="text-[10px] text-gray-500 block truncate max-w-[200px]">
                             {e.destino}
                           </span>
+                        )}
+                      </td>
+                      <td className="py-3 px-4 whitespace-nowrap">
+                        {e.sequencial_romaneio ? (
+                          <div className="inline-flex items-center gap-1 font-mono font-bold text-[11px] text-teal-950 bg-teal-50 border border-teal-200 px-2 py-0.5 rounded shadow-2xs">
+                            <span className="text-teal-700 font-normal">#</span>
+                            <span>{e.sequencial_romaneio}</span>
+                          </div>
+                        ) : (
+                          <span className="text-[10px] text-gray-400 font-mono">—</span>
                         )}
                       </td>
                       <td className="py-3 px-4">
@@ -1060,6 +1071,26 @@ export default function EntregaPage() {
           </SheetHeader>
 
           <form onSubmit={handleSave} className="space-y-4 py-4 text-xs">
+            {/* Sequencial Numeral do Romaneio (Somente Leitura) */}
+            {editingId && (
+              <div className="p-3 rounded-xl bg-gray-50 border border-gray-200 flex items-center justify-between">
+                <div>
+                  <Label className="text-gray-600 block text-[11px] font-semibold uppercase tracking-wider">
+                    Nº Sequencial do Romaneio
+                  </Label>
+                  <div className="text-[10px] text-gray-500">
+                    Gerado automaticamente pelo sistema (imutável)
+                  </div>
+                </div>
+                <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-white border border-teal-300 rounded-lg shadow-2xs font-mono font-black text-sm text-teal-950">
+                  <span>
+                    {entregas.find((item) => item.id === editingId)?.sequencial_romaneio ||
+                      'RMD-AUTOMÁTICO'}
+                  </span>
+                </div>
+              </div>
+            )}
+
             {/* Seletor de Venda Vinculada */}
             <div className="space-y-1.5 p-3 bg-teal-50/50 rounded-xl border border-teal-200">
               <Label className="text-teal-900 font-bold flex items-center gap-1.5">

@@ -1842,6 +1842,13 @@ export default function Entregas() {
                             {ent.destino}
                           </span>
                         </div>
+                        {ent.sequencial_romaneio && (
+                          <div className="mt-0.5">
+                            <span className="inline-flex items-center gap-1 text-[10px] font-mono font-bold text-teal-900 bg-teal-50 border border-teal-200 px-1.5 py-0.2 rounded">
+                              Romaneio: {ent.sequencial_romaneio}
+                            </span>
+                          </div>
+                        )}
                         {clienteExibicao && (
                           <div className="text-[10px] text-teal-700 font-semibold truncate mt-0.5">
                             Cliente: {clienteExibicao}

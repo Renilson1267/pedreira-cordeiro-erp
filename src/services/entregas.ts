@@ -34,6 +34,20 @@ export interface CreateEntregaPayload {
 export interface UpdateEntregaPayload extends Partial<CreateEntregaPayload> {}
 
 export const entregasService = {
+  async obterProximoSequencial(empresaId: string, anoRef?: number): Promise<string> {
+    const ano = anoRef || new Date().getFullYear()
+    try {
+      const records = await pb.collection('contadores_sequenciais').getList(1, 1, {
+        filter: `empresa_id = '${empresaId}' && tipo = 'romaneio' && ano = ${ano}`,
+      })
+      const ultimo = records.items[0]?.ultimo_numero || 0
+      const proximo = Number(ultimo) + 1
+      return `RMD-${ano}-${String(proximo).padStart(5, '0')}`
+    } catch (_) {
+      return `RMD-${ano}-00001`
+    }
+  },
+
   async listar(empresaId: string, filterExtra?: string): Promise<Entrega[]> {
     const filter = filterExtra
       ? `empresa_id = '${empresaId}' && (${filterExtra})`
