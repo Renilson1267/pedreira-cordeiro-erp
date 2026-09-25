@@ -46,6 +46,16 @@ import {
   DialogTitle,
   DialogFooter,
 } from '@/components/ui/dialog'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
 import { RomaneioEntregaImpressaoModal } from '@/components/frotas/RomaneioEntregaImpressaoModal'
 import { toast } from '@/hooks/use-toast'
 import {
@@ -89,6 +99,17 @@ export default function EntregaPage() {
   // Seleção múltipla para impressão
   const [selectedIds, setSelectedIds] = useState<string[]>([])
   const [relatorioImpressaoOpen, setRelatorioImpressaoOpen] = useState(false)
+
+  // Diálogo de Confirmação Obrigatório
+  const [confirmDialogOpen, setConfirmDialogOpen] = useState(false)
+  const [confirmDialogData, setConfirmDialogData] = useState<{
+    title: string
+    description: string
+    confirmLabel?: string
+    confirmVariant?: 'default' | 'destructive'
+    action?: () => Promise<void>
+  } | null>(null)
+  const [isProcessandoLote, setIsProcessandoLote] = useState(false)
 
   // Filtros
   const [searchQuery, setSearchQuery] = useState('')
@@ -367,18 +388,151 @@ export default function EntregaPage() {
   }
 
   const handleDelete = async (e: Entrega) => {
-    if (!confirm('Deseja realmente remover esta entrega?')) return
-    try {
-      await entregasService.remover(e.id)
-      toast({ title: 'Entrega excluída com sucesso.' })
-      await loadData()
-    } catch (err: any) {
-      toast({
-        title: 'Erro ao excluir entrega',
-        description: err.message,
-        variant: 'destructive',
-      })
+    setConfirmDialogData({
+      title: 'Confirmar exclusão da entrega',
+      description: `Deseja realmente remover a entrega de ${e.produto_nome || 'material'} para "${e.cliente_nome || e.destino || 'Cliente'}"? Esta ação removerá o registro da relação.`,
+      confirmLabel: 'Excluir Entrega',
+      confirmVariant: 'destructive',
+      action: async () => {
+        try {
+          await entregasService.remover(e.id)
+          toast({ title: 'Entrega excluída com sucesso.' })
+          await loadData()
+        } catch (err: any) {
+          toast({
+            title: 'Erro ao excluir entrega',
+            description: err.message,
+            variant: 'destructive',
+          })
+        }
+      },
+    })
+    setConfirmDialogOpen(true)
+  }
+
+  // Estatísticas de vendas elegíveis para entrega
+  const estatisticasEnvioLote = useMemo(() => {
+    const entregasComVenda = new Set(entregas.filter((e) => e.venda_id).map((e) => e.venda_id!))
+    const elegiveis = vendas.filter(
+      (v) => (v.tipo_entrega === 'frota_propria' || !v.tipo_entrega) && !entregasComVenda.has(v.id),
+    )
+    const jaComEntrega = vendas.filter((v) => entregasComVenda.has(v.id))
+    const terceiros = vendas.filter((v) => v.tipo_entrega === 'terceiro')
+
+    return {
+      totalVendas: vendas.length,
+      elegiveis,
+      qtdElegiveis: elegiveis.length,
+      qtdJaComEntrega: jaComEntrega.length,
+      qtdTerceiros: terceiros.length,
     }
+  }, [vendas, entregas])
+
+  // Ação em Lote: Enviar todas as vendas elegíveis para entrega
+  const handleEnviarTodasVendasParaEntrega = () => {
+    const { elegiveis, qtdElegiveis, qtdJaComEntrega, qtdTerceiros } = estatisticasEnvioLote
+
+    if (qtdElegiveis === 0) {
+      toast({
+        title: 'Nenhuma venda elegível para entrega',
+        description: `Todas as vendas de Frota Própria (${qtdJaComEntrega}) já possuem entrega vinculada. ${qtdTerceiros > 0 ? `${qtdTerceiros} venda(s) de Terceiro são desconsideradas.` : ''}`,
+      })
+      return
+    }
+
+    setConfirmDialogData({
+      title: 'Enviar todas as vendas para Entrega?',
+      description: `Serão criadas ${qtdElegiveis} entrega(s) pendente(s) na Relação de Entrega a partir das vendas de Frota Própria que ainda não possuem entrega vinculada.\n\n• ${qtdElegiveis} nova(s) entrega(s) pendente(s) serão criadas com cliente, produto, quantidade e valor da venda.\n• ${qtdJaComEntrega} venda(s) já possuem entrega vinculada e serão mantidas.\n• ${qtdTerceiros} venda(s) de Terceiro serão ignoradas (não utilizam frota própria).`,
+      confirmLabel: `Enviar ${qtdElegiveis} venda(s) para Entrega`,
+      confirmVariant: 'default',
+      action: async () => {
+        try {
+          setIsProcessandoLote(true)
+          let criadasCount = 0
+          const falhas: string[] = []
+
+          for (const venda of elegiveis) {
+            try {
+              const cli = clientes.find((c) => c.id === venda.cliente_id)
+              const destinoCli = cli?.cidade
+                ? `${cli.nome} - ${cli.cidade}`
+                : cli?.nome || venda.expand?.cliente_id?.nome || 'Destino cliente'
+              const nomeCli = cli?.nome || venda.expand?.cliente_id?.nome || 'Cliente'
+
+              const obsEntrega = venda.observacoes
+                ? `Entrega gerada em lote a partir da Venda Pedreira #${venda.id.slice(0, 8)} (${venda.produto_nome || 'Material'} - ${venda.quantidade} ${venda.unidade}). ${venda.observacoes}`
+                : `Entrega gerada em lote a partir da Venda Pedreira #${venda.id.slice(0, 8)} (${venda.produto_nome || 'Material'} - ${venda.quantidade} ${venda.unidade}).`
+
+              await entregasService.criar({
+                empresa_id: currentEmpresa!.id,
+                venda_id: venda.id,
+                cliente_id: venda.cliente_id || null,
+                cliente_nome: nomeCli,
+                veiculo_id: venda.veiculo_id || null,
+                motorista: venda.motorista || null,
+                data: venda.data_venda || new Date().toISOString(),
+                origem: 'Pedreira Cordeiro - Sertânia/PE',
+                destino: destinoCli,
+                produto_nome: venda.produto_nome || 'Material Pedreira',
+                quantidade: Number(venda.quantidade) || 0,
+                unidade_medida: (venda.unidade as any) || 'ton',
+                valor_venda: Number(venda.valor_total) || null,
+                status: 'pendente',
+                observacoes: obsEntrega,
+              })
+
+              // Registrar histórico de alteração na venda
+              await pb.collection('historico_alteracoes').create({
+                empresa_id: currentEmpresa!.id,
+                colecao_origem: 'vendas',
+                registro_id: venda.id,
+                acao: 'editar',
+                usuario_id: user?.id || '',
+                usuario_nome: user?.name || user?.email || 'Usuário',
+                descricao: `Venda #${venda.id.slice(0, 8)} enviada para a Relação de Entrega via ação em lote (status: Pendente).`,
+                detalhes: {
+                  acao_em_lote: 'enviar_para_entrega',
+                  cliente: nomeCli,
+                  produto: venda.produto_nome,
+                  quantidade: venda.quantidade,
+                  unidade: venda.unidade,
+                  valor: venda.valor_total,
+                },
+              })
+
+              criadasCount++
+            } catch (itemErr: any) {
+              console.error(`Erro ao criar entrega da venda #${venda.id}:`, itemErr)
+              falhas.push(`#${venda.id.slice(0, 6)}`)
+            }
+          }
+
+          await loadData()
+
+          if (falhas.length > 0) {
+            toast({
+              title: 'Processamento parcial em lote',
+              description: `${criadasCount} entrega(s) criada(s) com sucesso. Houve falha em ${falhas.length} venda(s) (${falhas.join(', ')}).`,
+              variant: 'destructive',
+            })
+          } else {
+            toast({
+              title: 'Envio para Entrega concluído!',
+              description: `${criadasCount} entrega(s) pendente(s) criada(s) com sucesso a partir das vendas da frota. Prontas para 'Alocar Frota'. (${qtdJaComEntrega} já vinculadas e ${qtdTerceiros} de terceiros ignoradas).`,
+            })
+          }
+        } catch (batchErr: any) {
+          toast({
+            title: 'Erro no envio em lote',
+            description: batchErr.message,
+            variant: 'destructive',
+          })
+        } finally {
+          setIsProcessandoLote(false)
+        }
+      },
+    })
+    setConfirmDialogOpen(true)
   }
 
   // Handlers de seleção por checkbox
@@ -673,15 +827,64 @@ export default function EntregaPage() {
         </div>
 
         {canEdit && (
-          <Button
-            onClick={openCreateModal}
-            className="bg-teal-700 hover:bg-teal-800 text-white rounded-xl shadow-xs"
-          >
-            <Plus className="w-4 h-4 mr-1.5" />
-            Nova Entrega
-          </Button>
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              variant="outline"
+              onClick={handleEnviarTodasVendasParaEntrega}
+              disabled={isProcessandoLote}
+              title="Processar todas as vendas de frota própria que ainda não possuem entrega vinculada"
+              className="border-teal-300 text-teal-800 bg-teal-50/60 hover:bg-teal-100 rounded-xl shadow-2xs font-semibold text-xs"
+            >
+              <Send className="w-3.5 h-3.5 mr-1.5 text-teal-700" />
+              <span>
+                {isProcessandoLote
+                  ? 'Processando Vendas...'
+                  : estatisticasEnvioLote.qtdElegiveis > 0
+                    ? `Enviar todas para Entrega (${estatisticasEnvioLote.qtdElegiveis})`
+                    : 'Enviar todas para Entrega'}
+              </span>
+            </Button>
+            <Button
+              onClick={openCreateModal}
+              className="bg-teal-700 hover:bg-teal-800 text-white rounded-xl shadow-xs"
+            >
+              <Plus className="w-4 h-4 mr-1.5" />
+              Nova Entrega
+            </Button>
+          </div>
         )}
       </div>
+
+      {/* Banner Informativo sobre Vendas Pendentes de Envio para Entrega */}
+      {canEdit && estatisticasEnvioLote.qtdElegiveis > 0 && (
+        <div className="p-3.5 rounded-2xl bg-amber-50/80 border border-amber-200 text-amber-900 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-2xs">
+          <div className="flex items-start sm:items-center gap-2.5">
+            <div className="w-8 h-8 rounded-xl bg-amber-100 text-amber-800 flex items-center justify-center shrink-0">
+              <AlertCircle className="w-4 h-4" />
+            </div>
+            <div>
+              <p className="text-xs font-bold text-amber-950">
+                {estatisticasEnvioLote.qtdElegiveis} venda(s) de Frota Própria aguardam inclusão na
+                Entrega
+              </p>
+              <p className="text-[11px] text-amber-800">
+                Clique no botão para criar os romaneios/entregas pendentes em lote com 1 clique (
+                {estatisticasEnvioLote.qtdJaComEntrega} já vinculadas e{' '}
+                {estatisticasEnvioLote.qtdTerceiros} de terceiros ignoradas).
+              </p>
+            </div>
+          </div>
+          <Button
+            size="sm"
+            onClick={handleEnviarTodasVendasParaEntrega}
+            disabled={isProcessandoLote}
+            className="bg-amber-600 hover:bg-amber-700 text-white rounded-xl text-xs font-semibold shrink-0"
+          >
+            <Send className="w-3 h-3 mr-1.5" />
+            {isProcessandoLote ? 'Enviando...' : 'Enviar Agora'}
+          </Button>
+        </div>
+      )}
 
       {/* KPI Cards */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
@@ -1531,6 +1734,44 @@ export default function EntregaPage() {
         totais={totalizadoresRelatorioEntregas}
         mensagemVazio="Nenhuma entrega encontrada para os filtros ou seleção atual."
       />
+
+      {/* Diálogo de Confirmação Obrigatório */}
+      <AlertDialog open={confirmDialogOpen} onOpenChange={setConfirmDialogOpen}>
+        <AlertDialogContent className="bg-white rounded-2xl border-[#ECEAE4] max-w-[440px]">
+          <AlertDialogHeader>
+            <AlertDialogTitle className="text-base font-bold text-gray-900">
+              {confirmDialogData?.title || 'Confirmar ação'}
+            </AlertDialogTitle>
+            <AlertDialogDescription className="text-xs text-gray-600 leading-relaxed whitespace-pre-line">
+              {confirmDialogData?.description}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter className="pt-2">
+            <AlertDialogCancel disabled={isProcessandoLote} className="text-xs rounded-xl">
+              Cancelar
+            </AlertDialogCancel>
+            <AlertDialogAction
+              disabled={isProcessandoLote}
+              onClick={async (e) => {
+                e.preventDefault()
+                if (confirmDialogData?.action) {
+                  await confirmDialogData.action()
+                }
+                setConfirmDialogOpen(false)
+              }}
+              className={`text-xs rounded-xl text-white ${
+                confirmDialogData?.confirmVariant === 'destructive'
+                  ? 'bg-red-600 hover:bg-red-700'
+                  : 'bg-teal-700 hover:bg-teal-800'
+              }`}
+            >
+              {isProcessandoLote
+                ? 'Processando...'
+                : confirmDialogData?.confirmLabel || 'Confirmar'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }

@@ -809,6 +809,135 @@ export default function Vendas() {
     }
   }
 
+  // Estatísticas de vendas elegíveis para entrega
+  const estatisticasEnvioLote = useMemo(() => {
+    const entregasComVenda = new Set(entregas.filter((e) => e.venda_id).map((e) => e.venda_id!))
+    const elegiveis = vendas.filter(
+      (v) => (v.tipo_entrega === 'frota_propria' || !v.tipo_entrega) && !entregasComVenda.has(v.id),
+    )
+    const jaComEntrega = vendas.filter((v) => entregasComVenda.has(v.id))
+    const terceiros = vendas.filter((v) => v.tipo_entrega === 'terceiro')
+    const valorTotalElegiveis = elegiveis.reduce((acc, v) => acc + (v.valor_total || 0), 0)
+
+    return {
+      totalVendas: vendas.length,
+      elegiveis,
+      qtdElegiveis: elegiveis.length,
+      qtdJaComEntrega: jaComEntrega.length,
+      qtdTerceiros: terceiros.length,
+      valorTotalElegiveis,
+    }
+  }, [vendas, entregas])
+
+  // Ação em Lote: Enviar todas as vendas elegíveis para entrega
+  const handleEnviarTodasVendasParaEntrega = () => {
+    const { elegiveis, qtdElegiveis, qtdJaComEntrega, qtdTerceiros, valorTotalElegiveis } =
+      estatisticasEnvioLote
+
+    if (qtdElegiveis === 0) {
+      toast({
+        title: 'Nenhuma venda elegível para entrega',
+        description: `Todas as vendas de Frota Própria (${qtdJaComEntrega}) já possuem entrega vinculada. ${qtdTerceiros > 0 ? `${qtdTerceiros} venda(s) de Terceiro são desconsideradas.` : ''}`,
+      })
+      return
+    }
+
+    setConfirmDialogData({
+      title: 'Enviar todas as vendas para Entrega?',
+      description: `Serão criadas ${qtdElegiveis} entrega(s) pendente(s) na Relação de Entrega a partir das vendas de Frota Própria que ainda não possuem entrega vinculada (Total do lote: ${formatCurrency(valorTotalElegiveis)}).\n\n• ${qtdElegiveis} nova(s) entrega(s) pendente(s) serão criadas com cliente, produto, quantidade e valor da venda.\n• ${qtdJaComEntrega} venda(s) já possuem entrega vinculada e serão mantidas.\n• ${qtdTerceiros} venda(s) de Terceiro serão ignoradas (não utilizam frota própria).`,
+      confirmLabel: `Enviar ${qtdElegiveis} venda(s) para Entrega`,
+      confirmVariant: 'default',
+      action: async () => {
+        try {
+          setIsSubmitting(true)
+          let criadasCount = 0
+          const falhas: string[] = []
+
+          for (const venda of elegiveis) {
+            try {
+              const cli = clientes.find((c) => c.id === venda.cliente_id)
+              const destinoCli = cli?.cidade
+                ? `${cli.nome} - ${cli.cidade}`
+                : cli?.nome || venda.expand?.cliente_id?.nome || 'Destino cliente'
+              const nomeCli = cli?.nome || venda.expand?.cliente_id?.nome || 'Cliente'
+
+              const obsEntrega = venda.observacoes
+                ? `Entrega gerada em lote a partir da Venda Pedreira #${venda.id.slice(0, 8)} (${venda.produto_nome || 'Material'} - ${venda.quantidade} ${venda.unidade}). ${venda.observacoes}`
+                : `Entrega gerada em lote a partir da Venda Pedreira #${venda.id.slice(0, 8)} (${venda.produto_nome || 'Material'} - ${venda.quantidade} ${venda.unidade}).`
+
+              await entregasService.criar({
+                empresa_id: currentEmpresa!.id,
+                venda_id: venda.id,
+                cliente_id: venda.cliente_id || null,
+                cliente_nome: nomeCli,
+                veiculo_id: venda.veiculo_id || null,
+                motorista: venda.motorista || null,
+                data: venda.data_venda || new Date().toISOString(),
+                origem: 'Pedreira Cordeiro - Sertânia/PE',
+                destino: destinoCli,
+                produto_nome: venda.produto_nome || 'Material Pedreira',
+                quantidade: Number(venda.quantidade) || 0,
+                unidade_medida: (venda.unidade as any) || 'ton',
+                valor_venda: Number(venda.valor_total) || null,
+                status: 'pendente',
+                observacoes: obsEntrega,
+              })
+
+              // Registrar histórico de alteração na venda
+              await pb.collection('historico_alteracoes').create({
+                empresa_id: currentEmpresa!.id,
+                colecao_origem: 'vendas',
+                registro_id: venda.id,
+                acao: 'editar',
+                usuario_id: user?.id || '',
+                usuario_nome: user?.name || user?.email || 'Usuário',
+                descricao: `Venda #${venda.id.slice(0, 8)} enviada para a Relação de Entrega via ação em lote (status: Pendente).`,
+                detalhes: {
+                  acao_em_lote: 'enviar_para_entrega',
+                  origem: 'Vendas',
+                  cliente: nomeCli,
+                  produto: venda.produto_nome,
+                  quantidade: venda.quantidade,
+                  unidade: venda.unidade,
+                  valor: venda.valor_total,
+                },
+              })
+
+              criadasCount++
+            } catch (itemErr: any) {
+              console.error(`Erro ao criar entrega da venda #${venda.id}:`, itemErr)
+              falhas.push(`#${venda.id.slice(0, 6)}`)
+            }
+          }
+
+          await loadData()
+
+          if (falhas.length > 0) {
+            toast({
+              title: 'Processamento parcial em lote',
+              description: `${criadasCount} entrega(s) criada(s) com sucesso. Houve falha em ${falhas.length} venda(s) (${falhas.join(', ')}).`,
+              variant: 'destructive',
+            })
+          } else {
+            toast({
+              title: 'Envio para Entrega concluído!',
+              description: `${criadasCount} entrega(s) pendente(s) criada(s) com sucesso a partir das vendas da frota.`,
+            })
+          }
+        } catch (batchErr: any) {
+          toast({
+            title: 'Erro no envio em lote',
+            description: batchErr.message,
+            variant: 'destructive',
+          })
+        } finally {
+          setIsSubmitting(false)
+        }
+      },
+    })
+    setConfirmDialogOpen(true)
+  }
+
   const handleDelete = async (v: Venda) => {
     setConfirmDialogData({
       title: 'Confirmar exclusão da venda',
@@ -1151,15 +1280,44 @@ export default function Vendas() {
           </p>
         </div>
 
-        {canEdit && (
-          <Button
-            onClick={openCreateModal}
-            className="bg-teal-700 hover:bg-teal-800 text-white rounded-xl shadow-xs"
-          >
-            <Plus className="w-4 h-4 mr-1.5" />
-            Nova Venda
-          </Button>
-        )}
+        <div className="flex flex-wrap items-center gap-2">
+          {canEdit && (
+            <Button
+              type="button"
+              variant="outline"
+              disabled={isSubmitting || estatisticasEnvioLote.qtdElegiveis === 0}
+              onClick={handleEnviarTodasVendasParaEntrega}
+              className={`rounded-xl text-xs font-semibold h-9 transition-colors ${
+                estatisticasEnvioLote.qtdElegiveis > 0
+                  ? 'border-teal-300 bg-teal-50 text-teal-800 hover:bg-teal-100 hover:text-teal-900 shadow-2xs'
+                  : 'border-gray-200 text-gray-400 bg-gray-50 cursor-not-allowed'
+              }`}
+              title={
+                estatisticasEnvioLote.qtdElegiveis > 0
+                  ? `Enviar ${estatisticasEnvioLote.qtdElegiveis} venda(s) de frota própria pendente(s) para a Relação de Entrega`
+                  : 'Nenhuma venda de frota própria sem entrega cadastrada'
+              }
+            >
+              <Truck className="w-4 h-4 mr-1.5 text-teal-700" />
+              Enviar todas para Entrega
+              {estatisticasEnvioLote.qtdElegiveis > 0 && (
+                <span className="ml-1.5 px-1.5 py-0.2 rounded-full text-[10px] bg-teal-200 text-teal-900 font-bold font-mono">
+                  {estatisticasEnvioLote.qtdElegiveis}
+                </span>
+              )}
+            </Button>
+          )}
+
+          {canEdit && (
+            <Button
+              onClick={openCreateModal}
+              className="bg-teal-700 hover:bg-teal-800 text-white rounded-xl shadow-xs h-9"
+            >
+              <Plus className="w-4 h-4 mr-1.5" />
+              Nova Venda
+            </Button>
+          )}
+        </div>
       </div>
 
       {/* KPI Cards */}
