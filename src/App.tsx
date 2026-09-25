@@ -40,6 +40,7 @@ import Funcionarios from '@/pages/rh/Funcionarios'
 import HorasExtras from '@/pages/rh/HorasExtras'
 import ManualPage from '@/pages/Manual'
 import Operadores from '@/pages/cadastros/Operadores'
+import FormasRecebimento from '@/pages/cadastros/FormasRecebimento'
 
 export default function App() {
   return (
@@ -89,6 +90,7 @@ export default function App() {
               <Route path="/cadastros/produtos" element={<Produtos />} />
               <Route path="/cadastros/plano-de-contas" element={<PlanoContas />} />
               <Route path="/cadastros/centros-de-custo" element={<CentrosCusto />} />
+              <Route path="/cadastros/formas-recebimento" element={<FormasRecebimento />} />
               <Route path="/cadastros/operadores" element={<Operadores />} />
 
               {/* Relatórios */}

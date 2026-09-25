@@ -1586,42 +1586,63 @@ export function classificarStatusRecebimento(params: {
 export function normalizarFormaRecebimento(
   forma: string | null | undefined,
   descricaoFallback: string = '',
-): 'Dinheiro' | 'Pix' | 'Cartão' | 'Boleto' | 'Transferência' {
+): string {
   const normForma = normalizarTextoStatus(forma)
   const normDesc = normalizarTextoStatus(descricaoFallback)
 
-  // 1. Depósito / Transferência / TED / DOC (com ou sem menção a banco, ex.: "DEPOSITO BRAD", "DEPOSITO BRADESCO")
+  // 1. Cheque pré-datado
+  if (
+    normForma.includes('CHEQUE') ||
+    normForma.includes('PRE-DATADO') ||
+    normForma.includes('PREDATADO') ||
+    normForma.includes('CHQ') ||
+    normDesc.includes('CHEQUE PRE') ||
+    normDesc.includes('PRE-DATADO') ||
+    normDesc.includes('PREDATADO')
+  ) {
+    return 'Cheque Pré-datado'
+  }
+
+  // 2. Depósito (identificado ou comum)
   if (
     normForma.includes('DEPOSITO') ||
     normForma.includes('DEPOS') ||
-    normForma.includes('TRANSF') ||
-    normForma.includes('TED') ||
-    normForma.includes('DOC') ||
-    normDesc.includes('TRANSF') ||
-    normDesc.includes('TED') ||
-    normDesc.includes('DOC') ||
     normDesc.includes('DEPOSITO') ||
     normDesc.includes('DEPOS')
   ) {
-    return 'Transferência'
+    return 'Depósito'
   }
 
-  // 2. Boleto
+  // 3. A Prazo / Faturado / Parcelado
   if (
-    normForma.includes('BOLETO') ||
-    normForma.includes('BOL') ||
-    normDesc.includes('BOLETO') ||
-    normDesc.includes('BOL')
+    normForma.includes('A PRAZO') ||
+    normForma.includes('PRAZO') ||
+    normForma.includes('FATURADO') ||
+    normDesc.includes('A PRAZO')
   ) {
-    return 'Boleto'
+    return 'A Prazo'
   }
 
-  // 3. Pix
+  // 4. Transferência Bancária / TED / DOC / Transferencia
+  if (
+    normForma.includes('TRANSF') ||
+    normForma.includes('TRANSFERENCIA') ||
+    normForma.includes('TED') ||
+    normForma.includes('DOC') ||
+    normDesc.includes('TRANSF') ||
+    normDesc.includes('TRANSFERENCIA') ||
+    normDesc.includes('TED') ||
+    normDesc.includes('DOC')
+  ) {
+    return 'Transferência Bancária'
+  }
+
+  // 5. Pix
   if (normForma.includes('PIX') || normForma.includes('CHAVE') || normDesc.includes('PIX')) {
     return 'Pix'
   }
 
-  // 4. Cartão (Débito/Crédito)
+  // 6. Cartão (Débito/Crédito)
   if (
     normForma.includes('CART') ||
     normForma.includes('DEBITO') ||
@@ -1632,18 +1653,29 @@ export function normalizarFormaRecebimento(
     return 'Cartão'
   }
 
-  // 5. Dinheiro / Espécie
+  // 7. Dinheiro / Espécie / Cash
   if (
     normForma.includes('DINHEIRO') ||
     normForma.includes('ESPECIE') ||
     normForma.includes('CASH') ||
     normDesc.includes('DINHEIRO') ||
-    normDesc.includes('ESPECIE')
+    normDesc.includes('ESPECIE') ||
+    normDesc.includes('CASH')
   ) {
     return 'Dinheiro'
   }
 
-  // 6. Menção a bancos na forma ou descrição (Santander, Bradesco, etc.) sem depósito/transf costumam ser boletos/cobrança bancária
+  // 8. Boleto Bancário
+  if (
+    normForma.includes('BOLETO') ||
+    normForma.includes('BOL') ||
+    normDesc.includes('BOLETO') ||
+    normDesc.includes('BOL')
+  ) {
+    return 'Transferência Bancária'
+  }
+
+  // 9. Menção a bancos na forma ou descrição (Santander, Bradesco, etc.) sem outra classificação
   if (
     normForma.includes('SANTANDER') ||
     normForma.includes('BRADESCO') ||
@@ -1653,8 +1685,16 @@ export function normalizarFormaRecebimento(
     normDesc.includes('BRADESCO') ||
     normDesc.includes('BRAD')
   ) {
-    return 'Boleto'
+    return 'Transferência Bancária'
   }
+
+  // Se já veio preenchido com string legada válida, preserva
+  if (forma && forma.trim()) {
+    const fTrim = forma.trim()
+    if (fTrim === 'Transferência') return 'Transferência Bancária'
+    return fTrim
+  }
+
   // Padrão do ERP da pedreira
   return 'Pix'
 }

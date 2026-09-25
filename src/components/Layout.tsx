@@ -104,6 +104,7 @@ export default function Layout() {
         { label: 'Produtos e Serviços', path: '/cadastros/produtos', icon: Package },
         { label: 'Plano de Contas', path: '/cadastros/plano-de-contas', icon: Layers },
         { label: 'Centros de Custo', path: '/cadastros/centros-de-custo', icon: PieChart },
+        { label: 'Formas de Recebimento', path: '/cadastros/formas-recebimento', icon: CreditCard },
         ...(isAdmin
           ? [{ label: 'Operadores (Usuários)', path: '/cadastros/operadores', icon: Shield }]
           : []),

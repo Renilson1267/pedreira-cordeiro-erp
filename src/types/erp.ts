@@ -163,6 +163,37 @@ export type StatusContaReceber =
 
 export type TipoDesconto = 'percentual' | 'valor'
 
+export interface FormaRecebimento {
+  id: string
+  empresa_id: string
+  nome: string
+  ativo: boolean
+  ordem?: number
+  created: string
+  updated: string
+}
+
+export type StatusChequePredatado = 'pendente' | 'compensado'
+
+export interface ChequePredatado {
+  id: string
+  empresa_id: string
+  titulo_id: string
+  data: string
+  valor: number
+  numero?: string
+  banco?: string
+  status: StatusChequePredatado
+  data_compensacao?: string
+  observacoes?: string
+  created: string
+  updated: string
+  expand?: {
+    titulo_id?: ContaReceber
+    empresa_id?: Empresa
+  }
+}
+
 export interface ContaReceber {
   id: string
   empresa_id: string
@@ -177,7 +208,7 @@ export interface ContaReceber {
   parcelas?: number
   status: StatusContaReceber
   data_recebimento?: string
-  forma_recebimento?: 'Dinheiro' | 'Pix' | 'Cartão' | 'Boleto' | 'Transferência'
+  forma_recebimento?: string
   endereco?: string
   nota?: string
   cliente_depositante?: string
@@ -473,7 +504,12 @@ export type TipoDespesaFrota =
   | 'Outros'
 
 export type AcaoHistorico = 'criar' | 'editar' | 'excluir' | 'baixa' | 'estorno'
-export type ColecaoOrigemHistorico = 'contas_pagar' | 'contas_receber' | 'outros'
+export type ColecaoOrigemHistorico =
+  | 'contas_pagar'
+  | 'contas_receber'
+  | 'cheques_predatados'
+  | 'formas_recebimento'
+  | 'outros'
 
 export interface DetalheAlteracaoCampo {
   campo: string

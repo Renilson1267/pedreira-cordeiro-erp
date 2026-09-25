@@ -79,8 +79,14 @@ import {
   History,
   Tag,
   Percent,
+  CheckSquare,
 } from 'lucide-react'
-import type { TipoDesconto } from '@/types/erp'
+import type { TipoDesconto, FormaRecebimento, ChequePredatado } from '@/types/erp'
+import {
+  formasRecebimentoService,
+  chequesPredatadosService,
+  FORMAS_RECEBIMENTO_PADRAO,
+} from '@/services/formasRecebimento'
 
 export default function ContasReceber() {
   const { currentEmpresa, canEdit, isReadOnly } = useCompany()
@@ -91,6 +97,7 @@ export default function ContasReceber() {
   const [categorias, setCategorias] = useState<PlanoConta[]>([])
   const [centrosCusto, setCentrosCusto] = useState<CentroCusto[]>([])
   const [creditos, setCreditos] = useState<CreditoCliente[]>([])
+  const [formasCadastradas, setFormasCadastradas] = useState<FormaRecebimento[]>([])
   const [loading, setLoading] = useState(true)
 
   // Filters
@@ -136,6 +143,10 @@ export default function ContasReceber() {
   const [status, setStatus] = useState<
     'Aberta' | 'Recebida' | 'Vencida' | 'Recebimento Antecipado'
   >('Aberta')
+  const [formaRecebimentoForm, setFormaRecebimentoForm] = useState<string>('Pix')
+  const [chequesPredatadosForm, setChequesPredatadosForm] = useState<
+    Array<{ id?: string; data: string; valor: number; numero: string; banco: string }>
+  >([])
   const [observacoes, setObservacoes] = useState('')
 
   // Settle (Receber) Modal
@@ -143,15 +154,15 @@ export default function ContasReceber() {
   const [settlingConta, setSettlingConta] = useState<ContaReceber | null>(null)
   const [dataRecebimento, setDataRecebimento] = useState('')
   const [valorRecebido, setValorRecebido] = useState<number>(0)
-  const [formaRecebimento, setFormaRecebimento] = useState<
-    'Dinheiro' | 'Pix' | 'Cartão' | 'Boleto' | 'Transferência' | 'Crédito do Cliente'
-  >('Pix')
+  const [formaRecebimento, setFormaRecebimento] = useState<string>('Pix')
   const [usarCreditoCliente, setUsarCreditoCliente] = useState(false)
   const [valorCreditoUsado, setValorCreditoUsado] = useState<number>(0)
   const [isSubmitting, setIsSubmitting] = useState(false)
 
-  // Read-only Detail Drawer
+  // Read-only Detail Drawer & Cheques
   const [detailItem, setDetailItem] = useState<ContaReceber | null>(null)
+  const [chequesDetail, setChequesDetail] = useState<ChequePredatado[]>([])
+  const [loadingChequesDetail, setLoadingChequesDetail] = useState(false)
 
   // Confirmation Alert Dialog State
   const [confirmDialogOpen, setConfirmDialogOpen] = useState(false)
@@ -164,13 +175,18 @@ export default function ContasReceber() {
   } | null>(null)
 
   useRealtime('contas_receber', () => loadData())
+  useRealtime('cheques_predatados', () => {
+    if (detailItem) {
+      carregarChequesDoTitulo(detailItem.id)
+    }
+  })
 
   const loadData = async () => {
     if (!currentEmpresa) return
 
     try {
       setLoading(true)
-      const [crList, cList, pcList, ccList, credList] = await Promise.all([
+      const [crList, cList, pcList, ccList, credList, fList] = await Promise.all([
         pb.collection('contas_receber').getFullList<ContaReceber>({
           filter: `empresa_id = '${currentEmpresa.id}'`,
           sort: 'vencimento',
@@ -192,6 +208,7 @@ export default function ContasReceber() {
           filter: `empresa_id = '${currentEmpresa.id}' && status != 'utilizado'`,
           sort: 'data',
         }),
+        formasRecebimentoService.listar(currentEmpresa.id, true),
       ])
 
       setContas(crList)
@@ -199,6 +216,7 @@ export default function ContasReceber() {
       setCategorias(pcList)
       setCentrosCusto(ccList)
       setCreditos(credList)
+      setFormasCadastradas(fList)
       const qNovo = searchParams.get('novo')
       const qId = searchParams.get('id')
       const qAction = searchParams.get('action')
@@ -230,6 +248,27 @@ export default function ContasReceber() {
   useEffect(() => {
     loadData()
   }, [currentEmpresa])
+
+  // Carregar cheques ao abrir detalhes do título
+  const carregarChequesDoTitulo = async (tituloId: string) => {
+    try {
+      setLoadingChequesDetail(true)
+      const chks = await chequesPredatadosService.listarPorTitulo(tituloId)
+      setChequesDetail(chks)
+    } catch (err) {
+      console.warn('Erro ao carregar cheques do título:', err)
+    } finally {
+      setLoadingChequesDetail(false)
+    }
+  }
+
+  useEffect(() => {
+    if (detailItem?.id) {
+      carregarChequesDoTitulo(detailItem.id)
+    } else {
+      setChequesDetail([])
+    }
+  }, [detailItem?.id])
 
   const [centroCustoId, setCentroCustoId] = useState('')
 
@@ -269,6 +308,8 @@ export default function ContasReceber() {
     setPrazoSelecionado('mensal')
     setDatasCustomizadasManuais(false)
     setGradeParcelas(gerarGradeParcelas(hoje, 1, 'mensal', 0))
+    setFormaRecebimentoForm('Pix')
+    setChequesPredatadosForm([])
     setEndereco('')
     setNota('')
     setStatus('Aberta')
@@ -276,7 +317,7 @@ export default function ContasReceber() {
     setIsDrawerOpen(true)
   }
 
-  const handleEdit = (c: ContaReceber) => {
+  const handleEdit = async (c: ContaReceber) => {
     const venc = toInputDate(c.vencimento)
     const numP = c.parcelas || 1
     const vBrutoInit = Number(c.valor_bruto || c.valor || 0)
@@ -301,10 +342,28 @@ export default function ContasReceber() {
     setPrazoSelecionado('mensal')
     setDatasCustomizadasManuais(false)
     setGradeParcelas(gerarGradeParcelas(venc, numP, 'mensal', c.valor))
+    setFormaRecebimentoForm(c.forma_recebimento || 'Pix')
     setEndereco(c.endereco || '')
     setNota(c.nota || '')
     setStatus(c.status === 'Recebida' ? 'Recebida' : 'Aberta')
     setObservacoes(c.observacoes || '')
+
+    // Carregar cheques pré-datados se houver para este título
+    try {
+      const chks = await chequesPredatadosService.listarPorTitulo(c.id)
+      setChequesPredatadosForm(
+        chks.map((chk) => ({
+          id: chk.id,
+          data: toInputDate(chk.data),
+          valor: chk.valor,
+          numero: chk.numero || '',
+          banco: chk.banco || '',
+        })),
+      )
+    } catch (_) {
+      setChequesPredatadosForm([])
+    }
+
     setIsDrawerOpen(true)
   }
 
@@ -484,12 +543,22 @@ export default function ContasReceber() {
               data_emissao: dataEmissaoIso,
               parcelas: Number(parcelas),
               status: status,
+              forma_recebimento: formaRecebimentoForm || null,
               endereco: endereco.trim(),
               nota: nota.trim(),
               observacoes: observacoes.trim(),
             }
 
             await pb.collection('contas_receber').update(editingId, novoObj)
+
+            // Se for cheque pré-datado, sincronizar cheques
+            if (formaRecebimentoForm === 'Cheque Pré-datado' && chequesPredatadosForm.length > 0) {
+              await chequesPredatadosService.salvarLote(
+                currentEmpresa!.id,
+                editingId,
+                chequesPredatadosForm,
+              )
+            }
 
             // Gravar histórico de alteração com diff
             if (registroAntes) {
@@ -501,19 +570,21 @@ export default function ContasReceber() {
               await historicoService.registrar({
                 empresaId: currentEmpresa!.id,
                 colecaoOrigem: 'contas_receber',
-                registroId: editingId,
-                acao: 'editar',
+                registroId: createdConta.id,
+                acao: 'criar',
                 usuarioId: user?.id,
                 usuarioNome: user?.name || user?.email || 'Usuário',
-                descricao: `Título a receber atualizado para "${descFinal}" (Líquido: ${formatCurrency(valorFinalLiquido)}${valorFinalDesconto > 0 ? `, Desconto: ${formatCurrency(valorFinalDesconto)}` : ''}) - Cliente: ${clienteNomeNovo}. ${diffs.length > 0 ? `${diffs.length} campo(s) modificado(s).` : 'Sem alteração de campos chave.'}`,
+                descricao: `Título a receber incluído: "${desc}" - Valor: ${formatCurrency(parcelValue)}${parcelDesconto > 0 ? ` (Desc: ${formatCurrency(parcelDesconto)})` : ''} - Venc: ${formatDate(dataVencIso)} - Forma: ${formaRecebimentoForm} - Cliente: ${clienteNomeCriado}.`,
                 detalhes: {
-                  alteracoes: diffs,
-                  valor: valorFinalLiquido,
+                  valor: parcelValue,
                   extra: {
-                    valor_bruto: valorFinalBruto,
-                    valor_desconto: valorFinalDesconto,
+                    valor_bruto: parcelBruto,
+                    valor_desconto: parcelDesconto,
                     desconto_percentual: descontoPercentual,
                     tipo_desconto: tipoDesconto,
+                    forma_recebimento: formaRecebimentoForm,
+                    parcela_indice: i + 1,
+                    total_parcelas: numParcelas,
                   },
                 },
               })
@@ -565,11 +636,25 @@ export default function ContasReceber() {
                 data_emissao: dataEmissaoIso || undefined,
                 parcelas: numParcelas,
                 status: status,
+                forma_recebimento: formaRecebimentoForm || null,
                 endereco: endereco.trim(),
                 nota: nota.trim(),
                 observacoes: observacoes.trim(),
                 data_recebimento: status === 'Recebimento Antecipado' ? dataVencIso : undefined,
               })
+
+              // Se for cheque pré-datado na primeira ou única parcela, salvar cheques associados
+              if (
+                formaRecebimentoForm === 'Cheque Pré-datado' &&
+                chequesPredatadosForm.length > 0 &&
+                i === 0
+              ) {
+                await chequesPredatadosService.salvarLote(
+                  currentEmpresa!.id,
+                  createdConta.id,
+                  chequesPredatadosForm,
+                )
+              }
 
               // Gravar histórico de criação
               await historicoService.registrar({
@@ -1147,10 +1232,89 @@ export default function ContasReceber() {
     setDataRecebimento(toInputDate(new Date().toISOString()))
     const saldo = getSaldoRestante(conta)
     setValorRecebido(saldo > 0 ? saldo : conta.valor)
-    setFormaRecebimento('Pix')
+    setFormaRecebimento(conta.forma_recebimento || 'Pix')
     setUsarCreditoCliente(false)
     setValorCreditoUsado(0)
     setSettleModalOpen(true)
+  }
+
+  // Ação de compensar cheque pré-datado
+  const handleCompensarCheque = (cheque: ChequePredatado) => {
+    if (!detailItem) return
+    const dataChequeFormatada = formatDate(cheque.data)
+
+    setConfirmDialogData({
+      title: 'Confirmar compensação de cheque pré-datado',
+      description: `Deseja marcar como compensado o cheque de ${formatCurrency(cheque.valor)} (Vencimento: ${dataChequeFormatada}${cheque.numero ? `, Nº ${cheque.numero}` : ''}${cheque.banco ? `, Banco: ${cheque.banco}` : ''})? Isso atualizará o status do cheque para Compensado e gerará uma entrada no caixa na data de compensação.`,
+      confirmLabel: 'Confirmar Compensação',
+      confirmVariant: 'default',
+      action: async () => {
+        try {
+          setIsSubmitting(true)
+          const dataCompensacaoIso = new Date().toISOString()
+
+          // 1. Atualizar cheque no banco
+          await chequesPredatadosService.atualizar(cheque.id, {
+            status: 'compensado',
+            data_compensacao: dataCompensacaoIso,
+          })
+
+          // 2. Gerar movimento de caixa de Entrada na data do cheque/compensação
+          const clienteNome =
+            detailItem.expand?.cliente_id?.nome || detailItem.descricao || 'Título'
+          const mov = await pb.collection('movimentos_financeiros').create({
+            empresa_id: currentEmpresa!.id,
+            tipo: 'Entrada',
+            descricao: `Compensação de cheque pré-datado: ${clienteNome}${cheque.numero ? ` [Cheque Nº ${cheque.numero}]` : ''}${cheque.banco ? ` [Banco: ${cheque.banco}]` : ''} - Ref: ${detailItem.descricao}`,
+            valor: cheque.valor,
+            data: dataCompensacaoIso,
+            categoria_id: detailItem.categoria_id || null,
+            centro_custo_id: detailItem.centro_custo_id || null,
+            origem: 'ContaReceber',
+            referencia_id: detailItem.id,
+            conciliado: false,
+          })
+
+          // 3. Registrar no histórico de alterações
+          await historicoService.registrar({
+            empresaId: currentEmpresa!.id,
+            colecaoOrigem: 'cheques_predatados',
+            registroId: cheque.id,
+            acao: 'baixa',
+            usuarioId: user?.id,
+            usuarioNome: user?.name || user?.email || 'Usuário',
+            descricao: `Cheque pré-datado de ${formatCurrency(cheque.valor)} compensado em ${formatDate(dataCompensacaoIso)}. Gerado movimento de Entrada no caixa ref. título "${detailItem.descricao}".`,
+            detalhes: {
+              valor: cheque.valor,
+              extra: {
+                cheque_id: cheque.id,
+                numero: cheque.numero,
+                banco: cheque.banco,
+                titulo_id: detailItem.id,
+                movimento_financeiro_id: mov.id,
+              },
+            },
+          })
+
+          toast({
+            title: 'Cheque compensado com sucesso!',
+            description: `Movimento de entrada gerado no valor de ${formatCurrency(cheque.valor)}.`,
+          })
+
+          await carregarChequesDoTitulo(detailItem.id)
+          await loadData()
+        } catch (err: any) {
+          toast({
+            title: 'Erro ao compensar cheque',
+            description: err.message,
+            variant: 'destructive',
+          })
+        } finally {
+          setIsSubmitting(false)
+        }
+      },
+    })
+    setConfirmDialogOpen(true)
   }
 
   const handleConfirmSettle = async () => {
@@ -2091,7 +2255,219 @@ export default function ContasReceber() {
                   className="mt-1 font-mono"
                 />
               </div>
+
+              <div className="col-span-2">
+                <Label className="text-xs font-semibold text-gray-700">Forma de Recebimento</Label>
+                <div className="mt-1">
+                  <ComboboxPesquisavel
+                    items={
+                      formasCadastradas.length > 0
+                        ? formasCadastradas.map((f) => ({ value: f.nome, label: f.nome }))
+                        : FORMAS_RECEBIMENTO_PADRAO.map((f) => ({ value: f, label: f }))
+                    }
+                    value={formaRecebimentoForm}
+                    onChange={(val) => {
+                      setFormaRecebimentoForm(val)
+                      if (val === 'A Prazo' && Number(parcelas) <= 1 && !editingId) {
+                        setParcelas(2)
+                        setGradeParcelas(
+                          gerarGradeParcelas(vencimento, 2, prazoSelecionado, valorLiquidoCalc),
+                        )
+                      } else if (
+                        val === 'Cheque Pré-datado' &&
+                        chequesPredatadosForm.length === 0
+                      ) {
+                        setChequesPredatadosForm([
+                          {
+                            data: vencimento || toInputDate(new Date().toISOString()),
+                            valor: valorLiquidoCalc > 0 ? valorLiquidoCalc : 0,
+                            numero: '',
+                            banco: '',
+                          },
+                        ])
+                      }
+                    }}
+                    placeholder="Selecione a forma..."
+                    buscaPlaceholder="Buscar forma de recebimento..."
+                    vazioTexto="Nenhuma forma encontrada"
+                  />
+                </div>
+              </div>
             </div>
+
+            {/* Painel / Aba de Cheques Pré-datados */}
+            {formaRecebimentoForm === 'Cheque Pré-datado' && (
+              <div className="p-3.5 rounded-xl border border-amber-200 bg-amber-50/50 space-y-3">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <span className="text-xs font-bold text-amber-900 flex items-center gap-1.5">
+                      <Tag className="w-3.5 h-3.5 text-amber-700" />
+                      Aba de Cheques Pré-datados ({chequesPredatadosForm.length})
+                    </span>
+                    <p className="text-[11px] text-amber-700/90 mt-0.5">
+                      Cadastre as datas de compensação, valores e números de cada cheque
+                    </p>
+                  </div>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    onClick={() => {
+                      const totalAtual = chequesPredatadosForm.reduce(
+                        (acc, c) => acc + (Number(c.valor) || 0),
+                        0,
+                      )
+                      const restante = Math.max(0, valorLiquidoCalc - totalAtual)
+                      setChequesPredatadosForm([
+                        ...chequesPredatadosForm,
+                        {
+                          data: vencimento || toInputDate(new Date().toISOString()),
+                          valor: restante,
+                          numero: '',
+                          banco: '',
+                        },
+                      ])
+                    }}
+                    className="h-7 text-[11px] border-amber-300 bg-white hover:bg-amber-100/50 text-amber-900 rounded-lg"
+                  >
+                    <Plus className="w-3 h-3 mr-1" />
+                    Adicionar Cheque
+                  </Button>
+                </div>
+
+                {chequesPredatadosForm.length === 0 ? (
+                  <div className="text-center py-3 text-[11px] text-amber-800 bg-white/70 rounded-lg border border-amber-200">
+                    Nenhum cheque cadastrado. Clique em "Adicionar Cheque" acima.
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    {chequesPredatadosForm.map((chk, idx) => (
+                      <div
+                        key={idx}
+                        className="p-2.5 rounded-lg bg-white border border-amber-200 grid grid-cols-1 sm:grid-cols-12 gap-2 items-center text-xs"
+                      >
+                        <div className="sm:col-span-3">
+                          <Label className="text-[10px] text-gray-500 block mb-0.5">
+                            Data / Vencimento
+                          </Label>
+                          <Input
+                            type="date"
+                            required
+                            value={chk.data}
+                            onChange={(e) => {
+                              const arr = [...chequesPredatadosForm]
+                              arr[idx].data = e.target.value
+                              setChequesPredatadosForm(arr)
+                            }}
+                            className="h-8 text-xs font-mono"
+                          />
+                        </div>
+
+                        <div className="sm:col-span-3">
+                          <Label className="text-[10px] text-gray-500 block mb-0.5">
+                            Valor (R$)
+                          </Label>
+                          <Input
+                            type="number"
+                            step="0.01"
+                            min="0"
+                            required
+                            value={chk.valor || ''}
+                            onChange={(e) => {
+                              const arr = [...chequesPredatadosForm]
+                              arr[idx].valor = parseFloat(e.target.value) || 0
+                              setChequesPredatadosForm(arr)
+                            }}
+                            className="h-8 text-xs font-mono"
+                            placeholder="0,00"
+                          />
+                        </div>
+
+                        <div className="sm:col-span-3">
+                          <Label className="text-[10px] text-gray-500 block mb-0.5">
+                            Nº Cheque
+                          </Label>
+                          <Input
+                            value={chk.numero}
+                            onChange={(e) => {
+                              const arr = [...chequesPredatadosForm]
+                              arr[idx].numero = e.target.value
+                              setChequesPredatadosForm(arr)
+                            }}
+                            placeholder="Opcional"
+                            className="h-8 text-xs font-mono"
+                          />
+                        </div>
+
+                        <div className="sm:col-span-2">
+                          <Label className="text-[10px] text-gray-500 block mb-0.5">
+                            Banco / Emissor
+                          </Label>
+                          <Input
+                            value={chk.banco}
+                            onChange={(e) => {
+                              const arr = [...chequesPredatadosForm]
+                              arr[idx].banco = e.target.value
+                              setChequesPredatadosForm(arr)
+                            }}
+                            placeholder="Ex: BB, Itaú"
+                            className="h-8 text-xs"
+                          />
+                        </div>
+
+                        <div className="sm:col-span-1 flex justify-end items-end pt-3 sm:pt-0">
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => {
+                              const arr = chequesPredatadosForm.filter((_, i) => i !== idx)
+                              setChequesPredatadosForm(arr)
+                            }}
+                            className="h-8 w-8 p-0 text-red-500 hover:text-red-700 hover:bg-red-50 rounded-lg"
+                            title="Remover cheque"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </Button>
+                        </div>
+                      </div>
+                    ))}
+
+                    {/* Resumo de totais dos cheques */}
+                    {(() => {
+                      const totalCheques = chequesPredatadosForm.reduce(
+                        (acc, c) => acc + (Number(c.valor) || 0),
+                        0,
+                      )
+                      const dif = Math.abs(totalCheques - valorLiquidoCalc)
+                      const divergente = dif > 0.01 && valorLiquidoCalc > 0
+
+                      return (
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between text-[11px] p-2 bg-amber-100/60 rounded-lg text-amber-950 font-medium gap-1">
+                          <div className="flex items-center gap-2">
+                            <span>Total dos Cheques: {formatCurrency(totalCheques)}</span>
+                            <span>•</span>
+                            <span>Valor do Título: {formatCurrency(valorLiquidoCalc)}</span>
+                          </div>
+                          {divergente && (
+                            <span className="text-amber-800 font-semibold flex items-center gap-1">
+                              <AlertCircle className="w-3 h-3 text-amber-600" />
+                              Divergência de {formatCurrency(dif)} (não bloqueia gravação)
+                            </span>
+                          )}
+                          {!divergente && valorLiquidoCalc > 0 && (
+                            <span className="text-emerald-700 font-semibold flex items-center gap-1">
+                              <CheckCircle className="w-3 h-3" />
+                              Soma dos cheques confere
+                            </span>
+                          )}
+                        </div>
+                      )
+                    })()}
+                  </div>
+                )}
+              </div>
+            )}
 
             {/* Bloco de Desconto */}
             <div className="p-3 bg-amber-50/40 rounded-xl border border-amber-200/80 space-y-2.5">
@@ -2478,21 +2854,33 @@ export default function ContasReceber() {
 
             <div>
               <Label className="text-xs font-semibold text-gray-700">Forma de Recebimento</Label>
-              <Select value={formaRecebimento} onValueChange={(v: any) => setFormaRecebimento(v)}>
-                <SelectTrigger className="mt-1">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="Pix">Pix</SelectItem>
-                  <SelectItem value="Boleto">Boleto Bancário</SelectItem>
-                  <SelectItem value="Transferência">Transferência (TED/DOC)</SelectItem>
-                  <SelectItem value="Cartão">Cartão de Crédito/Débito</SelectItem>
-                  <SelectItem value="Dinheiro">Dinheiro em Espécie</SelectItem>
-                  <SelectItem value="Crédito do Cliente">
-                    Crédito do Cliente (Saldo Antecipado)
-                  </SelectItem>
-                </SelectContent>
-              </Select>
+              <div className="mt-1">
+                <ComboboxPesquisavel
+                  items={
+                    usarCreditoCliente
+                      ? [
+                          {
+                            value: 'Crédito do Cliente',
+                            label: 'Crédito do Cliente (Saldo Antecipado)',
+                          },
+                        ]
+                      : [
+                          ...(formasCadastradas.length > 0
+                            ? formasCadastradas.map((f) => ({ value: f.nome, label: f.nome }))
+                            : FORMAS_RECEBIMENTO_PADRAO.map((f) => ({ value: f, label: f }))),
+                          {
+                            value: 'Crédito do Cliente',
+                            label: 'Crédito do Cliente (Saldo Antecipado)',
+                          },
+                        ]
+                  }
+                  value={formaRecebimento}
+                  onChange={(v) => setFormaRecebimento(v)}
+                  placeholder="Selecione a forma..."
+                  buscaPlaceholder="Buscar forma de recebimento..."
+                  vazioTexto="Nenhuma forma encontrada"
+                />
+              </div>
             </div>
           </div>
 
@@ -2639,10 +3027,95 @@ export default function ContasReceber() {
                 {detailItem.forma_recebimento && (
                   <div className="flex justify-between py-1">
                     <span className="text-gray-500">Forma de Recebimento:</span>
-                    <span className="text-gray-800">{detailItem.forma_recebimento}</span>
+                    <span className="text-gray-800 font-semibold">
+                      {detailItem.forma_recebimento}
+                    </span>
                   </div>
                 )}
               </div>
+
+              {/* Cheques Pré-datados Vinculados ao Título */}
+              {(detailItem.forma_recebimento === 'Cheque Pré-datado' ||
+                chequesDetail.length > 0) && (
+                <div className="p-3.5 bg-amber-50/50 rounded-2xl border border-amber-200/80 space-y-2.5">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-amber-950 flex items-center gap-1.5">
+                      <Tag className="w-3.5 h-3.5 text-amber-700" />
+                      Cheques Pré-datados ({chequesDetail.length})
+                    </span>
+                    <span className="text-[10px] text-amber-800">
+                      Total:{' '}
+                      {formatCurrency(
+                        chequesDetail.reduce((acc, c) => acc + (Number(c.valor) || 0), 0),
+                      )}
+                    </span>
+                  </div>
+
+                  {loadingChequesDetail ? (
+                    <div className="py-2 text-center text-[11px] text-amber-800">
+                      Carregando cheques...
+                    </div>
+                  ) : chequesDetail.length === 0 ? (
+                    <div className="text-[11px] text-amber-800 bg-white/70 p-2 rounded-lg border border-amber-200 text-center">
+                      Nenhum cheque cadastrado para este título.
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      {chequesDetail.map((chk) => (
+                        <div
+                          key={chk.id}
+                          className="p-2.5 bg-white rounded-xl border border-amber-200/90 flex items-center justify-between gap-2"
+                        >
+                          <div className="space-y-0.5 min-w-0">
+                            <div className="flex items-center gap-2">
+                              <span className="font-bold text-xs text-gray-900 font-mono">
+                                {formatCurrency(chk.valor)}
+                              </span>
+                              <Badge
+                                variant="outline"
+                                className={`text-[9px] px-1.5 py-0 ${
+                                  chk.status === 'compensado'
+                                    ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                                    : 'bg-amber-50 text-amber-800 border-amber-200'
+                                }`}
+                              >
+                                {chk.status === 'compensado' ? 'Compensado' : 'Pendente'}
+                              </Badge>
+                            </div>
+                            <div className="text-[11px] text-gray-500">
+                              Venc:{' '}
+                              <strong className="text-gray-800 font-mono">
+                                {formatDate(chk.data)}
+                              </strong>
+                              {chk.numero && ` • Nº ${chk.numero}`}
+                              {chk.banco && ` • Banco: ${chk.banco}`}
+                            </div>
+                            {chk.status === 'compensado' && chk.data_compensacao && (
+                              <div className="text-[10px] text-emerald-700">
+                                Compensado em: {formatDate(chk.data_compensacao)} (Entrada no caixa
+                                gerada)
+                              </div>
+                            )}
+                          </div>
+
+                          {canEdit && chk.status !== 'compensado' && (
+                            <Button
+                              type="button"
+                              size="sm"
+                              onClick={() => handleCompensarCheque(chk)}
+                              disabled={isSubmitting}
+                              className="bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] h-7 px-2.5 rounded-lg shrink-0 shadow-xs"
+                            >
+                              <CheckSquare className="w-3.5 h-3.5 mr-1" />
+                              Compensar
+                            </Button>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
 
               {detailItem.observacoes && (
                 <div className="p-3 bg-[#FAF9F7] rounded-xl border border-[#ECEAE4] mt-4">
