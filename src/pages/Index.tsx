@@ -98,20 +98,33 @@ export default function Dashboard() {
       setLoading(true)
       const now = new Date()
       const todayISO = now.toISOString().slice(0, 10)
+      const empFilter = `empresa_id = '${currentEmpresa.id}'`
+
+      // Disparar todas as consultas independentes em paralelo com Promise.all
+      // evitando waterfall de requisições sequenciais ao PocketBase
+      const [contasBancarias, allMovimentos, allCp, allCr, veicList, abastList, allManutencoes] =
+        await Promise.all([
+          pb.collection('bancos_contas').getFullList({ filter: empFilter }),
+          pb.collection('movimentos_financeiros').getFullList({
+            filter: empFilter,
+            sort: '-data',
+          }),
+          pb.collection('contas_pagar').getFullList({ filter: empFilter }),
+          pb.collection('contas_receber').getFullList({ filter: empFilter }),
+          pb.collection('veiculos').getFullList({ filter: empFilter }),
+          pb.collection('abastecimentos').getFullList({ filter: empFilter }),
+          pb.collection('manutencoes').getFullList({
+            filter: empFilter,
+            expand: 'veiculo_id',
+            sort: '-created',
+          }),
+        ])
 
       // 1. Bancos / Caixas (Saldo inicial cadastrado)
-      const contasBancarias = await pb.collection('bancos_contas').getFullList({
-        filter: `empresa_id = '${currentEmpresa.id}'`,
-      })
       setTotalContasBancarias(contasBancarias.length)
       const saldoInicialTotal = contasBancarias.reduce((acc, c) => acc + (c.saldo_inicial || 0), 0)
 
       // 2. All Movimentos for cash position and monthly result
-      const allMovimentos = await pb.collection('movimentos_financeiros').getFullList({
-        filter: `empresa_id = '${currentEmpresa.id}'`,
-        sort: '-data',
-      })
-
       // Saldo geral acumulado de todas as contas até o momento
       let saldoAcumuladoTotal = saldoInicialTotal
       let entradasPeriodo = 0
@@ -154,10 +167,6 @@ export default function Dashboard() {
       )
 
       // 3. Contas a Pagar do Período (competência e vencimento)
-      const allCp = await pb.collection('contas_pagar').getFullList({
-        filter: `empresa_id = '${currentEmpresa.id}'`,
-      })
-
       // Títulos que competem ao período (por vencimento)
       const cpNoPeriodo = allCp.filter((cp) =>
         estaDentroDoPeriodo(cp.vencimento, dataInicio, dataFim),
@@ -186,13 +195,6 @@ export default function Dashboard() {
       setTotalPrevistoPagarPeriodo(totalGeralCompetePagar)
 
       // 4. Contas a Receber do Período (competência e recebimento)
-      // Conforme o padrão das demais telas e requisito do usuário:
-      // O card de Contas a Receber soma o que compete ao período filtrado (abertos no período + recebidos no período),
-      // e o "Recebido" contabiliza todos os recebimentos reais do período (incluindo títulos Recebida vindos da planilha com data_recebimento vazia).
-      const allCr = await pb.collection('contas_receber').getFullList({
-        filter: `empresa_id = '${currentEmpresa.id}'`,
-      })
-
       const getValorRecebidoEfetivoCr = (cr: any) => {
         if (cr.status === 'Recebida') {
           return cr.valor_recebido && cr.valor_recebido > 0 ? cr.valor_recebido : cr.valor || 0
@@ -206,9 +208,6 @@ export default function Dashboard() {
         return Math.max(0, (cr.valor || 0) - jaRec)
       }
 
-      // Função para obter a data efetiva de liquidação/recebimento:
-      // Se data_recebimento estiver preenchida usa ela; se estiver vazia (importados da planilha),
-      // adota vencimento ou data_emissao como competência de recebimento, nunca deixando fora da apuração.
       const getDataEfetivaRecebimento = (cr: any): string => {
         return (cr.data_recebimento || cr.vencimento || cr.data_emissao || '').slice(0, 10)
       }
@@ -230,8 +229,6 @@ export default function Dashboard() {
       setReceberPeriodo(totalAbertoReceberPeriodo)
 
       // Total Recebido Efetivo Competente ao Período:
-      // Títulos cujo recebimento efetivo ocorreu dentro do período (usando data_recebimento ou vencimento de fallback para importados)
-      // OU títulos cuja competência de vencimento é do período e foram quitados/baixados
       const totalRecebidoCalculado = allCr.reduce((sum, cr) => {
         const valRecebido = getValorRecebidoEfetivoCr(cr)
         if (valRecebido <= 0) return sum
@@ -240,7 +237,6 @@ export default function Dashboard() {
         const recNoPeriodo = estaDentroDoPeriodo(dataRecebimentoEfetiva, dataInicio, dataFim)
         const vencNoPeriodo = estaDentroDoPeriodo(cr.vencimento, dataInicio, dataFim)
 
-        // Se o recebimento ocorreu no período filtrado OU o vencimento é do período e o título foi recebido
         if (recNoPeriodo || vencNoPeriodo) {
           return sum + valRecebido
         }
@@ -290,8 +286,7 @@ export default function Dashboard() {
         .slice(0, 5)
       setProximosVencimentos(unificados)
 
-      // 7. Gráfico Fluxo de Caixa: se o período selecionado for maior que 1 mês, agrupa por mês desse intervalo;
-      // senão mostra últimos 6 meses com destaque ao período.
+      // 7. Gráfico Fluxo de Caixa
       const monthNames = [
         'Jan',
         'Fev',
@@ -307,7 +302,6 @@ export default function Dashboard() {
         'Dez',
       ]
 
-      // Determinar meses a exibir no gráfico
       const mesesLabels: { ano: number; mes: number; label: string }[] = []
       if (dataInicio && dataFim) {
         const dIni = new Date(dataInicio + 'T00:00:00')
@@ -327,7 +321,6 @@ export default function Dashboard() {
       }
 
       if (mesesLabels.length === 0) {
-        // Padrão: últimos 6 meses
         const baseDate = dataFim ? new Date(dataFim + 'T00:00:00') : now
         const baseYear = baseDate.getFullYear()
         const baseMonth = baseDate.getMonth()
@@ -360,79 +353,56 @@ export default function Dashboard() {
       })
       setChartData(monthsData)
 
-      // 8. Frotas da Pedreira Resumo & Alertas (respeitando o período selecionado quando informado)
-      try {
-        const [veicList, abastList, manutList] = await Promise.all([
-          pb.collection('veiculos').getFullList({
-            filter: `empresa_id = '${currentEmpresa.id}'`,
-          }),
-          pb.collection('abastecimentos').getFullList({
-            filter: `empresa_id = '${currentEmpresa.id}'`,
-          }),
-          pb.collection('manutencoes').getFullList({
-            filter: `empresa_id = '${currentEmpresa.id}'`,
-          }),
-        ])
+      // 8. Frotas da Pedreira Resumo & Alertas
+      const abastFiltrados = abastList.filter((a) =>
+        estaDentroDoPeriodo(a.data, dataInicio, dataFim),
+      )
+      const manutFiltradas = allManutencoes.filter((m) =>
+        estaDentroDoPeriodo(m.data, dataInicio, dataFim),
+      )
 
-        const abastFiltrados = abastList.filter((a) =>
-          estaDentroDoPeriodo(a.data, dataInicio, dataFim),
-        )
-        const manutFiltradas = manutList.filter((m) =>
-          estaDentroDoPeriodo(m.data, dataInicio, dataFim),
-        )
+      const totalAtivos = veicList.filter((v) => v.status === 'ativo').length
+      const totalManutencao = veicList.filter((v) => v.status === 'manutencao').length
+      const custoCombustivel = abastFiltrados.reduce((acc, a) => acc + (a.valor_total || 0), 0)
+      const custoManutencao = manutFiltradas.reduce((acc, m) => acc + (m.custo || 0), 0)
+      const totalLitros = abastFiltrados.reduce((acc, a) => acc + (a.litros || 0), 0)
 
-        const totalAtivos = veicList.filter((v) => v.status === 'ativo').length
-        const totalManutencao = veicList.filter((v) => v.status === 'manutencao').length
-        const custoCombustivel = abastFiltrados.reduce((acc, a) => acc + (a.valor_total || 0), 0)
-        const custoManutencao = manutFiltradas.reduce((acc, m) => acc + (m.custo || 0), 0)
-        const totalLitros = abastFiltrados.reduce((acc, a) => acc + (a.litros || 0), 0)
+      setFrotaResumo({
+        totalAtivos,
+        totalManutencao,
+        custoFrotaMes: custoCombustivel + custoManutencao,
+        totalLitrosMes: totalLitros,
+      })
 
-        setFrotaResumo({
-          totalAtivos,
-          totalManutencao,
-          custoFrotaMes: custoCombustivel + custoManutencao,
-          totalLitrosMes: totalLitros,
-        })
+      const alertas: any[] = []
+      allManutencoes.forEach((m) => {
+        if (!m.proxima_revisao_data && !m.proxima_revisao_medidor) return
+        const v = veicList.find((ve) => ve.id === m.veiculo_id)
+        if (!v) return
 
-        // Buscar manutenções com próxima revisão próxima ou vencida
-        const allManutencoes = await pb.collection('manutencoes').getFullList({
-          filter: `empresa_id = '${currentEmpresa.id}'`,
-          expand: 'veiculo_id',
-          sort: '-created',
-        })
-
-        const alertas: any[] = []
-        allManutencoes.forEach((m) => {
-          if (!m.proxima_revisao_data && !m.proxima_revisao_medidor) return
-          const v = veicList.find((ve) => ve.id === m.veiculo_id)
-          if (!v) return
-
-          if (m.proxima_revisao_data) {
-            const pDate = m.proxima_revisao_data.slice(0, 10)
-            const diffDays = Math.ceil(
-              (new Date(pDate).getTime() - new Date(todayISO).getTime()) / (1000 * 3600 * 24),
-            )
-            if (diffDays <= 0) {
-              alertas.push({
-                codigo: v.codigo_interno,
-                modelo: v.modelo,
-                mensagem: `Revisão vencida (${pDate})`,
-                severidade: 'urgente',
-              })
-            } else if (diffDays <= 15) {
-              alertas.push({
-                codigo: v.codigo_interno,
-                modelo: v.modelo,
-                mensagem: `Revisão em ${diffDays} dias`,
-                severidade: 'alerta',
-              })
-            }
+        if (m.proxima_revisao_data) {
+          const pDate = m.proxima_revisao_data.slice(0, 10)
+          const diffDays = Math.ceil(
+            (new Date(pDate).getTime() - new Date(todayISO).getTime()) / (1000 * 3600 * 24),
+          )
+          if (diffDays <= 0) {
+            alertas.push({
+              codigo: v.codigo_interno,
+              modelo: v.modelo,
+              mensagem: `Revisão vencida (${pDate})`,
+              severidade: 'urgente',
+            })
+          } else if (diffDays <= 15) {
+            alertas.push({
+              codigo: v.codigo_interno,
+              modelo: v.modelo,
+              mensagem: `Revisão em ${diffDays} dias`,
+              severidade: 'alerta',
+            })
           }
-        })
-        setAlertasRevisao(alertas.slice(0, 3))
-      } catch (fErr) {
-        console.error('Error loading frota dashboard cards:', fErr)
-      }
+        }
+      })
+      setAlertasRevisao(alertas.slice(0, 3))
     } catch (err) {
       console.error('Error loading dashboard:', err)
     } finally {

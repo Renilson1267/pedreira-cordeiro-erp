@@ -4,7 +4,7 @@
 // 2. NUNCA cachear chamadas de API do PocketBase (/api/*), rotas autenticadas ou dados mutáveis do banco
 // 3. Fallback gracioso para offline no app shell
 
-const CACHE_NAME = 'pedreira-cordeiro-v1'
+const CACHE_NAME = 'pedreira-cordeiro-v2-perf'
 const STATIC_ASSETS = [
   '/',
   '/index.html',
