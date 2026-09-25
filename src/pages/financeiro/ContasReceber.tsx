@@ -570,21 +570,20 @@ export default function ContasReceber() {
               await historicoService.registrar({
                 empresaId: currentEmpresa!.id,
                 colecaoOrigem: 'contas_receber',
-                registroId: createdConta.id,
-                acao: 'criar',
+                registroId: editingId,
+                acao: 'editar',
                 usuarioId: user?.id,
                 usuarioNome: user?.name || user?.email || 'Usuário',
-                descricao: `Título a receber incluído: "${desc}" - Valor: ${formatCurrency(parcelValue)}${parcelDesconto > 0 ? ` (Desc: ${formatCurrency(parcelDesconto)})` : ''} - Venc: ${formatDate(dataVencIso)} - Forma: ${formaRecebimentoForm} - Cliente: ${clienteNomeCriado}.`,
+                descricao: `Título atualizado para "${descFinal}" (${formatCurrency(valorFinalLiquido)}) - Cliente: ${clienteNomeNovo}. ${diffs.length > 0 ? `${diffs.length} campo(s) modificado(s).` : 'Sem alteração de campos chave.'}`,
                 detalhes: {
-                  valor: parcelValue,
+                  alteracoes: diffs,
+                  valor: valorFinalLiquido,
                   extra: {
-                    valor_bruto: parcelBruto,
-                    valor_desconto: parcelDesconto,
+                    valor_bruto: valorFinalBruto,
+                    valor_desconto: valorFinalDesconto,
                     desconto_percentual: descontoPercentual,
                     tipo_desconto: tipoDesconto,
                     forma_recebimento: formaRecebimentoForm,
-                    parcela_indice: i + 1,
-                    total_parcelas: numParcelas,
                   },
                 },
               })
@@ -2260,10 +2259,10 @@ export default function ContasReceber() {
                 <Label className="text-xs font-semibold text-gray-700">Forma de Recebimento</Label>
                 <div className="mt-1">
                   <ComboboxPesquisavel
-                    items={
+                    options={
                       formasCadastradas.length > 0
-                        ? formasCadastradas.map((f) => ({ value: f.nome, label: f.nome }))
-                        : FORMAS_RECEBIMENTO_PADRAO.map((f) => ({ value: f, label: f }))
+                        ? formasCadastradas.map((f) => ({ id: f.nome, label: f.nome }))
+                        : FORMAS_RECEBIMENTO_PADRAO.map((f) => ({ id: f, label: f }))
                     }
                     value={formaRecebimentoForm}
                     onChange={(val) => {
@@ -2288,8 +2287,8 @@ export default function ContasReceber() {
                       }
                     }}
                     placeholder="Selecione a forma..."
-                    buscaPlaceholder="Buscar forma de recebimento..."
-                    vazioTexto="Nenhuma forma encontrada"
+                    searchPlaceholder="Buscar forma de recebimento..."
+                    emptyText="Nenhuma forma encontrada"
                   />
                 </div>
               </div>
@@ -2856,20 +2855,20 @@ export default function ContasReceber() {
               <Label className="text-xs font-semibold text-gray-700">Forma de Recebimento</Label>
               <div className="mt-1">
                 <ComboboxPesquisavel
-                  items={
+                  options={
                     usarCreditoCliente
                       ? [
                           {
-                            value: 'Crédito do Cliente',
+                            id: 'Crédito do Cliente',
                             label: 'Crédito do Cliente (Saldo Antecipado)',
                           },
                         ]
                       : [
                           ...(formasCadastradas.length > 0
-                            ? formasCadastradas.map((f) => ({ value: f.nome, label: f.nome }))
-                            : FORMAS_RECEBIMENTO_PADRAO.map((f) => ({ value: f, label: f }))),
+                            ? formasCadastradas.map((f) => ({ id: f.nome, label: f.nome }))
+                            : FORMAS_RECEBIMENTO_PADRAO.map((f) => ({ id: f, label: f }))),
                           {
-                            value: 'Crédito do Cliente',
+                            id: 'Crédito do Cliente',
                             label: 'Crédito do Cliente (Saldo Antecipado)',
                           },
                         ]
@@ -2877,8 +2876,8 @@ export default function ContasReceber() {
                   value={formaRecebimento}
                   onChange={(v) => setFormaRecebimento(v)}
                   placeholder="Selecione a forma..."
-                  buscaPlaceholder="Buscar forma de recebimento..."
-                  vazioTexto="Nenhuma forma encontrada"
+                  searchPlaceholder="Buscar forma de recebimento..."
+                  emptyText="Nenhuma forma encontrada"
                 />
               </div>
             </div>

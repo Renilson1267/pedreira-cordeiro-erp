@@ -41,6 +41,7 @@ import {
   Clock,
   ShoppingCart,
   BookOpen,
+  CreditCard,
 } from 'lucide-react'
 
 export default function Layout() {
