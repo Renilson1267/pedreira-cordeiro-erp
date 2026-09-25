@@ -294,24 +294,65 @@
   }
 }
 
-/* Print styles for Comprovantes e Romaneios */
+/* Print styles for Comprovantes, Romaneios e Relatórios Oficiais */
 @media print {
   @page {
     size: A4 portrait;
     margin: 6mm 8mm;
   }
 
+  html,
   body {
     background: #ffffff !important;
+    background-color: #ffffff !important;
     color: #000000 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    width: 100% !important;
+    min-height: 100% !important;
     -webkit-print-color-adjust: exact !important;
     print-color-adjust: exact !important;
   }
 
-  /* Hide entire main app chrome during printing */
+  /* Ocultar completamente os backdrops e overlays de Dialog do Radix/shadcn na mídia de impressão */
+  [data-radix-dialog-overlay],
+  [data-state][class*='fixed'][class*='bg-black'],
+  div[class*='bg-black/80'],
+  div[class*='bg-black'],
+  .dialog-overlay {
+    display: none !important;
+    background: transparent !important;
+    background-color: transparent !important;
+    opacity: 0 !important;
+    visibility: hidden !important;
+    pointer-events: none !important;
+  }
+
+  /* Desarmar o posicionamento fixo centralizado do DialogContent na mídia de impressão */
+  [data-radix-dialog-content],
+  div[role='dialog'] {
+    position: static !important;
+    transform: none !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    min-width: 100% !important;
+    height: auto !important;
+    max-height: none !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    border: none !important;
+    box-shadow: none !important;
+    background: #ffffff !important;
+    background-color: #ffffff !important;
+    overflow: visible !important;
+  }
+
+  /* Hide entire main app chrome, botões de ação e elementos no-print during printing */
   aside,
   header,
   footer,
+  nav,
+  button,
   .no-print {
     display: none !important;
   }
@@ -322,6 +363,24 @@
     width: 100% !important;
     margin: 0 !important;
     padding: 0 !important;
+    background: #ffffff !important;
+  }
+
+  /* Regras para .folha-a4-romaneio caber perfeitamente na folha A4 única sem cortes nem fundo escuro */
+  .folha-a4-romaneio {
+    background: #ffffff !important;
+    background-color: #ffffff !important;
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
+    width: 100% !important;
+    box-sizing: border-box !important;
+  }
+
+  .via-romaneio {
+    background: #ffffff !important;
+    background-color: #ffffff !important;
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
   }
 
   /* Suporte a paginação e repetição de cabeçalho da tabela */
@@ -342,4 +401,14 @@
     page-break-inside: avoid !important;
     break-inside: avoid !important;
   }
+
+  /* Suporte para relatórios que requerem orientação paisagem */
+  .print-landscape {
+    page: landscape;
+  }
+}
+
+@page landscape {
+  size: A4 landscape;
+  margin: 6mm 8mm;
 }

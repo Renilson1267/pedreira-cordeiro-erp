@@ -465,7 +465,7 @@ export const RomaneioEntregaImpressaoModal: React.FC<RomaneioEntregaImpressaoMod
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
-        className="max-w-[96vw] lg:max-w-4xl max-h-[95vh] overflow-y-auto p-4 sm:p-6 bg-white border-[#ECEAE4]"
+        className="max-w-[96vw] lg:max-w-4xl max-h-[95vh] overflow-y-auto p-4 sm:p-6 bg-white border-[#ECEAE4] print:static print:transform-none print:max-w-full print:p-0 print:border-none print:shadow-none print:bg-white print:overflow-visible"
         aria-describedby="romaneio-description"
       >
         <DialogHeader className="flex flex-row items-center justify-between border-b pb-3 no-print">
@@ -492,8 +492,8 @@ export const RomaneioEntregaImpressaoModal: React.FC<RomaneioEntregaImpressaoMod
         </DialogHeader>
 
         {/* CONTAINER DA FOLHA A4 ÚNICA */}
-        <div className="print-only-container mt-2">
-          <div className="folha-a4-romaneio flex flex-col justify-between h-[282mm] max-h-[287mm] w-full box-border">
+        <div className="print-only-container mt-2 print:mt-0 print:p-0">
+          <div className="folha-a4-romaneio bg-white print:bg-white flex flex-col justify-between h-[282mm] max-h-[287mm] w-full box-border">
             {/* 1ª VIA: CLIENTE */}
             <ViaRomaneio
               tipoVia="CLIENTE"
