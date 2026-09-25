@@ -58,8 +58,31 @@ import {
   HelpCircle,
   Pencil,
 } from 'lucide-react'
+import { Checkbox } from '@/components/ui/checkbox'
+import { X } from 'lucide-react'
+
+const MESES_PT_ORDER = [
+  'janeiro',
+  'fevereiro',
+  'março',
+  'marco',
+  'abril',
+  'maio',
+  'junho',
+  'julho',
+  'agosto',
+  'setembro',
+  'outubro',
+  'novembro',
+  'dezembro',
+]
 import { ReciboHorasExtrasModal } from '@/components/rh/ReciboHorasExtrasModal'
 import { FolhaHorasExtrasImpressaoModal } from '@/components/rh/FolhaHorasExtrasImpressaoModal'
+import {
+  RelatorioListagemImpressaoModal,
+  type ColunaRelatorioImpressao,
+  type TotalizadorRelatorioImpressao,
+} from '@/components/financeiro/RelatorioListagemImpressaoModal'
 
 export default function HorasExtras() {
   const { user } = useAuth()
@@ -74,7 +97,12 @@ export default function HorasExtras() {
   // Filtros da listagem
   const [searchQuery, setSearchQuery] = useState('')
   const [mesFiltro, setMesFiltro] = useState<string>('todos')
+  const [funcionarioFiltro, setFuncionarioFiltro] = useState<string>('todos')
   const [modoFiltro, setModoFiltro] = useState<string>('todos')
+
+  // Seleção múltipla para impressão
+  const [selectedIds, setSelectedIds] = useState<string[]>([])
+  const [relatorioImpressaoOpen, setRelatorioImpressaoOpen] = useState(false)
 
   // Drawer / Formulário de Cálculo & Edição
   const [drawerOpen, setDrawerOpen] = useState(false)
@@ -604,11 +632,22 @@ export default function HorasExtras() {
     setConfirmDialogOpen(true)
   }
 
-  // Filtragem dos registros
+  // Lista de colaboradores citados na folha (para o combobox de filtro)
+  const funcionariosDaFolha = useMemo(() => {
+    return funcionarios.filter((f) => folhas.some((folha) => folha.funcionario_id === f.id))
+  }, [funcionarios, folhas])
+
+  // Filtragem dos registros (busca textual + mês de referência + colaborador específico + modo)
   const folhasFiltradas = useMemo(() => {
     return folhas.filter((item) => {
       if (mesFiltro !== 'todos' && item.mes_referencia !== mesFiltro) return false
       if (modoFiltro !== 'todos' && item.modo_calculo !== modoFiltro) return false
+      if (
+        funcionarioFiltro !== 'todos' &&
+        funcionarioFiltro !== '' &&
+        item.funcionario_id !== funcionarioFiltro
+      )
+        return false
       if (searchQuery.trim()) {
         const q = searchQuery.toLowerCase()
         const fNome = (item.expand?.funcionario_id?.nome || '').toLowerCase()
@@ -619,16 +658,276 @@ export default function HorasExtras() {
       }
       return true
     })
-  }, [folhas, mesFiltro, modoFiltro, searchQuery])
+  }, [folhas, mesFiltro, modoFiltro, funcionarioFiltro, searchQuery])
 
   // Lista única de meses para o filtro
   const listaMeses = useMemo(() => {
     const setMeses = new Set<string>()
     folhas.forEach((f) => setMeses.add(f.mes_referencia))
-    return Array.from(setMeses)
+    return Array.from(setMeses).sort((a, b) => {
+      const pa = a.split('/')
+      const pb = b.split('/')
+      const ia = MESES_PT_ORDER.indexOf(pa[0]?.toLowerCase() || '') ?? -1
+      const ib = MESES_PT_ORDER.indexOf(pb[0]?.toLowerCase() || '') ?? -1
+      const ya = parseInt(pa[1] || '0', 10) || 0
+      const yb = parseInt(pb[1] || '0', 10) || 0
+      return ya !== yb ? ya - yb : ia - ib
+    })
   }, [folhas])
 
-  // KPIs
+  // Handlers de seleção por checkbox (padrão Contas a Pagar / Abastecimentos)
+  const handleToggleSelectAll = () => {
+    if (selectedIds.length === folhasFiltradas.length && folhasFiltradas.length > 0) {
+      setSelectedIds([])
+    } else {
+      setSelectedIds(folhasFiltradas.map((f) => f.id))
+    }
+  }
+
+  const handleToggleSelectOne = (id: string) => {
+    setSelectedIds((prev) =>
+      prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id],
+    )
+  }
+
+  // Itens a serem impressos: se houver seleção, imprime os selecionados; senão, todos os filtrados
+  const itensParaImpressao = useMemo(() => {
+    if (selectedIds.length > 0) {
+      const set = new Set(selectedIds)
+      return folhasFiltradas.filter((f) => set.has(f.id))
+    }
+    return folhasFiltradas
+  }, [folhasFiltradas, selectedIds])
+
+  // Descrição legível dos filtros aplicados (aparece no relatório impresso)
+  const descricaoFiltrosAplicados = useMemo(() => {
+    const partes: string[] = []
+    if (mesFiltro !== 'todos') {
+      partes.push(`Competência: ${mesFiltro}`)
+    } else {
+      partes.push('Competência: Todas')
+    }
+    if (funcionarioFiltro !== 'todos' && funcionarioFiltro !== '') {
+      const func = funcionarios.find((f) => f.id === funcionarioFiltro)
+      if (func) partes.push(`Colaborador: ${func.nome}`)
+    }
+    if (modoFiltro !== 'todos') {
+      partes.push(
+        modoFiltro === 'padrao_50'
+          ? 'Modo: 50% para todas as horas'
+          : 'Modo: CLT Vigente (50% / 100%)',
+      )
+    }
+    if (searchQuery.trim()) {
+      partes.push(`Busca: "${searchQuery.trim()}"`)
+    }
+    if (selectedIds.length > 0) {
+      partes.push(`Seleção ativa: ${selectedIds.length} item(ns)`)
+    }
+    return partes.join(' · ')
+  }, [mesFiltro, funcionarioFiltro, funcionarios, modoFiltro, searchQuery, selectedIds.length])
+
+  // Colunas do relatório A4 de listagem (mesmo helper das telas financeiras/frota)
+  const colunasRelatorioHorasExtras = useMemo<ColunaRelatorioImpressao<FolhaHorasExtras>[]>(
+    () => [
+      {
+        key: 'colaborador',
+        header: 'Colaborador / Cargo',
+        render: (f) => {
+          const func = f.expand?.funcionario_id
+          return (
+            <div>
+              <div className="font-semibold text-gray-900">{func?.nome || 'Não informado'}</div>
+              <div className="text-[10px] text-gray-500">
+                {func?.cargo || '—'} • {func?.setor || 'Geral'}
+              </div>
+            </div>
+          )
+        },
+      },
+      {
+        key: 'competencia',
+        header: 'Mês de Referência',
+        align: 'center',
+        className: 'font-mono whitespace-nowrap',
+        render: (f) => f.mes_referencia,
+      },
+      {
+        key: 'salario_base',
+        header: 'Salário Base (R$)',
+        align: 'right',
+        className: 'font-mono whitespace-nowrap',
+        render: (f) => formatCurrency(f.salario_base || 0),
+      },
+      {
+        key: 'horas_50',
+        header: 'Horas 50%',
+        align: 'center',
+        className: 'font-mono whitespace-nowrap',
+        render: (f) =>
+          (f.horas_50 || 0) > 0 ? (
+            <div>
+              <div>{(f.horas_50 || 0).toFixed(1)}h</div>
+              <div className="text-[10px] text-gray-500">
+                {formatCurrency(f.valor_horas_50 || 0)}
+              </div>
+            </div>
+          ) : (
+            '—'
+          ),
+      },
+      {
+        key: 'horas_100',
+        header: 'Horas 100%',
+        align: 'center',
+        className: 'font-mono whitespace-nowrap',
+        render: (f) =>
+          (f.horas_100 || 0) > 0 ? (
+            <div>
+              <div>{(f.horas_100 || 0).toFixed(1)}h</div>
+              <div className="text-[10px] text-gray-500">
+                {formatCurrency(f.valor_horas_100 || 0)}
+              </div>
+            </div>
+          ) : (
+            '—'
+          ),
+      },
+      {
+        key: 'total_horas',
+        header: 'Total H.',
+        align: 'center',
+        className: 'font-mono font-bold whitespace-nowrap',
+        render: (f) => `${(f.total_horas || 0).toFixed(1)}h`,
+      },
+      {
+        key: 'bruto',
+        header: 'Bruto HE (R$)',
+        align: 'right',
+        className: 'font-mono font-semibold whitespace-nowrap',
+        render: (f) => formatCurrency(f.total_valor || 0),
+      },
+      {
+        key: 'gratificacao',
+        header: 'Gratificação (+)',
+        align: 'right',
+        className: 'font-mono text-emerald-800 whitespace-nowrap',
+        render: (f) => ((f.gratificacao || 0) > 0 ? `+${formatCurrency(f.gratificacao)}` : '—'),
+      },
+      {
+        key: 'adiantamento',
+        header: 'Adiantamento (−)',
+        align: 'right',
+        className: 'font-mono text-red-700 whitespace-nowrap',
+        render: (f) => ((f.adiantamento || 0) > 0 ? `-${formatCurrency(f.adiantamento)}` : '—'),
+      },
+      {
+        key: 'observacoes',
+        header: 'Observações',
+        className: 'max-w-[180px]',
+        render: (f) =>
+          f.observacoes ? (
+            <span className="text-[10px] text-gray-600 line-clamp-2">{f.observacoes}</span>
+          ) : (
+            '—'
+          ),
+      },
+      {
+        key: 'liquido',
+        header: 'Líquido (R$)',
+        align: 'right',
+        className: 'font-mono font-extrabold text-teal-950 whitespace-nowrap',
+        render: (f) => {
+          const liq =
+            typeof f.valor_liquido === 'number'
+              ? f.valor_liquido
+              : f.total_valor + (f.gratificacao || 0) - (f.adiantamento || 0)
+          return formatCurrency(liq)
+        },
+      },
+    ],
+    [],
+  )
+
+  // Totalizadores do rodapé do relatório impresso
+  const totalizadoresRelatorioHorasExtras = useMemo<TotalizadorRelatorioImpressao[]>(() => {
+    const somaHoras50 = itensParaImpressao.reduce((acc, f) => acc + (f.horas_50 || 0), 0)
+    const somaHoras100 = itensParaImpressao.reduce((acc, f) => acc + (f.horas_100 || 0), 0)
+    const somaBruto = itensParaImpressao.reduce((acc, f) => acc + (f.total_valor || 0), 0)
+    const somaGrat = itensParaImpressao.reduce((acc, f) => acc + (f.gratificacao || 0), 0)
+    const somaAdiant = itensParaImpressao.reduce((acc, f) => acc + (f.adiantamento || 0), 0)
+    const somaLiquido = itensParaImpressao.reduce(
+      (acc, f) =>
+        acc +
+        (typeof f.valor_liquido === 'number'
+          ? f.valor_liquido
+          : f.total_valor + (f.gratificacao || 0) - (f.adiantamento || 0)),
+      0,
+    )
+
+    return [
+      {
+        label: 'TOTAIS:',
+        value: `${itensParaImpressao.length} lançamento(s)`,
+        colSpan: 3,
+        align: 'left',
+      },
+      {
+        label: '',
+        value: `${somaHoras50.toFixed(1)}h`,
+        colSpan: 1,
+        align: 'center',
+      },
+      {
+        label: '',
+        value: `${somaHoras100.toFixed(1)}h`,
+        colSpan: 1,
+        align: 'center',
+      },
+      {
+        label: '',
+        value: `${(somaHoras50 + somaHoras100).toFixed(1)}h`,
+        colSpan: 1,
+        align: 'center',
+        className: 'font-extrabold',
+      },
+      {
+        label: '',
+        value: formatCurrency(somaBruto),
+        colSpan: 1,
+        align: 'right',
+      },
+      {
+        label: '',
+        value: somaGrat > 0 ? `+${formatCurrency(somaGrat)}` : 'R$ 0,00',
+        colSpan: 1,
+        align: 'right',
+        className: 'text-emerald-800',
+      },
+      {
+        label: '',
+        value: somaAdiant > 0 ? `-${formatCurrency(somaAdiant)}` : 'R$ 0,00',
+        colSpan: 1,
+        align: 'right',
+        className: 'text-red-700',
+      },
+      {
+        label: '',
+        value: '',
+        colSpan: 1,
+        align: 'center',
+      },
+      {
+        label: '',
+        value: formatCurrency(somaLiquido),
+        colSpan: 1,
+        align: 'right',
+        className: 'text-teal-950 font-extrabold',
+      },
+    ]
+  }, [itensParaImpressao])
+
+  // KPIs (refletem os filtros aplicados)
   const totalLancamentos = folhasFiltradas.length
   const totalHorasGeral = folhasFiltradas.reduce((acc, f) => acc + (f.total_horas || 0), 0)
   const totalBrutoGeral = folhasFiltradas.reduce((acc, f) => acc + (f.total_valor || 0), 0)
@@ -758,7 +1057,7 @@ export default function HorasExtras() {
         <div className="flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-3">
           <div className="flex flex-wrap items-center gap-2">
             <Select value={mesFiltro} onValueChange={setMesFiltro}>
-              <SelectTrigger className="w-[190px] bg-[#FAF9F7] border-[#ECEAE4] text-xs h-9">
+              <SelectTrigger className="w-[190px] bg-[#FAF9F7] border-[#ECEAE4] text-xs h-9 rounded-xl">
                 <SelectValue placeholder="Mês de Referência" />
               </SelectTrigger>
               <SelectContent>
@@ -771,8 +1070,29 @@ export default function HorasExtras() {
               </SelectContent>
             </Select>
 
+            {/* Filtro por colaborador específico (combobox pesquisável, padrão do projeto) */}
+            <ComboboxPesquisavel
+              value={funcionarioFiltro}
+              onChange={setFuncionarioFiltro}
+              placeholder="Colaborador: Todos"
+              searchPlaceholder="Pesquisar colaborador..."
+              emptyText="Nenhum colaborador com lançamentos."
+              className="w-[230px]"
+              triggerClassName="bg-[#FAF9F7] border-[#ECEAE4] h-9 rounded-xl text-xs"
+              aria-label="Filtrar por colaborador"
+              options={[
+                { id: 'todos', label: 'Todos os Colaboradores' },
+                ...funcionariosDaFolha.map((f) => ({
+                  id: f.id,
+                  label: f.nome,
+                  sublabel: `${f.cargo || 'Geral'} • ${f.setor || 'Geral'}`,
+                  keywords: [f.nome, f.cargo || '', f.setor || '', f.cpf || ''],
+                })),
+              ]}
+            />
+
             <Select value={modoFiltro} onValueChange={setModoFiltro}>
-              <SelectTrigger className="w-[190px] bg-[#FAF9F7] border-[#ECEAE4] text-xs h-9">
+              <SelectTrigger className="w-[190px] bg-[#FAF9F7] border-[#ECEAE4] text-xs h-9 rounded-xl">
                 <SelectValue placeholder="Modo de Cálculo" />
               </SelectTrigger>
               <SelectContent>
@@ -782,30 +1102,62 @@ export default function HorasExtras() {
               </SelectContent>
             </Select>
 
-            {(mesFiltro !== 'todos' || modoFiltro !== 'todos' || searchQuery) && (
+            {(mesFiltro !== 'todos' ||
+              modoFiltro !== 'todos' ||
+              (funcionarioFiltro !== 'todos' && funcionarioFiltro !== '') ||
+              searchQuery ||
+              selectedIds.length > 0) && (
               <Button
                 variant="ghost"
                 size="sm"
                 onClick={() => {
                   setMesFiltro('todos')
                   setModoFiltro('todos')
+                  setFuncionarioFiltro('todos')
                   setSearchQuery('')
+                  setSelectedIds([])
                 }}
-                className="h-9 text-xs text-gray-500"
+                className="h-8 px-2 text-xs text-gray-500 hover:text-gray-900 hover:bg-gray-100 rounded-lg"
               >
-                Limpar filtros
+                <X className="w-3.5 h-3.5 mr-1" />
+                Limpar Filtros
               </Button>
             )}
           </div>
 
-          <div className="relative w-full lg:w-80">
-            <Search className="w-4 h-4 absolute left-3 top-2.5 text-gray-400" />
-            <Input
-              placeholder="Buscar por colaborador, setor, cargo..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="pl-9 bg-[#FAF9F7] border-[#ECEAE4] text-xs h-9 rounded-xl"
-            />
+          <div className="flex items-center gap-2">
+            <div className="relative w-full lg:w-80">
+              <Search className="w-4 h-4 absolute left-3 top-2.5 text-gray-400" />
+              <Input
+                placeholder="Buscar por colaborador, setor, cargo..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="pl-9 bg-[#FAF9F7] border-[#ECEAE4] text-xs h-9 rounded-xl"
+              />
+            </div>
+
+            {/* Botão de Impressão (padrão Imprimir / Imprimir Selecionados das telas financeiras) */}
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => setRelatorioImpressaoOpen(true)}
+              className={`h-9 px-2.5 text-xs font-semibold rounded-xl shadow-xs transition-colors shrink-0 ${
+                selectedIds.length > 0
+                  ? 'bg-teal-700 text-white hover:bg-teal-800 border-teal-700'
+                  : 'border-teal-300 text-teal-800 bg-teal-50/60 hover:bg-teal-100/80 hover:text-teal-950'
+              }`}
+              title={
+                selectedIds.length > 0
+                  ? `Imprimir os ${selectedIds.length} lançamentos selecionados`
+                  : 'Imprimir relatório A4 da lista de funcionários filtrada'
+              }
+            >
+              <Printer className="w-3.5 h-3.5 mr-1.5" />
+              {selectedIds.length > 0
+                ? `Imprimir Selecionados (${selectedIds.length})`
+                : 'Imprimir'}
+            </Button>
           </div>
         </div>
       </Card>
@@ -816,6 +1168,16 @@ export default function HorasExtras() {
           <table className="w-full text-left border-collapse text-xs">
             <thead>
               <tr className="bg-[#FAF9F7] border-b border-[#ECEAE4] text-gray-500 uppercase font-semibold">
+                <th className="py-3 px-3 text-center w-8">
+                  <Checkbox
+                    checked={
+                      folhasFiltradas.length > 0 && selectedIds.length === folhasFiltradas.length
+                    }
+                    onCheckedChange={handleToggleSelectAll}
+                    aria-label="Selecionar todos os lançamentos visíveis"
+                    className="border-gray-300"
+                  />
+                </th>
                 <th className="py-3 px-4">Colaborador / Função</th>
                 <th className="py-3 px-4">Mês Ref.</th>
                 <th className="py-3 px-4">Critério</th>
@@ -834,13 +1196,13 @@ export default function HorasExtras() {
             <tbody className="divide-y divide-[#ECEAE4]">
               {loading ? (
                 <tr>
-                  <td colSpan={11} className="py-12 text-center text-gray-400">
+                  <td colSpan={12} className="py-12 text-center text-gray-400">
                     Carregando apurações de horas extras...
                   </td>
                 </tr>
               ) : folhasFiltradas.length === 0 ? (
                 <tr>
-                  <td colSpan={11} className="py-12 text-center text-gray-400">
+                  <td colSpan={12} className="py-12 text-center text-gray-400">
                     Nenhuma folha de horas extras cadastrada ou encontrada para os filtros.
                   </td>
                 </tr>
@@ -853,9 +1215,23 @@ export default function HorasExtras() {
                     typeof folha.valor_liquido === 'number'
                       ? folha.valor_liquido
                       : folha.total_valor + grat - adiant
+                  const isSelected = selectedIds.includes(folha.id)
 
                   return (
-                    <tr key={folha.id} className="hover:bg-teal-50/20 transition-colors">
+                    <tr
+                      key={folha.id}
+                      className={`transition-colors ${
+                        isSelected ? 'bg-teal-50/60 hover:bg-teal-50/80' : 'hover:bg-teal-50/20'
+                      }`}
+                    >
+                      <td className="py-3.5 px-3 text-center">
+                        <Checkbox
+                          checked={isSelected}
+                          onCheckedChange={() => handleToggleSelectOne(folha.id)}
+                          aria-label={`Selecionar lançamento de ${func?.nome || 'colaborador'}`}
+                          className="border-gray-300"
+                        />
+                      </td>
                       <td className="py-3.5 px-4">
                         <div className="font-semibold text-gray-900">
                           {func?.nome || 'Colaborador não identificado'}
@@ -1387,6 +1763,23 @@ export default function HorasExtras() {
         empresa={currentEmpresa}
         mesReferenciaFiltro={mesFiltro}
         modoCalculoFiltro={modoFiltro}
+      />
+
+      {/* RELATÓRIO OFICIAL DE LISTAGEM DE HORAS EXTRAS A4 (PADRÃO FINANCEIRO / FROTA COM SELEÇÃO) */}
+      <RelatorioListagemImpressaoModal
+        open={relatorioImpressaoOpen}
+        onOpenChange={setRelatorioImpressaoOpen}
+        titulo="Folha de Horas Extras — Relatório de Lançamentos"
+        subtitulo="Demonstrativo de Apuração de Horas Suplementares, Gratificações e Adiantamentos"
+        badgeDestaque="Horas Extras"
+        empresa={currentEmpresa}
+        usuarioNome={user?.name || user?.email || 'Administrador'}
+        filtrosDescricao={descricaoFiltrosAplicados}
+        itens={itensParaImpressao}
+        colunas={colunasRelatorioHorasExtras}
+        totais={totalizadoresRelatorioHorasExtras}
+        mensagemVazio="Nenhum lançamento de horas extras encontrado para os filtros ou seleção atual."
+        orientacao="landscape"
       />
 
       {/* DIÁLOGO DE CONFIRMAÇÃO OBRIGATÓRIO (PADRÃO DO SISTEMA) */}
