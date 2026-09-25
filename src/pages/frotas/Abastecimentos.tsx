@@ -1,10 +1,17 @@
 import React, { useState, useEffect, useMemo } from 'react'
 import { useCompany } from '@/contexts/CompanyContext'
+import { useAuth } from '@/contexts/AuthContext'
 import pb from '@/lib/pocketbase/client'
 import { useRealtime } from '@/hooks/use-realtime'
 import { formatCurrency, formatDate } from '@/lib/formatters'
 import { calcularDatasPeriodoRapido, estaDentroDoPeriodo } from '@/lib/periodo'
 import FiltroPeriodoBar from '@/components/financeiro/FiltroPeriodoBar'
+import { Checkbox } from '@/components/ui/checkbox'
+import {
+  RelatorioListagemImpressaoModal,
+  type ColunaRelatorioImpressao,
+  type TotalizadorRelatorioImpressao,
+} from '@/components/financeiro/RelatorioListagemImpressaoModal'
 import type { Abastecimento, Veiculo, Fornecedor, PlanoConta } from '@/types/erp'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -38,12 +45,17 @@ import {
 
 export default function Abastecimentos() {
   const { currentEmpresa, canEdit } = useCompany()
+  const { user } = useAuth()
 
   const [abastecimentos, setAbastecimentos] = useState<Abastecimento[]>([])
   const [veiculos, setVeiculos] = useState<Veiculo[]>([])
   const [fornecedores, setFornecedores] = useState<Fornecedor[]>([])
   const [planoContas, setPlanoContas] = useState<PlanoConta[]>([])
   const [loading, setLoading] = useState(false)
+
+  // Seleção múltipla para impressão
+  const [selectedIds, setSelectedIds] = useState<string[]>([])
+  const [relatorioImpressaoOpen, setRelatorioImpressaoOpen] = useState(false)
 
   const [selectedVeiculoFilter, setSelectedVeiculoFilter] = useState('todos')
   const [searchQuery, setSearchQuery] = useState('')
@@ -333,6 +345,22 @@ export default function Abastecimentos() {
     }
   }
 
+  // Handlers de seleção por checkbox
+  const handleToggleSelectAll = () => {
+    if (selectedIds.length === filteredAbastecimentos.length && filteredAbastecimentos.length > 0) {
+      setSelectedIds([])
+    } else {
+      setSelectedIds(filteredAbastecimentos.map((a) => a.id))
+    }
+  }
+
+  const handleToggleSelectOne = (id: string, evt?: React.MouseEvent) => {
+    if (evt) evt.stopPropagation()
+    setSelectedIds((prev) =>
+      prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id],
+    )
+  }
+
   const filteredAbastecimentos = useMemo(() => {
     return abastecimentos.filter((a) => {
       if (selectedVeiculoFilter !== 'todos' && a.veiculo_id !== selectedVeiculoFilter) return false
@@ -347,6 +375,164 @@ export default function Abastecimentos() {
       return true
     })
   }, [abastecimentos, selectedVeiculoFilter, searchQuery, dataInicio, dataFim])
+
+  // Itens para impressão
+  const itensParaImpressao = useMemo(() => {
+    if (selectedIds.length > 0) {
+      const set = new Set(selectedIds)
+      return filteredAbastecimentos.filter((a) => set.has(a.id))
+    }
+    return filteredAbastecimentos
+  }, [filteredAbastecimentos, selectedIds])
+
+  // Descrição dos filtros aplicados
+  const descricaoFiltrosAplicados = useMemo(() => {
+    const partes: string[] = []
+    if (dataInicio || dataFim) {
+      const de = dataInicio ? formatDate(dataInicio) : 'Início'
+      const ate = dataFim ? formatDate(dataFim) : 'Fim'
+      partes.push(`Período: ${de} a ${ate}`)
+    } else {
+      partes.push('Período: Todos os abastecimentos')
+    }
+    if (selectedVeiculoFilter !== 'todos') {
+      const v = veiculos.find((veic) => veic.id === selectedVeiculoFilter)
+      if (v) partes.push(`Equipamento: ${v.codigo_interno} (${v.modelo})`)
+    }
+    if (searchQuery.trim()) {
+      partes.push(`Busca: "${searchQuery.trim()}"`)
+    }
+    if (selectedIds.length > 0) {
+      partes.push(`Seleção ativa: ${selectedIds.length} item(ns)`)
+    }
+    return partes.join(' · ')
+  }, [dataInicio, dataFim, selectedVeiculoFilter, veiculos, searchQuery, selectedIds.length])
+
+  // Colunas do relatório de abastecimentos
+  const colunasRelatorioAbast = useMemo<ColunaRelatorioImpressao<Abastecimento>[]>(() => {
+    return [
+      {
+        key: 'data',
+        header: 'Data',
+        className: 'font-mono whitespace-nowrap',
+        render: (a) => formatDate(a.data),
+      },
+      {
+        key: 'veiculo',
+        header: 'Veículo / Equipamento',
+        render: (a) => {
+          const veic = a.expand?.veiculo_id
+          return (
+            <div>
+              <span className="font-mono font-bold text-gray-900">
+                {veic?.codigo_interno || '—'}
+              </span>{' '}
+              <span className="text-gray-600">{veic?.modelo}</span>
+              {veic?.placa && (
+                <div className="text-[10px] text-gray-500 font-mono">Placa: {veic.placa}</div>
+              )}
+            </div>
+          )
+        },
+      },
+      {
+        key: 'combustivel',
+        header: 'Combustível',
+        render: (a) => a.combustivel,
+      },
+      {
+        key: 'litros',
+        header: 'Litros',
+        align: 'right',
+        className: 'font-mono font-semibold whitespace-nowrap',
+        render: (a) => `${a.litros.toFixed(1)} L`,
+      },
+      {
+        key: 'preco_litro',
+        header: 'Preço/L',
+        align: 'right',
+        className: 'font-mono whitespace-nowrap',
+        render: (a) => formatCurrency(a.preco_litro),
+      },
+      {
+        key: 'valor_total',
+        header: 'Valor Total (R$)',
+        align: 'right',
+        className: 'font-mono font-bold text-gray-900 whitespace-nowrap',
+        render: (a) => formatCurrency(a.valor_total),
+      },
+      {
+        key: 'medidor',
+        header: 'Km / Horímetro',
+        align: 'right',
+        className: 'font-mono whitespace-nowrap',
+        render: (a) => {
+          const parts: string[] = []
+          if (a.km_odometro) parts.push(`${Number(a.km_odometro).toLocaleString('pt-BR')} km`)
+          if (a.horimetro) parts.push(`${Number(a.horimetro).toLocaleString('pt-BR')} h`)
+          return parts.length > 0 ? parts.join(' · ') : '—'
+        },
+      },
+      {
+        key: 'consumo',
+        header: 'Consumo Médio',
+        align: 'right',
+        className: 'font-mono whitespace-nowrap',
+        render: (a) => {
+          if (a.consumo_km_l) return `${a.consumo_km_l.toFixed(2)} km/l`
+          if (a.consumo_l_h) return `${a.consumo_l_h.toFixed(2)} l/h`
+          if (a.consumo_medio) return `${a.consumo_medio.toFixed(2)}`
+          return '—'
+        },
+      },
+      {
+        key: 'operador',
+        header: 'Motorista / Operador',
+        render: (a) => a.motorista_operador || '—',
+      },
+    ]
+  }, [])
+
+  // Totalizadores do relatório de abastecimentos
+  const totalizadoresRelatorioAbast = useMemo<TotalizadorRelatorioImpressao[]>(() => {
+    const somaLitros = itensParaImpressao.reduce((acc, a) => acc + (a.litros || 0), 0)
+    const somaTotal = itensParaImpressao.reduce((acc, a) => acc + (a.valor_total || 0), 0)
+    const precoMedio = somaLitros > 0 ? somaTotal / somaLitros : 0
+
+    return [
+      {
+        label: 'TOTAIS:',
+        value: `${itensParaImpressao.length} registro(s)`,
+        colSpan: 3,
+        align: 'left',
+      },
+      {
+        label: 'Litros:',
+        value: `${somaLitros.toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 })} L`,
+        colSpan: 1,
+        align: 'right',
+      },
+      {
+        label: 'Méd:',
+        value: formatCurrency(precoMedio),
+        colSpan: 1,
+        align: 'right',
+      },
+      {
+        label: '',
+        value: formatCurrency(somaTotal),
+        colSpan: 1,
+        align: 'right',
+        className: 'text-teal-950 font-extrabold',
+      },
+      {
+        label: '',
+        value: '',
+        colSpan: 3,
+        align: 'center',
+      },
+    ]
+  }, [itensParaImpressao])
 
   // Totais calculados dinamicamente com base nas linhas filtradas pelo período
   const totalLitrosPeriodo = useMemo(() => {
@@ -487,11 +673,14 @@ export default function Abastecimentos() {
           onDataInicioChange={setDataInicio}
           dataFim={dataFim}
           onDataFimChange={setDataFim}
+          onImprimir={() => setRelatorioImpressaoOpen(true)}
+          totalSelecionados={selectedIds.length}
           mostrarLimpar={
             opcaoPeriodo !== 'todos' ||
             Boolean(dataInicio || dataFim) ||
             selectedVeiculoFilter !== 'todos' ||
-            Boolean(searchQuery.trim())
+            Boolean(searchQuery.trim()) ||
+            selectedIds.length > 0
           }
           onLimpar={() => {
             setOpcaoPeriodo('todos')
@@ -499,6 +688,7 @@ export default function Abastecimentos() {
             setDataFim('')
             setSelectedVeiculoFilter('todos')
             setSearchQuery('')
+            setSelectedIds([])
           }}
         />
       </Card>
@@ -509,6 +699,17 @@ export default function Abastecimentos() {
           <table className="w-full text-left border-collapse text-xs">
             <thead>
               <tr className="bg-[#FAF9F7] border-b border-[#ECEAE4] text-gray-500 uppercase font-semibold">
+                <th className="py-3 px-3 text-center w-8">
+                  <Checkbox
+                    checked={
+                      filteredAbastecimentos.length > 0 &&
+                      selectedIds.length === filteredAbastecimentos.length
+                    }
+                    onCheckedChange={handleToggleSelectAll}
+                    aria-label="Selecionar todos os abastecimentos visíveis"
+                    className="border-gray-300"
+                  />
+                </th>
                 <th className="py-3 px-4">Data</th>
                 <th className="py-3 px-4">Veículo / Máquina</th>
                 <th className="py-3 px-4">Combustível</th>
@@ -526,7 +727,7 @@ export default function Abastecimentos() {
             <tbody className="divide-y divide-[#ECEAE4]">
               {filteredAbastecimentos.length === 0 ? (
                 <tr>
-                  <td colSpan={12} className="py-12 text-center text-gray-400">
+                  <td colSpan={13} className="py-12 text-center text-gray-400">
                     Nenhum abastecimento encontrado.
                   </td>
                 </tr>
@@ -536,9 +737,26 @@ export default function Abastecimentos() {
                   const temConta = !!a.conta_pagar_id
                   const hasKm = (a.km_odometro || 0) > 0
                   const hasHoras = (a.horimetro || 0) > 0
+                  const isSelected = selectedIds.includes(a.id)
 
                   return (
-                    <tr key={a.id} className="hover:bg-teal-50/20 transition-colors">
+                    <tr
+                      key={a.id}
+                      className={`transition-colors ${
+                        isSelected ? 'bg-teal-50/60 hover:bg-teal-50/80' : 'hover:bg-teal-50/20'
+                      }`}
+                    >
+                      <td
+                        className="py-3 px-3 text-center"
+                        onClick={(evt) => evt.stopPropagation()}
+                      >
+                        <Checkbox
+                          checked={isSelected}
+                          onCheckedChange={() => handleToggleSelectOne(a.id)}
+                          aria-label={`Selecionar abastecimento ${a.id}`}
+                          className="border-gray-300"
+                        />
+                      </td>
                       <td className="py-3 px-4 font-mono text-gray-700 whitespace-nowrap">
                         {formatDate(a.data)}
                       </td>
@@ -868,6 +1086,21 @@ export default function Abastecimentos() {
           </form>
         </SheetContent>
       </Sheet>
+      {/* Relatório de Impressão A4 de Abastecimentos */}
+      <RelatorioListagemImpressaoModal
+        open={relatorioImpressaoOpen}
+        onOpenChange={setRelatorioImpressaoOpen}
+        titulo="Controle de Abastecimentos — Relatório de Itens"
+        subtitulo="Demonstrativo de Combustíveis, Consumo Médio e Gastos da Frota"
+        badgeDestaque="Abastecimentos Frota"
+        empresa={currentEmpresa}
+        usuarioNome={user?.name || user?.email || 'Administrador'}
+        filtrosDescricao={descricaoFiltrosAplicados}
+        itens={itensParaImpressao}
+        colunas={colunasRelatorioAbast}
+        totais={totalizadoresRelatorioAbast}
+        mensagemVazio="Nenhum abastecimento encontrado para os filtros ou seleção atual."
+      />
     </div>
   )
 }

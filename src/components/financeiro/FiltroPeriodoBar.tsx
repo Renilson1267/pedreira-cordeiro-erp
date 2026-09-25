@@ -1,5 +1,5 @@
 import React from 'react'
-import { Calendar, X } from 'lucide-react'
+import { Calendar, X, Printer } from 'lucide-react'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import {
@@ -42,6 +42,13 @@ export interface FiltroPeriodoBarProps {
   onLimpar?: () => void
   mostrarLimpar?: boolean
 
+  /** Ação ao clicar em imprimir relatório dos itens */
+  onImprimir?: () => void
+  /** Rótulo do botão imprimir (ex: "Imprimir selecionados (3)" ou "Imprimir") */
+  rotuloImprimir?: string
+  /** Quantidade de itens selecionados por checkbox (se houver) */
+  totalSelecionados?: number
+
   /** Rótulo principal */
   rotulo?: string
 
@@ -61,6 +68,9 @@ export const FiltroPeriodoBar: React.FC<FiltroPeriodoBarProps> = ({
   camposDataOpcoes,
   onLimpar,
   mostrarLimpar,
+  onImprimir,
+  rotuloImprimir,
+  totalSelecionados,
   rotulo = 'Filtrar por período:',
   className = '',
 }) => {
@@ -148,17 +158,45 @@ export const FiltroPeriodoBar: React.FC<FiltroPeriodoBarProps> = ({
         </div>
       </div>
 
-      {exibirBotaoLimpar && onLimpar && (
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={onLimpar}
-          className="h-8 px-2 text-xs text-gray-500 hover:text-gray-900 hover:bg-gray-100 rounded-lg"
-        >
-          <X className="w-3.5 h-3.5 mr-1" />
-          Limpar Filtros
-        </Button>
-      )}
+      <div className="flex items-center gap-2">
+        {onImprimir && (
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={onImprimir}
+            className={`h-8 px-2.5 text-xs font-semibold rounded-lg shadow-xs transition-colors ${
+              totalSelecionados && totalSelecionados > 0
+                ? 'bg-teal-700 text-white hover:bg-teal-800 border-teal-700'
+                : 'border-teal-300 text-teal-800 bg-teal-50/60 hover:bg-teal-100/80 hover:text-teal-950'
+            }`}
+            title={
+              totalSelecionados && totalSelecionados > 0
+                ? `Imprimir os ${totalSelecionados} itens selecionados`
+                : 'Imprimir relatório dos itens filtrados na listagem'
+            }
+          >
+            <Printer className="w-3.5 h-3.5 mr-1.5" />
+            {rotuloImprimir ||
+              (totalSelecionados && totalSelecionados > 0
+                ? `Imprimir Selecionados (${totalSelecionados})`
+                : 'Imprimir')}
+          </Button>
+        )}
+
+        {exibirBotaoLimpar && onLimpar && (
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            onClick={onLimpar}
+            className="h-8 px-2 text-xs text-gray-500 hover:text-gray-900 hover:bg-gray-100 rounded-lg"
+          >
+            <X className="w-3.5 h-3.5 mr-1" />
+            Limpar Filtros
+          </Button>
+        )}
+      </div>
     </div>
   )
 }

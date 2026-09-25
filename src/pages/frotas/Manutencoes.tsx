@@ -1,10 +1,17 @@
 import React, { useState, useEffect, useMemo } from 'react'
 import { useCompany } from '@/contexts/CompanyContext'
+import { useAuth } from '@/contexts/AuthContext'
 import pb from '@/lib/pocketbase/client'
 import { useRealtime } from '@/hooks/use-realtime'
 import { formatCurrency, formatDate } from '@/lib/formatters'
 import { calcularDatasPeriodoRapido, estaDentroDoPeriodo } from '@/lib/periodo'
 import FiltroPeriodoBar from '@/components/financeiro/FiltroPeriodoBar'
+import { Checkbox } from '@/components/ui/checkbox'
+import {
+  RelatorioListagemImpressaoModal,
+  type ColunaRelatorioImpressao,
+  type TotalizadorRelatorioImpressao,
+} from '@/components/financeiro/RelatorioListagemImpressaoModal'
 import type { Manutencao, Veiculo, Fornecedor, PlanoConta } from '@/types/erp'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -39,12 +46,17 @@ import {
 
 export default function Manutencoes() {
   const { currentEmpresa, canEdit } = useCompany()
+  const { user } = useAuth()
 
   const [manutencoes, setManutencoes] = useState<Manutencao[]>([])
   const [veiculos, setVeiculos] = useState<Veiculo[]>([])
   const [fornecedores, setFornecedores] = useState<Fornecedor[]>([])
   const [planoContas, setPlanoContas] = useState<PlanoConta[]>([])
   const [loading, setLoading] = useState(false)
+
+  // Seleção múltipla para impressão
+  const [selectedIds, setSelectedIds] = useState<string[]>([])
+  const [relatorioImpressaoOpen, setRelatorioImpressaoOpen] = useState(false)
 
   const [tipoFilter, setTipoFilter] = useState<string>('todos')
   const [statusFilter, setStatusFilter] = useState<string>('todos')
@@ -362,6 +374,22 @@ export default function Manutencoes() {
     return list
   }, [veiculos, manutencoes])
 
+  // Handlers de seleção por checkbox
+  const handleToggleSelectAll = () => {
+    if (selectedIds.length === filteredManutencoes.length && filteredManutencoes.length > 0) {
+      setSelectedIds([])
+    } else {
+      setSelectedIds(filteredManutencoes.map((m) => m.id))
+    }
+  }
+
+  const handleToggleSelectOne = (id: string, evt?: React.MouseEvent) => {
+    if (evt) evt.stopPropagation()
+    setSelectedIds((prev) =>
+      prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id],
+    )
+  }
+
   const filteredManutencoes = useMemo(() => {
     return manutencoes.filter((m) => {
       if (tipoFilter !== 'todos' && m.tipo !== tipoFilter) return false
@@ -378,6 +406,174 @@ export default function Manutencoes() {
       return true
     })
   }, [manutencoes, tipoFilter, statusFilter, searchQuery, dataInicio, dataFim])
+
+  // Itens para impressão
+  const itensParaImpressao = useMemo(() => {
+    if (selectedIds.length > 0) {
+      const set = new Set(selectedIds)
+      return filteredManutencoes.filter((m) => set.has(m.id))
+    }
+    return filteredManutencoes
+  }, [filteredManutencoes, selectedIds])
+
+  // Descrição dos filtros aplicados
+  const descricaoFiltrosAplicados = useMemo(() => {
+    const partes: string[] = []
+    if (dataInicio || dataFim) {
+      const de = dataInicio ? formatDate(dataInicio) : 'Início'
+      const ate = dataFim ? formatDate(dataFim) : 'Fim'
+      partes.push(`Período: ${de} a ${ate}`)
+    } else {
+      partes.push('Período: Todas as manutenções')
+    }
+    if (tipoFilter !== 'todos') {
+      partes.push(`Tipo: ${tipoFilter === 'preventiva' ? 'Preventiva' : 'Corretiva'}`)
+    }
+    if (statusFilter !== 'todos') {
+      const mapSt: Record<string, string> = {
+        agendada: 'Agendada',
+        em_andamento: 'Em Andamento',
+        concluida: 'Concluída',
+        cancelada: 'Cancelada',
+      }
+      partes.push(`Status: ${mapSt[statusFilter] || statusFilter}`)
+    }
+    if (searchQuery.trim()) {
+      partes.push(`Busca: "${searchQuery.trim()}"`)
+    }
+    if (selectedIds.length > 0) {
+      partes.push(`Seleção ativa: ${selectedIds.length} item(ns)`)
+    }
+    return partes.join(' · ')
+  }, [dataInicio, dataFim, tipoFilter, statusFilter, searchQuery, selectedIds.length])
+
+  // Colunas do relatório de manutenção
+  const colunasRelatorioManut = useMemo<ColunaRelatorioImpressao<Manutencao>[]>(() => {
+    return [
+      {
+        key: 'data',
+        header: 'Data',
+        className: 'font-mono whitespace-nowrap',
+        render: (m) => formatDate(m.data),
+      },
+      {
+        key: 'veiculo',
+        header: 'Veículo / Equipamento',
+        render: (m) => {
+          const veic = m.expand?.veiculo_id
+          return (
+            <div>
+              <span className="font-mono font-bold text-gray-900">
+                {veic?.codigo_interno || '—'}
+              </span>{' '}
+              <span className="text-gray-600">{veic?.modelo}</span>
+              {veic?.placa && (
+                <div className="text-[10px] text-gray-500 font-mono">Placa: {veic.placa}</div>
+              )}
+            </div>
+          )
+        },
+      },
+      {
+        key: 'tipo',
+        header: 'Tipo',
+        render: (m) => (
+          <span
+            className={`inline-block px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase ${
+              m.tipo === 'preventiva'
+                ? 'bg-blue-50 text-blue-800 border border-blue-300'
+                : 'bg-amber-50 text-amber-900 border border-amber-300'
+            }`}
+          >
+            {m.tipo === 'preventiva' ? 'Preventiva' : 'Corretiva'}
+          </span>
+        ),
+      },
+      {
+        key: 'descricao',
+        header: 'Descrição do Serviço',
+        render: (m) => m.descricao,
+      },
+      {
+        key: 'oficina',
+        header: 'Oficina / Fornecedor',
+        render: (m) => m.oficina_nome || m.expand?.fornecedor_id?.nome || 'Oficina Própria',
+      },
+      {
+        key: 'medidor',
+        header: 'Km / Horas',
+        align: 'right',
+        className: 'font-mono whitespace-nowrap',
+        render: (m) => {
+          const p: string[] = []
+          if (m.km_no_momento) p.push(`${Number(m.km_no_momento).toLocaleString('pt-BR')} km`)
+          if (m.horimetro_no_momento)
+            p.push(`${Number(m.horimetro_no_momento).toLocaleString('pt-BR')} h`)
+          return p.length > 0 ? p.join(' · ') : '—'
+        },
+      },
+      {
+        key: 'custo',
+        header: 'Custo Total (R$)',
+        align: 'right',
+        className: 'font-mono font-bold text-gray-900 whitespace-nowrap',
+        render: (m) => formatCurrency(m.custo),
+      },
+      {
+        key: 'status',
+        header: 'Status',
+        align: 'center',
+        render: (m) => (
+          <span
+            className={`inline-block px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase ${
+              m.status === 'concluida'
+                ? 'bg-emerald-50 text-emerald-800 border border-emerald-300'
+                : m.status === 'em_andamento'
+                  ? 'bg-blue-50 text-blue-800 border border-blue-300'
+                  : m.status === 'agendada'
+                    ? 'bg-amber-50 text-amber-900 border border-amber-300'
+                    : 'bg-gray-100 text-gray-700 border border-gray-300'
+            }`}
+          >
+            {m.status === 'concluida'
+              ? 'Concluída'
+              : m.status === 'em_andamento'
+                ? 'Em Serviço'
+                : m.status === 'agendada'
+                  ? 'Agendada'
+                  : 'Cancelada'}
+          </span>
+        ),
+      },
+    ]
+  }, [])
+
+  // Totalizadores do relatório de manutenção
+  const totalizadoresRelatorioManut = useMemo<TotalizadorRelatorioImpressao[]>(() => {
+    const somaCusto = itensParaImpressao.reduce((acc, m) => acc + (m.custo || 0), 0)
+
+    return [
+      {
+        label: 'TOTAIS:',
+        value: `${itensParaImpressao.length} ordem(ns) de serviço`,
+        colSpan: 6,
+        align: 'left',
+      },
+      {
+        label: '',
+        value: formatCurrency(somaCusto),
+        colSpan: 1,
+        align: 'right',
+        className: 'text-teal-950 font-extrabold',
+      },
+      {
+        label: '',
+        value: '',
+        colSpan: 1,
+        align: 'center',
+      },
+    ]
+  }, [itensParaImpressao])
 
   // KPIs recalculados de acordo com os filtros selecionados
   const totalGastoManutencao = useMemo(() => {
@@ -564,12 +760,15 @@ export default function Manutencoes() {
           onDataInicioChange={setDataInicio}
           dataFim={dataFim}
           onDataFimChange={setDataFim}
+          onImprimir={() => setRelatorioImpressaoOpen(true)}
+          totalSelecionados={selectedIds.length}
           mostrarLimpar={
             opcaoPeriodo !== 'todos' ||
             Boolean(dataInicio || dataFim) ||
             tipoFilter !== 'todos' ||
             statusFilter !== 'todos' ||
-            Boolean(searchQuery.trim())
+            Boolean(searchQuery.trim()) ||
+            selectedIds.length > 0
           }
           onLimpar={() => {
             setOpcaoPeriodo('todos')
@@ -578,6 +777,7 @@ export default function Manutencoes() {
             setTipoFilter('todos')
             setStatusFilter('todos')
             setSearchQuery('')
+            setSelectedIds([])
           }}
         />
       </Card>
@@ -588,6 +788,17 @@ export default function Manutencoes() {
           <table className="w-full text-left border-collapse text-xs">
             <thead>
               <tr className="bg-[#FAF9F7] border-b border-[#ECEAE4] text-gray-500 uppercase font-semibold">
+                <th className="py-3 px-3 text-center w-8">
+                  <Checkbox
+                    checked={
+                      filteredManutencoes.length > 0 &&
+                      selectedIds.length === filteredManutencoes.length
+                    }
+                    onCheckedChange={handleToggleSelectAll}
+                    aria-label="Selecionar todas as manutenções visíveis"
+                    className="border-gray-300"
+                  />
+                </th>
                 <th className="py-3 px-4">Data</th>
                 <th className="py-3 px-4">Veículo / Máquina</th>
                 <th className="py-3 px-4">Tipo</th>
@@ -603,7 +814,7 @@ export default function Manutencoes() {
             <tbody className="divide-y divide-[#ECEAE4]">
               {filteredManutencoes.length === 0 ? (
                 <tr>
-                  <td colSpan={10} className="py-12 text-center text-gray-400">
+                  <td colSpan={11} className="py-12 text-center text-gray-400">
                     Nenhuma manutenção registrada.
                   </td>
                 </tr>
@@ -613,9 +824,26 @@ export default function Manutencoes() {
                   const temConta = !!m.conta_pagar_id
                   const hasKm = (m.km_no_momento || 0) > 0
                   const hasHoras = (m.horimetro_no_momento || 0) > 0
+                  const isSelected = selectedIds.includes(m.id)
 
                   return (
-                    <tr key={m.id} className="hover:bg-teal-50/20 transition-colors">
+                    <tr
+                      key={m.id}
+                      className={`transition-colors ${
+                        isSelected ? 'bg-teal-50/60 hover:bg-teal-50/80' : 'hover:bg-teal-50/20'
+                      }`}
+                    >
+                      <td
+                        className="py-3 px-3 text-center"
+                        onClick={(evt) => evt.stopPropagation()}
+                      >
+                        <Checkbox
+                          checked={isSelected}
+                          onCheckedChange={() => handleToggleSelectOne(m.id)}
+                          aria-label={`Selecionar manutenção ${m.id}`}
+                          className="border-gray-300"
+                        />
+                      </td>
                       <td className="py-3 px-4 font-mono text-gray-700 whitespace-nowrap">
                         {formatDate(m.data)}
                       </td>
@@ -981,6 +1209,21 @@ export default function Manutencoes() {
           </form>
         </SheetContent>
       </Sheet>
+      {/* Relatório de Impressão A4 de Manutenções */}
+      <RelatorioListagemImpressaoModal
+        open={relatorioImpressaoOpen}
+        onOpenChange={setRelatorioImpressaoOpen}
+        titulo="Ordens de Manutenção de Frota — Relatório de Itens"
+        subtitulo="Demonstrativo de Serviços Preventivos e Corretivos, Oficinas e Custos da Frota"
+        badgeDestaque="Manutenção Frota"
+        empresa={currentEmpresa}
+        usuarioNome={user?.name || user?.email || 'Administrador'}
+        filtrosDescricao={descricaoFiltrosAplicados}
+        itens={itensParaImpressao}
+        colunas={colunasRelatorioManut}
+        totais={totalizadoresRelatorioManut}
+        mensagemVazio="Nenhuma manutenção encontrada para os filtros ou seleção atual."
+      />
     </div>
   )
 }

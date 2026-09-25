@@ -1,10 +1,17 @@
 import React, { useState, useEffect, useMemo } from 'react'
 import { useCompany } from '@/contexts/CompanyContext'
+import { useAuth } from '@/contexts/AuthContext'
 import pb from '@/lib/pocketbase/client'
 import { useRealtime } from '@/hooks/use-realtime'
 import { formatCurrency, formatDate, toInputDate } from '@/lib/formatters'
 import { calcularDatasPeriodoRapido, estaDentroDoPeriodo } from '@/lib/periodo'
 import FiltroPeriodoBar from '@/components/financeiro/FiltroPeriodoBar'
+import { Checkbox } from '@/components/ui/checkbox'
+import {
+  RelatorioListagemImpressaoModal,
+  type ColunaRelatorioImpressao,
+  type TotalizadorRelatorioImpressao,
+} from '@/components/financeiro/RelatorioListagemImpressaoModal'
 import type { Entrega, Venda, Veiculo, Cliente, Produto, Funcionario } from '@/types/erp'
 import { entregasService } from '@/services/entregas'
 import { vendasService } from '@/services/vendas'
@@ -56,6 +63,7 @@ import {
 
 export default function EntregaPage() {
   const { currentEmpresa, canEdit } = useCompany()
+  const { user } = useAuth()
 
   const [entregas, setEntregas] = useState<Entrega[]>([])
   const [vendas, setVendas] = useState<Venda[]>([])
@@ -64,6 +72,10 @@ export default function EntregaPage() {
   const [produtos, setProdutos] = useState<Produto[]>([])
   const [funcionarios, setFuncionarios] = useState<Funcionario[]>([])
   const [loading, setLoading] = useState(false)
+
+  // Seleção múltipla para impressão
+  const [selectedIds, setSelectedIds] = useState<string[]>([])
+  const [relatorioImpressaoOpen, setRelatorioImpressaoOpen] = useState(false)
 
   // Filtros
   const [searchQuery, setSearchQuery] = useState('')
@@ -286,6 +298,22 @@ export default function EntregaPage() {
     }
   }
 
+  // Handlers de seleção por checkbox
+  const handleToggleSelectAll = () => {
+    if (selectedIds.length === filteredEntregas.length && filteredEntregas.length > 0) {
+      setSelectedIds([])
+    } else {
+      setSelectedIds(filteredEntregas.map((e) => e.id))
+    }
+  }
+
+  const handleToggleSelectOne = (id: string, evt?: React.MouseEvent) => {
+    if (evt) evt.stopPropagation()
+    setSelectedIds((prev) =>
+      prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id],
+    )
+  }
+
   // Filtragem
   const filteredEntregas = useMemo(() => {
     return entregas.filter((e) => {
@@ -318,6 +346,198 @@ export default function EntregaPage() {
       return true
     })
   }, [entregas, selectedStatusFilter, selectedVeiculoFilter, dataInicio, dataFim, searchQuery])
+
+  // Itens para impressão
+  const itensParaImpressao = useMemo(() => {
+    if (selectedIds.length > 0) {
+      const set = new Set(selectedIds)
+      return filteredEntregas.filter((e) => set.has(e.id))
+    }
+    return filteredEntregas
+  }, [filteredEntregas, selectedIds])
+
+  // Descrição dos filtros aplicados
+  const descricaoFiltrosAplicados = useMemo(() => {
+    const partes: string[] = []
+    if (dataInicio || dataFim) {
+      const de = dataInicio ? formatDate(dataInicio) : 'Início'
+      const ate = dataFim ? formatDate(dataFim) : 'Fim'
+      partes.push(`Período: ${de} a ${ate}`)
+    } else {
+      partes.push('Período: Todas as entregas')
+    }
+    if (selectedVeiculoFilter !== 'todos') {
+      const v = veiculos.find((veic) => veic.id === selectedVeiculoFilter)
+      if (v) partes.push(`Veículo: ${v.codigo_interno} ${v.placa ? `(${v.placa})` : ''}`)
+    }
+    if (selectedStatusFilter !== 'todos') {
+      const stMap: Record<string, string> = {
+        concluida: 'Entregue / Concluída',
+        em_transito: 'Em Trânsito',
+        cancelada: 'Cancelada',
+      }
+      partes.push(`Status: ${stMap[selectedStatusFilter] || selectedStatusFilter}`)
+    }
+    if (searchQuery.trim()) {
+      partes.push(`Busca: "${searchQuery.trim()}"`)
+    }
+    if (selectedIds.length > 0) {
+      partes.push(`Seleção ativa: ${selectedIds.length} item(ns)`)
+    }
+    return partes.join(' · ')
+  }, [
+    dataInicio,
+    dataFim,
+    selectedVeiculoFilter,
+    veiculos,
+    selectedStatusFilter,
+    searchQuery,
+    selectedIds.length,
+  ])
+
+  // Colunas do relatório de entregas
+  const colunasRelatorioEntregas = useMemo<ColunaRelatorioImpressao<Entrega>[]>(() => {
+    return [
+      {
+        key: 'data',
+        header: 'Data',
+        className: 'font-mono whitespace-nowrap',
+        render: (e) => formatDate(e.data),
+      },
+      {
+        key: 'cliente_destino',
+        header: 'Cliente / Destino',
+        render: (e) => {
+          const cli =
+            e.cliente_nome ||
+            e.expand?.cliente_id?.nome ||
+            e.expand?.venda_id?.expand?.cliente_id?.nome ||
+            e.destino
+          return (
+            <div>
+              <div className="font-semibold text-gray-900">{cli}</div>
+              {e.destino && e.destino !== cli && (
+                <div className="text-[10px] text-gray-500">{e.destino}</div>
+              )}
+            </div>
+          )
+        },
+      },
+      {
+        key: 'equipamento',
+        header: 'Equipamento / Placa',
+        render: (e) => {
+          const veic = e.expand?.veiculo_id
+          return (
+            <div>
+              <span className="font-mono font-semibold text-gray-900">
+                {veic?.codigo_interno || '—'}
+              </span>
+              {veic?.placa && (
+                <span className="text-[10px] text-gray-500 block font-mono">{veic.placa}</span>
+              )}
+            </div>
+          )
+        },
+      },
+      {
+        key: 'motorista',
+        header: 'Motorista',
+        render: (e) => e.motorista || e.expand?.funcionario_id?.nome || '—',
+      },
+      {
+        key: 'produto_qtd',
+        header: 'Produto / Qtd',
+        align: 'right',
+        className: 'font-mono whitespace-nowrap',
+        render: (e) =>
+          `${e.quantidade || 0} ${e.unidade_medida || 'm³'} ${e.produto_nome ? `(${e.produto_nome})` : ''}`,
+      },
+      {
+        key: 'km',
+        header: 'Km',
+        align: 'right',
+        className: 'font-mono whitespace-nowrap',
+        render: (e) => (e.km_rodado ? `${e.km_rodado} km` : '—'),
+      },
+      {
+        key: 'valor',
+        header: 'Valor Venda (R$)',
+        align: 'right',
+        className: 'font-mono font-bold text-gray-900 whitespace-nowrap',
+        render: (e) => {
+          const val = e.valor_venda || e.expand?.venda_id?.valor_total || 0
+          return val > 0 ? formatCurrency(val) : '—'
+        },
+      },
+      {
+        key: 'status',
+        header: 'Status',
+        align: 'center',
+        render: (e) => (
+          <span
+            className={`inline-block px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase ${
+              e.status === 'concluida'
+                ? 'bg-emerald-50 text-emerald-800 border border-emerald-300'
+                : e.status === 'em_transito'
+                  ? 'bg-blue-50 text-blue-800 border border-blue-300'
+                  : 'bg-red-50 text-red-800 border border-red-300'
+            }`}
+          >
+            {e.status === 'concluida'
+              ? 'Entregue'
+              : e.status === 'em_transito'
+                ? 'Em Trânsito'
+                : 'Cancelada'}
+          </span>
+        ),
+      },
+    ]
+  }, [])
+
+  // Totalizadores do relatório de entregas
+  const totalizadoresRelatorioEntregas = useMemo<TotalizadorRelatorioImpressao[]>(() => {
+    const somaQtd = itensParaImpressao.reduce((acc, e) => acc + (e.quantidade || 0), 0)
+    const somaKm = itensParaImpressao.reduce((acc, e) => acc + (e.km_rodado || 0), 0)
+    const somaValor = itensParaImpressao.reduce(
+      (acc, e) => acc + (e.valor_venda || e.expand?.venda_id?.valor_total || 0),
+      0,
+    )
+
+    return [
+      {
+        label: 'TOTAIS:',
+        value: `${itensParaImpressao.length} entrega(s)`,
+        colSpan: 4,
+        align: 'left',
+      },
+      {
+        label: 'Qtd:',
+        value: `${somaQtd.toLocaleString('pt-BR')}`,
+        colSpan: 1,
+        align: 'right',
+      },
+      {
+        label: 'Km:',
+        value: `${somaKm.toLocaleString('pt-BR')} km`,
+        colSpan: 1,
+        align: 'right',
+      },
+      {
+        label: '',
+        value: somaValor > 0 ? formatCurrency(somaValor) : '—',
+        colSpan: 1,
+        align: 'right',
+        className: 'text-teal-950 font-extrabold',
+      },
+      {
+        label: '',
+        value: '',
+        colSpan: 1,
+        align: 'center',
+      },
+    ]
+  }, [itensParaImpressao])
 
   // KPIs
   const kpis = useMemo(() => {
@@ -471,12 +691,15 @@ export default function EntregaPage() {
           onDataInicioChange={setDataInicio}
           dataFim={dataFim}
           onDataFimChange={setDataFim}
+          onImprimir={() => setRelatorioImpressaoOpen(true)}
+          totalSelecionados={selectedIds.length}
           mostrarLimpar={
             opcaoPeriodo !== 'todos' ||
             Boolean(dataInicio || dataFim) ||
             selectedVeiculoFilter !== 'todos' ||
             selectedStatusFilter !== 'todos' ||
-            Boolean(searchQuery.trim())
+            Boolean(searchQuery.trim()) ||
+            selectedIds.length > 0
           }
           onLimpar={() => {
             setOpcaoPeriodo('todos')
@@ -485,6 +708,7 @@ export default function EntregaPage() {
             setSelectedVeiculoFilter('todos')
             setSelectedStatusFilter('todos')
             setSearchQuery('')
+            setSelectedIds([])
           }}
         />
       </Card>
@@ -495,6 +719,16 @@ export default function EntregaPage() {
           <table className="w-full text-left text-xs">
             <thead className="bg-[#FAF9F7] border-b border-[#ECEAE4] text-gray-500 uppercase font-semibold">
               <tr>
+                <th className="py-3 px-3 text-center w-8">
+                  <Checkbox
+                    checked={
+                      filteredEntregas.length > 0 && selectedIds.length === filteredEntregas.length
+                    }
+                    onCheckedChange={handleToggleSelectAll}
+                    aria-label="Selecionar todas as entregas visíveis"
+                    className="border-gray-300"
+                  />
+                </th>
                 <th className="py-3 px-4">Data</th>
                 <th className="py-3 px-4">Venda Vinculada</th>
                 <th className="py-3 px-4">Cliente / Destino</th>
@@ -509,13 +743,13 @@ export default function EntregaPage() {
             <tbody className="divide-y divide-[#ECEAE4]">
               {loading ? (
                 <tr>
-                  <td colSpan={9} className="py-12 text-center text-gray-400">
+                  <td colSpan={10} className="py-12 text-center text-gray-400">
                     Carregando entregas...
                   </td>
                 </tr>
               ) : filteredEntregas.length === 0 ? (
                 <tr>
-                  <td colSpan={9} className="py-12 text-center text-gray-400">
+                  <td colSpan={10} className="py-12 text-center text-gray-400">
                     Nenhuma entrega encontrada com os filtros selecionados.
                   </td>
                 </tr>
@@ -530,9 +764,26 @@ export default function EntregaPage() {
                     e.destino
 
                   const valorFinal = e.valor_venda || venda?.valor_total || 0
+                  const isSelected = selectedIds.includes(e.id)
 
                   return (
-                    <tr key={e.id} className="hover:bg-gray-50/60 transition-colors">
+                    <tr
+                      key={e.id}
+                      className={`transition-colors ${
+                        isSelected ? 'bg-teal-50/60 hover:bg-teal-50/80' : 'hover:bg-gray-50/60'
+                      }`}
+                    >
+                      <td
+                        className="py-3 px-3 text-center"
+                        onClick={(evt) => evt.stopPropagation()}
+                      >
+                        <Checkbox
+                          checked={isSelected}
+                          onCheckedChange={() => handleToggleSelectOne(e.id)}
+                          aria-label={`Selecionar entrega ${e.id}`}
+                          className="border-gray-300"
+                        />
+                      </td>
                       <td className="py-3 px-4 font-mono text-gray-700 whitespace-nowrap">
                         {formatDate(e.data)}
                       </td>
@@ -659,7 +910,7 @@ export default function EntregaPage() {
             {filteredEntregas.length > 0 && (
               <tfoot className="bg-[#FAF9F7] border-t-2 border-[#ECEAE4] font-bold text-gray-900">
                 <tr>
-                  <td colSpan={5} className="py-3 px-4">
+                  <td colSpan={6} className="py-3 px-4">
                     TOTALIZADOR ({filteredEntregas.length} entregas)
                   </td>
                   <td className="py-3 px-4 text-right font-mono">
@@ -932,6 +1183,21 @@ export default function EntregaPage() {
         empresa={currentEmpresa}
         open={modalImprimirOpen}
         onOpenChange={setModalImprimirOpen}
+      />
+      {/* Relatório de Impressão A4 das Entregas */}
+      <RelatorioListagemImpressaoModal
+        open={relatorioImpressaoOpen}
+        onOpenChange={setRelatorioImpressaoOpen}
+        titulo="Controle de Entregas — Relatório de Itens"
+        subtitulo="Demonstrativo Operacional de Viagens, Cargas e Veículos da Frota"
+        badgeDestaque="Entregas Frota"
+        empresa={currentEmpresa}
+        usuarioNome={user?.name || user?.email || 'Administrador'}
+        filtrosDescricao={descricaoFiltrosAplicados}
+        itens={itensParaImpressao}
+        colunas={colunasRelatorioEntregas}
+        totais={totalizadoresRelatorioEntregas}
+        mensagemVazio="Nenhuma entrega encontrada para os filtros ou seleção atual."
       />
     </div>
   )

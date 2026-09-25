@@ -21,6 +21,12 @@ import {
 import { HistoricoSecao } from '@/components/financeiro/HistoricoSecao'
 import { HistoricoGeralModal } from '@/components/financeiro/HistoricoGeralModal'
 import { ImportadorRecebimentosModal } from '@/components/financeiro/ImportadorRecebimentosModal'
+import { Checkbox } from '@/components/ui/checkbox'
+import {
+  RelatorioListagemImpressaoModal,
+  type ColunaRelatorioImpressao,
+  type TotalizadorRelatorioImpressao,
+} from '@/components/financeiro/RelatorioListagemImpressaoModal'
 import {
   SeletorParcelas,
   TipoPrazo,
@@ -112,6 +118,11 @@ export default function ContasReceber() {
   const [opcaoPeriodoRapido, setOpcaoPeriodoRapido] = useState<string>('todos')
   const [centroCustoFilter, setCentroCustoFilter] = useState<string>('todos')
   const [searchQuery, setSearchQuery] = useState('')
+
+  // Seleção múltipla para impressão
+  const [selectedIds, setSelectedIds] = useState<string[]>([])
+  // Modal de Impressão do Relatório
+  const [relatorioImpressaoOpen, setRelatorioImpressaoOpen] = useState(false)
 
   // Import Modal
   const [importModalOpen, setImportModalOpen] = useState(false)
@@ -1570,7 +1581,245 @@ export default function ContasReceber() {
     setOpcaoPeriodoRapido('todos')
     setCampoDataFiltro('vencimento')
     setSearchQuery('')
+    setSelectedIds([])
   }
+
+  // Handlers de seleção por checkbox
+  const handleToggleSelectAll = () => {
+    if (selectedIds.length === filteredContas.length && filteredContas.length > 0) {
+      setSelectedIds([])
+    } else {
+      setSelectedIds(filteredContas.map((c) => c.id))
+    }
+  }
+
+  const handleToggleSelectOne = (id: string, e?: React.MouseEvent) => {
+    if (e) e.stopPropagation()
+    setSelectedIds((prev) =>
+      prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id],
+    )
+  }
+
+  // Itens para impressão: selecionados quando houver, senão os filtrados
+  const itensParaImpressao = useMemo(() => {
+    if (selectedIds.length > 0) {
+      const set = new Set(selectedIds)
+      return filteredContas.filter((c) => set.has(c.id))
+    }
+    return filteredContas
+  }, [filteredContas, selectedIds])
+
+  // Descrição legível dos filtros aplicados
+  const descricaoFiltrosAplicados = useMemo(() => {
+    const partes: string[] = []
+    if (dataInicioFilter || dataFimFilter) {
+      const campoNome =
+        campoDataFiltro === 'vencimento'
+          ? 'Vencimento'
+          : campoDataFiltro === 'data_emissao'
+            ? 'Emissão'
+            : 'Recebimento'
+      const de = dataInicioFilter ? formatDate(dataInicioFilter) : 'Início'
+      const ate = dataFimFilter ? formatDate(dataFimFilter) : 'Fim'
+      partes.push(`Período: ${de} a ${ate} (Base: ${campoNome})`)
+    } else if (opcaoPeriodoRapido && opcaoPeriodoRapido !== 'todos') {
+      const labels: Record<string, string> = {
+        este_mes: 'Este mês',
+        mes_passado: 'Mês passado',
+        este_ano: 'Este ano',
+      }
+      partes.push(`Período: ${labels[opcaoPeriodoRapido] || opcaoPeriodoRapido}`)
+    } else {
+      partes.push('Período: Todos os recebimentos')
+    }
+
+    if (statusFilter !== 'Todas') {
+      partes.push(`Status: ${statusFilter}`)
+    }
+    if (centroCustoFilter !== 'todos') {
+      const cc = centrosCusto.find((c) => c.id === centroCustoFilter)
+      if (cc) partes.push(`C. Custo: ${cc.codigo} - ${cc.nome}`)
+    }
+    if (searchQuery.trim()) {
+      partes.push(`Busca: "${searchQuery.trim()}"`)
+    }
+    if (selectedIds.length > 0) {
+      partes.push(`Seleção ativa: ${selectedIds.length} item(ns) marcado(s)`)
+    }
+    return partes.join(' · ')
+  }, [
+    dataInicioFilter,
+    dataFimFilter,
+    campoDataFiltro,
+    opcaoPeriodoRapido,
+    statusFilter,
+    centroCustoFilter,
+    centrosCusto,
+    searchQuery,
+    selectedIds.length,
+  ])
+
+  // Colunas do relatório de impressão A4 para Contas a Receber
+  const colunasRelatorioReceber = useMemo<ColunaRelatorioImpressao<ContaReceber>[]>(() => {
+    return [
+      {
+        key: 'cliente_descricao',
+        header: 'Cliente / Sacado',
+        render: (c) => {
+          const nomeCli = c.expand?.cliente_id?.nome || ''
+          return (
+            <div>
+              <div className="font-semibold text-gray-900">
+                {nomeCli || c.descricao || 'Cliente não informado'}
+              </div>
+              {c.cliente_depositante && (
+                <div className="text-[10px] text-teal-800 font-medium">
+                  Depositante: {c.cliente_depositante}
+                </div>
+              )}
+              {c.descricao && nomeCli && (
+                <div className="text-[10px] text-gray-500">{c.descricao}</div>
+              )}
+            </div>
+          )
+        },
+      },
+      {
+        key: 'documento',
+        header: 'Doc / NF',
+        className: 'font-mono whitespace-nowrap',
+        render: (c) => c.nota || '—',
+      },
+      {
+        key: 'emissao',
+        header: 'Emissão',
+        className: 'font-mono whitespace-nowrap',
+        render: (c) => (c.data_emissao ? formatDate(c.data_emissao) : '—'),
+      },
+      {
+        key: 'vencimento',
+        header: 'Vencimento',
+        className: 'font-mono whitespace-nowrap font-medium',
+        render: (c) => formatDate(c.vencimento),
+      },
+      {
+        key: 'forma',
+        header: 'Forma',
+        render: (c) => c.forma_recebimento || '—',
+      },
+      {
+        key: 'valor',
+        header: 'Valor (R$)',
+        align: 'right',
+        className: 'font-mono font-medium text-gray-900 whitespace-nowrap',
+        render: (c) => formatCurrency(c.valor),
+      },
+      {
+        key: 'desconto',
+        header: 'Desc. (R$)',
+        align: 'right',
+        className: 'font-mono text-amber-700 whitespace-nowrap',
+        render: (c) =>
+          c.valor_desconto && c.valor_desconto > 0 ? formatCurrency(c.valor_desconto) : '—',
+      },
+      {
+        key: 'recebido',
+        header: 'Recebido (R$)',
+        align: 'right',
+        className: 'font-mono text-emerald-800 whitespace-nowrap',
+        render: (c) => {
+          const rec = getValorRecebidoEfetivo(c)
+          return rec > 0 ? formatCurrency(rec) : '—'
+        },
+      },
+      {
+        key: 'saldo',
+        header: 'Saldo (R$)',
+        align: 'right',
+        className: 'font-mono font-bold whitespace-nowrap',
+        render: (c) => {
+          const saldo = getSaldoRestante(c)
+          return saldo > 0 ? formatCurrency(saldo) : 'R$ 0,00'
+        },
+      },
+      {
+        key: 'status',
+        header: 'Status',
+        align: 'center',
+        render: (c) => {
+          const st = getContaStatusReal(c)
+          return (
+            <span
+              className={`inline-block px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase ${
+                st === 'Recebida'
+                  ? 'bg-emerald-50 text-emerald-800 border border-emerald-300'
+                  : st === 'Vencida'
+                    ? 'bg-red-50 text-red-800 border border-red-300'
+                    : st === 'Parcial'
+                      ? 'bg-amber-50 text-amber-900 border border-amber-300'
+                      : st === 'Recebimento Antecipado'
+                        ? 'bg-teal-50 text-teal-800 border border-teal-300'
+                        : 'bg-blue-50 text-blue-900 border border-blue-300'
+              }`}
+            >
+              {st}
+            </span>
+          )
+        },
+      },
+    ]
+  }, [])
+
+  // Totalizadores do rodapé do relatório
+  const totalizadoresRelatorioReceber = useMemo<TotalizadorRelatorioImpressao[]>(() => {
+    const somaValor = itensParaImpressao.reduce((acc, c) => acc + (c.valor || 0), 0)
+    const somaDesc = itensParaImpressao.reduce((acc, c) => acc + (c.valor_desconto || 0), 0)
+    const somaRecebido = itensParaImpressao.reduce((acc, c) => acc + getValorRecebidoEfetivo(c), 0)
+    const somaSaldo = itensParaImpressao.reduce((acc, c) => acc + getSaldoRestante(c), 0)
+
+    return [
+      {
+        label: 'TOTAIS:',
+        value: `${itensParaImpressao.length} item(ns)`,
+        colSpan: 6,
+        align: 'left',
+      },
+      {
+        label: '',
+        value: formatCurrency(somaValor),
+        colSpan: 1,
+        align: 'right',
+        className: 'text-gray-900',
+      },
+      {
+        label: '',
+        value: somaDesc > 0 ? formatCurrency(somaDesc) : '—',
+        colSpan: 1,
+        align: 'right',
+        className: 'text-amber-800',
+      },
+      {
+        label: '',
+        value: formatCurrency(somaRecebido),
+        colSpan: 1,
+        align: 'right',
+        className: 'text-emerald-800',
+      },
+      {
+        label: '',
+        value: formatCurrency(somaSaldo),
+        colSpan: 1,
+        align: 'right',
+        className: 'text-teal-950 font-extrabold',
+      },
+      {
+        label: '',
+        value: '',
+        colSpan: 1,
+        align: 'center',
+      },
+    ]
+  }, [itensParaImpressao])
 
   return (
     <div className="space-y-6">
@@ -1799,21 +2048,46 @@ export default function ContasReceber() {
             </div>
           </div>
 
-          {(statusFilter !== 'Todas' ||
-            centroCustoFilter !== 'todos' ||
-            dataInicioFilter ||
-            dataFimFilter ||
-            searchQuery) && (
+          <div className="flex items-center gap-2">
             <Button
-              variant="ghost"
+              type="button"
+              variant="outline"
               size="sm"
-              onClick={handleLimparFiltros}
-              className="h-8 px-2 text-xs text-gray-500 hover:text-gray-900 hover:bg-gray-100 rounded-lg"
+              onClick={() => setRelatorioImpressaoOpen(true)}
+              className={`h-8 px-2.5 text-xs font-semibold rounded-lg shadow-xs transition-colors ${
+                selectedIds.length > 0
+                  ? 'bg-teal-700 text-white hover:bg-teal-800 border-teal-700'
+                  : 'border-teal-300 text-teal-800 bg-teal-50/60 hover:bg-teal-100/80 hover:text-teal-950'
+              }`}
+              title={
+                selectedIds.length > 0
+                  ? `Imprimir os ${selectedIds.length} títulos selecionados`
+                  : 'Imprimir relatório dos títulos a receber filtrados'
+              }
             >
-              <X className="w-3.5 h-3.5 mr-1" />
-              Limpar Filtros
+              <Printer className="w-3.5 h-3.5 mr-1.5" />
+              {selectedIds.length > 0
+                ? `Imprimir Selecionados (${selectedIds.length})`
+                : 'Imprimir'}
             </Button>
-          )}
+
+            {(statusFilter !== 'Todas' ||
+              centroCustoFilter !== 'todos' ||
+              dataInicioFilter ||
+              dataFimFilter ||
+              searchQuery ||
+              selectedIds.length > 0) && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={handleLimparFiltros}
+                className="h-8 px-2 text-xs text-gray-500 hover:text-gray-900 hover:bg-gray-100 rounded-lg"
+              >
+                <X className="w-3.5 h-3.5 mr-1" />
+                Limpar Filtros
+              </Button>
+            )}
+          </div>
         </div>
       </Card>
 
@@ -1823,6 +2097,16 @@ export default function ContasReceber() {
           <table className="w-full text-left border-collapse text-xs">
             <thead>
               <tr className="bg-[#FAF9F7] border-b border-[#ECEAE4] text-gray-500 uppercase font-semibold text-[11px] tracking-wider">
+                <th className="py-2.5 px-2 text-center w-8">
+                  <Checkbox
+                    checked={
+                      filteredContas.length > 0 && selectedIds.length === filteredContas.length
+                    }
+                    onCheckedChange={handleToggleSelectAll}
+                    aria-label="Selecionar todas as contas a receber visíveis"
+                    className="border-gray-300"
+                  />
+                </th>
                 <th className="py-2.5 px-2.5 whitespace-nowrap">Vencimento</th>
                 <th className="py-2.5 px-2.5 whitespace-nowrap">Emissão</th>
                 <th className="py-2.5 px-2.5 min-w-[140px]">Cliente / Pagador</th>
@@ -1840,7 +2124,7 @@ export default function ContasReceber() {
             <tbody className="divide-y divide-[#ECEAE4]">
               {filteredContas.length === 0 ? (
                 <tr>
-                  <td colSpan={12} className="py-12 text-center text-gray-400">
+                  <td colSpan={13} className="py-12 text-center text-gray-400">
                     Nenhuma conta a receber encontrada para os filtros atuais.
                   </td>
                 </tr>
@@ -1851,13 +2135,26 @@ export default function ContasReceber() {
                   const saldoRestante = getSaldoRestante(c)
                   const nomeCliente = c.expand?.cliente_id?.nome || ''
                   const temDescricao = Boolean(c.descricao && c.descricao.trim())
+                  const isSelected = selectedIds.includes(c.id)
 
                   return (
                     <tr
                       key={c.id}
                       onClick={() => setDetailItem(c)}
-                      className="hover:bg-teal-50/20 cursor-pointer transition-colors"
+                      className={`cursor-pointer transition-colors ${
+                        isSelected ? 'bg-teal-50/60 hover:bg-teal-50/80' : 'hover:bg-teal-50/20'
+                      }`}
                     >
+                      {/* Checkbox de seleção */}
+                      <td className="py-2 px-2 text-center" onClick={(e) => e.stopPropagation()}>
+                        <Checkbox
+                          checked={isSelected}
+                          onCheckedChange={() => handleToggleSelectOne(c.id)}
+                          aria-label={`Selecionar recebimento ${c.descricao || nomeCliente}`}
+                          className="border-gray-300"
+                        />
+                      </td>
+
                       {/* Vencimento */}
                       <td className="py-2 px-2.5 font-mono font-medium text-gray-800 whitespace-nowrap text-xs">
                         {formatDate(c.vencimento)}
@@ -3264,6 +3561,22 @@ export default function ContasReceber() {
         onOpenChange={setHistoricoModalOpen}
         empresaId={currentEmpresa?.id || ''}
         colecaoPadrao="contas_receber"
+      />
+
+      {/* Relatório de Impressão A4 das Contas a Receber */}
+      <RelatorioListagemImpressaoModal
+        open={relatorioImpressaoOpen}
+        onOpenChange={setRelatorioImpressaoOpen}
+        titulo="Contas a Receber — Relatório de Itens"
+        subtitulo="Demonstrativo de Direitos Creditórios, Faturamento e Clientes"
+        badgeDestaque="Contas a Receber"
+        empresa={currentEmpresa}
+        usuarioNome={user?.name || user?.email || 'Administrador'}
+        filtrosDescricao={descricaoFiltrosAplicados}
+        itens={itensParaImpressao}
+        colunas={colunasRelatorioReceber}
+        totais={totalizadoresRelatorioReceber}
+        mensagemVazio="Nenhuma conta a receber encontrada para os filtros ou seleção atual."
       />
     </div>
   )

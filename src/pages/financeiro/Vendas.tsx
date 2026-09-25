@@ -1,11 +1,18 @@
 import React, { useState, useEffect, useMemo } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { useCompany } from '@/contexts/CompanyContext'
+import { useAuth } from '@/contexts/AuthContext'
 import pb from '@/lib/pocketbase/client'
 import { useRealtime } from '@/hooks/use-realtime'
 import { formatCurrency, formatDate, toInputDate } from '@/lib/formatters'
 import { calcularDatasPeriodoRapido, estaDentroDoPeriodo } from '@/lib/periodo'
 import FiltroPeriodoBar from '@/components/financeiro/FiltroPeriodoBar'
+import { Checkbox } from '@/components/ui/checkbox'
+import {
+  RelatorioListagemImpressaoModal,
+  type ColunaRelatorioImpressao,
+  type TotalizadorRelatorioImpressao,
+} from '@/components/financeiro/RelatorioListagemImpressaoModal'
 import type {
   Venda,
   Cliente,
@@ -84,6 +91,7 @@ const PRODUTOS_PEDREIRA_PADRAO = [
 
 export default function Vendas() {
   const { currentEmpresa, canEdit } = useCompany()
+  const { user } = useAuth()
   const [searchParams] = useSearchParams()
 
   const [vendas, setVendas] = useState<Venda[]>([])
@@ -91,6 +99,10 @@ export default function Vendas() {
   const [produtos, setProdutos] = useState<Produto[]>([])
   const [entregas, setEntregas] = useState<Entrega[]>([])
   const [loading, setLoading] = useState(false)
+
+  // Seleção múltipla para impressão
+  const [selectedIds, setSelectedIds] = useState<string[]>([])
+  const [relatorioImpressaoOpen, setRelatorioImpressaoOpen] = useState(false)
 
   // Filtros
   const [searchQuery, setSearchQuery] = useState('')
@@ -542,6 +554,203 @@ export default function Vendas() {
     )
   }, [detalheVenda, entregas])
 
+  // Handlers de seleção por checkbox
+  const handleToggleSelectAll = () => {
+    if (selectedIds.length === filteredVendas.length && filteredVendas.length > 0) {
+      setSelectedIds([])
+    } else {
+      setSelectedIds(filteredVendas.map((v) => v.id))
+    }
+  }
+
+  const handleToggleSelectOne = (id: string, e?: React.MouseEvent) => {
+    if (e) e.stopPropagation()
+    setSelectedIds((prev) =>
+      prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id],
+    )
+  }
+
+  // Itens para impressão: selecionados quando houver, senão filtrados
+  const itensParaImpressao = useMemo(() => {
+    if (selectedIds.length > 0) {
+      const set = new Set(selectedIds)
+      return filteredVendas.filter((v) => set.has(v.id))
+    }
+    return filteredVendas
+  }, [filteredVendas, selectedIds])
+
+  // Descrição dos filtros aplicados
+  const descricaoFiltrosAplicados = useMemo(() => {
+    const partes: string[] = []
+    if (dataInicio || dataFim) {
+      const de = dataInicio ? formatDate(dataInicio) : 'Início'
+      const ate = dataFim ? formatDate(dataFim) : 'Fim'
+      partes.push(`Período: ${de} a ${ate}`)
+    } else {
+      partes.push('Período: Todas as vendas')
+    }
+    if (selectedClienteFilter !== 'todos') {
+      const c = clientes.find((cli) => cli.id === selectedClienteFilter)
+      if (c) partes.push(`Cliente: ${c.nome}`)
+    }
+    if (selectedProdutoFilter !== 'todos') {
+      partes.push(`Produto: ${selectedProdutoFilter}`)
+    }
+    if (selectedStatusFilter !== 'todos') {
+      partes.push(`Status: ${selectedStatusFilter}`)
+    }
+    if (searchQuery.trim()) {
+      partes.push(`Busca: "${searchQuery.trim()}"`)
+    }
+    if (selectedIds.length > 0) {
+      partes.push(`Seleção ativa: ${selectedIds.length} item(ns)`)
+    }
+    return partes.join(' · ')
+  }, [
+    dataInicio,
+    dataFim,
+    selectedClienteFilter,
+    clientes,
+    selectedProdutoFilter,
+    selectedStatusFilter,
+    searchQuery,
+    selectedIds.length,
+  ])
+
+  // Colunas do relatório de vendas
+  const colunasRelatorioVendas = useMemo<ColunaRelatorioImpressao<Venda>[]>(() => {
+    return [
+      {
+        key: 'data',
+        header: 'Data',
+        className: 'font-mono whitespace-nowrap',
+        render: (v) => formatDate(v.data_venda),
+      },
+      {
+        key: 'cliente',
+        header: 'Cliente / Comprador',
+        render: (v) => {
+          const cliNome = v.expand?.cliente_id?.nome || 'Cliente não identificado'
+          return (
+            <div>
+              <div className="font-semibold text-gray-900">{cliNome}</div>
+              {v.nota_fiscal && (
+                <div className="text-[10px] text-gray-500 font-mono">NF: {v.nota_fiscal}</div>
+              )}
+            </div>
+          )
+        },
+      },
+      {
+        key: 'produto',
+        header: 'Produto',
+        render: (v) => v.produto_nome || 'Brita',
+      },
+      {
+        key: 'quantidade',
+        header: 'Qtd / Un.',
+        align: 'right',
+        className: 'font-mono whitespace-nowrap',
+        render: (v) => `${v.quantidade} ${v.unidade}`,
+      },
+      {
+        key: 'preco_unitario',
+        header: 'Unitário (R$)',
+        align: 'right',
+        className: 'font-mono whitespace-nowrap',
+        render: (v) => formatCurrency(v.preco_unitario),
+      },
+      {
+        key: 'desconto',
+        header: 'Desc. (R$)',
+        align: 'right',
+        className: 'font-mono text-amber-700 whitespace-nowrap',
+        render: (v) =>
+          v.valor_desconto && v.valor_desconto > 0 ? formatCurrency(v.valor_desconto) : '—',
+      },
+      {
+        key: 'valor_total',
+        header: 'Valor Total (R$)',
+        align: 'right',
+        className: 'font-mono font-bold text-gray-900 whitespace-nowrap',
+        render: (v) => formatCurrency(v.valor_total),
+      },
+      {
+        key: 'forma',
+        header: 'Forma Pgto',
+        render: (v) => v.forma_pagamento || '—',
+      },
+      {
+        key: 'status',
+        header: 'Status',
+        align: 'center',
+        render: (v) => (
+          <span
+            className={`inline-block px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase ${
+              v.status === 'Paga'
+                ? 'bg-emerald-50 text-emerald-800 border border-emerald-300'
+                : v.status === 'Faturada'
+                  ? 'bg-blue-50 text-blue-800 border border-blue-300'
+                  : v.status === 'Cancelada'
+                    ? 'bg-red-50 text-red-800 border border-red-300'
+                    : 'bg-amber-50 text-amber-900 border border-amber-300'
+            }`}
+          >
+            {v.status}
+          </span>
+        ),
+      },
+    ]
+  }, [])
+
+  // Totalizadores do relatório de vendas
+  const totalizadoresRelatorioVendas = useMemo<TotalizadorRelatorioImpressao[]>(() => {
+    const somaQtd = itensParaImpressao.reduce((acc, v) => acc + (v.quantidade || 0), 0)
+    const somaDesc = itensParaImpressao.reduce((acc, v) => acc + (v.valor_desconto || 0), 0)
+    const somaTotal = itensParaImpressao.reduce((acc, v) => acc + (v.valor_total || 0), 0)
+
+    return [
+      {
+        label: 'TOTAIS:',
+        value: `${itensParaImpressao.length} venda(s)`,
+        colSpan: 3,
+        align: 'left',
+      },
+      {
+        label: 'Qtd:',
+        value: somaQtd.toLocaleString('pt-BR'),
+        colSpan: 1,
+        align: 'right',
+      },
+      {
+        label: '',
+        value: '',
+        colSpan: 1,
+        align: 'center',
+      },
+      {
+        label: '',
+        value: somaDesc > 0 ? formatCurrency(somaDesc) : '—',
+        colSpan: 1,
+        align: 'right',
+        className: 'text-amber-800',
+      },
+      {
+        label: '',
+        value: formatCurrency(somaTotal),
+        colSpan: 1,
+        align: 'right',
+        className: 'text-teal-950 font-extrabold',
+      },
+      {
+        label: '',
+        value: '',
+        colSpan: 2,
+        align: 'center',
+      },
+    ]
+  }, [itensParaImpressao])
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -697,13 +906,16 @@ export default function Vendas() {
           onDataInicioChange={setDataInicio}
           dataFim={dataFim}
           onDataFimChange={setDataFim}
+          onImprimir={() => setRelatorioImpressaoOpen(true)}
+          totalSelecionados={selectedIds.length}
           mostrarLimpar={
             opcaoPeriodo !== 'todos' ||
             Boolean(dataInicio || dataFim) ||
             selectedClienteFilter !== 'todos' ||
             selectedProdutoFilter !== 'todos' ||
             selectedStatusFilter !== 'todos' ||
-            Boolean(searchQuery.trim())
+            Boolean(searchQuery.trim()) ||
+            selectedIds.length > 0
           }
           onLimpar={() => {
             setOpcaoPeriodo('todos')
@@ -713,6 +925,7 @@ export default function Vendas() {
             setSelectedProdutoFilter('todos')
             setSelectedStatusFilter('todos')
             setSearchQuery('')
+            setSelectedIds([])
           }}
         />
       </Card>
@@ -723,6 +936,16 @@ export default function Vendas() {
           <table className="w-full text-left text-xs">
             <thead className="bg-[#FAF9F7] border-b border-[#ECEAE4] text-gray-500 uppercase font-semibold">
               <tr>
+                <th className="py-3 px-3 text-center w-8">
+                  <Checkbox
+                    checked={
+                      filteredVendas.length > 0 && selectedIds.length === filteredVendas.length
+                    }
+                    onCheckedChange={handleToggleSelectAll}
+                    aria-label="Selecionar todas as vendas visíveis"
+                    className="border-gray-300"
+                  />
+                </th>
                 <th className="py-3 px-4">Data</th>
                 <th className="py-3 px-4">Cliente</th>
                 <th className="py-3 px-4">Produto da Pedreira</th>
@@ -738,13 +961,13 @@ export default function Vendas() {
             <tbody className="divide-y divide-[#ECEAE4]">
               {loading ? (
                 <tr>
-                  <td colSpan={10} className="py-12 text-center text-gray-400">
+                  <td colSpan={11} className="py-12 text-center text-gray-400">
                     Carregando vendas...
                   </td>
                 </tr>
               ) : filteredVendas.length === 0 ? (
                 <tr>
-                  <td colSpan={10} className="py-12 text-center text-gray-400">
+                  <td colSpan={11} className="py-12 text-center text-gray-400">
                     Nenhuma venda encontrada com os filtros selecionados.
                   </td>
                 </tr>
@@ -753,9 +976,23 @@ export default function Vendas() {
                   const cliNome = v.expand?.cliente_id?.nome || 'Cliente não identificado'
                   const entregasVinculadas = entregas.filter((e) => e.venda_id === v.id)
                   const temContaReceber = !!v.conta_receber_id
+                  const isSelected = selectedIds.includes(v.id)
 
                   return (
-                    <tr key={v.id} className="hover:bg-gray-50/60 transition-colors">
+                    <tr
+                      key={v.id}
+                      className={`transition-colors ${
+                        isSelected ? 'bg-teal-50/60 hover:bg-teal-50/80' : 'hover:bg-gray-50/60'
+                      }`}
+                    >
+                      <td className="py-3 px-3 text-center" onClick={(e) => e.stopPropagation()}>
+                        <Checkbox
+                          checked={isSelected}
+                          onCheckedChange={() => handleToggleSelectOne(v.id)}
+                          aria-label={`Selecionar venda ${v.id}`}
+                          className="border-gray-300"
+                        />
+                      </td>
                       <td className="py-3 px-4 font-mono text-gray-700 whitespace-nowrap">
                         {formatDate(v.data_venda)}
                       </td>
@@ -893,7 +1130,7 @@ export default function Vendas() {
             {filteredVendas.length > 0 && (
               <tfoot className="bg-[#FAF9F7] border-t-2 border-[#ECEAE4] font-bold text-gray-900">
                 <tr>
-                  <td colSpan={3} className="py-3 px-4">
+                  <td colSpan={4} className="py-3 px-4">
                     TOTALIZADOR ({filteredVendas.length} vendas)
                   </td>
                   <td className="py-3 px-4 text-right font-mono">
@@ -1525,6 +1762,21 @@ export default function Vendas() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+      {/* Relatório de Impressão A4 de Vendas */}
+      <RelatorioListagemImpressaoModal
+        open={relatorioImpressaoOpen}
+        onOpenChange={setRelatorioImpressaoOpen}
+        titulo="Vendas da Pedreira — Relatório de Itens"
+        subtitulo="Demonstrativo de Vendas de Britas, Agregados e Materiais da Pedreira"
+        badgeDestaque="Vendas Pedreira"
+        empresa={currentEmpresa}
+        usuarioNome={user?.name || user?.email || 'Administrador'}
+        filtrosDescricao={descricaoFiltrosAplicados}
+        itens={itensParaImpressao}
+        colunas={colunasRelatorioVendas}
+        totais={totalizadoresRelatorioVendas}
+        mensagemVazio="Nenhuma venda encontrada para os filtros ou seleção atual."
+      />
     </div>
   )
 }

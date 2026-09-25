@@ -1,8 +1,15 @@
 import React, { useState, useEffect, useMemo } from 'react'
 import { useCompany } from '@/contexts/CompanyContext'
+import { useAuth } from '@/contexts/AuthContext'
 import pb from '@/lib/pocketbase/client'
 import { useRealtime } from '@/hooks/use-realtime'
 import { formatCurrency, formatDate } from '@/lib/formatters'
+import { Checkbox } from '@/components/ui/checkbox'
+import {
+  RelatorioListagemImpressaoModal,
+  type ColunaRelatorioImpressao,
+  type TotalizadorRelatorioImpressao,
+} from '@/components/financeiro/RelatorioListagemImpressaoModal'
 import { calcularDatasPeriodoRapido, estaDentroDoPeriodo } from '@/lib/periodo'
 import FiltroPeriodoBar from '@/components/financeiro/FiltroPeriodoBar'
 import type {
@@ -102,6 +109,7 @@ const PRODUTOS_PEDREIRA_NOMES = [
 
 export default function Entregas() {
   const { currentEmpresa, canEdit } = useCompany()
+  const { user } = useAuth()
 
   const [entregas, setEntregas] = useState<Entrega[]>([])
   const [vendas, setVendas] = useState<Venda[]>([])
@@ -113,6 +121,10 @@ export default function Entregas() {
   const [planoContas, setPlanoContas] = useState<PlanoConta[]>([])
   const [centrosCusto, setCentrosCusto] = useState<CentroCusto[]>([])
   const [, setLoading] = useState(false)
+
+  // Seleção múltipla para impressão
+  const [selectedIds, setSelectedIds] = useState<string[]>([])
+  const [relatorioImpressaoOpen, setRelatorioImpressaoOpen] = useState(false)
 
   // Filtros da listagem
   const [selectedVeiculoFilter, setSelectedVeiculoFilter] = useState('todos')
@@ -913,6 +925,22 @@ export default function Entregas() {
     }
   }
 
+  // Handlers de seleção por checkbox
+  const handleToggleSelectAll = () => {
+    if (selectedIds.length === filteredEntregas.length && filteredEntregas.length > 0) {
+      setSelectedIds([])
+    } else {
+      setSelectedIds(filteredEntregas.map((e) => e.id))
+    }
+  }
+
+  const handleToggleSelectOne = (id: string, evt?: React.MouseEvent) => {
+    if (evt) evt.stopPropagation()
+    setSelectedIds((prev) =>
+      prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id],
+    )
+  }
+
   // Filtragem de entregas
   const filteredEntregas = useMemo(() => {
     return entregas.filter((ent) => {
@@ -1056,6 +1084,199 @@ export default function Entregas() {
       .sort((a, b) => b.viagens - a.viagens)
       .slice(0, 5)
   }, [filteredEntregas])
+
+  // Itens para impressão
+  const itensParaImpressao = useMemo(() => {
+    if (selectedIds.length > 0) {
+      const set = new Set(selectedIds)
+      return filteredEntregas.filter((e) => set.has(e.id))
+    }
+    return filteredEntregas
+  }, [filteredEntregas, selectedIds])
+
+  // Descrição legível dos filtros aplicados
+  const descricaoFiltrosAplicados = useMemo(() => {
+    const partes: string[] = []
+    if (dataInicio || dataFim) {
+      const de = dataInicio ? formatDate(dataInicio) : 'Início'
+      const ate = dataFim ? formatDate(dataFim) : 'Fim'
+      partes.push(`Período: ${de} a ${ate}`)
+    } else {
+      partes.push('Período: Todas as viagens')
+    }
+    if (selectedVeiculoFilter !== 'todos') {
+      const v = veiculos.find((veic) => veic.id === selectedVeiculoFilter)
+      if (v) partes.push(`Veículo: ${v.codigo_interno}`)
+    }
+    if (selectedProdutoFilter !== 'todos') {
+      partes.push(`Produto: ${selectedProdutoFilter}`)
+    }
+    if (selectedStatusFilter !== 'todos') {
+      partes.push(`Status: ${selectedStatusFilter}`)
+    }
+    if (searchQuery.trim()) {
+      partes.push(`Busca: "${searchQuery.trim()}"`)
+    }
+    if (selectedIds.length > 0) {
+      partes.push(`Seleção ativa: ${selectedIds.length} item(ns)`)
+    }
+    return partes.join(' · ')
+  }, [
+    dataInicio,
+    dataFim,
+    selectedVeiculoFilter,
+    veiculos,
+    selectedProdutoFilter,
+    selectedStatusFilter,
+    searchQuery,
+    selectedIds.length,
+  ])
+
+  // Colunas do relatório de entregas
+  const colunasRelatorioEntregas = useMemo<ColunaRelatorioImpressao<Entrega>[]>(() => {
+    return [
+      {
+        key: 'data',
+        header: 'Data',
+        className: 'font-mono whitespace-nowrap',
+        render: (e) => formatDate(e.data),
+      },
+      {
+        key: 'rota_cliente',
+        header: 'Origem ➔ Destino / Cliente',
+        render: (e) => {
+          const cli =
+            e.cliente_nome ||
+            e.expand?.cliente_id?.nome ||
+            e.expand?.venda_id?.expand?.cliente_id?.nome
+          return (
+            <div>
+              <div className="font-semibold text-gray-900">
+                {e.origem} ➔ {e.destino}
+              </div>
+              {cli && <div className="text-[10px] text-teal-800 font-medium">Cliente: {cli}</div>}
+              {e.motorista && (
+                <div className="text-[10px] text-gray-500">Motorista: {e.motorista}</div>
+              )}
+            </div>
+          )
+        },
+      },
+      {
+        key: 'veiculo',
+        header: 'Veículo',
+        render: (e) => {
+          const v = e.expand?.veiculo_id
+          return (
+            <div>
+              <span className="font-mono font-bold text-gray-900">{v?.codigo_interno || '—'}</span>
+              {v?.placa && <div className="text-[10px] text-gray-500 font-mono">{v.placa}</div>}
+            </div>
+          )
+        },
+      },
+      {
+        key: 'produto_carga',
+        header: 'Carga',
+        render: (e) => (
+          <div>
+            <div className="font-semibold text-gray-800">{e.produto_nome || '—'}</div>
+            {e.quantidade ? (
+              <div className="text-[10px] font-mono text-gray-600">
+                {e.quantidade} {e.unidade_medida || 'm³'}
+              </div>
+            ) : null}
+          </div>
+        ),
+      },
+      {
+        key: 'km',
+        header: 'Km',
+        align: 'right',
+        className: 'font-mono font-bold whitespace-nowrap',
+        render: (e) => `${(e.km_rodado || 0).toLocaleString('pt-BR')} km`,
+      },
+      {
+        key: 'venda',
+        header: 'Venda (R$)',
+        align: 'right',
+        className: 'font-mono text-emerald-800 whitespace-nowrap',
+        render: (e) => (e.valor_venda && e.valor_venda > 0 ? formatCurrency(e.valor_venda) : '—'),
+      },
+      {
+        key: 'custo',
+        header: 'Custo Comb. (R$)',
+        align: 'right',
+        className: 'font-mono text-red-600 whitespace-nowrap',
+        render: (e) =>
+          e.custo_estimado && e.custo_estimado > 0 ? formatCurrency(e.custo_estimado) : '—',
+      },
+      {
+        key: 'status',
+        header: 'Status',
+        align: 'center',
+        render: (e) => (
+          <span
+            className={`inline-block px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase ${
+              e.status === 'concluida'
+                ? 'bg-emerald-50 text-emerald-800 border border-emerald-300'
+                : e.status === 'em_transito'
+                  ? 'bg-blue-50 text-blue-800 border border-blue-300'
+                  : 'bg-gray-100 text-gray-700 border border-gray-300'
+            }`}
+          >
+            {e.status === 'concluida'
+              ? 'Concluída'
+              : e.status === 'em_transito'
+                ? 'Em Trânsito'
+                : 'Cancelada'}
+          </span>
+        ),
+      },
+    ]
+  }, [])
+
+  // Totalizadores
+  const totalizadoresRelatorioEntregas = useMemo<TotalizadorRelatorioImpressao[]>(() => {
+    const somaKm = itensParaImpressao.reduce((acc, e) => acc + (e.km_rodado || 0), 0)
+    const somaVenda = itensParaImpressao.reduce((acc, e) => acc + (e.valor_venda || 0), 0)
+    const somaCusto = itensParaImpressao.reduce((acc, e) => acc + (e.custo_estimado || 0), 0)
+
+    return [
+      {
+        label: 'TOTAIS:',
+        value: `${itensParaImpressao.length} viagem(ns)`,
+        colSpan: 4,
+        align: 'left',
+      },
+      {
+        label: 'Km:',
+        value: `${somaKm.toLocaleString('pt-BR')} km`,
+        colSpan: 1,
+        align: 'right',
+      },
+      {
+        label: '',
+        value: somaVenda > 0 ? formatCurrency(somaVenda) : '—',
+        colSpan: 1,
+        align: 'right',
+        className: 'text-emerald-800',
+      },
+      {
+        label: '',
+        value: somaCusto > 0 ? formatCurrency(somaCusto) : '—',
+        colSpan: 1,
+        align: 'right',
+        className: 'text-red-700',
+      },
+      {
+        label: '',
+        value: '',
+        colSpan: 1,
+        align: 'center',
+      },
+    ]
+  }, [itensParaImpressao])
 
   return (
     <div className="space-y-6">
@@ -1245,13 +1466,16 @@ export default function Entregas() {
           onDataInicioChange={setDataInicio}
           dataFim={dataFim}
           onDataFimChange={setDataFim}
+          onImprimir={() => setRelatorioImpressaoOpen(true)}
+          totalSelecionados={selectedIds.length}
           mostrarLimpar={
             opcaoPeriodo !== 'todos' ||
             Boolean(dataInicio || dataFim) ||
             selectedVeiculoFilter !== 'todos' ||
             selectedProdutoFilter !== 'todos' ||
             selectedStatusFilter !== 'todos' ||
-            Boolean(searchQuery)
+            Boolean(searchQuery) ||
+            selectedIds.length > 0
           }
           onLimpar={() => {
             setOpcaoPeriodo('todos')
@@ -1261,6 +1485,7 @@ export default function Entregas() {
             setSelectedProdutoFilter('todos')
             setSelectedStatusFilter('todos')
             setSearchQuery('')
+            setSelectedIds([])
           }}
         />
       </Card>
@@ -1388,6 +1613,16 @@ export default function Entregas() {
           <table className="w-full text-left border-collapse text-xs">
             <thead>
               <tr className="bg-[#FAF9F7] border-b border-[#ECEAE4] text-gray-500 uppercase font-semibold">
+                <th className="py-3 px-3 text-center w-8">
+                  <Checkbox
+                    checked={
+                      filteredEntregas.length > 0 && selectedIds.length === filteredEntregas.length
+                    }
+                    onCheckedChange={handleToggleSelectAll}
+                    aria-label="Selecionar todas as entregas visíveis"
+                    className="border-gray-300"
+                  />
+                </th>
                 <th className="py-3 px-4">Data</th>
                 <th className="py-3 px-4">Venda Vinculada</th>
                 <th className="py-3 px-4">Veículo</th>
@@ -1405,7 +1640,7 @@ export default function Entregas() {
             <tbody className="divide-y divide-[#ECEAE4]">
               {filteredEntregas.length === 0 ? (
                 <tr>
-                  <td colSpan={12} className="py-12 text-center text-gray-400">
+                  <td colSpan={13} className="py-12 text-center text-gray-400">
                     <div className="flex flex-col items-center justify-center gap-2">
                       <Truck className="w-8 h-8 text-gray-300" />
                       <p>Nenhuma entrega encontrada para os critérios selecionados.</p>
@@ -1435,9 +1670,26 @@ export default function Entregas() {
                     ent.cliente_nome ||
                     ent.expand?.cliente_id?.nome ||
                     venda?.expand?.cliente_id?.nome
+                  const isSelected = selectedIds.includes(ent.id)
 
                   return (
-                    <tr key={ent.id} className="hover:bg-teal-50/20 transition-colors">
+                    <tr
+                      key={ent.id}
+                      className={`transition-colors ${
+                        isSelected ? 'bg-teal-50/60 hover:bg-teal-50/80' : 'hover:bg-teal-50/20'
+                      }`}
+                    >
+                      <td
+                        className="py-3 px-3 text-center"
+                        onClick={(evt) => evt.stopPropagation()}
+                      >
+                        <Checkbox
+                          checked={isSelected}
+                          onCheckedChange={() => handleToggleSelectOne(ent.id)}
+                          aria-label={`Selecionar entrega ${ent.id}`}
+                          className="border-gray-300"
+                        />
+                      </td>
                       <td className="py-3 px-4 font-mono text-gray-700 whitespace-nowrap">
                         {formatDate(ent.data)}
                       </td>
@@ -2582,6 +2834,21 @@ export default function Entregas() {
         empresa={currentEmpresa}
         open={!!selectedEntregaImpressao}
         onOpenChange={(open) => !open && setSelectedEntregaImpressao(null)}
+      />
+      {/* Relatório de Impressão A4 das Entregas e Rotas */}
+      <RelatorioListagemImpressaoModal
+        open={relatorioImpressaoOpen}
+        onOpenChange={setRelatorioImpressaoOpen}
+        titulo="Controle de Entregas & Rotas — Relatório de Itens"
+        subtitulo="Demonstrativo de Romaneios, Quilometragem Rodada e Custos Operacionais"
+        badgeDestaque="Entregas Frota"
+        empresa={currentEmpresa}
+        usuarioNome={user?.name || user?.email || 'Administrador'}
+        filtrosDescricao={descricaoFiltrosAplicados}
+        itens={itensParaImpressao}
+        colunas={colunasRelatorioEntregas}
+        totais={totalizadoresRelatorioEntregas}
+        mensagemVazio="Nenhuma entrega encontrada para os filtros ou seleção atual."
       />
     </div>
   )
