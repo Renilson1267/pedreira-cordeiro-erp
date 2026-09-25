@@ -20,6 +20,7 @@ export interface CreateVendaPayload {
   valor_desconto?: number | null
   desconto_percentual?: number | null
   valor_bruto?: number | null
+  tipo_entrega?: 'frota_propria' | 'terceiro' | null
 }
 
 export interface UpdateVendaPayload extends Partial<CreateVendaPayload> {}

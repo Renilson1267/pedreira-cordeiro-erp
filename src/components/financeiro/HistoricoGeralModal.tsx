@@ -195,7 +195,9 @@ export const HistoricoGeralModal: React.FC<HistoricoGeralModalProps> = ({
                           ? 'Contas a Pagar'
                           : item.colecao_origem === 'contas_receber'
                             ? 'Contas a Receber'
-                            : 'Outro'}
+                            : item.colecao_origem === 'vendas'
+                              ? 'Vendas Pedreira'
+                              : 'Outro'}
                       </Badge>
                       <span className="font-semibold text-gray-900 text-xs">
                         {item.usuario_nome || 'Usuário'}

@@ -449,9 +449,10 @@ export interface FolhaHorasExtras {
   }
 }
 
-export type StatusEntrega = 'concluida' | 'em_transito' | 'cancelada'
+export type StatusEntrega = 'pendente' | 'em_transito' | 'concluida' | 'cancelada'
 export type UnidadeMedidaCarga = 'm³' | 'ton' | 'viagem'
 
+export type TipoEntregaVenda = 'frota_propria' | 'terceiro'
 export type StatusVenda = 'Pendente' | 'Faturada' | 'Paga' | 'Cancelada'
 export type FormaPagamentoVenda =
   | 'Dinheiro'
@@ -482,6 +483,7 @@ export interface Venda {
   valor_desconto?: number
   desconto_percentual?: number
   valor_bruto?: number
+  tipo_entrega?: TipoEntregaVenda
   created: string
   updated: string
   expand?: {
@@ -509,6 +511,7 @@ export type ColecaoOrigemHistorico =
   | 'contas_receber'
   | 'cheques_predatados'
   | 'formas_recebimento'
+  | 'vendas'
   | 'outros'
 
 export interface DetalheAlteracaoCampo {

@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-09-25T00:36:14.203Z",
+  "generatedAt": "2026-09-25T02:10:56.463Z",
   "collections": [
     {
       "name": "users",
@@ -2045,7 +2045,7 @@
         {
           "name": "veiculo_id",
           "type": "relation",
-          "required": true,
+          "required": false,
           "system": false,
           "collectionRef": "veiculos"
         },
@@ -2070,7 +2070,7 @@
         {
           "name": "km_rodado",
           "type": "number",
-          "required": true,
+          "required": false,
           "system": false
         },
         {
@@ -2145,7 +2145,7 @@
         {
           "name": "custo_estimado",
           "type": "number",
-          "required": true,
+          "required": false,
           "system": false
         },
         {
@@ -2376,6 +2376,13 @@
           "type": "number",
           "required": false,
           "system": false
+        },
+        {
+          "name": "tipo_entrega",
+          "type": "select",
+          "required": false,
+          "system": false,
+          "selectValues": ["frota_propria", "terceiro"]
         }
       ],
       "indexes": [

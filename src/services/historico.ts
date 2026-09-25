@@ -56,6 +56,39 @@ export const CAMPOS_CONFIG_PAGAR: Record<string, CampoConfig> = {
   observacoes: { label: 'Observações' },
 }
 
+export const CAMPOS_CONFIG_VENDAS: Record<string, CampoConfig> = {
+  cliente_id: { label: 'Cliente' },
+  cliente_nome: { label: 'Cliente' },
+  produto_nome: { label: 'Produto' },
+  quantidade: { label: 'Quantidade' },
+  unidade: { label: 'Unidade' },
+  preco_unitario: { label: 'Preço Unitário', format: (v) => formatCurrency(Number(v) || 0) },
+  valor_bruto: { label: 'Valor Bruto', format: (v) => formatCurrency(Number(v) || 0) },
+  valor_total: { label: 'Valor Total / Líquido', format: (v) => formatCurrency(Number(v) || 0) },
+  tipo_desconto: {
+    label: 'Tipo de Desconto',
+    format: (v) => (v === 'percentual' ? 'Percentual (%)' : v === 'valor' ? 'Valor (R$)' : '—'),
+  },
+  desconto_percentual: {
+    label: 'Desconto (%)',
+    format: (v) => (v !== null && v !== undefined && v !== '' ? `${Number(v).toFixed(2)}%` : '—'),
+  },
+  valor_desconto: {
+    label: 'Valor do Desconto',
+    format: (v) =>
+      v !== null && v !== undefined && v !== '' ? formatCurrency(Number(v) || 0) : '—',
+  },
+  tipo_entrega: {
+    label: 'Tipo de Entrega',
+    format: (v) => (v === 'frota_propria' ? 'Frota Própria' : v === 'terceiro' ? 'Terceiro' : '—'),
+  },
+  data_venda: { label: 'Data da Venda', format: (v) => (v ? formatDate(v) : '—') },
+  forma_pagamento: { label: 'Forma de Pagamento' },
+  status: { label: 'Status' },
+  nota_fiscal: { label: 'Nota Fiscal' },
+  observacoes: { label: 'Observações' },
+}
+
 export const CAMPOS_CONFIG_RECEBER: Record<string, CampoConfig> = {
   descricao: { label: 'Descrição' },
   valor: { label: 'Valor Líquido', format: (v) => formatCurrency(Number(v) || 0) },

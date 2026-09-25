@@ -111,7 +111,7 @@ export default function EntregaPage() {
   const [quantidade, setQuantidade] = useState<number>(0)
   const [unidadeMedida, setUnidadeMedida] = useState<'m³' | 'ton' | 'viagem'>('m³')
   const [kmRodado, setKmRodado] = useState<number>(0)
-  const [status, setStatus] = useState<'concluida' | 'em_transito' | 'cancelada'>('concluida')
+  const [status, setStatus] = useState<StatusEntrega>('pendente')
   const [valorVenda, setValorVenda] = useState<number>(0)
   const [custoEstimado, setCustoEstimado] = useState<number>(0)
   const [observacoes, setObservacoes] = useState<string>('')
@@ -177,7 +177,7 @@ export default function EntregaPage() {
     setQuantidade(14)
     setUnidadeMedida('m³')
     setKmRodado(60)
-    setStatus('concluida')
+    setStatus('pendente')
     setValorVenda(0)
     setCustoEstimado(150)
     setObservacoes('')
@@ -372,6 +372,7 @@ export default function EntregaPage() {
     }
     if (selectedStatusFilter !== 'todos') {
       const stMap: Record<string, string> = {
+        pendente: 'Pendente',
         concluida: 'Entregue / Concluída',
         em_transito: 'Em Trânsito',
         cancelada: 'Cancelada',
@@ -481,14 +482,18 @@ export default function EntregaPage() {
                 ? 'bg-emerald-50 text-emerald-800 border border-emerald-300'
                 : e.status === 'em_transito'
                   ? 'bg-blue-50 text-blue-800 border border-blue-300'
-                  : 'bg-red-50 text-red-800 border border-red-300'
+                  : e.status === 'pendente'
+                    ? 'bg-amber-50 text-amber-800 border border-amber-300'
+                    : 'bg-red-50 text-red-800 border border-red-300'
             }`}
           >
             {e.status === 'concluida'
               ? 'Entregue'
               : e.status === 'em_transito'
                 ? 'Em Trânsito'
-                : 'Cancelada'}
+                : e.status === 'pendente'
+                  ? 'Pendente'
+                  : 'Cancelada'}
           </span>
         ),
       },
@@ -674,8 +679,9 @@ export default function EntregaPage() {
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="todos">Todos os Status</SelectItem>
-                <SelectItem value="concluida">Entregue / Concluída</SelectItem>
+                <SelectItem value="pendente">Pendente</SelectItem>
                 <SelectItem value="em_transito">Em Trânsito</SelectItem>
+                <SelectItem value="concluida">Entregue / Concluída</SelectItem>
                 <SelectItem value="cancelada">Cancelada</SelectItem>
               </SelectContent>
             </Select>
@@ -854,14 +860,18 @@ export default function EntregaPage() {
                               ? 'bg-emerald-100 text-emerald-800 border-emerald-200'
                               : e.status === 'em_transito'
                                 ? 'bg-blue-100 text-blue-800 border-blue-200'
-                                : 'bg-red-100 text-red-800 border-red-200'
+                                : e.status === 'pendente'
+                                  ? 'bg-amber-100 text-amber-800 border-amber-200'
+                                  : 'bg-red-100 text-red-800 border-red-200'
                           }`}
                         >
                           {e.status === 'concluida'
                             ? 'Entregue'
                             : e.status === 'em_transito'
                               ? 'Em Trânsito'
-                              : 'Cancelada'}
+                              : e.status === 'pendente'
+                                ? 'Pendente'
+                                : 'Cancelada'}
                         </Badge>
                       </td>
                       <td className="py-3 px-4 text-right whitespace-nowrap">
@@ -1048,8 +1058,9 @@ export default function EntregaPage() {
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="concluida">Entregue / Concluída</SelectItem>
+                    <SelectItem value="pendente">Pendente / Agendada</SelectItem>
                     <SelectItem value="em_transito">Em Trânsito</SelectItem>
+                    <SelectItem value="concluida">Entregue / Concluída</SelectItem>
                     <SelectItem value="cancelada">Cancelada</SelectItem>
                   </SelectContent>
                 </Select>

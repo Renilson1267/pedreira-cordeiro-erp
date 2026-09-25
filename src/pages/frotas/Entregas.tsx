@@ -1839,6 +1839,11 @@ export default function Entregas() {
                             <Clock className="w-3 h-3 mr-1" />
                             Em Trânsito
                           </Badge>
+                        ) : ent.status === 'pendente' ? (
+                          <Badge className="bg-amber-50 text-amber-800 border-amber-200 text-[10px]">
+                            <Clock className="w-3 h-3 mr-1" />
+                            Pendente
+                          </Badge>
                         ) : (
                           <Badge className="bg-gray-100 text-gray-700 border-gray-200 text-[10px]">
                             <Ban className="w-3 h-3 mr-1" />
@@ -1986,8 +1991,9 @@ export default function Entregas() {
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="concluida">Concluída (Realizada)</SelectItem>
+                    <SelectItem value="pendente">Pendente / Agendada</SelectItem>
                     <SelectItem value="em_transito">Em Trânsito</SelectItem>
+                    <SelectItem value="concluida">Concluída (Realizada)</SelectItem>
                     <SelectItem value="cancelada">Cancelada</SelectItem>
                   </SelectContent>
                 </Select>

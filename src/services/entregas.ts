@@ -1,16 +1,16 @@
 import pb from '@/lib/pocketbase/client'
-import type { Entrega } from '@/types/erp'
+import type { Entrega, UnidadeMedidaCarga, StatusEntrega } from '@/types/erp'
 
 export interface CreateEntregaPayload {
   empresa_id: string
-  veiculo_id: string
+  veiculo_id?: string | null
   venda_id?: string | null
   cliente_id?: string | null
   cliente_nome?: string | null
   data: string
   origem: string
   destino: string
-  km_rodado: number
+  km_rodado?: number | null
   km_rota?: number | null
   km_inicial?: number | null
   km_final?: number | null
@@ -19,19 +19,18 @@ export interface CreateEntregaPayload {
   produto_id?: string | null
   produto_nome?: string | null
   quantidade?: number | null
-  unidade_medida?: 'm³' | 'ton' | 'viagem' | null
+  unidade_medida?: UnidadeMedidaCarga | null
   consumo_estimado_km_l?: number | null
   preco_combustivel_litro?: number | null
   litros_estimados?: number | null
-  custo_estimado: number
+  custo_estimado?: number | null
   custo_por_km?: number | null
   valor_venda?: number | null
   preco_unitario_venda?: number | null
-  status: 'concluida' | 'em_transito' | 'cancelada'
+  status?: StatusEntrega
   conta_pagar_id?: string | null
   observacoes?: string | null
 }
-
 export interface UpdateEntregaPayload extends Partial<CreateEntregaPayload> {}
 
 export const entregasService = {

@@ -20,9 +20,15 @@ import type {
   Entrega,
   StatusVenda,
   FormaPagamentoVenda,
+  TipoEntregaVenda,
 } from '@/types/erp'
 import { vendasService } from '@/services/vendas'
 import { entregasService } from '@/services/entregas'
+import {
+  historicoService,
+  calcularDiffAlteracoes,
+  CAMPOS_CONFIG_VENDAS,
+} from '@/services/historico'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -133,6 +139,8 @@ export default function Vendas() {
   const [tipoDesconto, setTipoDesconto] = useState<'percentual' | 'valor'>('percentual')
   const [descontoPercentual, setDescontoPercentual] = useState<number>(0)
   const [descontoValor, setDescontoValor] = useState<number>(0)
+  // Tipo de Entrega: Frota Própria ou Terceiro
+  const [tipoEntrega, setTipoEntrega] = useState<TipoEntregaVenda>('frota_propria')
   const [dataVenda, setDataVenda] = useState(() => toInputDate(new Date().toISOString()))
   const [formaPagamento, setFormaPagamento] = useState<FormaPagamentoVenda>('Pix')
   const [status, setStatus] = useState<StatusVenda>('Pendente')
@@ -234,6 +242,7 @@ export default function Vendas() {
     setTipoDesconto('percentual')
     setDescontoPercentual(0)
     setDescontoValor(0)
+    setTipoEntrega('frota_propria')
     setValorTotal(Number((14 * preco).toFixed(2)))
     setDataVenda(toInputDate(new Date().toISOString()))
     setFormaPagamento('Pix')
@@ -276,6 +285,7 @@ export default function Vendas() {
     setTipoDesconto(v.tipo_desconto || 'percentual')
     setDescontoPercentual(v.desconto_percentual || 0)
     setDescontoValor(v.valor_desconto || 0)
+    setTipoEntrega(v.tipo_entrega || 'frota_propria')
     setValorTotal(v.valor_total)
     setDataVenda(toInputDate(v.data_venda))
     setFormaPagamento(v.forma_pagamento || 'Pix')
@@ -338,12 +348,13 @@ export default function Vendas() {
 
     const cli = clientes.find((c) => c.id === clienteId)
     const isEdit = Boolean(editingId)
+    const tipoEntregaRotulo = tipoEntrega === 'frota_propria' ? 'Frota Própria' : 'Terceiro'
 
     setConfirmDialogData({
       title: isEdit ? 'Confirmar alteração da venda' : 'Confirmar gravação da venda',
       description: isEdit
-        ? `Deseja atualizar a venda para "${cli?.nome || 'Cliente'}"? Valor Bruto: ${formatCurrency(valorBrutoCalc)}, Desconto: ${formatCurrency(valorDescontoEfetivo)}, Valor Líquido: ${formatCurrency(valorFinalLiquido)}.`
-        : `Deseja registrar a nova venda de ${quantidade} ${unidade} de ${produtoNome} para "${cli?.nome || 'Cliente'}" no valor líquido de ${formatCurrency(valorFinalLiquido)}?${valorDescontoEfetivo > 0 ? ` (Desconto aplicado: ${formatCurrency(valorDescontoEfetivo)})` : ''}`,
+        ? `Deseja atualizar a venda para "${cli?.nome || 'Cliente'}"? Tipo de Entrega: ${tipoEntregaRotulo}. Valor Bruto: ${formatCurrency(valorBrutoCalc)}, Desconto: ${formatCurrency(valorDescontoEfetivo)}, Valor Líquido: ${formatCurrency(valorFinalLiquido)}.`
+        : `Deseja registrar a nova venda de ${quantidade} ${unidade} de ${produtoNome} para "${cli?.nome || 'Cliente'}" no valor líquido de ${formatCurrency(valorFinalLiquido)}? (${tipoEntregaRotulo})${tipoEntrega === 'frota_propria' ? ' — Será gerada uma entrega na relação de entregas.' : ''}${valorDescontoEfetivo > 0 ? ` [Desconto: ${formatCurrency(valorDescontoEfetivo)}]` : ''}`,
       confirmLabel: isEdit ? 'Confirmar Alteração' : 'Gravar Venda',
       confirmVariant: 'default',
       action: async () => {
@@ -367,6 +378,7 @@ export default function Vendas() {
                 : null,
             valor_desconto: valorDescontoEfetivo > 0 ? Number(valorDescontoEfetivo) : 0,
             valor_total: Number(valorFinalLiquido),
+            tipo_entrega: tipoEntrega,
             data_venda: dataIso,
             forma_pagamento: formaPagamento,
             status,
@@ -375,18 +387,133 @@ export default function Vendas() {
           }
 
           let vendaSalva: Venda
+          let entregaGeradaId: string | null = null
+
           if (editingId) {
+            const vendaAntes = vendas.find((v) => v.id === editingId)
             vendaSalva = await vendasService.atualizar(editingId, payload)
+
+            // Se for Frota Própria e ainda não existir entrega vinculada, criar
+            if (tipoEntrega === 'frota_propria') {
+              const jaTemEntrega = entregas.some((e) => e.venda_id === editingId)
+              if (!jaTemEntrega) {
+                const destinoCli = cli?.cidade
+                  ? `${cli.nome} - ${cli.cidade}`
+                  : cli?.nome || 'Destino cliente'
+                const entregaCriada = await entregasService.criar({
+                  empresa_id: currentEmpresa!.id,
+                  venda_id: editingId,
+                  cliente_id: clienteId,
+                  cliente_nome: cli?.nome || 'Cliente',
+                  data: dataIso,
+                  origem: 'Pedreira Cordeiro - Sertânia/PE',
+                  destino: destinoCli,
+                  produto_nome: produtoNome,
+                  quantidade: Number(quantidade),
+                  unidade_medida: (unidade as any) || 'm³',
+                  valor_venda: Number(valorFinalLiquido),
+                  status: 'pendente',
+                  observacoes: `Entrega gerada da Venda Pedreira #${editingId.slice(0, 8)} (${produtoNome} - ${quantidade} ${unidade}).`,
+                })
+                entregaGeradaId = entregaCriada.id
+              }
+            }
+
+            // Histórico de alteração
+            if (vendaAntes) {
+              const diffs = calcularDiffAlteracoes(
+                {
+                  ...vendaAntes,
+                  cliente_nome: vendaAntes.expand?.cliente_id?.nome || cli?.nome,
+                },
+                {
+                  ...vendaSalva,
+                  cliente_nome: cli?.nome,
+                },
+                CAMPOS_CONFIG_VENDAS,
+              )
+              await historicoService.registrar({
+                empresaId: currentEmpresa!.id,
+                colecaoOrigem: 'vendas',
+                registroId: editingId,
+                acao: 'editar',
+                usuarioId: user?.id,
+                usuarioNome: user?.name || user?.email || 'Usuário',
+                descricao: `Venda #${editingId.slice(0, 8)} atualizada (${formatCurrency(valorFinalLiquido)}) - Cliente: ${cli?.nome || 'Cliente'}. ${tipoEntrega === 'frota_propria' ? 'Frota Própria' : 'Terceiro'}. ${diffs.length > 0 ? `${diffs.length} campo(s) modificado(s).` : 'Sem alteração de campos chave.'}${entregaGeradaId ? ' Entrega criada na relação de entregas.' : ''}`,
+                detalhes: {
+                  alteracoes: diffs,
+                  valor: valorFinalLiquido,
+                  extra: {
+                    tipo_entrega: tipoEntrega,
+                    entrega_id: entregaGeradaId,
+                  },
+                },
+              })
+            }
+
             toast({ title: 'Venda atualizada com sucesso!' })
           } else {
             vendaSalva = await vendasService.criar(payload)
+
+            // Quando for Frota Própria: criar o registro de entrega vinculado à venda na relação de Entrega
+            if (tipoEntrega === 'frota_propria') {
+              const destinoCli = cli?.cidade
+                ? `${cli.nome} - ${cli.cidade}`
+                : cli?.nome || 'Destino cliente'
+              const entregaCriada = await entregasService.criar({
+                empresa_id: currentEmpresa!.id,
+                venda_id: vendaSalva.id,
+                cliente_id: clienteId,
+                cliente_nome: cli?.nome || 'Cliente',
+                data: dataIso,
+                origem: 'Pedreira Cordeiro - Sertânia/PE',
+                destino: destinoCli,
+                produto_nome: produtoNome,
+                quantidade: Number(quantidade),
+                unidade_medida: (unidade as any) || 'm³',
+                valor_venda: Number(valorFinalLiquido),
+                status: 'pendente',
+                observacoes: `Entrega gerada automaticamente a partir da Venda Pedreira #${vendaSalva.id.slice(0, 8)} (${produtoNome} - ${quantidade} ${unidade}).`,
+              })
+              entregaGeradaId = entregaCriada.id
+            }
+
+            // Gravar histórico de criação
+            await historicoService.registrar({
+              empresaId: currentEmpresa!.id,
+              colecaoOrigem: 'vendas',
+              registroId: vendaSalva.id,
+              acao: 'criar',
+              usuarioId: user?.id,
+              usuarioNome: user?.name || user?.email || 'Usuário',
+              descricao: `Venda registrada no valor líquido de ${formatCurrency(valorFinalLiquido)} (${quantidade} ${unidade} de ${produtoNome}) para "${cli?.nome || 'Cliente'}". Entrega: ${tipoEntrega === 'frota_propria' ? 'Frota Própria (incluída na relação de entrega)' : 'Terceiro (retirada/frete terceiro)'}.`,
+              detalhes: {
+                valor: valorFinalLiquido,
+                extra: {
+                  tipo_entrega: tipoEntrega,
+                  entrega_id: entregaGeradaId,
+                  cliente: cli?.nome,
+                  produto: produtoNome,
+                  quantidade,
+                  unidade,
+                  valor_bruto: valorBrutoCalc,
+                  valor_desconto: valorDescontoEfetivo,
+                },
+              },
+            })
 
             // Se marcou para gerar Conta a Receber automaticamente
             if (gerarReceberAoSalvar) {
               await criarContaReceberParaVenda(vendaSalva, dataVenda, 1)
             }
 
-            toast({ title: 'Venda cadastrada com sucesso!' })
+            toast({
+              title: 'Venda cadastrada com sucesso!',
+              description:
+                tipoEntrega === 'frota_propria'
+                  ? 'Entrega vinculada e incluída na relação de entregas da frota (status: Pendente).'
+                  : 'Entrega do tipo Terceiro (sem romaneio de frota própria).',
+            })
           }
 
           setIsDrawerOpen(false)
@@ -676,6 +803,16 @@ export default function Vendas() {
         render: (v) => formatCurrency(v.valor_total),
       },
       {
+        key: 'tipo_entrega',
+        header: 'Entrega',
+        render: (v) =>
+          v.tipo_entrega === 'terceiro'
+            ? 'Terceiro'
+            : v.tipo_entrega === 'frota_propria'
+              ? 'Frota Própria'
+              : '—',
+      },
+      {
         key: 'forma',
         header: 'Forma Pgto',
         render: (v) => v.forma_pagamento || '—',
@@ -745,7 +882,7 @@ export default function Vendas() {
       {
         label: '',
         value: '',
-        colSpan: 2,
+        colSpan: 3,
         align: 'center',
       },
     ]
@@ -952,6 +1089,7 @@ export default function Vendas() {
                 <th className="py-3 px-4 text-right">Qtd</th>
                 <th className="py-3 px-4 text-right">Preço Unit.</th>
                 <th className="py-3 px-4 text-right">Valor Total</th>
+                <th className="py-3 px-4 text-center">Entrega</th>
                 <th className="py-3 px-4 text-center">Status</th>
                 <th className="py-3 px-4 text-center">Entregas</th>
                 <th className="py-3 px-4 text-center">Receber</th>
@@ -961,13 +1099,13 @@ export default function Vendas() {
             <tbody className="divide-y divide-[#ECEAE4]">
               {loading ? (
                 <tr>
-                  <td colSpan={11} className="py-12 text-center text-gray-400">
+                  <td colSpan={12} className="py-12 text-center text-gray-400">
                     Carregando vendas...
                   </td>
                 </tr>
               ) : filteredVendas.length === 0 ? (
                 <tr>
-                  <td colSpan={11} className="py-12 text-center text-gray-400">
+                  <td colSpan={12} className="py-12 text-center text-gray-400">
                     Nenhuma venda encontrada com os filtros selecionados.
                   </td>
                 </tr>
@@ -977,6 +1115,7 @@ export default function Vendas() {
                   const entregasVinculadas = entregas.filter((e) => e.venda_id === v.id)
                   const temContaReceber = !!v.conta_receber_id
                   const isSelected = selectedIds.includes(v.id)
+                  const isFrota = v.tipo_entrega !== 'terceiro'
 
                   return (
                     <tr
@@ -1029,6 +1168,21 @@ export default function Vendas() {
                             ) : null}
                           </div>
                         ) : null}
+                      </td>
+                      <td className="py-3 px-4 text-center whitespace-nowrap">
+                        {isFrota ? (
+                          <Badge className="bg-teal-100 text-teal-900 border-teal-300 text-[10px] font-semibold flex items-center gap-1 mx-auto w-fit">
+                            <Truck className="w-3 h-3 text-teal-700" />
+                            Frota Própria
+                          </Badge>
+                        ) : (
+                          <Badge
+                            variant="secondary"
+                            className="bg-gray-100 text-gray-700 border-gray-300 text-[10px] font-semibold mx-auto w-fit"
+                          >
+                            Terceiro
+                          </Badge>
+                        )}
                       </td>
                       <td className="py-3 px-4 text-center">
                         <Badge
@@ -1140,7 +1294,7 @@ export default function Vendas() {
                   <td className="py-3 px-4 text-right font-mono text-teal-900 text-sm">
                     {formatCurrency(kpis.totalFaturado)}
                   </td>
-                  <td colSpan={4} className="py-3 px-4"></td>
+                  <td colSpan={5} className="py-3 px-4"></td>
                 </tr>
               </tfoot>
             )}
@@ -1175,6 +1329,49 @@ export default function Vendas() {
                   sublabel: c.cidade || c.cnpj_cpf || undefined,
                 }))}
               />
+            </div>
+
+            {/* Tipo de Entrega: Frota Própria ou Terceiro */}
+            <div className="space-y-1.5 p-3 rounded-xl border border-teal-200 bg-teal-50/40">
+              <Label className="text-gray-900 font-semibold flex items-center gap-1.5">
+                <Truck className="w-4 h-4 text-teal-700" />
+                <span>Tipo de Entrega *</span>
+              </Label>
+              <div className="grid grid-cols-2 gap-2 pt-1">
+                <button
+                  type="button"
+                  onClick={() => setTipoEntrega('frota_propria')}
+                  className={`flex items-center justify-center gap-2 p-2.5 rounded-xl border text-xs font-semibold transition-all ${
+                    tipoEntrega === 'frota_propria'
+                      ? 'bg-teal-700 text-white border-teal-700 shadow-xs'
+                      : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
+                  }`}
+                >
+                  <Truck
+                    className={`w-4 h-4 ${tipoEntrega === 'frota_propria' ? 'text-white' : 'text-teal-700'}`}
+                  />
+                  <span>Frota Própria</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setTipoEntrega('terceiro')}
+                  className={`flex items-center justify-center gap-2 p-2.5 rounded-xl border text-xs font-semibold transition-all ${
+                    tipoEntrega === 'terceiro'
+                      ? 'bg-gray-800 text-white border-gray-800 shadow-xs'
+                      : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
+                  }`}
+                >
+                  <Package
+                    className={`w-4 h-4 ${tipoEntrega === 'terceiro' ? 'text-white' : 'text-gray-500'}`}
+                  />
+                  <span>Terceiro</span>
+                </button>
+              </div>
+              <p className="text-[11px] text-gray-600 mt-1">
+                {tipoEntrega === 'frota_propria'
+                  ? '• Frota Própria: gerará automaticamente registro na relação de entregas com status Pendente.'
+                  : '• Terceiro: cliente retira na pedreira ou frete de terceiro (não entra na relação de entrega).'}
+              </p>
             </div>
 
             {/* Produto da Pedreira */}
@@ -1637,6 +1834,16 @@ export default function Vendas() {
                     <span className="text-[10px] text-gray-400 block uppercase">Data</span>
                     <span className="font-mono text-gray-900">
                       {formatDate(detalheVenda.data_venda)}
+                    </span>
+                  </div>
+                  <div>
+                    <span className="text-[10px] text-gray-400 block uppercase">
+                      Tipo de Entrega
+                    </span>
+                    <span className="font-semibold text-gray-900">
+                      {detalheVenda.tipo_entrega === 'terceiro'
+                        ? 'Terceiro (Retirada/Terceiro)'
+                        : 'Frota Própria'}
                     </span>
                   </div>
                 </div>
