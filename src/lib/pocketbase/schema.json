@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-09-25T02:10:56.463Z",
+  "generatedAt": "2026-09-25T02:16:20.054Z",
   "collections": [
     {
       "name": "users",
@@ -2159,7 +2159,7 @@
           "type": "select",
           "required": true,
           "system": false,
-          "selectValues": ["concluida", "em_transito", "cancelada"]
+          "selectValues": ["pendente", "em_transito", "concluida", "cancelada"]
         },
         {
           "name": "conta_pagar_id",

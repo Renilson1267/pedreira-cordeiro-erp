@@ -150,6 +150,15 @@ export default function Entregas() {
   // Drawer Form State
   const [isDrawerOpen, setIsDrawerOpen] = useState(false)
   const [editingEntregaId, setEditingEntregaId] = useState<string | null>(null)
+
+  // Modal de Alocação Rápida de Frota (para entregas pendentes originadas de vendas)
+  const [alocacaoModalOpen, setAlocacaoModalOpen] = useState(false)
+  const [entregaParaAlocar, setEntregaParaAlocar] = useState<Entrega | null>(null)
+  const [alocarVeiculoId, setAlocarVeiculoId] = useState('')
+  const [alocarMotorista, setAlocarMotorista] = useState('')
+  const [alocarKmRodado, setAlocarKmRodado] = useState<number>(0)
+  const [alocarStatus, setAlocarStatus] = useState<StatusEntrega>('em_transito')
+  const [isAlocando, setIsAlocando] = useState(false)
   const [vendaId, setVendaId] = useState<string>('nenhuma')
   const [clienteId, setClienteId] = useState<string>('')
   const [clienteNome, setClienteNome] = useState<string>('')
@@ -617,6 +626,73 @@ export default function Entregas() {
       if (venda.data_venda) {
         setDataEntrega(venda.data_venda.slice(0, 10))
       }
+    }
+  }
+
+  // Modal de alocação de frota/motorista para entrega pendente vinda da venda
+  const openAlocacaoModal = (ent: Entrega) => {
+    setEntregaParaAlocar(ent)
+    const veiculosEntrega = veiculos.filter(
+      (v) => normalizarSetorFrota(v.setor) === 'Entrega' || v.tipo === 'caminhao',
+    )
+    const veicSugerido = ent.veiculo_id || veiculosEntrega[0]?.id || veiculos[0]?.id || ''
+    setAlocarVeiculoId(veicSugerido)
+    setAlocarMotorista(ent.motorista || ent.expand?.funcionario_id?.nome || '')
+    setAlocarKmRodado(ent.km_rodado || ent.km_rota || 60)
+    setAlocarStatus(ent.status === 'pendente' ? 'em_transito' : ent.status)
+    setAlocacaoModalOpen(true)
+  }
+
+  const handleSalvarAlocacao = async (evt: React.FormEvent) => {
+    evt.preventDefault()
+    if (!entregaParaAlocar) return
+    if (!alocarVeiculoId) {
+      toast({ title: 'Selecione um veículo da frota', variant: 'destructive' })
+      return
+    }
+
+    try {
+      setIsAlocando(true)
+      const vObj = veiculos.find((veic) => veic.id === alocarVeiculoId)
+      const kmFinalNum = Number(alocarKmRodado) || entregaParaAlocar.km_rodado || 0
+      const consumoEstimado = entregaParaAlocar.consumo_estimado_km_l || 2.8
+      const precoDiesel = entregaParaAlocar.preco_combustivel_litro || precoDieselApurado || 5.89
+      const litros = kmFinalNum > 0 && consumoEstimado > 0 ? kmFinalNum / consumoEstimado : null
+      const custoCalc = litros && precoDiesel ? Number((litros * precoDiesel).toFixed(2)) : 0
+
+      await entregasService.atualizar(entregaParaAlocar.id, {
+        veiculo_id: alocarVeiculoId,
+        motorista: alocarMotorista.trim() || null,
+        km_rodado: kmFinalNum,
+        consumo_estimado_km_l: consumoEstimado,
+        preco_combustivel_litro: precoDiesel,
+        litros_estimados: litros,
+        custo_estimado: custoCalc > 0 ? custoCalc : entregaParaAlocar.custo_estimado || 0,
+        status: alocarStatus,
+      })
+
+      toast({
+        title: 'Alocação confirmada com sucesso!',
+        description: `Veículo ${vObj?.codigo_interno || 'alocado'} associado à entrega. Novo status: ${
+          alocarStatus === 'em_transito'
+            ? 'Em Trânsito'
+            : alocarStatus === 'concluida'
+              ? 'Concluída'
+              : 'Pendente'
+        }.`,
+      })
+
+      setAlocacaoModalOpen(false)
+      setEntregaParaAlocar(null)
+      await loadData()
+    } catch (err: any) {
+      toast({
+        title: 'Erro ao alocar veículo',
+        description: err.message,
+        variant: 'destructive',
+      })
+    } finally {
+      setIsAlocando(false)
     }
   }
 
@@ -1433,13 +1509,14 @@ export default function Entregas() {
 
             {/* Status */}
             <Select value={selectedStatusFilter} onValueChange={setSelectedStatusFilter}>
-              <SelectTrigger className="w-[140px] bg-[#FAF9F7] border-[#ECEAE4] text-xs h-9 rounded-xl">
+              <SelectTrigger className="w-[145px] bg-[#FAF9F7] border-[#ECEAE4] text-xs h-9 rounded-xl">
                 <SelectValue placeholder="Status" />
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="todos">Todos os Status</SelectItem>
-                <SelectItem value="concluida">Concluída</SelectItem>
+                <SelectItem value="pendente">Pendente / Agendada</SelectItem>
                 <SelectItem value="em_transito">Em Trânsito</SelectItem>
+                <SelectItem value="concluida">Concluída</SelectItem>
                 <SelectItem value="cancelada">Cancelada</SelectItem>
               </SelectContent>
             </Select>
@@ -1698,14 +1775,20 @@ export default function Entregas() {
                           <div className="space-y-0.5">
                             <Badge
                               variant="outline"
-                              className="bg-teal-50 text-teal-800 border-teal-300 text-[10px] font-mono flex items-center gap-1 w-fit"
+                              className="bg-teal-50 text-teal-800 border-teal-300 text-[10px] font-mono flex items-center gap-1 w-fit font-semibold"
                             >
-                              <LinkIcon className="w-2.5 h-2.5" />
+                              <LinkIcon className="w-2.5 h-2.5 shrink-0" />
                               Venda #{venda.id.slice(0, 6)}
                             </Badge>
-                            <span className="text-[10px] text-gray-500 block truncate max-w-[150px]">
-                              {venda.expand?.cliente_id?.nome || clienteExibicao || 'Cliente'}
-                            </span>
+                            <div className="text-[11px] font-medium text-gray-900 truncate max-w-[170px]">
+                              {clienteExibicao || venda.expand?.cliente_id?.nome || 'Cliente'}
+                            </div>
+                            {ent.destino && (
+                              <div className="text-[10px] text-gray-500 truncate max-w-[170px] flex items-center gap-1">
+                                <MapPin className="w-2.5 h-2.5 text-teal-600 shrink-0" />
+                                <span>{ent.destino}</span>
+                              </div>
+                            )}
                             {venda.status && (
                               <span className="text-[9px] font-semibold text-teal-700 block uppercase">
                                 {venda.status}
@@ -1713,13 +1796,24 @@ export default function Entregas() {
                             )}
                           </div>
                         ) : ent.venda_id ? (
-                          <Badge
-                            variant="outline"
-                            className="bg-teal-50 text-teal-800 border-teal-300 text-[10px] font-mono flex items-center gap-1 w-fit"
-                          >
-                            <LinkIcon className="w-2.5 h-2.5" />
-                            Venda #{ent.venda_id.slice(0, 6)}
-                          </Badge>
+                          <div className="space-y-0.5">
+                            <Badge
+                              variant="outline"
+                              className="bg-teal-50 text-teal-800 border-teal-300 text-[10px] font-mono flex items-center gap-1 w-fit font-semibold"
+                            >
+                              <LinkIcon className="w-2.5 h-2.5 shrink-0" />
+                              Venda #{ent.venda_id.slice(0, 6)}
+                            </Badge>
+                            <div className="text-[11px] font-medium text-gray-900 truncate max-w-[170px]">
+                              {clienteExibicao || 'Cliente'}
+                            </div>
+                            {ent.destino && (
+                              <div className="text-[10px] text-gray-500 truncate max-w-[170px] flex items-center gap-1">
+                                <MapPin className="w-2.5 h-2.5 text-teal-600 shrink-0" />
+                                <span>{ent.destino}</span>
+                              </div>
+                            )}
+                          </div>
                         ) : (
                           <span className="text-[10px] text-gray-400 italic">
                             Avulsa / Sem venda
@@ -1830,29 +1924,41 @@ export default function Entregas() {
                       </td>
                       <td className="py-3 px-4 text-center">
                         {ent.status === 'concluida' ? (
-                          <Badge className="bg-emerald-50 text-emerald-800 border-emerald-200 text-[10px]">
-                            <CheckCircle2 className="w-3 h-3 mr-1" />
+                          <Badge className="bg-emerald-50 text-emerald-800 border-emerald-200 text-[10px] font-semibold">
+                            <CheckCircle2 className="w-3 h-3 mr-1 text-emerald-600" />
                             Concluída
                           </Badge>
                         ) : ent.status === 'em_transito' ? (
-                          <Badge className="bg-blue-50 text-blue-800 border-blue-200 text-[10px]">
-                            <Clock className="w-3 h-3 mr-1" />
+                          <Badge className="bg-blue-50 text-blue-800 border-blue-200 text-[10px] font-semibold">
+                            <Truck className="w-3 h-3 mr-1 text-blue-600" />
                             Em Trânsito
                           </Badge>
                         ) : ent.status === 'pendente' ? (
-                          <Badge className="bg-amber-50 text-amber-800 border-amber-200 text-[10px]">
-                            <Clock className="w-3 h-3 mr-1" />
+                          <Badge className="bg-amber-50 text-amber-900 border-amber-300 text-[10px] font-semibold shadow-xs">
+                            <Clock className="w-3 h-3 mr-1 text-amber-700" />
                             Pendente
                           </Badge>
                         ) : (
-                          <Badge className="bg-gray-100 text-gray-700 border-gray-200 text-[10px]">
-                            <Ban className="w-3 h-3 mr-1" />
+                          <Badge className="bg-gray-100 text-gray-700 border-gray-200 text-[10px] font-semibold">
+                            <Ban className="w-3 h-3 mr-1 text-gray-500" />
                             Cancelada
                           </Badge>
                         )}
                       </td>
                       <td className="py-3 px-4 text-right">
                         <div className="flex items-center justify-end gap-1">
+                          {canEdit && ent.status === 'pendente' && (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => openAlocacaoModal(ent)}
+                              className="h-7 px-2 text-xs font-semibold text-amber-900 bg-amber-50 hover:bg-amber-100 border-amber-300"
+                              title="Alocar veículo e motorista para a entrega pendente"
+                            >
+                              <Truck className="w-3.5 h-3.5 mr-1" />
+                              Alocar
+                            </Button>
+                          )}
                           <Button
                             size="sm"
                             variant="ghost"
@@ -2572,6 +2678,139 @@ export default function Entregas() {
           </form>
         </SheetContent>
       </Sheet>
+
+      {/* Modal de Alocação Rápida de Veículo / Motorista a partir do Estado Pendente */}
+      <Dialog open={alocacaoModalOpen} onOpenChange={setAlocacaoModalOpen}>
+        <DialogContent className="sm:max-w-[480px] bg-white border-[#ECEAE4]">
+          <DialogHeader>
+            <div className="flex items-center gap-2">
+              <div className="w-8 h-8 rounded-lg bg-amber-100 text-amber-900 flex items-center justify-center">
+                <Truck className="w-4 h-4" />
+              </div>
+              <div>
+                <DialogTitle className="text-base font-bold text-gray-900">
+                  Alocar Veículo & Motorista (Frota Própria)
+                </DialogTitle>
+                <p className="text-[11px] text-gray-500">
+                  {entregaParaAlocar?.expand?.venda_id
+                    ? `Origem: Venda #${entregaParaAlocar.expand.venda_id.id.slice(0, 6)} • ${
+                        entregaParaAlocar.cliente_nome ||
+                        entregaParaAlocar.expand?.venda_id?.expand?.cliente_id?.nome ||
+                        'Cliente'
+                      }`
+                    : 'Entrega pendente de alocação'}
+                </p>
+              </div>
+            </div>
+          </DialogHeader>
+
+          {entregaParaAlocar && (
+            <form onSubmit={handleSalvarAlocacao} className="space-y-4 py-2 text-xs">
+              <div className="p-3 bg-amber-50/80 rounded-xl border border-amber-200 text-amber-950 space-y-1">
+                <div className="font-semibold text-xs flex items-center justify-between">
+                  <span>Carga: {entregaParaAlocar.produto_nome || 'Agregados da Pedreira'}</span>
+                  <span className="font-mono font-bold text-amber-950">
+                    {entregaParaAlocar.quantidade} {entregaParaAlocar.unidade_medida || 'm³'}
+                  </span>
+                </div>
+                <div className="text-[11px] text-amber-900 flex items-center gap-1">
+                  <MapPin className="w-3 h-3 text-amber-700 shrink-0" />
+                  <span className="truncate">Destino: {entregaParaAlocar.destino}</span>
+                </div>
+                {entregaParaAlocar.valor_venda && entregaParaAlocar.valor_venda > 0 ? (
+                  <div className="text-[11px] font-mono text-emerald-800 font-semibold">
+                    Valor faturado da carga: {formatCurrency(entregaParaAlocar.valor_venda)}
+                  </div>
+                ) : null}
+              </div>
+
+              <div className="space-y-1.5">
+                <Label className="text-gray-700 font-semibold">Veículo / Caçamba da Frota *</Label>
+                <ComboboxPesquisavel
+                  value={alocarVeiculoId}
+                  onChange={setAlocarVeiculoId}
+                  placeholder="Selecione o caminhão/caçamba..."
+                  searchPlaceholder="Buscar por código interno, placa ou modelo..."
+                  emptyText="Nenhum veículo encontrado."
+                  triggerClassName="bg-white border-[#ECEAE4] font-mono"
+                  options={veiculos.map((v) => ({
+                    id: v.id,
+                    label: `${v.codigo_interno} • ${v.placa ? `${v.placa} (${v.modelo})` : v.modelo}`,
+                    sublabel: v.setor || undefined,
+                    keywords: [v.codigo_interno, v.placa || '', v.modelo],
+                  }))}
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <Label className="text-gray-700 font-semibold">Motorista / Condutor</Label>
+                <Input
+                  placeholder="Nome do motorista..."
+                  value={alocarMotorista}
+                  onChange={(e) => setAlocarMotorista(e.target.value)}
+                  list="funcionarios-alocar-list-frota"
+                  className="bg-white border-[#ECEAE4] text-xs h-9"
+                />
+                <datalist id="funcionarios-alocar-list-frota">
+                  {funcionarios.map((f) => (
+                    <option key={f.id} value={f.nome}>
+                      {f.cargo ? `${f.cargo} - ${f.setor}` : f.setor}
+                    </option>
+                  ))}
+                </datalist>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <Label className="text-gray-700 font-semibold">Quilometragem (Km)</Label>
+                  <Input
+                    type="number"
+                    step="0.1"
+                    min="0"
+                    value={alocarKmRodado}
+                    onChange={(e) => setAlocarKmRodado(parseFloat(e.target.value) || 0)}
+                    className="bg-white border-[#ECEAE4] text-xs h-9 font-mono"
+                  />
+                </div>
+
+                <div className="space-y-1.5">
+                  <Label className="text-gray-700 font-semibold">Status Operacional *</Label>
+                  <Select value={alocarStatus} onValueChange={(s: any) => setAlocarStatus(s)}>
+                    <SelectTrigger className="bg-white border-[#ECEAE4] text-xs h-9">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="pendente">Manter Pendente</SelectItem>
+                      <SelectItem value="em_transito">Em Trânsito (Saiu p/ viagem)</SelectItem>
+                      <SelectItem value="concluida">Concluída (Entregue)</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+
+              <DialogFooter className="pt-3 border-t border-[#ECEAE4] flex justify-between">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setAlocacaoModalOpen(false)}
+                  className="text-xs"
+                >
+                  Cancelar
+                </Button>
+                <Button
+                  type="submit"
+                  disabled={isAlocando}
+                  size="sm"
+                  className="bg-teal-700 hover:bg-teal-800 text-white text-xs font-semibold"
+                >
+                  {isAlocando ? 'Salvando...' : 'Confirmar Alocação'}
+                </Button>
+              </DialogFooter>
+            </form>
+          )}
+        </DialogContent>
+      </Dialog>
 
       {/* Modal de Detalhes da Entrega com Comparativo Km da Rota vs Motorista */}
       <Dialog

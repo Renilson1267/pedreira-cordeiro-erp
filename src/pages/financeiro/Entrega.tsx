@@ -12,7 +12,15 @@ import {
   type ColunaRelatorioImpressao,
   type TotalizadorRelatorioImpressao,
 } from '@/components/financeiro/RelatorioListagemImpressaoModal'
-import type { Entrega, Venda, Veiculo, Cliente, Produto, Funcionario } from '@/types/erp'
+import type {
+  Entrega,
+  Venda,
+  Veiculo,
+  Cliente,
+  Produto,
+  Funcionario,
+  StatusEntrega,
+} from '@/types/erp'
 import { entregasService } from '@/services/entregas'
 import { vendasService } from '@/services/vendas'
 import { Card } from '@/components/ui/card'
@@ -98,6 +106,15 @@ export default function EntregaPage() {
   // Drawer Cadastro / Edição
   const [isDrawerOpen, setIsDrawerOpen] = useState(false)
   const [editingId, setEditingId] = useState<string | null>(null)
+
+  // Modal de Alocação Rápida (para entregas pendentes vindas de vendas)
+  const [alocacaoModalOpen, setAlocacaoModalOpen] = useState(false)
+  const [entregaParaAlocar, setEntregaParaAlocar] = useState<Entrega | null>(null)
+  const [alocarVeiculoId, setAlocarVeiculoId] = useState('')
+  const [alocarMotorista, setAlocarMotorista] = useState('')
+  const [alocarKmRodado, setAlocarKmRodado] = useState<number>(0)
+  const [alocarStatus, setAlocarStatus] = useState<StatusEntrega>('em_transito')
+  const [isAlocando, setIsAlocando] = useState(false)
 
   // Form fields
   const [vendaId, setVendaId] = useState<string>('nenhuma')
@@ -202,6 +219,64 @@ export default function EntregaPage() {
       if (venda.data_venda) {
         setDataEntrega(toInputDate(venda.data_venda))
       }
+    }
+  }
+
+  const openAlocacaoModal = (e: Entrega) => {
+    setEntregaParaAlocar(e)
+    setAlocarVeiculoId(e.veiculo_id || veiculos[0]?.id || '')
+    setAlocarMotorista(e.motorista || e.expand?.funcionario_id?.nome || '')
+    setAlocarKmRodado(e.km_rodado || 60)
+    setAlocarStatus(e.status === 'pendente' ? 'em_transito' : e.status)
+    setAlocacaoModalOpen(true)
+  }
+
+  const handleSalvarAlocacao = async (evt: React.FormEvent) => {
+    evt.preventDefault()
+    if (!entregaParaAlocar) return
+    if (!alocarVeiculoId) {
+      toast({ title: 'Selecione um veículo da frota', variant: 'destructive' })
+      return
+    }
+
+    try {
+      setIsAlocando(true)
+      const vObj = veiculos.find((veic) => veic.id === alocarVeiculoId)
+      const custoEst =
+        Number(entregaParaAlocar.custo_estimado) > 0
+          ? entregaParaAlocar.custo_estimado
+          : Math.round(Number(alocarKmRodado || 60) * 2.8)
+
+      await entregasService.atualizar(entregaParaAlocar.id, {
+        veiculo_id: alocarVeiculoId,
+        motorista: alocarMotorista.trim() || null,
+        km_rodado: Number(alocarKmRodado) || entregaParaAlocar.km_rodado || 0,
+        custo_estimado: custoEst,
+        status: alocarStatus,
+      })
+
+      toast({
+        title: 'Alocação realizada com sucesso!',
+        description: `Veículo ${vObj?.codigo_interno || 'alocado'} definido para a entrega. Status: ${
+          alocarStatus === 'em_transito'
+            ? 'Em Trânsito'
+            : alocarStatus === 'concluida'
+              ? 'Concluída'
+              : 'Pendente'
+        }.`,
+      })
+
+      setAlocacaoModalOpen(false)
+      setEntregaParaAlocar(null)
+      await loadData()
+    } catch (err: any) {
+      toast({
+        title: 'Erro ao alocar veículo',
+        description: err.message,
+        variant: 'destructive',
+      })
+    } finally {
+      setIsAlocando(false)
     }
   }
 
@@ -795,23 +870,37 @@ export default function EntregaPage() {
                       </td>
                       <td className="py-3 px-4">
                         {venda ? (
-                          <div className="flex items-center gap-1">
+                          <div className="space-y-0.5">
                             <Badge
                               variant="outline"
-                              className="bg-teal-50 text-teal-800 border-teal-200 text-[10px] font-mono"
+                              className="bg-teal-50 text-teal-800 border-teal-200 text-[10px] font-mono inline-flex items-center"
                             >
-                              <LinkIcon className="w-2.5 h-2.5 mr-1" />
+                              <LinkIcon className="w-2.5 h-2.5 mr-1 shrink-0" />
                               Venda #{venda.id.slice(0, 6)}
                             </Badge>
+                            <div className="text-[11px] font-medium text-gray-900 truncate max-w-[190px]">
+                              {clienteFinal}
+                            </div>
+                            {e.destino && (
+                              <div className="text-[10px] text-gray-500 truncate max-w-[190px] flex items-center gap-1">
+                                <MapPin className="w-2.5 h-2.5 text-teal-600 shrink-0" />
+                                <span>{e.destino}</span>
+                              </div>
+                            )}
                           </div>
                         ) : e.venda_id ? (
-                          <Badge
-                            variant="outline"
-                            className="bg-teal-50 text-teal-800 border-teal-200 text-[10px] font-mono"
-                          >
-                            <LinkIcon className="w-2.5 h-2.5 mr-1" />
-                            Venda #{e.venda_id.slice(0, 6)}
-                          </Badge>
+                          <div className="space-y-0.5">
+                            <Badge
+                              variant="outline"
+                              className="bg-teal-50 text-teal-800 border-teal-200 text-[10px] font-mono inline-flex items-center"
+                            >
+                              <LinkIcon className="w-2.5 h-2.5 mr-1 shrink-0" />
+                              Venda #{e.venda_id.slice(0, 6)}
+                            </Badge>
+                            <div className="text-[11px] font-medium text-gray-900 truncate max-w-[190px]">
+                              {clienteFinal}
+                            </div>
+                          </div>
                         ) : (
                           <span className="text-[10px] text-gray-400 italic">
                             Avulsa / Sem venda
@@ -855,7 +944,7 @@ export default function EntregaPage() {
                       </td>
                       <td className="py-3 px-4 text-center">
                         <Badge
-                          className={`text-[10px] uppercase font-semibold ${
+                          className={`text-[10px] uppercase font-semibold inline-flex items-center gap-1 ${
                             e.status === 'concluida'
                               ? 'bg-emerald-100 text-emerald-800 border-emerald-200'
                               : e.status === 'em_transito'
@@ -865,13 +954,24 @@ export default function EntregaPage() {
                                   : 'bg-red-100 text-red-800 border-red-200'
                           }`}
                         >
-                          {e.status === 'concluida'
-                            ? 'Entregue'
-                            : e.status === 'em_transito'
-                              ? 'Em Trânsito'
-                              : e.status === 'pendente'
-                                ? 'Pendente'
-                                : 'Cancelada'}
+                          {e.status === 'pendente' ? (
+                            <Clock className="w-3 h-3 text-amber-700 shrink-0" />
+                          ) : e.status === 'em_transito' ? (
+                            <Truck className="w-3 h-3 text-blue-700 shrink-0" />
+                          ) : e.status === 'concluida' ? (
+                            <CheckCircle2 className="w-3 h-3 text-emerald-700 shrink-0" />
+                          ) : (
+                            <Ban className="w-3 h-3 text-red-700 shrink-0" />
+                          )}
+                          <span>
+                            {e.status === 'concluida'
+                              ? 'Entregue'
+                              : e.status === 'em_transito'
+                                ? 'Em Trânsito'
+                                : e.status === 'pendente'
+                                  ? 'Pendente'
+                                  : 'Cancelada'}
+                          </span>
                         </Badge>
                       </td>
                       <td className="py-3 px-4 text-right whitespace-nowrap">
@@ -890,6 +990,18 @@ export default function EntregaPage() {
                           </Button>
                           {canEdit && (
                             <>
+                              {e.status === 'pendente' && (
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={() => openAlocacaoModal(e)}
+                                  title="Alocar veículo e motorista para entrega pendente"
+                                  className="h-7 px-2 text-[11px] font-semibold text-amber-800 bg-amber-50 hover:bg-amber-100 border-amber-300"
+                                >
+                                  <Truck className="w-3 h-3 mr-1" />
+                                  Alocar Frota
+                                </Button>
+                              )}
                               <Button
                                 variant="ghost"
                                 size="icon"
@@ -1187,6 +1299,139 @@ export default function EntregaPage() {
           </form>
         </SheetContent>
       </Sheet>
+
+      {/* Modal de Alocação de Frota / Motorista para Entrega Pendente */}
+      <Dialog open={alocacaoModalOpen} onOpenChange={setAlocacaoModalOpen}>
+        <DialogContent className="sm:max-w-[480px] bg-white border-[#ECEAE4]">
+          <DialogHeader>
+            <div className="flex items-center gap-2">
+              <div className="w-8 h-8 rounded-lg bg-amber-100 text-amber-800 flex items-center justify-center">
+                <Truck className="w-4 h-4" />
+              </div>
+              <div>
+                <DialogTitle className="text-base font-bold text-gray-900">
+                  Alocar Frota & Motorista
+                </DialogTitle>
+                <p className="text-[11px] text-gray-500">
+                  {entregaParaAlocar?.expand?.venda_id
+                    ? `Venda #${entregaParaAlocar.expand.venda_id.id.slice(0, 6)} • ${
+                        entregaParaAlocar.cliente_nome ||
+                        entregaParaAlocar.expand?.venda_id?.expand?.cliente_id?.nome ||
+                        'Cliente'
+                      }`
+                    : 'Entrega Pendente da Pedreira'}
+                </p>
+              </div>
+            </div>
+          </DialogHeader>
+
+          {entregaParaAlocar && (
+            <form onSubmit={handleSalvarAlocacao} className="space-y-4 py-2 text-xs">
+              <div className="p-3 bg-amber-50/70 rounded-xl border border-amber-200 text-amber-950 space-y-1">
+                <div className="font-semibold text-xs flex items-center justify-between">
+                  <span>Carga: {entregaParaAlocar.produto_nome || 'Brita'}</span>
+                  <span className="font-mono font-bold">
+                    {entregaParaAlocar.quantidade} {entregaParaAlocar.unidade_medida || 'm³'}
+                  </span>
+                </div>
+                <div className="text-[11px] text-amber-900 flex items-center gap-1">
+                  <MapPin className="w-3 h-3 text-amber-700 shrink-0" />
+                  <span className="truncate">Destino: {entregaParaAlocar.destino}</span>
+                </div>
+                {entregaParaAlocar.valor_venda && entregaParaAlocar.valor_venda > 0 ? (
+                  <div className="text-[11px] font-mono text-emerald-800 font-semibold">
+                    Valor faturado: {formatCurrency(entregaParaAlocar.valor_venda)}
+                  </div>
+                ) : null}
+              </div>
+
+              <div className="space-y-1.5">
+                <Label className="text-gray-700 font-medium">Veículo / Caçamba da Frota *</Label>
+                <ComboboxPesquisavel
+                  value={alocarVeiculoId}
+                  onChange={setAlocarVeiculoId}
+                  placeholder="Selecione o caminhão/veículo..."
+                  searchPlaceholder="Buscar por código interno, placa ou modelo..."
+                  emptyText="Nenhum veículo encontrado."
+                  triggerClassName="bg-[#FAF9F7] border-[#ECEAE4] font-mono"
+                  options={veiculos.map((v) => ({
+                    id: v.id,
+                    label: `${v.codigo_interno} • ${v.placa ? `${v.placa} (${v.modelo})` : v.modelo}`,
+                    sublabel: v.setor || undefined,
+                    keywords: [v.codigo_interno, v.placa || '', v.modelo],
+                  }))}
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <Label className="text-gray-700 font-medium">Motorista / Condutor</Label>
+                <Input
+                  placeholder="Nome do motorista"
+                  value={alocarMotorista}
+                  onChange={(e) => setAlocarMotorista(e.target.value)}
+                  list="funcionarios-alocar-list"
+                  className="bg-[#FAF9F7] border-[#ECEAE4] text-xs h-9"
+                />
+                <datalist id="funcionarios-alocar-list">
+                  {funcionarios.map((f) => (
+                    <option key={f.id} value={f.nome}>
+                      {f.cargo ? `${f.cargo} - ${f.setor}` : f.setor}
+                    </option>
+                  ))}
+                </datalist>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <Label className="text-gray-700 font-medium">Km Estimado / Rodado</Label>
+                  <Input
+                    type="number"
+                    step="0.1"
+                    min="0"
+                    value={alocarKmRodado}
+                    onChange={(e) => setAlocarKmRodado(parseFloat(e.target.value) || 0)}
+                    className="bg-[#FAF9F7] border-[#ECEAE4] text-xs h-9 font-mono"
+                  />
+                </div>
+
+                <div className="space-y-1.5">
+                  <Label className="text-gray-700 font-medium">Novo Status *</Label>
+                  <Select value={alocarStatus} onValueChange={(s: any) => setAlocarStatus(s)}>
+                    <SelectTrigger className="bg-[#FAF9F7] border-[#ECEAE4] text-xs h-9">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="pendente">Manter Pendente</SelectItem>
+                      <SelectItem value="em_transito">Em Trânsito (Saiu p/ entrega)</SelectItem>
+                      <SelectItem value="concluida">Entregue / Concluída</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+
+              <DialogFooter className="pt-3 border-t border-[#ECEAE4] flex justify-between">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setAlocacaoModalOpen(false)}
+                  className="text-xs"
+                >
+                  Cancelar
+                </Button>
+                <Button
+                  type="submit"
+                  disabled={isAlocando}
+                  size="sm"
+                  className="bg-teal-700 hover:bg-teal-800 text-white text-xs font-semibold"
+                >
+                  {isAlocando ? 'Salvando...' : 'Confirmar Alocação'}
+                </Button>
+              </DialogFooter>
+            </form>
+          )}
+        </DialogContent>
+      </Dialog>
 
       {/* Modal Impressão A4 de Romaneio */}
       <RomaneioEntregaImpressaoModal
