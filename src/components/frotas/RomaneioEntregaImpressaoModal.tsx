@@ -10,6 +10,7 @@ import { Button } from '@/components/ui/button'
 import { Printer, Building, Route, Package, Scissors, Hash } from 'lucide-react'
 import { formatCurrency, formatDate } from '@/lib/formatters'
 import type { Entrega, Empresa, Venda } from '@/types/erp'
+import { extrairEquivalenciaOriginal } from '@/lib/unidades'
 
 interface RomaneioEntregaImpressaoModalProps {
   entrega?: Entrega | null
@@ -44,6 +45,7 @@ interface ViaRomaneioProps {
   produtoCodigo?: string
   unidadeMedida: string
   quantidade?: number
+  equivalenciaOriginal?: string | null
   precoUnitario?: number
   valorTotal: number
   valorDesconto?: number
@@ -80,6 +82,7 @@ const ViaRomaneio: React.FC<ViaRomaneioProps> = ({
   produtoCodigo,
   unidadeMedida,
   quantidade,
+  equivalenciaOriginal,
   precoUnitario,
   valorTotal,
   valorDesconto,
@@ -217,9 +220,16 @@ const ViaRomaneio: React.FC<ViaRomaneioProps> = ({
                   {unidadeMedida}
                 </td>
                 <td className="py-1 px-2 text-right font-mono font-bold text-gray-900 text-[11px]">
-                  {quantidade !== undefined && quantidade !== null
-                    ? Number(quantidade).toLocaleString('pt-BR', { maximumFractionDigits: 2 })
-                    : '—'}
+                  <div>
+                    {quantidade !== undefined && quantidade !== null
+                      ? Number(quantidade).toLocaleString('pt-BR', { maximumFractionDigits: 2 })
+                      : '—'}
+                  </div>
+                  {equivalenciaOriginal && (
+                    <div className="text-[9px] font-sans font-medium text-teal-800 print:text-black">
+                      ≡ {equivalenciaOriginal}
+                    </div>
+                  )}
                 </td>
                 <td className="py-1 px-2 text-right font-mono text-gray-800">
                   {precoUnitario && precoUnitario > 0 ? formatCurrency(precoUnitario) : '—'}
@@ -429,6 +439,9 @@ export const RomaneioEntregaImpressaoModal: React.FC<RomaneioEntregaImpressaoMod
 
   const formaPagamento = vendaVinculada?.forma_pagamento || undefined
   const observacoes = entrega?.observacoes || vendaVinculada?.observacoes || undefined
+  const equivalenciaOriginal =
+    extrairEquivalenciaOriginal(entrega?.observacoes) ||
+    extrairEquivalenciaOriginal(vendaVinculada?.observacoes)
 
   // Sequencial numeral do romaneio (sem possibilidade de alteração, exibido em destaque)
   const sequencial =
@@ -494,6 +507,7 @@ export const RomaneioEntregaImpressaoModal: React.FC<RomaneioEntregaImpressaoMod
               produtoCodigo={produtoCodigo}
               unidadeMedida={unidadeMedida}
               quantidade={quantidade}
+              equivalenciaOriginal={equivalenciaOriginal}
               precoUnitario={precoUnitario}
               valorTotal={valorTotal}
               valorDesconto={valorDesconto}
@@ -543,6 +557,7 @@ export const RomaneioEntregaImpressaoModal: React.FC<RomaneioEntregaImpressaoMod
               produtoCodigo={produtoCodigo}
               unidadeMedida={unidadeMedida}
               quantidade={quantidade}
+              equivalenciaOriginal={equivalenciaOriginal}
               precoUnitario={precoUnitario}
               valorTotal={valorTotal}
               valorDesconto={valorDesconto}

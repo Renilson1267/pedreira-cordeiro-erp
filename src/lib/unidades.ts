@@ -123,6 +123,15 @@ export interface ResultadoCalculoVendaUnidades {
   valorBruto: number
   explicacaoFormula: string
   detalheResumo: string
+  /**
+   * Resumo de equivalência em formato conciso, ex: "10 m³ ≈ 14,5 t" ou "14,5 t ≡ 10 m³"
+   */
+  equivalenciaCard: string
+  /**
+   * Tag gravada em observações da venda/entrega/título para preservar rastreabilidade
+   * Ex: "[Conversão: 10 m³ ≈ 14,5 t (fator 1,45 t/m³)]"
+   */
+  tagObservacao: string
 }
 
 /**
@@ -176,6 +185,7 @@ export function calcularConversaoVenda({
     const valorBruto = Number((qtdConvertida * preco).toFixed(2))
     const precoEquivalente = Number((preco * dens).toFixed(2))
 
+    const cardEquiv = `${formatarNumeroBR(qtd, 2)} m³ ≈ ${formatarNumeroBR(qtdConvertida, 2)} t`
     return {
       precisaConversao: true,
       tipoConversao: 'm3_para_ton',
@@ -189,6 +199,8 @@ export function calcularConversaoVenda({
       valorBruto,
       explicacaoFormula: `${formatarNumeroBR(qtd, 2)} m³ × ${formatarNumeroBR(dens, 3)} t/m³ = ${formatarNumeroBR(qtdConvertida, 2)} t × R$ ${formatarNumeroBR(preco, 2)}/ton`,
       detalheResumo: `${formatarNumeroBR(qtd, 2)} m³ ≈ ${formatarNumeroBR(qtdConvertida, 2)} toneladas (fator ${formatarNumeroBR(dens, 2)} t/m³)`,
+      equivalenciaCard: cardEquiv,
+      tagObservacao: `[Conversão: ${cardEquiv} (fator ${formatarNumeroBR(dens, 2)} t/m³)]`,
     }
   }
 
@@ -197,6 +209,7 @@ export function calcularConversaoVenda({
     const qtdConvertida = dens > 0 ? Number((qtd / dens).toFixed(3)) : 0
     const valorBruto = Number((qtdConvertida * preco).toFixed(2))
     const precoEquivalente = dens > 0 ? Number((preco / dens).toFixed(2)) : 0
+    const cardEquiv = `${formatarNumeroBR(qtd, 2)} t ≈ ${formatarNumeroBR(qtdConvertida, 2)} m³`
 
     return {
       precisaConversao: true,
@@ -211,6 +224,8 @@ export function calcularConversaoVenda({
       valorBruto,
       explicacaoFormula: `${formatarNumeroBR(qtd, 2)} t ÷ ${formatarNumeroBR(dens, 3)} t/m³ = ${formatarNumeroBR(qtdConvertida, 2)} m³ × R$ ${formatarNumeroBR(preco, 2)}/m³`,
       detalheResumo: `${formatarNumeroBR(qtd, 2)} toneladas ≈ ${formatarNumeroBR(qtdConvertida, 2)} m³ (fator ${formatarNumeroBR(dens, 2)} t/m³)`,
+      equivalenciaCard: cardEquiv,
+      tagObservacao: `[Conversão: ${cardEquiv} (fator ${formatarNumeroBR(dens, 2)} t/m³)]`,
     }
   }
 
@@ -229,5 +244,31 @@ export function calcularConversaoVenda({
     valorBruto,
     explicacaoFormula: `${formatarNumeroBR(qtd, 2)} ${unidadeVenda} × R$ ${formatarNumeroBR(preco, 2)}/${unidadeVenda}`,
     detalheResumo: `${formatarNumeroBR(qtd, 2)} ${unidadeVenda}`,
+    equivalenciaCard: `${formatarNumeroBR(qtd, 2)} ${unidadeVenda}`,
+    tagObservacao: '',
   }
+}
+
+/**
+ * Tenta extrair a equivalência original gravada nas observações de vendas antigas ou novas.
+ * Exemplo de texto: "[Conversão: 10 m³ ≈ 14,5 t (fator 1,45 t/m³)]" -> "≡ 10 m³"
+ */
+export function extrairEquivalenciaOriginal(observacoes?: string | null): string | null {
+  if (!observacoes) return null
+  // Padrão 1: [Conversão: 10 m³ ≈ 14,5 t ...] -> captura "10 m³"
+  const match1 = observacoes.match(/\[Convers[ãa]o:\s*([0-9.,]+\s*(?:m[³3]|t|ton))\s*[≈=]/i)
+  if (match1 && match1[1]) {
+    return match1[1].trim()
+  }
+  // Padrão 2: [Conversão: 10 m³ × 1,45 t/m³ = ...]
+  const match2 = observacoes.match(/\[Convers[ãa]o:\s*([0-9.,]+\s*(?:m[³3]|t|ton))\s*[×*x]/i)
+  if (match2 && match2[1]) {
+    return match2[1].trim()
+  }
+  // Padrão 3: "informado: 10 m³" ou "(original: 10 m³)"
+  const match3 = observacoes.match(/(?:informado|original):\s*([0-9.,]+\s*(?:m[³3]|t|ton))/i)
+  if (match3 && match3[1]) {
+    return match3[1].trim()
+  }
+  return null
 }

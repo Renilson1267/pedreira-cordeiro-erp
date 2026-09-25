@@ -30,7 +30,12 @@ import {
   calcularDiffAlteracoes,
   CAMPOS_CONFIG_VENDAS,
 } from '@/services/historico'
-import { calcularConversaoVenda, formatarNumeroBR, obterDensidadeEfetiva } from '@/lib/unidades'
+import {
+  calcularConversaoVenda,
+  formatarNumeroBR,
+  obterDensidadeEfetiva,
+  extrairEquivalenciaOriginal,
+} from '@/lib/unidades'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -394,15 +399,35 @@ export default function Vendas() {
     const cli = clientes.find((c) => c.id === clienteId)
     const isEdit = Boolean(editingId)
     const tipoEntregaRotulo = tipoEntrega === 'frota_propria' ? 'Frota Própria' : 'Terceiro'
+
+    // Regra: se houver conversão de unidade, a quantidade e a unidade oficiais da venda
+    // são gravadas na unidade de cadastro do produto (ex.: toneladas).
+    const qtdOficial = conversaoUnidades.precisaConversao
+      ? conversaoUnidades.quantidadeConvertida
+      : Number(quantidade)
+    const unidadeOficial = conversaoUnidades.precisaConversao
+      ? (conversaoUnidades.unidadeCadastro as 'm³' | 'ton' | 'un' | 'viagem')
+      : unidade
+
     const textoConversao = conversaoUnidades.precisaConversao
-      ? ` [Conversão: ${conversaoUnidades.explicacaoFormula}]`
+      ? ` [Conversão: ${conversaoUnidades.equivalenciaCard} | ${conversaoUnidades.explicacaoFormula}]`
       : ''
+
+    // Montar observação preservando a equivalência informada pelo usuário (ex: "10 m³ ≈ 14,5 t")
+    let observacoesComEquivalencia = observacoes.trim()
+    if (conversaoUnidades.precisaConversao && conversaoUnidades.tagObservacao) {
+      if (!observacoesComEquivalencia.includes(conversaoUnidades.tagObservacao)) {
+        observacoesComEquivalencia = observacoesComEquivalencia
+          ? `${observacoesComEquivalencia} ${conversaoUnidades.tagObservacao}`
+          : conversaoUnidades.tagObservacao
+      }
+    }
 
     setConfirmDialogData({
       title: isEdit ? 'Confirmar alteração da venda' : 'Confirmar gravação da venda',
       description: isEdit
-        ? `Deseja atualizar a venda para "${cli?.nome || 'Cliente'}"? Tipo de Entrega: ${tipoEntregaRotulo}.${textoConversao} Valor Bruto: ${formatCurrency(valorBrutoCalc)}, Desconto: ${formatCurrency(valorDescontoEfetivo)}, Valor Líquido: ${formatCurrency(valorFinalLiquido)}.`
-        : `Deseja registrar a nova venda de ${quantidade} ${unidade} de ${produtoNome} para "${cli?.nome || 'Cliente'}" no valor líquido de ${formatCurrency(valorFinalLiquido)}? (${tipoEntregaRotulo})${textoConversao}${tipoEntrega === 'frota_propria' ? ' — Será gerada uma entrega na relação de entregas.' : ''}${valorDescontoEfetivo > 0 ? ` [Desconto: ${formatCurrency(valorDescontoEfetivo)}]` : ''}`,
+        ? `Deseja atualizar a venda para "${cli?.nome || 'Cliente'}"? Quantidade oficial: ${qtdOficial} ${unidadeOficial}${conversaoUnidades.precisaConversao ? ` (original: ${quantidade} ${unidade})` : ''}. Tipo de Entrega: ${tipoEntregaRotulo}.${textoConversao} Valor Bruto: ${formatCurrency(valorBrutoCalc)}, Desconto: ${formatCurrency(valorDescontoEfetivo)}, Valor Líquido: ${formatCurrency(valorFinalLiquido)}.`
+        : `Deseja registrar a nova venda de ${qtdOficial} ${unidadeOficial}${conversaoUnidades.precisaConversao ? ` (informado: ${quantidade} ${unidade})` : ''} de ${produtoNome} para "${cli?.nome || 'Cliente'}" no valor líquido de ${formatCurrency(valorFinalLiquido)}? (${tipoEntregaRotulo})${textoConversao}${tipoEntrega === 'frota_propria' ? ' — Será gerada uma entrega na relação de entregas.' : ''}${valorDescontoEfetivo > 0 ? ` [Desconto: ${formatCurrency(valorDescontoEfetivo)}]` : ''}`,
       confirmLabel: isEdit ? 'Confirmar Alteração' : 'Gravar Venda',
       confirmVariant: 'default',
       action: async () => {
@@ -415,8 +440,8 @@ export default function Vendas() {
             cliente_id: clienteId,
             produto_id: produtoId || null,
             produto_nome: produtoNome,
-            quantidade: Number(quantidade),
-            unidade,
+            quantidade: Number(qtdOficial),
+            unidade: unidadeOficial,
             preco_unitario: Number(precoUnitario),
             valor_bruto: Number(valorBrutoCalc),
             tipo_desconto: valorDescontoEfetivo > 0 ? tipoDesconto : null,
@@ -431,7 +456,7 @@ export default function Vendas() {
             forma_pagamento: formaPagamento,
             status,
             nota_fiscal: notaFiscal.trim() || null,
-            observacoes: observacoes.trim() || null,
+            observacoes: observacoesComEquivalencia || null,
           }
 
           let vendaSalva: Venda
@@ -448,6 +473,9 @@ export default function Vendas() {
                 const destinoCli = cli?.cidade
                   ? `${cli.nome} - ${cli.cidade}`
                   : cli?.nome || 'Destino cliente'
+                const obsEntrega = conversaoUnidades.precisaConversao
+                  ? `Entrega gerada da Venda Pedreira #${editingId.slice(0, 8)} (${produtoNome} - ${qtdOficial} ${unidadeOficial} ≡ ${quantidade} ${unidade}). ${conversaoUnidades.tagObservacao}`
+                  : `Entrega gerada da Venda Pedreira #${editingId.slice(0, 8)} (${produtoNome} - ${qtdOficial} ${unidadeOficial}).`
                 const entregaCriada = await entregasService.criar({
                   empresa_id: currentEmpresa!.id,
                   venda_id: editingId,
@@ -457,11 +485,11 @@ export default function Vendas() {
                   origem: 'Pedreira Cordeiro - Sertânia/PE',
                   destino: destinoCli,
                   produto_nome: produtoNome,
-                  quantidade: Number(quantidade),
-                  unidade_medida: (unidade as any) || 'm³',
+                  quantidade: Number(qtdOficial),
+                  unidade_medida: (unidadeOficial as any) || 'ton',
                   valor_venda: Number(valorFinalLiquido),
                   status: 'pendente',
-                  observacoes: `Entrega gerada da Venda Pedreira #${editingId.slice(0, 8)} (${produtoNome} - ${quantidade} ${unidade}).`,
+                  observacoes: obsEntrega,
                 })
                 entregaGeradaId = entregaCriada.id
               }
@@ -517,6 +545,9 @@ export default function Vendas() {
               const destinoCli = cli?.cidade
                 ? `${cli.nome} - ${cli.cidade}`
                 : cli?.nome || 'Destino cliente'
+              const obsEntrega = conversaoUnidades.precisaConversao
+                ? `Entrega gerada automaticamente a partir da Venda Pedreira #${vendaSalva.id.slice(0, 8)} (${produtoNome} - ${qtdOficial} ${unidadeOficial} ≡ ${quantidade} ${unidade}). ${conversaoUnidades.tagObservacao}`
+                : `Entrega gerada automaticamente a partir da Venda Pedreira #${vendaSalva.id.slice(0, 8)} (${produtoNome} - ${qtdOficial} ${unidadeOficial}).`
               const entregaCriada = await entregasService.criar({
                 empresa_id: currentEmpresa!.id,
                 venda_id: vendaSalva.id,
@@ -526,11 +557,11 @@ export default function Vendas() {
                 origem: 'Pedreira Cordeiro - Sertânia/PE',
                 destino: destinoCli,
                 produto_nome: produtoNome,
-                quantidade: Number(quantidade),
-                unidade_medida: (unidade as any) || 'm³',
+                quantidade: Number(qtdOficial),
+                unidade_medida: (unidadeOficial as any) || 'ton',
                 valor_venda: Number(valorFinalLiquido),
                 status: 'pendente',
-                observacoes: `Entrega gerada automaticamente a partir da Venda Pedreira #${vendaSalva.id.slice(0, 8)} (${produtoNome} - ${quantidade} ${unidade}).`,
+                observacoes: obsEntrega,
               })
               entregaGeradaId = entregaCriada.id
             }
@@ -606,7 +637,9 @@ export default function Vendas() {
   ) => {
     try {
       const cli = clientes.find((c) => c.id === v.cliente_id)
-      const desc = `Venda ${v.produto_nome || 'Brita'} - ${v.quantidade} ${v.unidade} (${cli?.nome || 'Cliente'})`
+      const equivOrig = extrairEquivalenciaOriginal(v.observacoes)
+      const sufEquiv = equivOrig ? ` (≡ ${equivOrig})` : ''
+      const desc = `Venda ${v.produto_nome || 'Brita'} - ${v.quantidade} ${v.unidade}${sufEquiv} (${cli?.nome || 'Cliente'})`
       const vencIso = new Date(`${dataVencimentoStr}T12:00:00Z`).toISOString()
 
       // Buscar categoria de receita com brita ou vendas
@@ -844,7 +877,15 @@ export default function Vendas() {
         header: 'Qtd / Un.',
         align: 'right',
         className: 'font-mono whitespace-nowrap',
-        render: (v) => `${v.quantidade} ${v.unidade}`,
+        render: (v) => {
+          const equiv = extrairEquivalenciaOriginal(v.observacoes)
+          return (
+            <div>
+              <span className="font-bold text-gray-900">{`${v.quantidade} ${v.unidade}`}</span>
+              {equiv && <div className="text-[10px] text-teal-700 font-normal">≡ {equiv}</div>}
+            </div>
+          )
+        },
       },
       {
         key: 'preco_unitario',
@@ -1217,8 +1258,15 @@ export default function Vendas() {
                         </div>
                       </td>
                       <td className="py-3 px-4 text-right font-mono font-bold text-gray-800">
-                        {v.quantidade}{' '}
-                        <span className="font-normal text-gray-500">{v.unidade}</span>
+                        <div>
+                          {v.quantidade}{' '}
+                          <span className="font-normal text-gray-500">{v.unidade}</span>
+                        </div>
+                        {extrairEquivalenciaOriginal(v.observacoes) && (
+                          <div className="text-[10px] text-teal-700 font-normal">
+                            ≡ {extrairEquivalenciaOriginal(v.observacoes)}
+                          </div>
+                        )}
                       </td>
                       <td className="py-3 px-4 text-right font-mono text-gray-600">
                         {formatCurrency(v.preco_unitario)}
@@ -1559,26 +1607,39 @@ export default function Vendas() {
 
             {/* CARD TRANSPARENTE DE CONVERSÃO DE UNIDADES SE HOUVER DIVERGÊNCIA */}
             {conversaoUnidades.precisaConversao && (
-              <div className="p-3 bg-teal-50/80 rounded-xl border border-teal-200/90 space-y-1.5 text-xs text-teal-950">
+              <div className="p-3 bg-teal-50/80 rounded-xl border border-teal-200/90 space-y-2 text-xs text-teal-950">
                 <div className="flex items-center justify-between">
                   <span className="font-bold text-teal-900 flex items-center gap-1.5">
                     <Scale className="w-4 h-4 text-teal-700" />
-                    <span>Conversão Automática de Unidade</span>
+                    <span>Conversão Automática: Valor E Quantidade</span>
                   </span>
                   <Badge className="bg-teal-700 text-white font-mono text-[10px]">
-                    Fator: {formatarNumeroBR(conversaoUnidades.fatorConversao, 2)} t/m³
+                    Densidade: {formatarNumeroBR(conversaoUnidades.fatorConversao, 2)} t/m³
                   </Badge>
                 </div>
 
-                <div className="p-2 bg-white rounded-lg border border-teal-200 font-mono text-xs space-y-1">
-                  <div className="text-teal-900 font-semibold">
-                    {conversaoUnidades.detalheResumo}
+                {/* Destaque principal da quantidade convertida */}
+                <div className="p-2.5 bg-white rounded-lg border-2 border-teal-400 font-mono text-xs space-y-1.5 shadow-2xs">
+                  <div className="flex items-center justify-between text-teal-950">
+                    <span className="text-[11px] uppercase font-bold text-teal-800">
+                      Conversão de Quantidade:
+                    </span>
+                    <span className="text-sm font-extrabold text-teal-900 bg-teal-100/80 px-2 py-0.5 rounded">
+                      {conversaoUnidades.equivalenciaCard}
+                    </span>
                   </div>
-                  <div className="text-[11px] text-gray-600 flex items-center gap-1">
+                  <div className="text-[11px] text-gray-700 flex items-center justify-between">
+                    <span>Quantidade oficial gravada:</span>
+                    <strong className="text-teal-950 font-bold">
+                      {formatarNumeroBR(conversaoUnidades.quantidadeConvertida, 2)}{' '}
+                      {conversaoUnidades.unidadeCadastro}
+                    </strong>
+                  </div>
+                  <div className="text-[11px] text-gray-600 flex items-center gap-1 border-t border-teal-100 pt-1">
                     <span>Fórmula:</span>
                     <strong className="text-teal-800">{conversaoUnidades.explicacaoFormula}</strong>
                   </div>
-                  <div className="text-[11px] text-teal-900 pt-0.5 border-t border-teal-100 flex justify-between">
+                  <div className="text-[11px] text-teal-900 pt-1 border-t border-teal-100 flex justify-between">
                     <span>Preço equivalente por {unidade}:</span>
                     <strong>
                       R$ {formatarNumeroBR(conversaoUnidades.precoUnitarioEquivalente, 2)}/{unidade}
@@ -1586,10 +1647,13 @@ export default function Vendas() {
                   </div>
                 </div>
 
-                <p className="text-[10px] text-teal-800/80 leading-tight">
-                  O produto está precificado em <strong>{conversaoUnidades.unidadeCadastro}</strong>{' '}
-                  e a venda foi lançada em <strong>{unidade}</strong>. O sistema converteu a
-                  quantidade para aplicar o preço unitário correto.
+                <p className="text-[10px] text-teal-900/90 leading-tight">
+                  O produto é precificado em <strong>{conversaoUnidades.unidadeCadastro}</strong> e
+                  a venda foi informada em <strong>{unidade}</strong>. O sistema converte tanto o{' '}
+                  <strong>VALOR</strong> quanto a <strong>QUANTIDADE</strong> (
+                  {formatarNumeroBR(conversaoUnidades.quantidadeConvertida, 2)}{' '}
+                  {conversaoUnidades.unidadeCadastro}), propagando para Conta a Receber, romaneio e
+                  entregas.
                 </p>
               </div>
             )}
@@ -1949,11 +2013,18 @@ export default function Vendas() {
                     </span>
                   </div>
                   <div>
-                    <span className="text-[10px] text-gray-400 block uppercase">Cliente</span>
-                    <span className="font-semibold text-gray-900">
-                      {detalheVenda.expand?.cliente_id?.nome || 'Cliente'}
+                    <span className="text-[10px] text-gray-400 block uppercase">
+                      Quantidade Oficial
                     </span>
-                  </div>
+                    <span className="font-semibold font-mono text-gray-900">
+                      {detalheVenda.quantidade} {detalheVenda.unidade}
+                    </span>
+                    {extrairEquivalenciaOriginal(detalheVenda.observacoes) && (
+                      <span className="block text-[10px] text-teal-700 font-normal">
+                        ≡ {extrairEquivalenciaOriginal(detalheVenda.observacoes)}
+                      </span>
+                    )}
+                  </div>{' '}
                   <div>
                     <span className="text-[10px] text-gray-400 block uppercase">Produto</span>
                     <span className="font-semibold text-gray-900">{detalheVenda.produto_nome}</span>

@@ -5,6 +5,7 @@ import pb from '@/lib/pocketbase/client'
 import { useRealtime } from '@/hooks/use-realtime'
 import { formatCurrency, formatDate, toInputDate } from '@/lib/formatters'
 import { calcularDatasPeriodoRapido, estaDentroDoPeriodo } from '@/lib/periodo'
+import { extrairEquivalenciaOriginal } from '@/lib/unidades'
 import FiltroPeriodoBar from '@/components/financeiro/FiltroPeriodoBar'
 import { Checkbox } from '@/components/ui/checkbox'
 import {
@@ -214,8 +215,11 @@ export default function EntregaPage() {
       setDestino(cli?.cidade ? `${cli.nome} - ${cli.cidade}` : cli?.nome || '')
       setProdutoNome(venda.produto_nome || '')
       setQuantidade(venda.quantidade || 0)
-      setUnidadeMedida((venda.unidade as any) || 'm³')
+      setUnidadeMedida((venda.unidade as any) || 'ton')
       setValorVenda(venda.valor_total || 0)
+      if (venda.observacoes) {
+        setObservacoes(venda.observacoes)
+      }
       if (venda.data_venda) {
         setDataEntrega(toInputDate(venda.data_venda))
       }
@@ -526,8 +530,18 @@ export default function EntregaPage() {
         header: 'Produto / Qtd',
         align: 'right',
         className: 'font-mono whitespace-nowrap',
-        render: (e) =>
-          `${e.quantidade || 0} ${e.unidade_medida || 'm³'} ${e.produto_nome ? `(${e.produto_nome})` : ''}`,
+        render: (e) => {
+          const equiv = extrairEquivalenciaOriginal(e.observacoes)
+          return (
+            <div>
+              <span className="font-bold text-gray-900">
+                {e.quantidade || 0} {e.unidade_medida || 'ton'}{' '}
+                {e.produto_nome ? `(${e.produto_nome})` : ''}
+              </span>
+              {equiv && <div className="text-[10px] text-teal-700 font-normal">≡ {equiv}</div>}
+            </div>
+          )
+        },
       },
       {
         key: 'km',
@@ -940,10 +954,17 @@ export default function EntregaPage() {
                         {e.motorista || e.expand?.funcionario_id?.nome || '—'}
                       </td>
                       <td className="py-3 px-4 text-right font-mono font-bold text-gray-800">
-                        {e.quantidade || 0}{' '}
-                        <span className="font-normal text-gray-500">
-                          {e.unidade_medida || 'm³'}
-                        </span>
+                        <div>
+                          {e.quantidade || 0}{' '}
+                          <span className="font-normal text-gray-500">
+                            {e.unidade_medida || 'ton'}
+                          </span>
+                        </div>
+                        {extrairEquivalenciaOriginal(e.observacoes) && (
+                          <div className="text-[10px] text-teal-700 font-normal">
+                            ≡ {extrairEquivalenciaOriginal(e.observacoes)}
+                          </div>
+                        )}
                         {e.produto_nome && (
                           <span className="block text-[10px] text-teal-700 font-normal">
                             {e.produto_nome}

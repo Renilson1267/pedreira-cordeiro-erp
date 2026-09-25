@@ -89,6 +89,7 @@ import {
   COORDENADAS_PEDREIRA_PADRAO,
   buscarCidadesNominatim,
 } from '@/services/rotasGeocoding'
+import { extrairEquivalenciaOriginal } from '@/lib/unidades'
 
 // Origens frequentes sugeridas na Pedreira
 const ORIGENS_SUGERIDAS = [
@@ -622,6 +623,9 @@ export default function Entregas() {
       }
       if (venda.valor_total) {
         setValorVendaManual(venda.valor_total)
+      }
+      if (venda.observacoes) {
+        setObservacoes(venda.observacoes)
       }
       if (venda.data_venda) {
         setDataEntrega(venda.data_venda.slice(0, 10))
@@ -1254,16 +1258,22 @@ export default function Entregas() {
       {
         key: 'produto_carga',
         header: 'Carga',
-        render: (e) => (
-          <div>
-            <div className="font-semibold text-gray-800">{e.produto_nome || '—'}</div>
-            {e.quantidade ? (
-              <div className="text-[10px] font-mono text-gray-600">
-                {e.quantidade} {e.unidade_medida || 'm³'}
-              </div>
-            ) : null}
-          </div>
-        ),
+        render: (e) => {
+          const equiv = extrairEquivalenciaOriginal(e.observacoes)
+          return (
+            <div>
+              <div className="font-semibold text-gray-800">{e.produto_nome || '—'}</div>
+              {e.quantidade ? (
+                <div className="text-[10px] font-mono text-gray-700 font-bold">
+                  {e.quantidade} {e.unidade_medida || 'ton'}
+                  {equiv && (
+                    <span className="block text-[9px] font-normal text-teal-700">≡ {equiv}</span>
+                  )}
+                </div>
+              ) : null}
+            </div>
+          )
+        },
       },
       {
         key: 'km',
@@ -1894,15 +1904,20 @@ export default function Entregas() {
                                 {ent.produto_nome}
                               </Badge>
                               {ent.quantidade ? (
-                                <span className="text-[11px] font-mono font-semibold text-gray-700">
-                                  {ent.quantidade} {ent.unidade_medida || 'm³'}
+                                <span className="text-[11px] font-mono font-bold text-gray-800">
+                                  {ent.quantidade} {ent.unidade_medida || 'ton'}
                                 </span>
                               ) : null}
                             </div>
+                            {extrairEquivalenciaOriginal(ent.observacoes) && (
+                              <span className="text-[10px] font-mono text-teal-700 font-medium">
+                                ≡ {extrairEquivalenciaOriginal(ent.observacoes)}
+                              </span>
+                            )}
                             {ent.preco_unitario_venda && ent.preco_unitario_venda > 0 ? (
                               <span className="text-[10px] font-mono text-gray-400">
                                 {formatCurrency(ent.preco_unitario_venda)} /{' '}
-                                {ent.unidade_medida || 'm³'}
+                                {ent.unidade_medida || 'ton'}
                               </span>
                             ) : null}
                           </div>
@@ -2957,9 +2972,14 @@ export default function Entregas() {
                     {selectedEntregaDetalhe.produto_nome || 'Agregados'}
                   </div>
                   {selectedEntregaDetalhe.quantidade && (
-                    <div className="text-[11px] font-mono text-gray-600">
+                    <div className="text-[11px] font-mono text-gray-700 font-bold">
                       {selectedEntregaDetalhe.quantidade}{' '}
-                      {selectedEntregaDetalhe.unidade_medida || 'm³'}
+                      {selectedEntregaDetalhe.unidade_medida || 'ton'}
+                      {extrairEquivalenciaOriginal(selectedEntregaDetalhe.observacoes) && (
+                        <span className="block text-[10px] font-normal text-teal-700">
+                          ≡ {extrairEquivalenciaOriginal(selectedEntregaDetalhe.observacoes)}
+                        </span>
+                      )}
                     </div>
                   )}
                 </div>
