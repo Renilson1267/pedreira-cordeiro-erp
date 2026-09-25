@@ -30,6 +30,7 @@ import {
   calcularDiffAlteracoes,
   CAMPOS_CONFIG_VENDAS,
 } from '@/services/historico'
+import { calcularConversaoVenda, formatarNumeroBR, obterDensidadeEfetiva } from '@/lib/unidades'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -87,6 +88,7 @@ import {
   Tag,
   Printer,
   Hash,
+  Scale,
 } from 'lucide-react'
 
 // 5 Produtos padrão da Pedreira Cordeiro
@@ -217,10 +219,29 @@ export default function Vendas() {
     loadData()
   }, [currentEmpresa])
 
-  // Cálculo de desconto da Venda
+  // Produto selecionado no formulário da Venda
+  const produtoSelecionado = useMemo(() => {
+    return produtos.find((p) => p.id === produtoId) || null
+  }, [produtos, produtoId])
+
+  // Cálculo de conversão de unidades (m³ ⇄ ton)
+  // Se o produto está cadastrado em tonelada e a venda é em m³, ou vice-versa,
+  // converte a quantidade antes de aplicar o preço unitário.
+  const conversaoUnidades = useMemo(() => {
+    return calcularConversaoVenda({
+      quantidade,
+      unidadeVenda: unidade,
+      unidadeCadastro: produtoSelecionado?.unidade,
+      precoUnitario,
+      densidade: produtoSelecionado?.densidade,
+      nomeProduto: produtoNome,
+    })
+  }, [quantidade, unidade, produtoSelecionado, precoUnitario, produtoNome])
+
+  // Cálculo de desconto da Venda com base no valor bruto convertido
   const valorBrutoCalc = useMemo(() => {
-    return Number((Number(quantidade || 0) * Number(precoUnitario || 0)).toFixed(2))
-  }, [quantidade, precoUnitario])
+    return conversaoUnidades.valorBruto
+  }, [conversaoUnidades.valorBruto])
 
   const valorDescontoEfetivo = useMemo(() => {
     if (tipoDesconto === 'percentual') {
@@ -373,12 +394,15 @@ export default function Vendas() {
     const cli = clientes.find((c) => c.id === clienteId)
     const isEdit = Boolean(editingId)
     const tipoEntregaRotulo = tipoEntrega === 'frota_propria' ? 'Frota Própria' : 'Terceiro'
+    const textoConversao = conversaoUnidades.precisaConversao
+      ? ` [Conversão: ${conversaoUnidades.explicacaoFormula}]`
+      : ''
 
     setConfirmDialogData({
       title: isEdit ? 'Confirmar alteração da venda' : 'Confirmar gravação da venda',
       description: isEdit
-        ? `Deseja atualizar a venda para "${cli?.nome || 'Cliente'}"? Tipo de Entrega: ${tipoEntregaRotulo}. Valor Bruto: ${formatCurrency(valorBrutoCalc)}, Desconto: ${formatCurrency(valorDescontoEfetivo)}, Valor Líquido: ${formatCurrency(valorFinalLiquido)}.`
-        : `Deseja registrar a nova venda de ${quantidade} ${unidade} de ${produtoNome} para "${cli?.nome || 'Cliente'}" no valor líquido de ${formatCurrency(valorFinalLiquido)}? (${tipoEntregaRotulo})${tipoEntrega === 'frota_propria' ? ' — Será gerada uma entrega na relação de entregas.' : ''}${valorDescontoEfetivo > 0 ? ` [Desconto: ${formatCurrency(valorDescontoEfetivo)}]` : ''}`,
+        ? `Deseja atualizar a venda para "${cli?.nome || 'Cliente'}"? Tipo de Entrega: ${tipoEntregaRotulo}.${textoConversao} Valor Bruto: ${formatCurrency(valorBrutoCalc)}, Desconto: ${formatCurrency(valorDescontoEfetivo)}, Valor Líquido: ${formatCurrency(valorFinalLiquido)}.`
+        : `Deseja registrar a nova venda de ${quantidade} ${unidade} de ${produtoNome} para "${cli?.nome || 'Cliente'}" no valor líquido de ${formatCurrency(valorFinalLiquido)}? (${tipoEntregaRotulo})${textoConversao}${tipoEntrega === 'frota_propria' ? ' — Será gerada uma entrega na relação de entregas.' : ''}${valorDescontoEfetivo > 0 ? ` [Desconto: ${formatCurrency(valorDescontoEfetivo)}]` : ''}`,
       confirmLabel: isEdit ? 'Confirmar Alteração' : 'Gravar Venda',
       confirmVariant: 'default',
       action: async () => {
@@ -470,6 +494,15 @@ export default function Vendas() {
                   extra: {
                     tipo_entrega: tipoEntrega,
                     entrega_id: entregaGeradaId,
+                    conversao: conversaoUnidades.precisaConversao
+                      ? {
+                          tipo: conversaoUnidades.tipoConversao,
+                          quantidade_informada: conversaoUnidades.quantidadeInformada,
+                          quantidade_convertida: conversaoUnidades.quantidadeConvertida,
+                          fator: conversaoUnidades.fatorConversao,
+                          formula: conversaoUnidades.explicacaoFormula,
+                        }
+                      : null,
                   },
                 },
               })
@@ -522,6 +555,15 @@ export default function Vendas() {
                   unidade,
                   valor_bruto: valorBrutoCalc,
                   valor_desconto: valorDescontoEfetivo,
+                  conversao: conversaoUnidades.precisaConversao
+                    ? {
+                        tipo: conversaoUnidades.tipoConversao,
+                        quantidade_informada: conversaoUnidades.quantidadeInformada,
+                        quantidade_convertida: conversaoUnidades.quantidadeConvertida,
+                        fator: conversaoUnidades.fatorConversao,
+                        formula: conversaoUnidades.explicacaoFormula,
+                      }
+                    : null,
                 },
               },
             })
@@ -1479,7 +1521,12 @@ export default function Vendas() {
             {/* Quantidade e Preço Unitário */}
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
-                <Label className="text-gray-700 font-medium">Quantidade *</Label>
+                <div className="flex items-center justify-between">
+                  <Label className="text-gray-700 font-medium">Quantidade *</Label>
+                  <span className="text-[10px] text-gray-500 font-mono font-semibold">
+                    ({unidade})
+                  </span>
+                </div>
                 <Input
                   type="number"
                   step="0.01"
@@ -1491,7 +1538,14 @@ export default function Vendas() {
               </div>
 
               <div className="space-y-1.5">
-                <Label className="text-gray-700 font-medium">Preço Unitário (R$) *</Label>
+                <div className="flex items-center justify-between">
+                  <Label className="text-gray-700 font-medium">Preço Unitário (R$) *</Label>
+                  {produtoSelecionado?.unidade && (
+                    <span className="text-[10px] text-teal-800 font-mono font-semibold">
+                      (R$/{produtoSelecionado.unidade})
+                    </span>
+                  )}
+                </div>
                 <Input
                   type="number"
                   step="0.01"
@@ -1502,6 +1556,43 @@ export default function Vendas() {
                 />
               </div>
             </div>
+
+            {/* CARD TRANSPARENTE DE CONVERSÃO DE UNIDADES SE HOUVER DIVERGÊNCIA */}
+            {conversaoUnidades.precisaConversao && (
+              <div className="p-3 bg-teal-50/80 rounded-xl border border-teal-200/90 space-y-1.5 text-xs text-teal-950">
+                <div className="flex items-center justify-between">
+                  <span className="font-bold text-teal-900 flex items-center gap-1.5">
+                    <Scale className="w-4 h-4 text-teal-700" />
+                    <span>Conversão Automática de Unidade</span>
+                  </span>
+                  <Badge className="bg-teal-700 text-white font-mono text-[10px]">
+                    Fator: {formatarNumeroBR(conversaoUnidades.fatorConversao, 2)} t/m³
+                  </Badge>
+                </div>
+
+                <div className="p-2 bg-white rounded-lg border border-teal-200 font-mono text-xs space-y-1">
+                  <div className="text-teal-900 font-semibold">
+                    {conversaoUnidades.detalheResumo}
+                  </div>
+                  <div className="text-[11px] text-gray-600 flex items-center gap-1">
+                    <span>Fórmula:</span>
+                    <strong className="text-teal-800">{conversaoUnidades.explicacaoFormula}</strong>
+                  </div>
+                  <div className="text-[11px] text-teal-900 pt-0.5 border-t border-teal-100 flex justify-between">
+                    <span>Preço equivalente por {unidade}:</span>
+                    <strong>
+                      R$ {formatarNumeroBR(conversaoUnidades.precoUnitarioEquivalente, 2)}/{unidade}
+                    </strong>
+                  </div>
+                </div>
+
+                <p className="text-[10px] text-teal-800/80 leading-tight">
+                  O produto está precificado em <strong>{conversaoUnidades.unidadeCadastro}</strong>{' '}
+                  e a venda foi lançada em <strong>{unidade}</strong>. O sistema converteu a
+                  quantidade para aplicar o preço unitário correto.
+                </p>
+              </div>
+            )}
 
             {/* Seção de Desconto */}
             <div className="p-3 bg-amber-50/40 rounded-xl border border-amber-200/80 space-y-2.5">
@@ -1870,7 +1961,7 @@ export default function Vendas() {
                   <div>
                     <span className="text-[10px] text-gray-400 block uppercase">Quantidade</span>
                     <span className="font-semibold font-mono text-gray-900">
-                      {detalheVenda.quantidade} {detalheVenda.unidade}
+                      {formatarNumeroBR(detalheVenda.quantidade, 2)} {detalheVenda.unidade}
                     </span>
                   </div>
                   <div>
@@ -1878,7 +1969,7 @@ export default function Vendas() {
                       Preço Unitário
                     </span>
                     <span className="font-semibold font-mono text-gray-900">
-                      {formatCurrency(detalheVenda.preco_unitario)}
+                      {formatCurrency(detalheVenda.preco_unitario)}/{detalheVenda.unidade}
                     </span>
                   </div>
                   <div>

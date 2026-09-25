@@ -624,12 +624,14 @@ export default function Produtos() {
               </div>
             </div>
 
-            {/* DENSIDADE FIELD & LIVE CONVERSION */}
+            {/* DENSIDADE / FATOR DE CONVERSÃO FIELD & LIVE CONVERSION */}
             <div className="rounded-xl border border-teal-200 bg-teal-50/40 p-3.5 space-y-2.5">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-1.5">
                   <Scale className="w-4 h-4 text-teal-700" />
-                  <Label className="text-xs font-bold text-teal-950">Densidade (t/m³)</Label>
+                  <Label className="text-xs font-bold text-teal-950">
+                    Fator de conversão m³ → t / Densidade (t/m³)
+                  </Label>
                   <span className="text-[10px] text-gray-500 font-normal">(Opcional)</span>
                 </div>
                 {nome && !densidade && sugerirDensidadePorNome(nome) && (
@@ -662,7 +664,9 @@ export default function Produtos() {
               </div>
 
               <p className="text-[11px] text-gray-600 leading-tight">
-                Permite converter entre m³ e toneladas (ex.: 1,5 t/m³ → 1 m³ = 1,5 t).
+                Fator de conversão configurável por produto. Usado automaticamente nas Vendas da
+                Pedreira quando a unidade vendida for diferente da unidade precificada (ex.: 1,50
+                t/m³ brita 12).
               </p>
 
               {/* Botões rápidos de densidades típicas */}
