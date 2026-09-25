@@ -508,14 +508,13 @@ export default function EntregaPage() {
         header: 'Equipamento / Placa',
         render: (e) => {
           const veic = e.expand?.veiculo_id
+          const venda = e.expand?.venda_id
+          const cod = veic?.codigo_interno || venda?.veiculo_identificacao || '—'
+          const pl = veic?.placa || venda?.placa
           return (
             <div>
-              <span className="font-mono font-semibold text-gray-900">
-                {veic?.codigo_interno || '—'}
-              </span>
-              {veic?.placa && (
-                <span className="text-[10px] text-gray-500 block font-mono">{veic.placa}</span>
-              )}
+              <span className="font-mono font-semibold text-gray-900">{cod}</span>
+              {pl && <span className="text-[10px] text-gray-500 block font-mono">{pl}</span>}
             </div>
           )
         },
@@ -523,7 +522,8 @@ export default function EntregaPage() {
       {
         key: 'motorista',
         header: 'Motorista',
-        render: (e) => e.motorista || e.expand?.funcionario_id?.nome || '—',
+        render: (e) =>
+          e.motorista || e.expand?.funcionario_id?.nome || e.expand?.venda_id?.motorista || '—',
       },
       {
         key: 'produto_qtd',
@@ -944,14 +944,18 @@ export default function EntregaPage() {
                       </td>
                       <td className="py-3 px-4">
                         <span className="font-semibold text-gray-900 block font-mono">
-                          {veic?.codigo_interno || 'Equipamento'}
+                          {veic?.codigo_interno || venda?.veiculo_identificacao || 'Equipamento'}
                         </span>
                         <span className="text-[10px] text-gray-500 font-mono">
-                          {veic?.placa ? `Placa: ${veic.placa}` : veic?.modelo || '—'}
+                          {veic?.placa
+                            ? `Placa: ${veic.placa}`
+                            : venda?.placa
+                              ? `Placa: ${venda.placa}`
+                              : veic?.modelo || '—'}
                         </span>
                       </td>
                       <td className="py-3 px-4 text-gray-700">
-                        {e.motorista || e.expand?.funcionario_id?.nome || '—'}
+                        {e.motorista || e.expand?.funcionario_id?.nome || venda?.motorista || '—'}
                       </td>
                       <td className="py-3 px-4 text-right font-mono font-bold text-gray-800">
                         <div>

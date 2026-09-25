@@ -486,12 +486,18 @@ export interface Venda {
   tipo_entrega?: TipoEntregaVenda
   sequencial_romaneio?: string
   numero_sequencial?: number
+  veiculo_id?: string
+  veiculo_identificacao?: string
+  placa?: string
+  transportador_terceiro?: string
+  motorista?: string
   created: string
   updated: string
   expand?: {
     empresa_id?: Empresa
     cliente_id?: Cliente
     produto_id?: Produto
+    veiculo_id?: Veiculo
   }
 }
 

@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-09-25T15:54:51.880Z",
+  "generatedAt": "2026-09-25T16:42:47.243Z",
   "collections": [
     {
       "name": "users",
@@ -2405,6 +2405,37 @@
         {
           "name": "numero_sequencial",
           "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "veiculo_id",
+          "type": "relation",
+          "required": false,
+          "system": false,
+          "collectionRef": "veiculos"
+        },
+        {
+          "name": "veiculo_identificacao",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "placa",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "transportador_terceiro",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "motorista",
+          "type": "text",
           "required": false,
           "system": false
         }

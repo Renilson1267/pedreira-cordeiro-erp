@@ -21,6 +21,11 @@ export interface CreateVendaPayload {
   desconto_percentual?: number | null
   valor_bruto?: number | null
   tipo_entrega?: 'frota_propria' | 'terceiro' | null
+  veiculo_id?: string | null
+  veiculo_identificacao?: string | null
+  placa?: string | null
+  transportador_terceiro?: string | null
+  motorista?: string | null
 }
 
 export interface UpdateVendaPayload extends Partial<CreateVendaPayload> {}
@@ -46,26 +51,26 @@ export const vendasService = {
       : `empresa_id = '${empresaId}'`
     return pb.collection('vendas').getFullList<Venda>({
       filter,
-      expand: 'cliente_id,produto_id',
+      expand: 'cliente_id,produto_id,veiculo_id',
       sort: '-data_venda,-created',
     })
   },
 
   async obterPorId(id: string): Promise<Venda> {
     return pb.collection('vendas').getOne<Venda>(id, {
-      expand: 'cliente_id,produto_id',
+      expand: 'cliente_id,produto_id,veiculo_id',
     })
   },
 
   async criar(payload: CreateVendaPayload): Promise<Venda> {
     return pb.collection('vendas').create<Venda>(payload, {
-      expand: 'cliente_id,produto_id',
+      expand: 'cliente_id,produto_id,veiculo_id',
     })
   },
 
   async atualizar(id: string, payload: UpdateVendaPayload): Promise<Venda> {
     return pb.collection('vendas').update<Venda>(id, payload, {
-      expand: 'cliente_id,produto_id',
+      expand: 'cliente_id,produto_id,veiculo_id',
     })
   },
 

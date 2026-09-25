@@ -19,6 +19,8 @@ import type {
   Cliente,
   Produto,
   Entrega,
+  Veiculo,
+  Funcionario,
   StatusVenda,
   FormaPagamentoVenda,
   TipoEntregaVenda,
@@ -114,6 +116,8 @@ export default function Vendas() {
   const [clientes, setClientes] = useState<Cliente[]>([])
   const [produtos, setProdutos] = useState<Produto[]>([])
   const [entregas, setEntregas] = useState<Entrega[]>([])
+  const [veiculos, setVeiculos] = useState<Veiculo[]>([])
+  const [funcionarios, setFuncionarios] = useState<Funcionario[]>([])
   const [loading, setLoading] = useState(false)
 
   // Seleção múltipla para impressão
@@ -151,6 +155,12 @@ export default function Vendas() {
   const [descontoValor, setDescontoValor] = useState<number>(0)
   // Tipo de Entrega: Frota Própria ou Terceiro
   const [tipoEntrega, setTipoEntrega] = useState<TipoEntregaVenda>('frota_propria')
+  // Veículo e Motorista na Venda
+  const [veiculoId, setVeiculoId] = useState<string>('')
+  const [veiculoIdentificacao, setVeiculoIdentificacao] = useState<string>('')
+  const [placa, setPlaca] = useState<string>('')
+  const [transportadorTerceiro, setTransportadorTerceiro] = useState<string>('')
+  const [motorista, setMotorista] = useState<string>('')
   const [dataVenda, setDataVenda] = useState(() => toInputDate(new Date().toISOString()))
   const [formaPagamento, setFormaPagamento] = useState<FormaPagamentoVenda>('Pix')
   const [status, setStatus] = useState<StatusVenda>('Pendente')
@@ -190,13 +200,15 @@ export default function Vendas() {
   // Realtime listeners
   useRealtime('vendas', () => loadData())
   useRealtime('entregas', () => loadData())
+  useRealtime('veiculos', () => loadData())
+  useRealtime('funcionarios', () => loadData())
   useRealtime('contas_receber', () => loadData())
 
   const loadData = async () => {
     if (!currentEmpresa) return
     try {
       setLoading(true)
-      const [vList, cList, pList, eList] = await Promise.all([
+      const [vList, cList, pList, eList, veicList, funcList] = await Promise.all([
         vendasService.listar(currentEmpresa.id),
         pb.collection('clientes').getFullList<Cliente>({
           filter: `empresa_id = '${currentEmpresa.id}'`,
@@ -207,12 +219,22 @@ export default function Vendas() {
           sort: 'nome',
         }),
         entregasService.listar(currentEmpresa.id),
+        pb.collection('veiculos').getFullList<Veiculo>({
+          filter: `empresa_id = '${currentEmpresa.id}'`,
+          sort: 'codigo_interno',
+        }),
+        pb.collection('funcionarios').getFullList<Funcionario>({
+          filter: `empresa_id = '${currentEmpresa.id}' && status = 'ativo'`,
+          sort: 'nome',
+        }),
       ])
 
       setVendas(vList)
       setClientes(cList)
       setProdutos(pList)
       setEntregas(eList)
+      setVeiculos(veicList)
+      setFuncionarios(funcList)
     } catch (err) {
       console.error('Erro ao carregar vendas:', err)
     } finally {
@@ -262,6 +284,46 @@ export default function Vendas() {
     return Number(Math.max(0, valorBrutoCalc - valorDescontoEfetivo).toFixed(2))
   }, [valorBrutoCalc, valorDescontoEfetivo])
 
+  // Motoristas da frota (setor Frota ou cargo motorista)
+  const motoristasFrota = useMemo(() => {
+    return funcionarios.filter(
+      (f) =>
+        f.setor === 'Frota' ||
+        (f.cargo && f.cargo.toLowerCase().includes('motorista')) ||
+        (f.cargo && f.cargo.toLowerCase().includes('operador')),
+    )
+  }, [funcionarios])
+
+  // Veículos de entrega (priorizar setor Entrega / caminhões / carretas)
+  const veiculosEntregaOpcoes = useMemo(() => {
+    return veiculos.map((v) => {
+      const placaStr = v.placa ? ` • ${v.placa}` : ''
+      const modeloStr = v.modelo ? ` (${v.modelo})` : ''
+      const label = `${v.codigo_interno}${placaStr}${modeloStr}`
+      const sublabel = v.setor ? `Setor: ${v.setor}` : undefined
+      return {
+        id: v.id,
+        label,
+        sublabel,
+        keywords: [v.codigo_interno, v.placa || '', v.modelo || '', v.setor || ''],
+      }
+    })
+  }, [veiculos])
+
+  // Handler para troca de veículo na venda
+  const handleVeiculoChange = (vid: string) => {
+    setVeiculoId(vid)
+    const v = veiculos.find((veic) => veic.id === vid)
+    if (v) {
+      const desc = `${v.codigo_interno}${v.modelo ? ` • ${v.modelo}` : ''}`
+      setVeiculoIdentificacao(desc)
+      setPlaca(v.placa || '')
+    } else {
+      setVeiculoIdentificacao('')
+      setPlaca('')
+    }
+  }
+
   // Abrir criação
   const openCreateModal = () => {
     setEditingId(null)
@@ -287,6 +349,12 @@ export default function Vendas() {
     setDescontoPercentual(0)
     setDescontoValor(0)
     setTipoEntrega('frota_propria')
+    // Veículo e motorista padrão
+    setVeiculoId('')
+    setVeiculoIdentificacao('')
+    setPlaca('')
+    setTransportadorTerceiro('')
+    setMotorista('')
     setValorTotal(Number((14 * preco).toFixed(2)))
     setDataVenda(toInputDate(new Date().toISOString()))
     setFormaPagamento('Pix')
@@ -336,6 +404,11 @@ export default function Vendas() {
     setDescontoPercentual(v.desconto_percentual || 0)
     setDescontoValor(v.valor_desconto || 0)
     setTipoEntrega(v.tipo_entrega || 'frota_propria')
+    setVeiculoId(v.veiculo_id || '')
+    setVeiculoIdentificacao(v.veiculo_identificacao || '')
+    setPlaca(v.placa || '')
+    setTransportadorTerceiro(v.transportador_terceiro || '')
+    setMotorista(v.motorista || '')
     setValorTotal(v.valor_total)
     setDataVenda(toInputDate(v.data_venda))
     setFormaPagamento(v.forma_pagamento || 'Pix')
@@ -400,6 +473,20 @@ export default function Vendas() {
     const isEdit = Boolean(editingId)
     const tipoEntregaRotulo = tipoEntrega === 'frota_propria' ? 'Frota Própria' : 'Terceiro'
 
+    // Obter veículo e motorista selecionados
+    const veiculoObj = veiculos.find((ve) => ve.id === veiculoId)
+    const veicDescEfetivo =
+      tipoEntrega === 'frota_propria'
+        ? veiculoObj
+          ? `${veiculoObj.codigo_interno}${veiculoObj.modelo ? ` • ${veiculoObj.modelo}` : ''}`
+          : veiculoIdentificacao.trim() || null
+        : null
+    const placaEfetiva =
+      tipoEntrega === 'frota_propria' ? veiculoObj?.placa || placa.trim() || null : null
+    const transportadorEfetivo =
+      tipoEntrega === 'terceiro' ? transportadorTerceiro.trim() || null : null
+    const motoristaEfetivo = motorista.trim() || null
+
     // Regra: se houver conversão de unidade, a quantidade e a unidade oficiais da venda
     // são gravadas na unidade de cadastro do produto (ex.: toneladas).
     const qtdOficial = conversaoUnidades.precisaConversao
@@ -412,6 +499,11 @@ export default function Vendas() {
     const textoConversao = conversaoUnidades.precisaConversao
       ? ` [Conversão: ${conversaoUnidades.equivalenciaCard} | ${conversaoUnidades.explicacaoFormula}]`
       : ''
+
+    const infoLogisticaConfirmacao =
+      tipoEntrega === 'frota_propria'
+        ? ` Veículo: ${veicDescEfetivo || 'A alocar posteriormente'}${placaEfetiva ? ` (${placaEfetiva})` : ''} • Motorista: ${motoristaEfetivo || 'Não informado'}.`
+        : ` Transportador: ${transportadorEfetivo || 'Não informado'} • Motorista: ${motoristaEfetivo || 'Não informado'}.`
 
     // Montar observação preservando a equivalência informada pelo usuário (ex: "10 m³ ≈ 14,5 t")
     let observacoesComEquivalencia = observacoes.trim()
@@ -426,8 +518,8 @@ export default function Vendas() {
     setConfirmDialogData({
       title: isEdit ? 'Confirmar alteração da venda' : 'Confirmar gravação da venda',
       description: isEdit
-        ? `Deseja atualizar a venda para "${cli?.nome || 'Cliente'}"? Quantidade oficial: ${qtdOficial} ${unidadeOficial}${conversaoUnidades.precisaConversao ? ` (original: ${quantidade} ${unidade})` : ''}. Tipo de Entrega: ${tipoEntregaRotulo}.${textoConversao} Valor Bruto: ${formatCurrency(valorBrutoCalc)}, Desconto: ${formatCurrency(valorDescontoEfetivo)}, Valor Líquido: ${formatCurrency(valorFinalLiquido)}.`
-        : `Deseja registrar a nova venda de ${qtdOficial} ${unidadeOficial}${conversaoUnidades.precisaConversao ? ` (informado: ${quantidade} ${unidade})` : ''} de ${produtoNome} para "${cli?.nome || 'Cliente'}" no valor líquido de ${formatCurrency(valorFinalLiquido)}? (${tipoEntregaRotulo})${textoConversao}${tipoEntrega === 'frota_propria' ? ' — Será gerada uma entrega na relação de entregas.' : ''}${valorDescontoEfetivo > 0 ? ` [Desconto: ${formatCurrency(valorDescontoEfetivo)}]` : ''}`,
+        ? `Deseja atualizar a venda para "${cli?.nome || 'Cliente'}"? Quantidade oficial: ${qtdOficial} ${unidadeOficial}${conversaoUnidades.precisaConversao ? ` (original: ${quantidade} ${unidade})` : ''}. Tipo de Entrega: ${tipoEntregaRotulo}.${infoLogisticaConfirmacao}${textoConversao} Valor Bruto: ${formatCurrency(valorBrutoCalc)}, Desconto: ${formatCurrency(valorDescontoEfetivo)}, Valor Líquido: ${formatCurrency(valorFinalLiquido)}.`
+        : `Deseja registrar a nova venda de ${qtdOficial} ${unidadeOficial}${conversaoUnidades.precisaConversao ? ` (informado: ${quantidade} ${unidade})` : ''} de ${produtoNome} para "${cli?.nome || 'Cliente'}" no valor líquido de ${formatCurrency(valorFinalLiquido)}? (${tipoEntregaRotulo})${infoLogisticaConfirmacao}${textoConversao}${tipoEntrega === 'frota_propria' ? ' — Será gerada uma entrega na relação de entregas.' : ''}${valorDescontoEfetivo > 0 ? ` [Desconto: ${formatCurrency(valorDescontoEfetivo)}]` : ''}`,
       confirmLabel: isEdit ? 'Confirmar Alteração' : 'Gravar Venda',
       confirmVariant: 'default',
       action: async () => {
@@ -452,6 +544,11 @@ export default function Vendas() {
             valor_desconto: valorDescontoEfetivo > 0 ? Number(valorDescontoEfetivo) : 0,
             valor_total: Number(valorFinalLiquido),
             tipo_entrega: tipoEntrega,
+            veiculo_id: tipoEntrega === 'frota_propria' ? veiculoId || null : null,
+            veiculo_identificacao: veicDescEfetivo,
+            placa: placaEfetiva,
+            transportador_terceiro: transportadorEfetivo,
+            motorista: motoristaEfetivo,
             data_venda: dataIso,
             forma_pagamento: formaPagamento,
             status,
@@ -466,10 +563,10 @@ export default function Vendas() {
             const vendaAntes = vendas.find((v) => v.id === editingId)
             vendaSalva = await vendasService.atualizar(editingId, payload)
 
-            // Se for Frota Própria e ainda não existir entrega vinculada, criar
+            // Se for Frota Própria e ainda não existir entrega vinculada, criar; se já existir, atualizar veículo/motorista
             if (tipoEntrega === 'frota_propria') {
-              const jaTemEntrega = entregas.some((e) => e.venda_id === editingId)
-              if (!jaTemEntrega) {
+              const entregaExistente = entregas.find((e) => e.venda_id === editingId)
+              if (!entregaExistente) {
                 const destinoCli = cli?.cidade
                   ? `${cli.nome} - ${cli.cidade}`
                   : cli?.nome || 'Destino cliente'
@@ -481,6 +578,8 @@ export default function Vendas() {
                   venda_id: editingId,
                   cliente_id: clienteId,
                   cliente_nome: cli?.nome || 'Cliente',
+                  veiculo_id: veiculoId || null,
+                  motorista: motoristaEfetivo,
                   data: dataIso,
                   origem: 'Pedreira Cordeiro - Sertânia/PE',
                   destino: destinoCli,
@@ -492,6 +591,15 @@ export default function Vendas() {
                   observacoes: obsEntrega,
                 })
                 entregaGeradaId = entregaCriada.id
+              } else if (veiculoId || motoristaEfetivo) {
+                // Sincroniza veículo e motorista atualizados na entrega existente
+                await entregasService.atualizar(entregaExistente.id, {
+                  veiculo_id: veiculoId || entregaExistente.veiculo_id,
+                  motorista: motoristaEfetivo || entregaExistente.motorista,
+                  cliente_nome: cli?.nome || entregaExistente.cliente_nome,
+                  valor_venda: Number(valorFinalLiquido),
+                })
+                entregaGeradaId = entregaExistente.id
               }
             }
 
@@ -515,12 +623,16 @@ export default function Vendas() {
                 acao: 'editar',
                 usuarioId: user?.id,
                 usuarioNome: user?.name || user?.email || 'Usuário',
-                descricao: `Venda #${editingId.slice(0, 8)} atualizada (${formatCurrency(valorFinalLiquido)}) - Cliente: ${cli?.nome || 'Cliente'}. ${tipoEntrega === 'frota_propria' ? 'Frota Própria' : 'Terceiro'}. ${diffs.length > 0 ? `${diffs.length} campo(s) modificado(s).` : 'Sem alteração de campos chave.'}${entregaGeradaId ? ' Entrega criada na relação de entregas.' : ''}`,
+                descricao: `Venda #${editingId.slice(0, 8)} atualizada (${formatCurrency(valorFinalLiquido)}) - Cliente: ${cli?.nome || 'Cliente'}. ${tipoEntrega === 'frota_propria' ? `Frota Própria${veicDescEfetivo ? ` (${veicDescEfetivo})` : ''}` : `Terceiro${transportadorEfetivo ? ` (${transportadorEfetivo})` : ''}`}${motoristaEfetivo ? ` • Motorista: ${motoristaEfetivo}` : ''}. ${diffs.length > 0 ? `${diffs.length} campo(s) modificado(s).` : 'Sem alteração de campos chave.'}${entregaGeradaId ? ' Entrega sincronizada.' : ''}`,
                 detalhes: {
                   alteracoes: diffs,
                   valor: valorFinalLiquido,
                   extra: {
                     tipo_entrega: tipoEntrega,
+                    veiculo: veicDescEfetivo,
+                    placa: placaEfetiva,
+                    transportador: transportadorEfetivo,
+                    motorista: motoristaEfetivo,
                     entrega_id: entregaGeradaId,
                     conversao: conversaoUnidades.precisaConversao
                       ? {
@@ -540,7 +652,7 @@ export default function Vendas() {
           } else {
             vendaSalva = await vendasService.criar(payload)
 
-            // Quando for Frota Própria: criar o registro de entrega vinculado à venda na relação de Entrega
+            // Quando for Frota Própria: criar o registro de entrega vinculado à venda na relação de Entrega já com o veículo e motorista
             if (tipoEntrega === 'frota_propria') {
               const destinoCli = cli?.cidade
                 ? `${cli.nome} - ${cli.cidade}`
@@ -553,6 +665,8 @@ export default function Vendas() {
                 venda_id: vendaSalva.id,
                 cliente_id: clienteId,
                 cliente_nome: cli?.nome || 'Cliente',
+                veiculo_id: veiculoId || null,
+                motorista: motoristaEfetivo,
                 data: dataIso,
                 origem: 'Pedreira Cordeiro - Sertânia/PE',
                 destino: destinoCli,
@@ -574,11 +688,15 @@ export default function Vendas() {
               acao: 'criar',
               usuarioId: user?.id,
               usuarioNome: user?.name || user?.email || 'Usuário',
-              descricao: `Venda registrada no valor líquido de ${formatCurrency(valorFinalLiquido)} (${quantidade} ${unidade} de ${produtoNome}) para "${cli?.nome || 'Cliente'}". Entrega: ${tipoEntrega === 'frota_propria' ? 'Frota Própria (incluída na relação de entrega)' : 'Terceiro (retirada/frete terceiro)'}.`,
+              descricao: `Venda registrada no valor líquido de ${formatCurrency(valorFinalLiquido)} (${quantidade} ${unidade} de ${produtoNome}) para "${cli?.nome || 'Cliente'}". Entrega: ${tipoEntrega === 'frota_propria' ? `Frota Própria${veicDescEfetivo ? ` (${veicDescEfetivo})` : ''}` : `Terceiro${transportadorEfetivo ? ` (${transportadorEfetivo})` : ''}`}${motoristaEfetivo ? ` • Motorista: ${motoristaEfetivo}` : ''}.`,
               detalhes: {
                 valor: valorFinalLiquido,
                 extra: {
                   tipo_entrega: tipoEntrega,
+                  veiculo: veicDescEfetivo,
+                  placa: placaEfetiva,
+                  transportador: transportadorEfetivo,
+                  motorista: motoristaEfetivo,
                   entrega_id: entregaGeradaId,
                   cliente: cli?.nome,
                   produto: produtoNome,
@@ -911,13 +1029,30 @@ export default function Vendas() {
       },
       {
         key: 'tipo_entrega',
-        header: 'Entrega',
-        render: (v) =>
-          v.tipo_entrega === 'terceiro'
-            ? 'Terceiro'
-            : v.tipo_entrega === 'frota_propria'
-              ? 'Frota Própria'
-              : '—',
+        header: 'Entrega / Veículo / Motorista',
+        render: (v) => {
+          const badge =
+            v.tipo_entrega === 'terceiro'
+              ? 'Terceiro'
+              : v.tipo_entrega === 'frota_propria'
+                ? 'Frota Própria'
+                : '—'
+          const veic =
+            v.veiculo_identificacao ||
+            (v.expand?.veiculo_id
+              ? `${v.expand.veiculo_id.codigo_interno}${v.expand.veiculo_id.modelo ? ` • ${v.expand.veiculo_id.modelo}` : ''}`
+              : '') ||
+            (v.transportador_terceiro ? `Transp.: ${v.transportador_terceiro}` : '')
+          const placaStr = v.placa ? ` [${v.placa}]` : ''
+          const mot = v.motorista ? `Mot.: ${v.motorista}` : ''
+          const detalhes = [veic ? `${veic}${placaStr}` : '', mot].filter(Boolean).join(' · ')
+          return (
+            <div>
+              <span className="font-semibold">{badge}</span>
+              {detalhes && <div className="text-[10px] text-gray-500">{detalhes}</div>}
+            </div>
+          )
+        },
       },
       {
         key: 'forma',
@@ -1294,20 +1429,55 @@ export default function Vendas() {
                           <span className="text-[10px] text-gray-400 font-mono">—</span>
                         )}
                       </td>
-                      <td className="py-3 px-4 text-center whitespace-nowrap">
-                        {isFrota ? (
-                          <Badge className="bg-teal-100 text-teal-900 border-teal-300 text-[10px] font-semibold flex items-center gap-1 mx-auto w-fit">
-                            <Truck className="w-3 h-3 text-teal-700" />
-                            Frota Própria
-                          </Badge>
-                        ) : (
-                          <Badge
-                            variant="secondary"
-                            className="bg-gray-100 text-gray-700 border-gray-300 text-[10px] font-semibold mx-auto w-fit"
-                          >
-                            Terceiro
-                          </Badge>
-                        )}
+                      <td className="py-3 px-4 whitespace-nowrap">
+                        <div className="flex flex-col items-center gap-0.5 text-center">
+                          {isFrota ? (
+                            <Badge className="bg-teal-100 text-teal-900 border-teal-300 text-[10px] font-semibold flex items-center gap-1 w-fit">
+                              <Truck className="w-3 h-3 text-teal-700" />
+                              Frota Própria
+                            </Badge>
+                          ) : (
+                            <Badge
+                              variant="secondary"
+                              className="bg-gray-100 text-gray-700 border-gray-300 text-[10px] font-semibold w-fit"
+                            >
+                              Terceiro
+                            </Badge>
+                          )}
+                          {/* Exibir Veículo e/ou Transportador Terceiro */}
+                          {v.veiculo_identificacao ||
+                          (v.expand?.veiculo_id && v.expand.veiculo_id.codigo_interno) ? (
+                            <div
+                              className="text-[10px] font-medium text-gray-800 max-w-[140px] truncate"
+                              title={
+                                v.veiculo_identificacao || v.expand?.veiculo_id?.codigo_interno
+                              }
+                            >
+                              {v.veiculo_identificacao || v.expand?.veiculo_id?.codigo_interno}
+                              {v.placa
+                                ? ` • ${v.placa}`
+                                : v.expand?.veiculo_id?.placa
+                                  ? ` • ${v.expand.veiculo_id.placa}`
+                                  : ''}
+                            </div>
+                          ) : v.transportador_terceiro ? (
+                            <div
+                              className="text-[10px] text-gray-600 max-w-[140px] truncate"
+                              title={v.transportador_terceiro}
+                            >
+                              {v.transportador_terceiro}
+                            </div>
+                          ) : null}
+                          {/* Exibir Motorista */}
+                          {v.motorista && (
+                            <div
+                              className="text-[9px] text-teal-700 font-mono truncate max-w-[140px]"
+                              title={`Motorista: ${v.motorista}`}
+                            >
+                              Mot: {v.motorista}
+                            </div>
+                          )}
+                        </div>
                       </td>
                       <td className="py-3 px-4 text-center">
                         <Badge
@@ -1488,12 +1658,25 @@ export default function Vendas() {
             </div>
 
             {/* Tipo de Entrega: Frota Própria ou Terceiro */}
-            <div className="space-y-1.5 p-3 rounded-xl border border-teal-200 bg-teal-50/40">
-              <Label className="text-gray-900 font-semibold flex items-center gap-1.5">
-                <Truck className="w-4 h-4 text-teal-700" />
-                <span>Tipo de Entrega *</span>
-              </Label>
-              <div className="grid grid-cols-2 gap-2 pt-1">
+            <div className="space-y-3 p-3.5 rounded-xl border border-teal-200 bg-teal-50/40">
+              <div className="flex items-center justify-between">
+                <Label className="text-gray-900 font-semibold flex items-center gap-1.5">
+                  <Truck className="w-4 h-4 text-teal-700" />
+                  <span>Tipo de Logística / Transporte *</span>
+                </Label>
+                <Badge
+                  variant="outline"
+                  className={
+                    tipoEntrega === 'frota_propria'
+                      ? 'border-teal-400 text-teal-800 bg-teal-100/60 font-semibold'
+                      : 'border-gray-400 text-gray-800 bg-white font-semibold'
+                  }
+                >
+                  {tipoEntrega === 'frota_propria' ? 'Entrega Vinculada' : 'Retirada / Terceiro'}
+                </Badge>
+              </div>
+
+              <div className="grid grid-cols-2 gap-2 pt-0.5">
                 <button
                   type="button"
                   onClick={() => setTipoEntrega('frota_propria')}
@@ -1523,10 +1706,118 @@ export default function Vendas() {
                   <span>Terceiro</span>
                 </button>
               </div>
-              <p className="text-[11px] text-gray-600 mt-1">
+
+              {/* CAMPOS ESPECÍFICOS DE FROTA PRÓPRIA OU TERCEIRO */}
+              {tipoEntrega === 'frota_propria' ? (
+                <div className="p-3 bg-white rounded-lg border border-teal-200 space-y-3 shadow-2xs">
+                  {/* Veículo / Equipamento da Frota */}
+                  <div className="space-y-1">
+                    <div className="flex items-center justify-between">
+                      <Label className="text-gray-800 font-medium text-[11px] flex items-center gap-1">
+                        <Truck className="w-3.5 h-3.5 text-teal-700" />
+                        <span>Veículo / Equipamento da Frota</span>
+                      </Label>
+                      {veiculoId && (
+                        <button
+                          type="button"
+                          onClick={() => handleVeiculoChange('')}
+                          className="text-[10px] text-gray-400 hover:text-red-600"
+                        >
+                          Limpar seleção
+                        </button>
+                      )}
+                    </div>
+                    <ComboboxPesquisavel
+                      value={veiculoId}
+                      onChange={handleVeiculoChange}
+                      placeholder="Pesquisar veículo por código ou placa..."
+                      searchPlaceholder="Digitar código, placa ou modelo..."
+                      emptyText="Nenhum veículo encontrado no cadastro de frotas."
+                      triggerClassName="bg-[#FAF9F7] border-teal-300 text-xs h-9"
+                      options={veiculosEntregaOpcoes}
+                    />
+                    {placa ? (
+                      <div className="flex items-center justify-between text-[10px] text-teal-900 bg-teal-50/80 px-2 py-1 rounded border border-teal-200">
+                        <span>Placa identificada:</span>
+                        <strong className="font-mono font-bold">{placa}</strong>
+                      </div>
+                    ) : (
+                      <p className="text-[10px] text-gray-500 leading-tight">
+                        Busca direta no cadastro de equipamentos/veículos. O veículo e a placa
+                        preenchem a entrega vinculada e o romaneio A4.
+                      </p>
+                    )}
+                  </div>
+
+                  {/* Motorista da Frota Própria */}
+                  <div className="space-y-1">
+                    <Label className="text-gray-800 font-medium text-[11px]">
+                      Motorista / Condutor (Frota)
+                    </Label>
+                    <div className="space-y-1.5">
+                      <ComboboxPesquisavel
+                        value={motorista}
+                        onChange={(val) => setMotorista(val)}
+                        placeholder="Selecionar motorista cadastrado ou digitar..."
+                        searchPlaceholder="Digitar nome do motorista..."
+                        emptyText="Nenhum motorista com este nome na lista."
+                        triggerClassName="bg-[#FAF9F7] border-teal-300 text-xs h-9"
+                        options={motoristasFrota.map((f) => ({
+                          id: f.nome,
+                          label: f.nome,
+                          sublabel: `${f.cargo || 'Funcionário'}${f.setor ? ` • ${f.setor}` : ''}`,
+                          keywords: [f.nome, f.cargo || '', f.setor || ''],
+                        }))}
+                      />
+                      {/* Permite digitação livre caso o motorista seja um funcionário temporário ou nome direto */}
+                      <Input
+                        placeholder="Ou digite o nome do condutor livremente..."
+                        value={motorista}
+                        onChange={(e) => setMotorista(e.target.value)}
+                        className="bg-[#FAF9F7] border-[#ECEAE4] text-xs h-8"
+                      />
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div className="p-3 bg-white rounded-lg border border-gray-300 space-y-3 shadow-2xs">
+                  {/* Transportador Terceiro */}
+                  <div className="space-y-1">
+                    <Label className="text-gray-800 font-medium text-[11px] flex items-center gap-1">
+                      <Package className="w-3.5 h-3.5 text-gray-600" />
+                      <span>Transportador / Terceiro (Nome ou Empresa) *</span>
+                    </Label>
+                    <Input
+                      placeholder="Ex: Transportadora Sertaneja / Frete Particular"
+                      value={transportadorTerceiro}
+                      onChange={(e) => setTransportadorTerceiro(e.target.value)}
+                      className="bg-[#FAF9F7] border-gray-300 text-xs h-9"
+                    />
+                    <p className="text-[10px] text-gray-500">
+                      Nome da empresa transportadora, freteiro autônomo ou indicação de retirada
+                      pelo próprio cliente.
+                    </p>
+                  </div>
+
+                  {/* Motorista do Terceiro */}
+                  <div className="space-y-1">
+                    <Label className="text-gray-800 font-medium text-[11px]">
+                      Motorista do Terceiro (Digitação Livre)
+                    </Label>
+                    <Input
+                      placeholder="Ex: Carlos Eduardo (Motorista Terceiro)"
+                      value={motorista}
+                      onChange={(e) => setMotorista(e.target.value)}
+                      className="bg-[#FAF9F7] border-gray-300 text-xs h-9"
+                    />
+                  </div>
+                </div>
+              )}
+
+              <p className="text-[11px] text-gray-600">
                 {tipoEntrega === 'frota_propria'
-                  ? '• Frota Própria: gerará automaticamente registro na relação de entregas com status Pendente.'
-                  : '• Terceiro: cliente retira na pedreira ou frete de terceiro (não entra na relação de entrega).'}
+                  ? '• Frota Própria: gerará automaticamente entrega vinculada (Pendente) e preencherá o romaneio de duas vias com o veículo e motorista.'
+                  : '• Terceiro: cliente retira na pedreira ou frete contratado externamente.'}
               </p>
             </div>
 
@@ -2081,6 +2372,33 @@ export default function Vendas() {
                         : 'Frota Própria'}
                     </span>
                   </div>
+                  {(detalheVenda.veiculo_identificacao ||
+                    detalheVenda.expand?.veiculo_id ||
+                    detalheVenda.transportador_terceiro) && (
+                    <div>
+                      <span className="text-[10px] text-gray-400 block uppercase">
+                        {detalheVenda.tipo_entrega === 'terceiro'
+                          ? 'Transportador Terceiro'
+                          : 'Veículo da Frota'}
+                      </span>
+                      <span className="font-semibold text-gray-900">
+                        {detalheVenda.veiculo_identificacao ||
+                          (detalheVenda.expand?.veiculo_id
+                            ? `${detalheVenda.expand.veiculo_id.codigo_interno}${detalheVenda.expand.veiculo_id.modelo ? ` • ${detalheVenda.expand.veiculo_id.modelo}` : ''}`
+                            : '') ||
+                          detalheVenda.transportador_terceiro}
+                        {detalheVenda.placa ? ` (${detalheVenda.placa})` : ''}
+                      </span>
+                    </div>
+                  )}
+                  {detalheVenda.motorista && (
+                    <div>
+                      <span className="text-[10px] text-gray-400 block uppercase">
+                        Motorista / Condutor
+                      </span>
+                      <span className="font-semibold text-gray-900">{detalheVenda.motorista}</span>
+                    </div>
+                  )}
                 </div>
 
                 {detalheVenda.observacoes && (

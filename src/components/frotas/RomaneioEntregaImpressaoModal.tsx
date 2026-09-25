@@ -373,18 +373,31 @@ export const RomaneioEntregaImpressaoModal: React.FC<RomaneioEntregaImpressaoMod
   const destino = entrega?.destino || clienteNome || 'Sertânia / Região'
   const origem = entrega?.origem || 'Pedreira Cordeiro - Sertânia/PE'
 
-  const veiculoDescricao = veiculo?.codigo_interno
-    ? `${veiculo.codigo_interno}${veiculo.modelo ? ` • ${veiculo.modelo}` : ''}`
-    : venda?.tipo_entrega === 'terceiro'
-      ? 'Retirada / Frete Terceiro'
-      : 'Frota Pedreira Cordeiro'
+  // Veículo e identificação: prioriza dados da entrega vinculada, depois da venda vinculada
+  const veiculoVenda = vendaVinculada?.expand?.veiculo_id
+  const veiculoEfetivo = veiculo || veiculoVenda
 
-  const veiculoPlaca = veiculo?.placa || undefined
+  const veiculoDescricao = veiculoEfetivo?.codigo_interno
+    ? `${veiculoEfetivo.codigo_interno}${veiculoEfetivo.modelo ? ` • ${veiculoEfetivo.modelo}` : ''}`
+    : vendaVinculada?.veiculo_identificacao
+      ? vendaVinculada.veiculo_identificacao
+      : vendaVinculada?.transportador_terceiro
+        ? `Terceiro: ${vendaVinculada.transportador_terceiro}`
+        : venda?.tipo_entrega === 'terceiro'
+          ? 'Retirada / Frete Terceiro'
+          : 'Frota Pedreira Cordeiro'
+
+  const veiculoPlaca = veiculoEfetivo?.placa || vendaVinculada?.placa || undefined
 
   const motorista =
     entrega?.motorista ||
     entrega?.expand?.funcionario_id?.nome ||
-    (venda?.tipo_entrega === 'terceiro' ? 'Transportador Terceiro' : 'Motorista da Frota')
+    vendaVinculada?.motorista ||
+    (venda?.tipo_entrega === 'terceiro'
+      ? vendaVinculada?.transportador_terceiro
+        ? `Terceiro (${vendaVinculada.transportador_terceiro})`
+        : 'Transportador Terceiro'
+      : 'Motorista da Frota')
 
   const produtoNome =
     entrega?.produto_nome ||
