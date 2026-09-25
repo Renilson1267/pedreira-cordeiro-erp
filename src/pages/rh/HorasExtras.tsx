@@ -1,11 +1,17 @@
-import React, { useState, useEffect, useMemo } from 'react'
+import React, { useState, useEffect, useMemo, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { useAuth } from '@/contexts/AuthContext'
 import { useCompany } from '@/contexts/CompanyContext'
 import pb from '@/lib/pocketbase/client'
 import { useRealtime } from '@/hooks/use-realtime'
 import { formatCurrency, formatDate } from '@/lib/formatters'
 import type { Funcionario, FolhaHorasExtras, ModoCalculoHorasExtras, PlanoConta } from '@/types/erp'
 import { folhaHorasExtrasService } from '@/services/folhaHorasExtras'
+import {
+  historicoService,
+  calcularDiffAlteracoes,
+  CAMPOS_CONFIG_HORAS_EXTRAS,
+} from '@/services/historico'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -22,6 +28,16 @@ import {
 } from '@/components/ui/select'
 import { ComboboxPesquisavel } from '@/components/ui/ComboboxPesquisavel'
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetFooter } from '@/components/ui/sheet'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
 import { toast } from '@/hooks/use-toast'
 import {
   Clock,
@@ -40,11 +56,13 @@ import {
   Briefcase,
   AlertCircle,
   HelpCircle,
+  Pencil,
 } from 'lucide-react'
 import { ReciboHorasExtrasModal } from '@/components/rh/ReciboHorasExtrasModal'
 import { FolhaHorasExtrasImpressaoModal } from '@/components/rh/FolhaHorasExtrasImpressaoModal'
 
 export default function HorasExtras() {
+  const { user } = useAuth()
   const { currentEmpresa, canEdit, isReadOnly } = useCompany()
   const navigate = useNavigate()
 
@@ -58,8 +76,9 @@ export default function HorasExtras() {
   const [mesFiltro, setMesFiltro] = useState<string>('todos')
   const [modoFiltro, setModoFiltro] = useState<string>('todos')
 
-  // Drawer / Formulário de Cálculo
+  // Drawer / Formulário de Cálculo & Edição
   const [drawerOpen, setDrawerOpen] = useState(false)
+  const [editingId, setEditingId] = useState<string | null>(null)
   const [selectedFuncionarioId, setSelectedFuncionarioId] = useState<string>('')
   const [salarioManual, setSalarioManual] = useState<number | ''>('')
   const [mesReferencia, setMesReferencia] = useState<string>(() => {
@@ -91,6 +110,16 @@ export default function HorasExtras() {
   const [observacoes, setObservacoes] = useState<string>('')
   const [isSaving, setIsSaving] = useState(false)
 
+  // Diálogo de confirmação antes de gravar/excluir
+  const [confirmDialogOpen, setConfirmDialogOpen] = useState(false)
+  const [confirmDialogData, setConfirmDialogData] = useState<{
+    title: string
+    description: string
+    confirmLabel?: string
+    confirmVariant?: 'default' | 'destructive'
+    action: () => Promise<void>
+  } | null>(null)
+
   // Modal de Impressão / Recibo Individual
   const [reciboModalOpen, setReciboModalOpen] = useState(false)
   const [selectedFolhaParaRecibo, setSelectedFolhaParaRecibo] = useState<FolhaHorasExtras | null>(
@@ -103,12 +132,8 @@ export default function HorasExtras() {
   // Modal / Ação de Lançar no Financeiro (Conta a Pagar)
   const [lancandoContaId, setLancandoContaId] = useState<string | null>(null)
 
-  // Realtime
-  useRealtime('folha_horas_extras', () => loadDados())
-  useRealtime('funcionarios', () => loadDados())
-
-  const loadDados = async () => {
-    if (!currentEmpresa) return
+  const loadDados = useCallback(async () => {
+    if (!currentEmpresa?.id) return
     try {
       setLoading(true)
       const [fList, folhasList, pList] = await Promise.all([
@@ -134,11 +159,15 @@ export default function HorasExtras() {
     } finally {
       setLoading(false)
     }
-  }
+  }, [currentEmpresa?.id])
+
+  // Realtime com callback estável
+  useRealtime('folha_horas_extras', loadDados, !!currentEmpresa?.id)
+  useRealtime('funcionarios', loadDados, !!currentEmpresa?.id)
 
   useEffect(() => {
     loadDados()
-  }, [currentEmpresa])
+  }, [loadDados])
 
   // Colaborador atualmente selecionado no formulário
   const funcionarioAtual = useMemo(() => {
@@ -174,8 +203,9 @@ export default function HorasExtras() {
     adiantamento,
   ])
 
-  // Abertura do formulário
+  // Abertura do formulário para novo cálculo
   const handleOpenNovoCalculo = (funcionarioId?: string) => {
+    setEditingId(null)
     if (funcionarioId) {
       setSelectedFuncionarioId(funcionarioId)
       const f = funcionarios.find((item) => item.id === funcionarioId)
@@ -193,6 +223,30 @@ export default function HorasExtras() {
     setDrawerOpen(true)
   }
 
+  // Abertura do formulário para edição de registro existente (ícone lápis)
+  const handleEditFolha = (folha: FolhaHorasExtras) => {
+    setEditingId(folha.id)
+    setSelectedFuncionarioId(folha.funcionario_id)
+    setSalarioManual(folha.salario_base || '')
+    setMesReferencia(folha.mes_referencia)
+    setModoCalculo(folha.modo_calculo)
+
+    if (folha.modo_calculo === 'padrao_50') {
+      setHoras50Todas(folha.total_horas || folha.horas_50 || '')
+      setHorasCltUteis50('')
+      setHorasCltDomingos100('')
+    } else {
+      setHoras50Todas('')
+      setHorasCltUteis50(folha.horas_50 || '')
+      setHorasCltDomingos100(folha.horas_100 || '')
+    }
+
+    setGratificacao(folha.gratificacao && folha.gratificacao > 0 ? folha.gratificacao : '')
+    setAdiantamento(folha.adiantamento && folha.adiantamento > 0 ? folha.adiantamento : '')
+    setObservacoes(folha.observacoes || '')
+    setDrawerOpen(true)
+  }
+
   // Mudança do funcionário no Select
   const handleFuncionarioSelectChange = (funcId: string) => {
     setSelectedFuncionarioId(funcId)
@@ -204,8 +258,8 @@ export default function HorasExtras() {
     }
   }
 
-  // Salvar registro de horas extras
-  const handleSalvarCalculo = async (e: React.FormEvent) => {
+  // Salvar registro de horas extras (criação ou edição com confirmação e histórico)
+  const handleSalvarCalculo = (e: React.FormEvent) => {
     e.preventDefault()
     if (!currentEmpresa) return
 
@@ -231,70 +285,219 @@ export default function HorasExtras() {
       return
     }
 
-    try {
-      setIsSaving(true)
-      const novoRegistro = await folhaHorasExtrasService.create({
-        empresa_id: currentEmpresa.id,
-        funcionario_id: selectedFuncionarioId,
-        mes_referencia: mesReferencia.trim(),
-        modo_calculo: modoCalculo,
-        salario_base: salarioEfetivo,
-        valor_hora_normal: memoriaCalculo.valorHoraNormal,
-        horas_50: memoriaCalculo.horas50,
-        valor_horas_50: memoriaCalculo.valorHoras50,
-        horas_100: memoriaCalculo.horas100,
-        valor_horas_100: memoriaCalculo.valorHoras100,
-        total_horas: memoriaCalculo.totalHoras,
-        total_valor: memoriaCalculo.totalValor,
-        gratificacao: memoriaCalculo.gratificacao,
-        adiantamento: memoriaCalculo.adiantamento,
-        valor_liquido: memoriaCalculo.valorLiquido,
-        status: 'calculado',
-        observacoes: observacoes.trim() || undefined,
-      })
+    const fNome = funcionarioAtual?.nome || 'Colaborador'
+    const isEdicao = !!editingId
 
-      toast({
-        title: 'Cálculo de horas extras salvo com sucesso!',
-        description: `Total de ${memoriaCalculo.totalHoras}h apuradas • Líquido a pagar: ${formatCurrency(
-          memoriaCalculo.valorLiquido,
-        )}.`,
-      })
+    setConfirmDialogData({
+      title: isEdicao ? 'Confirmar alteração de horas extras' : 'Confirmar cálculo de horas extras',
+      description: isEdicao
+        ? `Deseja atualizar o lançamento de horas extras de ${fNome} referente a ${mesReferencia}? O novo valor líquido será de ${formatCurrency(
+            memoriaCalculo.valorLiquido,
+          )} (${memoriaCalculo.totalHoras.toFixed(1)}h). As alterações serão salvas na trilha de auditoria.`
+        : `Deseja salvar o cálculo de horas extras de ${fNome} referente a ${mesReferencia} no valor líquido de ${formatCurrency(
+            memoriaCalculo.valorLiquido,
+          )} (${memoriaCalculo.totalHoras.toFixed(1)}h)?`,
+      confirmLabel: isEdicao ? 'Salvar Alterações' : 'Salvar Cálculo',
+      confirmVariant: 'default',
+      action: async () => {
+        try {
+          setIsSaving(true)
+          if (editingId) {
+            const registroAntes = folhas.find((item) => item.id === editingId)
+            const payloadUpdate = {
+              funcionario_id: selectedFuncionarioId,
+              mes_referencia: mesReferencia.trim(),
+              modo_calculo: modoCalculo,
+              salario_base: salarioEfetivo,
+              valor_hora_normal: memoriaCalculo.valorHoraNormal,
+              horas_50: memoriaCalculo.horas50,
+              valor_horas_50: memoriaCalculo.valorHoras50,
+              horas_100: memoriaCalculo.horas100,
+              valor_horas_100: memoriaCalculo.valorHoras100,
+              total_horas: memoriaCalculo.totalHoras,
+              total_valor: memoriaCalculo.totalValor,
+              gratificacao: memoriaCalculo.gratificacao,
+              adiantamento: memoriaCalculo.adiantamento,
+              valor_liquido: memoriaCalculo.valorLiquido,
+              observacoes: observacoes.trim() || undefined,
+            }
 
-      setDrawerOpen(false)
-      await loadDados()
+            const registroAtualizado = await folhaHorasExtrasService.update(
+              editingId,
+              payloadUpdate,
+            )
 
-      // Abre automaticamente para visualização/impressão se desejado
-      setSelectedFolhaParaRecibo(novoRegistro)
-      setReciboModalOpen(true)
-    } catch (err: any) {
-      toast({
-        title: 'Erro ao salvar horas extras',
-        description: err.message,
-        variant: 'destructive',
-      })
-    } finally {
-      setIsSaving(false)
-    }
+            // Registro no histórico de alterações (auditoria)
+            if (registroAntes) {
+              const diffs = calcularDiffAlteracoes(
+                {
+                  ...registroAntes,
+                  funcionario_nome: registroAntes.expand?.funcionario_id?.nome || fNome,
+                },
+                {
+                  ...payloadUpdate,
+                  funcionario_nome: fNome,
+                },
+                CAMPOS_CONFIG_HORAS_EXTRAS,
+              )
+
+              await historicoService.registrar({
+                empresaId: currentEmpresa.id,
+                colecaoOrigem: 'outros',
+                registroId: editingId,
+                acao: 'editar',
+                usuarioId: user?.id,
+                usuarioNome: user?.name || user?.email || 'Usuário',
+                descricao: `Horas extras de ${fNome} (${mesReferencia}) alteradas: ${memoriaCalculo.totalHoras.toFixed(1)}h • Líquido: ${formatCurrency(memoriaCalculo.valorLiquido)}. ${diffs.length > 0 ? `${diffs.length} campo(s) modificado(s).` : 'Sem alteração nos campos principais.'}`,
+                detalhes: {
+                  alteracoes: diffs,
+                  valor: memoriaCalculo.valorLiquido,
+                  extra: {
+                    funcionario: fNome,
+                    mes_referencia: mesReferencia,
+                    total_horas: memoriaCalculo.totalHoras,
+                    total_bruto: memoriaCalculo.totalValor,
+                    modo: modoCalculo,
+                  },
+                },
+              })
+            }
+
+            toast({
+              title: 'Horas extras atualizadas com sucesso!',
+              description: `Total de ${memoriaCalculo.totalHoras}h • Líquido: ${formatCurrency(
+                memoriaCalculo.valorLiquido,
+              )}.`,
+            })
+
+            setDrawerOpen(false)
+            setEditingId(null)
+            await loadDados()
+
+            setSelectedFolhaParaRecibo(registroAtualizado)
+            setReciboModalOpen(true)
+          } else {
+            const novoRegistro = await folhaHorasExtrasService.create({
+              empresa_id: currentEmpresa.id,
+              funcionario_id: selectedFuncionarioId,
+              mes_referencia: mesReferencia.trim(),
+              modo_calculo: modoCalculo,
+              salario_base: salarioEfetivo,
+              valor_hora_normal: memoriaCalculo.valorHoraNormal,
+              horas_50: memoriaCalculo.horas50,
+              valor_horas_50: memoriaCalculo.valorHoras50,
+              horas_100: memoriaCalculo.horas100,
+              valor_horas_100: memoriaCalculo.valorHoras100,
+              total_horas: memoriaCalculo.totalHoras,
+              total_valor: memoriaCalculo.totalValor,
+              gratificacao: memoriaCalculo.gratificacao,
+              adiantamento: memoriaCalculo.adiantamento,
+              valor_liquido: memoriaCalculo.valorLiquido,
+              status: 'calculado',
+              observacoes: observacoes.trim() || undefined,
+            })
+
+            // Registro no histórico de alterações (auditoria)
+            await historicoService.registrar({
+              empresaId: currentEmpresa.id,
+              colecaoOrigem: 'outros',
+              registroId: novoRegistro.id,
+              acao: 'criar',
+              usuarioId: user?.id,
+              usuarioNome: user?.name || user?.email || 'Usuário',
+              descricao: `Lançamento de horas extras criado para ${fNome} (${mesReferencia}): ${memoriaCalculo.totalHoras.toFixed(1)}h • Líquido: ${formatCurrency(memoriaCalculo.valorLiquido)}.`,
+              detalhes: {
+                valor: memoriaCalculo.valorLiquido,
+                extra: {
+                  funcionario: fNome,
+                  mes_referencia: mesReferencia,
+                  total_horas: memoriaCalculo.totalHoras,
+                  total_bruto: memoriaCalculo.totalValor,
+                  modo: modoCalculo,
+                },
+              },
+            })
+
+            toast({
+              title: 'Cálculo de horas extras salvo com sucesso!',
+              description: `Total de ${memoriaCalculo.totalHoras}h apuradas • Líquido a pagar: ${formatCurrency(
+                memoriaCalculo.valorLiquido,
+              )}.`,
+            })
+
+            setDrawerOpen(false)
+            setEditingId(null)
+            await loadDados()
+
+            setSelectedFolhaParaRecibo(novoRegistro)
+            setReciboModalOpen(true)
+          }
+        } catch (err: any) {
+          toast({
+            title: 'Erro ao salvar horas extras',
+            description: err.message,
+            variant: 'destructive',
+          })
+        } finally {
+          setIsSaving(false)
+        }
+      },
+    })
+    setConfirmDialogOpen(true)
   }
 
-  // Excluir registro
-  const handleDeleteFolha = async (id: string) => {
-    if (!confirm('Deseja realmente remover este lançamento de horas extras?')) return
-    try {
-      await folhaHorasExtrasService.delete(id)
-      toast({ title: 'Lançamento de horas extras removido com sucesso.' })
-      await loadDados()
-    } catch (err: any) {
-      toast({
-        title: 'Erro ao remover lançamento',
-        description: err.message,
-        variant: 'destructive',
-      })
-    }
+  // Excluir registro com diálogo de confirmação e histórico
+  const handleDeleteFolha = (folha: FolhaHorasExtras) => {
+    const fNome = folha.expand?.funcionario_id?.nome || 'Colaborador'
+    const valorLiq =
+      typeof folha.valor_liquido === 'number'
+        ? folha.valor_liquido
+        : Number(
+            (folha.total_valor + (folha.gratificacao || 0) - (folha.adiantamento || 0)).toFixed(2),
+          )
+
+    setConfirmDialogData({
+      title: 'Confirmar remoção de horas extras',
+      description: `Deseja realmente remover o lançamento de horas extras de ${fNome} referente a ${folha.mes_referencia} (${folha.total_horas}h • ${formatCurrency(valorLiq)})? Esta ação não pode ser desfeita.`,
+      confirmLabel: 'Excluir Lançamento',
+      confirmVariant: 'destructive',
+      action: async () => {
+        try {
+          await historicoService.registrar({
+            empresaId: currentEmpresa!.id,
+            colecaoOrigem: 'outros',
+            registroId: folha.id,
+            acao: 'excluir',
+            usuarioId: user?.id,
+            usuarioNome: user?.name || user?.email || 'Usuário',
+            descricao: `Lançamento de horas extras de ${fNome} (${folha.mes_referencia}) no valor líquido de ${formatCurrency(valorLiq)} foi removido.`,
+            detalhes: {
+              valor: valorLiq,
+              extra: {
+                funcionario: fNome,
+                mes_referencia: folha.mes_referencia,
+                total_horas: folha.total_horas,
+              },
+            },
+          })
+
+          await folhaHorasExtrasService.delete(folha.id)
+          toast({ title: 'Lançamento de horas extras removido com sucesso.' })
+          await loadDados()
+        } catch (err: any) {
+          toast({
+            title: 'Erro ao remover lançamento',
+            description: err.message,
+            variant: 'destructive',
+          })
+        }
+      },
+    })
+    setConfirmDialogOpen(true)
   }
 
-  // Lançar no Financeiro (gerar Conta a Pagar pelo VALOR LÍQUIDO)
-  const handleLancarNoFinanceiro = async (folha: FolhaHorasExtras) => {
+  // Lançar no Financeiro (gerar Conta a Pagar pelo VALOR LÍQUIDO) com confirmação
+  const handleLancarNoFinanceiro = (folha: FolhaHorasExtras) => {
     if (!currentEmpresa) return
     const fNome = folha.expand?.funcionario_id?.nome || 'Colaborador'
     const valorLiquido =
@@ -304,82 +507,101 @@ export default function HorasExtras() {
             (folha.total_valor + (folha.gratificacao || 0) - (folha.adiantamento || 0)).toFixed(2),
           )
 
-    if (
-      !confirm(
-        `Deseja gerar uma Conta a Pagar no valor LÍQUIDO de ${formatCurrency(
-          valorLiquido,
-        )} referente às horas extras de ${fNome} (Mês: ${folha.mes_referencia})?`,
-      )
-    ) {
-      return
-    }
+    setConfirmDialogData({
+      title: 'Gerar Conta a Pagar de Horas Extras',
+      description: `Deseja gerar uma Conta a Pagar no valor LÍQUIDO de ${formatCurrency(
+        valorLiquido,
+      )} referente às horas extras de ${fNome} (Mês: ${folha.mes_referencia})?`,
+      confirmLabel: 'Gerar Conta a Pagar',
+      confirmVariant: 'default',
+      action: async () => {
+        try {
+          setLancandoContaId(folha.id)
 
-    try {
-      setLancandoContaId(folha.id)
+          // Categoria de despesas com folha/pessoal
+          const catFolha =
+            planoContas.find((pc) => pc.nome.toLowerCase().includes('hora extra')) ||
+            planoContas.find((pc) => pc.nome.toLowerCase().includes('salário')) ||
+            planoContas.find((pc) => pc.nome.toLowerCase().includes('pessoal')) ||
+            planoContas[0] ||
+            null
 
-      // Categoria de despesas com folha/pessoal
-      const catFolha =
-        planoContas.find((pc) => pc.nome.toLowerCase().includes('hora extra')) ||
-        planoContas.find((pc) => pc.nome.toLowerCase().includes('salário')) ||
-        planoContas.find((pc) => pc.nome.toLowerCase().includes('pessoal')) ||
-        planoContas[0] ||
-        null
+          // Vencimento padrão: 5º dia útil próximo
+          const dVenc = new Date()
+          dVenc.setDate(5)
+          dVenc.setMonth(dVenc.getMonth() + 1)
 
-      // Vencimento padrão: 5º dia útil próximo
-      const dVenc = new Date()
-      dVenc.setDate(5)
-      dVenc.setMonth(dVenc.getMonth() + 1)
+          const detalhesMemoria: string[] = [
+            `Bruto HE: ${formatCurrency(folha.total_valor)} (${folha.total_horas}h)`,
+          ]
+          if (folha.gratificacao && folha.gratificacao > 0) {
+            detalhesMemoria.push(`Gratificação (+): ${formatCurrency(folha.gratificacao)}`)
+          }
+          if (folha.adiantamento && folha.adiantamento > 0) {
+            detalhesMemoria.push(`Adiantamento (-): ${formatCurrency(folha.adiantamento)}`)
+          }
+          detalhesMemoria.push(`Líquido: ${formatCurrency(valorLiquido)}`)
 
-      const detalhesMemoria: string[] = [
-        `Bruto HE: ${formatCurrency(folha.total_valor)} (${folha.total_horas}h)`,
-      ]
-      if (folha.gratificacao && folha.gratificacao > 0) {
-        detalhesMemoria.push(`Gratificação (+): ${formatCurrency(folha.gratificacao)}`)
-      }
-      if (folha.adiantamento && folha.adiantamento > 0) {
-        detalhesMemoria.push(`Adiantamento (-): ${formatCurrency(folha.adiantamento)}`)
-      }
-      detalhesMemoria.push(`Líquido: ${formatCurrency(valorLiquido)}`)
+          const payloadConta = {
+            empresa_id: currentEmpresa.id,
+            descricao: `Horas Extras (${folha.total_horas}h) - Líquido a Pagar: ${fNome} [${folha.mes_referencia}]`,
+            categoria_id: catFolha?.id || null,
+            valor: valorLiquido,
+            vencimento: dVenc.toISOString(),
+            parcelas: 1,
+            status: 'Aberta',
+            observacoes: `Apuração de Horas Extras de ${folha.mes_referencia}. Colaborador: ${fNome}. Salário base: ${formatCurrency(
+              folha.salario_base,
+            )}. Memória: ${detalhesMemoria.join(' | ')}. Modo: ${
+              folha.modo_calculo === 'padrao_50' ? '50% Geral' : 'Regra CLT 50%/100%'
+            }.`,
+          }
 
-      const payloadConta = {
-        empresa_id: currentEmpresa.id,
-        descricao: `Horas Extras (${folha.total_horas}h) - Líquido a Pagar: ${fNome} [${folha.mes_referencia}]`,
-        categoria_id: catFolha?.id || null,
-        valor: valorLiquido,
-        vencimento: dVenc.toISOString(),
-        parcelas: 1,
-        status: 'Aberta',
-        observacoes: `Apuração de Horas Extras de ${folha.mes_referencia}. Colaborador: ${fNome}. Salário base: ${formatCurrency(
-          folha.salario_base,
-        )}. Memória: ${detalhesMemoria.join(' | ')}. Modo: ${
-          folha.modo_calculo === 'padrao_50' ? '50% Geral' : 'Regra CLT 50%/100%'
-        }.`,
-      }
+          const contaCriada = await pb.collection('contas_pagar').create(payloadConta)
 
-      const contaCriada = await pb.collection('contas_pagar').create(payloadConta)
+          // Atualiza o registro de horas extras como aprovado/vinculado e garante os campos
+          await folhaHorasExtrasService.update(folha.id, {
+            status: 'aprovado',
+            conta_pagar_id: contaCriada.id,
+            valor_liquido: valorLiquido,
+          })
 
-      // Atualiza o registro de horas extras como aprovado/vinculado e garante os campos
-      await folhaHorasExtrasService.update(folha.id, {
-        status: 'aprovado',
-        conta_pagar_id: contaCriada.id,
-        valor_liquido: valorLiquido,
-      })
+          await historicoService.registrar({
+            empresaId: currentEmpresa.id,
+            colecaoOrigem: 'outros',
+            registroId: folha.id,
+            acao: 'editar',
+            usuarioId: user?.id,
+            usuarioNome: user?.name || user?.email || 'Usuário',
+            descricao: `Horas extras de ${fNome} (${folha.mes_referencia}) lançadas no financeiro. Conta a pagar gerada no valor de ${formatCurrency(valorLiquido)}.`,
+            detalhes: {
+              valor: valorLiquido,
+              extra: {
+                conta_pagar_id: contaCriada.id,
+                funcionario: fNome,
+                mes_referencia: folha.mes_referencia,
+              },
+            },
+          })
 
-      toast({
-        title: 'Conta a Pagar de Horas Extras gerada com sucesso!',
-        description: `Lançado no Contas a Pagar pelo valor líquido de ${formatCurrency(valorLiquido)}.`,
-      })
+          toast({
+            title: 'Conta a Pagar de Horas Extras gerada com sucesso!',
+            description: `Lançado no Contas a Pagar pelo valor líquido de ${formatCurrency(valorLiquido)}.`,
+          })
 
-      await loadDados()
-    } catch (err: any) {
-      toast({
-        title: 'Erro ao lançar no financeiro',
-        description: err.message,
-        variant: 'destructive',
-      })
-    } finally {
-      setLancandoContaId(null)
-    }
+          await loadDados()
+        } catch (err: any) {
+          toast({
+            title: 'Erro ao lançar no financeiro',
+            description: err.message,
+            variant: 'destructive',
+          })
+        } finally {
+          setLancandoContaId(null)
+        }
+      },
+    })
+    setConfirmDialogOpen(true)
   }
 
   // Filtragem dos registros
@@ -745,11 +967,25 @@ export default function HorasExtras() {
                             </Button>
                           )}
 
+                          {/* Botão de Edição (Lápis na folha de horas extras) */}
                           {canEdit && (
                             <Button
                               size="sm"
                               variant="ghost"
-                              onClick={() => handleDeleteFolha(folha.id)}
+                              onClick={() => handleEditFolha(folha)}
+                              className="h-7 w-7 p-0 text-teal-700 hover:text-teal-900 hover:bg-teal-50"
+                              title="Editar cálculo de horas extras"
+                              aria-label={`Editar horas extras de ${func?.nome || 'colaborador'}`}
+                            >
+                              <Pencil className="w-3.5 h-3.5" />
+                            </Button>
+                          )}
+
+                          {canEdit && (
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              onClick={() => handleDeleteFolha(folha)}
                               className="h-7 w-7 p-0 text-red-400 hover:text-red-700 hover:bg-red-50"
                               title="Excluir Lançamento"
                             >
@@ -772,8 +1008,17 @@ export default function HorasExtras() {
         <SheetContent className="sm:max-w-[560px] w-full bg-white border-l border-[#ECEAE4] p-6 overflow-y-auto">
           <SheetHeader>
             <SheetTitle className="text-lg font-bold text-gray-900 flex items-center gap-2">
-              <Calculator className="w-5 h-5 text-teal-700" />
-              Cálculo de Folha de Horas Extras
+              {editingId ? (
+                <>
+                  <Pencil className="w-5 h-5 text-teal-700" />
+                  Editar Folha de Horas Extras
+                </>
+              ) : (
+                <>
+                  <Calculator className="w-5 h-5 text-teal-700" />
+                  Cálculo de Folha de Horas Extras
+                </>
+              )}
             </SheetTitle>
           </SheetHeader>
 
@@ -1097,7 +1342,14 @@ export default function HorasExtras() {
             </div>
 
             <SheetFooter className="pt-3 flex justify-between">
-              <Button type="button" variant="ghost" onClick={() => setDrawerOpen(false)}>
+              <Button
+                type="button"
+                variant="ghost"
+                onClick={() => {
+                  setDrawerOpen(false)
+                  setEditingId(null)
+                }}
+              >
                 Cancelar
               </Button>
               <Button
@@ -1105,7 +1357,11 @@ export default function HorasExtras() {
                 disabled={isSaving}
                 className="bg-teal-700 hover:bg-teal-800 text-white rounded-xl shadow-xs"
               >
-                {isSaving ? 'Gravando...' : 'Salvar & Gerar Recibo'}
+                {isSaving
+                  ? 'Gravando...'
+                  : editingId
+                    ? 'Atualizar Horas Extras'
+                    : 'Salvar & Gerar Recibo'}
               </Button>
             </SheetFooter>
           </form>
@@ -1132,6 +1388,42 @@ export default function HorasExtras() {
         mesReferenciaFiltro={mesFiltro}
         modoCalculoFiltro={modoFiltro}
       />
+
+      {/* DIÁLOGO DE CONFIRMAÇÃO OBRIGATÓRIO (PADRÃO DO SISTEMA) */}
+      <AlertDialog open={confirmDialogOpen} onOpenChange={setConfirmDialogOpen}>
+        <AlertDialogContent className="bg-white rounded-2xl border-[#ECEAE4] max-w-[440px]">
+          <AlertDialogHeader>
+            <AlertDialogTitle className="text-base font-bold text-gray-900">
+              {confirmDialogData?.title || 'Confirmar ação'}
+            </AlertDialogTitle>
+            <AlertDialogDescription className="text-xs text-gray-600 leading-relaxed">
+              {confirmDialogData?.description}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter className="pt-2">
+            <AlertDialogCancel disabled={isSaving} className="text-xs rounded-xl">
+              Cancelar
+            </AlertDialogCancel>
+            <AlertDialogAction
+              disabled={isSaving}
+              onClick={async (e) => {
+                e.preventDefault()
+                if (confirmDialogData?.action) {
+                  await confirmDialogData.action()
+                }
+                setConfirmDialogOpen(false)
+              }}
+              className={`text-xs rounded-xl text-white ${
+                confirmDialogData?.confirmVariant === 'destructive'
+                  ? 'bg-red-600 hover:bg-red-700'
+                  : 'bg-teal-700 hover:bg-teal-800'
+              }`}
+            >
+              {isSaving ? 'Processando...' : confirmDialogData?.confirmLabel || 'Confirmar'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }

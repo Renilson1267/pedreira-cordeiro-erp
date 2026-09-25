@@ -129,6 +129,25 @@ export const CAMPOS_CONFIG_RECEBER: Record<string, CampoConfig> = {
   observacoes: { label: 'Observações' },
 }
 
+export const CAMPOS_CONFIG_HORAS_EXTRAS: Record<string, CampoConfig> = {
+  funcionario_nome: { label: 'Colaborador' },
+  mes_referencia: { label: 'Mês de Referência' },
+  modo_calculo: {
+    label: 'Modo de Cálculo',
+    format: (v) => (v === 'clt_vigente' ? 'CLT Atual (50%/100%)' : '50% Geral'),
+  },
+  salario_base: { label: 'Salário Base', format: (v) => formatCurrency(Number(v) || 0) },
+  horas_50: { label: 'Horas 50%', format: (v) => `${Number(v || 0).toFixed(1)}h` },
+  horas_100: { label: 'Horas 100%', format: (v) => `${Number(v || 0).toFixed(1)}h` },
+  total_horas: { label: 'Total de Horas', format: (v) => `${Number(v || 0).toFixed(1)}h` },
+  total_valor: { label: 'Total Bruto HE', format: (v) => formatCurrency(Number(v) || 0) },
+  gratificacao: { label: 'Gratificação (+)', format: (v) => formatCurrency(Number(v) || 0) },
+  adiantamento: { label: 'Adiantamento (−)', format: (v) => formatCurrency(Number(v) || 0) },
+  valor_liquido: { label: 'Valor Líquido a Pagar', format: (v) => formatCurrency(Number(v) || 0) },
+  status: { label: 'Status' },
+  observacoes: { label: 'Observações' },
+}
+
 export function calcularDiffAlteracoes(
   anterior: Record<string, any>,
   novo: Record<string, any>,
