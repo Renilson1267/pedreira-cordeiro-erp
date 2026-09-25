@@ -68,6 +68,10 @@ import {
   Trash2,
   Eye,
   Link as LinkIcon,
+  Send,
+  Building2,
+  AlertCircle,
+  HelpCircle,
 } from 'lucide-react'
 
 export default function EntregaPage() {
@@ -886,13 +890,29 @@ export default function EntregaPage() {
                       <td className="py-3 px-4">
                         {venda ? (
                           <div className="space-y-0.5">
-                            <Badge
-                              variant="outline"
-                              className="bg-teal-50 text-teal-800 border-teal-200 text-[10px] font-mono inline-flex items-center"
-                            >
-                              <LinkIcon className="w-2.5 h-2.5 mr-1 shrink-0" />
-                              Venda #{venda.id.slice(0, 6)}
-                            </Badge>
+                            <div className="flex items-center gap-1 flex-wrap">
+                              <Badge
+                                variant="outline"
+                                className="bg-teal-50 text-teal-800 border-teal-200 text-[10px] font-mono inline-flex items-center"
+                              >
+                                <LinkIcon className="w-2.5 h-2.5 mr-1 shrink-0" />
+                                Venda #{venda.id.slice(0, 6)}
+                              </Badge>
+                              {venda.tipo_entrega === 'terceiro' ? (
+                                <Badge
+                                  variant="secondary"
+                                  className="bg-gray-100 text-gray-700 border-gray-300 text-[9px] font-medium inline-flex items-center gap-0.5"
+                                >
+                                  <Building2 className="w-2.5 h-2.5 text-gray-500 shrink-0" />
+                                  <span>Terceiro</span>
+                                </Badge>
+                              ) : (
+                                <Badge className="bg-teal-100 text-teal-900 border-teal-300 text-[9px] font-medium inline-flex items-center gap-0.5">
+                                  <Truck className="w-2.5 h-2.5 text-teal-700 shrink-0" />
+                                  <span>Frota</span>
+                                </Badge>
+                              )}
+                            </div>
                             <div className="text-[11px] font-medium text-gray-900 truncate max-w-[190px]">
                               {clienteFinal}
                             </div>

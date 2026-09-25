@@ -96,6 +96,9 @@ import {
   Printer,
   Hash,
   Scale,
+  Building2,
+  Send,
+  AlertCircle,
 } from 'lucide-react'
 
 // 5 Produtos padrão da Pedreira Cordeiro
@@ -1433,15 +1436,16 @@ export default function Vendas() {
                         <div className="flex flex-col items-center gap-0.5 text-center">
                           {isFrota ? (
                             <Badge className="bg-teal-100 text-teal-900 border-teal-300 text-[10px] font-semibold flex items-center gap-1 w-fit">
-                              <Truck className="w-3 h-3 text-teal-700" />
-                              Frota Própria
+                              <Truck className="w-3 h-3 text-teal-700 shrink-0" />
+                              <span>Frota Própria</span>
                             </Badge>
                           ) : (
                             <Badge
                               variant="secondary"
-                              className="bg-gray-100 text-gray-700 border-gray-300 text-[10px] font-semibold w-fit"
+                              className="bg-gray-100 text-gray-700 border-gray-300 text-[10px] font-semibold flex items-center gap-1 w-fit"
                             >
-                              Terceiro
+                              <Building2 className="w-3 h-3 text-gray-500 shrink-0" />
+                              <span>Terceiro</span>
                             </Badge>
                           )}
                           {/* Exibir Veículo e/ou Transportador Terceiro */}
@@ -1700,8 +1704,8 @@ export default function Vendas() {
                       : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
                   }`}
                 >
-                  <Package
-                    className={`w-4 h-4 ${tipoEntrega === 'terceiro' ? 'text-white' : 'text-gray-500'}`}
+                  <Building2
+                    className={`w-4 h-4 ${tipoEntrega === 'terceiro' ? 'text-white' : 'text-gray-600'}`}
                   />
                   <span>Terceiro</span>
                 </button>
@@ -1713,7 +1717,7 @@ export default function Vendas() {
                   {/* Veículo / Equipamento da Frota */}
                   <div className="space-y-1">
                     <div className="flex items-center justify-between">
-                      <Label className="text-gray-800 font-medium text-[11px] flex items-center gap-1">
+                      <Label className="text-gray-800 font-medium text-[11px] flex items-center gap-1.5">
                         <Truck className="w-3.5 h-3.5 text-teal-700" />
                         <span>Veículo / Equipamento da Frota</span>
                       </Label>
@@ -1783,8 +1787,8 @@ export default function Vendas() {
                 <div className="p-3 bg-white rounded-lg border border-gray-300 space-y-3 shadow-2xs">
                   {/* Transportador Terceiro */}
                   <div className="space-y-1">
-                    <Label className="text-gray-800 font-medium text-[11px] flex items-center gap-1">
-                      <Package className="w-3.5 h-3.5 text-gray-600" />
+                    <Label className="text-gray-800 font-medium text-[11px] flex items-center gap-1.5">
+                      <Building2 className="w-3.5 h-3.5 text-gray-600" />
                       <span>Transportador / Terceiro (Nome ou Empresa) *</span>
                     </Label>
                     <Input
@@ -2366,10 +2370,18 @@ export default function Vendas() {
                     <span className="text-[10px] text-gray-400 block uppercase">
                       Tipo de Entrega
                     </span>
-                    <span className="font-semibold text-gray-900">
-                      {detalheVenda.tipo_entrega === 'terceiro'
-                        ? 'Terceiro (Retirada/Terceiro)'
-                        : 'Frota Própria'}
+                    <span className="font-semibold text-gray-900 inline-flex items-center gap-1.5 mt-0.5">
+                      {detalheVenda.tipo_entrega === 'terceiro' ? (
+                        <>
+                          <Building2 className="w-3.5 h-3.5 text-gray-600" />
+                          <span>Terceiro (Retirada / Transportador Externo)</span>
+                        </>
+                      ) : (
+                        <>
+                          <Truck className="w-3.5 h-3.5 text-teal-700" />
+                          <span>Frota Própria (Entrega Pedreira)</span>
+                        </>
+                      )}
                     </span>
                   </div>
                   {(detalheVenda.veiculo_identificacao ||
