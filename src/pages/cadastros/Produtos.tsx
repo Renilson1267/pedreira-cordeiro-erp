@@ -672,13 +672,14 @@ export default function Produtos() {
               {/* Botões rápidos de densidades típicas */}
               <div className="pt-1">
                 <span className="text-[10px] uppercase font-semibold text-gray-500 tracking-wider">
-                  Valores típicos de pedreira:
+                  Valores típicos da pedreira:
                 </span>
                 <div className="flex flex-wrap gap-1.5 mt-1">
                   {[
-                    { label: 'Brita (1,50)', val: '1.5' },
+                    { label: 'Brita 12 (1,45)', val: '1.45' },
+                    { label: 'Brita 19 (1,47)', val: '1.47' },
+                    { label: 'Pó de pedra (1,56)', val: '1.56' },
                     { label: 'Rachão (1,50)', val: '1.5' },
-                    { label: 'Pó de pedra (1,50)', val: '1.5' },
                     { label: 'Cascalhinho (1,60)', val: '1.6' },
                     { label: 'Areia (1,45)', val: '1.45' },
                   ].map((sug) => (
@@ -850,17 +851,23 @@ export default function Produtos() {
               </div>
 
               {/* Botões rápidos */}
-              <div className="flex gap-1.5 pb-0.5">
-                {[1.5, 1.6].map((d) => (
+              <div className="flex flex-wrap gap-1.5 pb-0.5">
+                {[
+                  { label: '1,45 (B12)', val: '1.45' },
+                  { label: '1,47 (B19)', val: '1.47' },
+                  { label: '1,56 (Pó)', val: '1.56' },
+                  { label: '1,50 (Rachão)', val: '1.5' },
+                  { label: '1,60 (Cascalho)', val: '1.6' },
+                ].map((item) => (
                   <Button
-                    key={d}
+                    key={item.label}
                     type="button"
                     size="sm"
                     variant="outline"
-                    onClick={() => handleConverterDensidadeChange(String(d))}
-                    className="h-9 text-xs px-2.5 border-teal-200 text-teal-800 hover:bg-teal-50"
+                    onClick={() => handleConverterDensidadeChange(item.val)}
+                    className="h-9 text-[11px] px-2 border-teal-200 text-teal-800 hover:bg-teal-50"
                   >
-                    Usar {d.toFixed(1)}
+                    {item.label}
                   </Button>
                 ))}
               </div>

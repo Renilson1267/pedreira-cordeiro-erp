@@ -22,14 +22,16 @@ export interface DensidadeReferencia {
  * - Bica corrida: ~1,60 t/m³
  */
 export const DENSIDADES_TIPICAS_PEDREIRA: DensidadeReferencia[] = [
-  { padrao: 'brita 12', densidade: 1.5, desc: 'Brita 12 (~1,50 t/m³)' },
-  { padrao: 'brita 19', densidade: 1.5, desc: 'Brita 19 (~1,50 t/m³)' },
-  { padrao: 'brita', densidade: 1.5, desc: 'Brita em geral (~1,50 t/m³)' },
+  { padrao: 'brita 12', densidade: 1.45, desc: 'Brita 12 (1,45 t/m³)' },
+  { padrao: 'brita 19', densidade: 1.47, desc: 'Brita 19 (1,47 t/m³)' },
+  { padrao: 'brita', densidade: 1.45, desc: 'Brita em geral (~1,45 t/m³)' },
   { padrao: 'pedra rachão', densidade: 1.5, desc: 'Pedra Rachão (~1,50 t/m³)' },
   { padrao: 'pedra rachao', densidade: 1.5, desc: 'Pedra Rachão (~1,50 t/m³)' },
   { padrao: 'rachao', densidade: 1.5, desc: 'Pedra Rachão (~1,50 t/m³)' },
-  { padrao: 'pó de pedra', densidade: 1.5, desc: 'Pó de Pedra (~1,50 t/m³)' },
-  { padrao: 'po de pedra', densidade: 1.5, desc: 'Pó de Pedra (~1,50 t/m³)' },
+  { padrao: 'pó de brita', densidade: 1.56, desc: 'Pó de Brita (1,56 t/m³)' },
+  { padrao: 'po de brita', densidade: 1.56, desc: 'Pó de Brita (1,56 t/m³)' },
+  { padrao: 'pó de pedra', densidade: 1.56, desc: 'Pó de Pedra (1,56 t/m³)' },
+  { padrao: 'po de pedra', densidade: 1.56, desc: 'Pó de Pedra (1,56 t/m³)' },
   { padrao: 'cascalhinho', densidade: 1.6, desc: 'Cascalhinho (~1,60 t/m³)' },
   { padrao: 'areia', densidade: 1.45, desc: 'Areia (~1,45 t/m³)' },
   { padrao: 'pedrisco', densidade: 1.45, desc: 'Pedrisco (~1,45 t/m³)' },
