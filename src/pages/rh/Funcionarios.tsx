@@ -1,16 +1,19 @@
 import React, { useState, useEffect, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useCompany } from '@/contexts/CompanyContext'
+import { useAuth } from '@/contexts/AuthContext'
 import pb from '@/lib/pocketbase/client'
 import { useRealtime } from '@/hooks/use-realtime'
 import { formatCurrency, formatDate } from '@/lib/formatters'
 import type { Funcionario, SetorFuncionario, StatusFuncionario, PlanoConta } from '@/types/erp'
-import { Card, CardContent } from '@/components/ui/card'
+import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
 import { Textarea } from '@/components/ui/textarea'
+import { Checkbox } from '@/components/ui/checkbox'
+import { ComboboxPesquisavel } from '@/components/ui/ComboboxPesquisavel'
 import {
   Select,
   SelectContent,
@@ -19,25 +22,27 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetFooter } from '@/components/ui/sheet'
+import {
+  RelatorioListagemImpressaoModal,
+  type ColunaRelatorioImpressao,
+  type TotalizadorRelatorioImpressao,
+} from '@/components/financeiro/RelatorioListagemImpressaoModal'
 import { toast } from '@/hooks/use-toast'
 import {
-  Users,
   Plus,
   Search,
   Edit2,
   Trash2,
   Phone,
-  Mail,
   DollarSign,
-  Calendar,
   Briefcase,
   Building,
-  CheckCircle2,
-  AlertCircle,
   FileSpreadsheet,
   Receipt,
   UserCheck,
   Clock,
+  Printer,
+  X,
 } from 'lucide-react'
 import { formatarCpf, apenasDigitos, formatarTelefoneBrasil, validarCpf } from '@/lib/brasilApi'
 import { ImportadorFuncionariosModal } from '@/components/rh/ImportadorFuncionariosModal'
@@ -52,16 +57,23 @@ const SETOR_COLORS: Record<SetorFuncionario, { bg: string; text: string; border:
 }
 
 export default function Funcionarios() {
-  const { currentEmpresa, canEdit, isReadOnly } = useCompany()
+  const { currentEmpresa, canEdit } = useCompany()
+  const { user } = useAuth()
   const navigate = useNavigate()
 
   const [funcionarios, setFuncionarios] = useState<Funcionario[]>([])
   const [planoContas, setPlanoContas] = useState<PlanoConta[]>([])
   const [loading, setLoading] = useState(false)
 
+  // Filtros da listagem
   const [searchQuery, setSearchQuery] = useState('')
   const [setorFilter, setSetorFilter] = useState<string>('todos')
+  const [cargoFilter, setCargoFilter] = useState<string>('todos')
   const [statusFilter, setStatusFilter] = useState<string>('todos')
+
+  // Seleção múltipla para impressão
+  const [selectedIds, setSelectedIds] = useState<string[]>([])
+  const [relatorioImpressaoOpen, setRelatorioImpressaoOpen] = useState(false)
 
   // Importador Modal
   const [importadorOpen, setImportadorOpen] = useState(false)
@@ -327,28 +339,256 @@ export default function Funcionarios() {
     }
   }
 
+  // Lista única de cargos existentes para o filtro de Cargo
+  const listaCargos = useMemo(() => {
+    const cargosSet = new Set<string>()
+    funcionarios.forEach((f) => {
+      if (f.cargo?.trim()) {
+        cargosSet.add(f.cargo.trim())
+      }
+    })
+    return Array.from(cargosSet).sort((a, b) => a.localeCompare(b, 'pt-BR'))
+  }, [funcionarios])
+
+  // Lista única de setores encontrados na base (combina setores padrão + setores cadastrados)
+  const listaSetoresDisponiveis = useMemo(() => {
+    const setoresPadrao: SetorFuncionario[] = [
+      'Britagem',
+      'Concreto',
+      'Lokotrack',
+      'Frota',
+      'Administrativo',
+      'Outro',
+    ]
+    const set = new Set<string>(setoresPadrao)
+    funcionarios.forEach((f) => {
+      if (f.setor) set.add(f.setor)
+    })
+    return Array.from(set)
+  }, [funcionarios])
+
   const filteredFuncionarios = useMemo(() => {
     return funcionarios.filter((f) => {
       if (setorFilter !== 'todos' && f.setor !== setorFilter) return false
+      if (
+        cargoFilter !== 'todos' &&
+        f.cargo?.trim().toLowerCase() !== cargoFilter.trim().toLowerCase()
+      ) {
+        return false
+      }
       if (statusFilter !== 'todos' && f.status !== statusFilter) return false
       if (searchQuery.trim()) {
         const q = searchQuery.toLowerCase()
-        const n = f.nome.toLowerCase()
-        const c = f.cargo.toLowerCase()
-        const doc = (f.cpf || '').toLowerCase()
-        return n.includes(q) || c.includes(q) || doc.includes(q)
+        const n = (f.nome || '').toLowerCase()
+        const c = (f.cargo || '').toLowerCase()
+        const s = (f.setor || '').toLowerCase()
+        const doc = (f.cpf || '').replace(/\D/g, '')
+        const tel = (f.telefone || '').replace(/\D/g, '')
+        const pix = (f.chave_pix || '').toLowerCase()
+        const qDigits = q.replace(/\D/g, '')
+
+        const matchText = n.includes(q) || c.includes(q) || s.includes(q) || pix.includes(q)
+        const matchDigits = qDigits.length > 2 && (doc.includes(qDigits) || tel.includes(qDigits))
+        return matchText || matchDigits
       }
       return true
     })
-  }, [funcionarios, setorFilter, statusFilter, searchQuery])
+  }, [funcionarios, setorFilter, cargoFilter, statusFilter, searchQuery])
 
-  // KPIs
-  const totalAtivos = funcionarios.filter((f) => f.status === 'ativo').length
-  const totalFolhaMensal = funcionarios
+  // Handlers de seleção por checkbox (padrão ContasPagar / HorasExtras)
+  const handleToggleSelectAll = () => {
+    if (selectedIds.length === filteredFuncionarios.length && filteredFuncionarios.length > 0) {
+      setSelectedIds([])
+    } else {
+      setSelectedIds(filteredFuncionarios.map((f) => f.id))
+    }
+  }
+
+  const handleToggleSelectOne = (id: string) => {
+    setSelectedIds((prev) =>
+      prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id],
+    )
+  }
+
+  // Itens a serem impressos: se houver seleção, imprime os selecionados; senão, todos os filtrados
+  const itensParaImpressao = useMemo(() => {
+    if (selectedIds.length > 0) {
+      const set = new Set(selectedIds)
+      return filteredFuncionarios.filter((f) => set.has(f.id))
+    }
+    return filteredFuncionarios
+  }, [filteredFuncionarios, selectedIds])
+
+  // Descrição legível dos filtros aplicados (aparece no cabeçalho do relatório impresso)
+  const descricaoFiltrosAplicados = useMemo(() => {
+    const partes: string[] = []
+    if (setorFilter !== 'todos') {
+      partes.push(`Setor: ${setorFilter}`)
+    } else {
+      partes.push('Setor: Todos')
+    }
+    if (cargoFilter !== 'todos') {
+      partes.push(`Cargo: ${cargoFilter}`)
+    }
+    if (statusFilter !== 'todos') {
+      const labelStatus =
+        statusFilter === 'ativo'
+          ? 'Ativo'
+          : statusFilter === 'ferias'
+            ? 'Férias'
+            : statusFilter === 'afastado'
+              ? 'Afastado'
+              : 'Demitido'
+      partes.push(`Situação: ${labelStatus}`)
+    } else {
+      partes.push('Situação: Todas')
+    }
+    if (searchQuery.trim()) {
+      partes.push(`Busca: "${searchQuery.trim()}"`)
+    }
+    if (selectedIds.length > 0) {
+      partes.push(`Seleção ativa: ${selectedIds.length} colaborador(es) selecionado(s)`)
+    }
+    return partes.join(' · ')
+  }, [setorFilter, cargoFilter, statusFilter, searchQuery, selectedIds.length])
+
+  // Colunas do relatório oficial de listagem de funcionários A4
+  const colunasRelatorioFuncionarios = useMemo<ColunaRelatorioImpressao<Funcionario>[]>(
+    () => [
+      {
+        key: 'nome',
+        header: 'Nome do Colaborador',
+        render: (f) => (
+          <div>
+            <div className="font-bold text-gray-900">{f.nome}</div>
+            {f.chave_pix && (
+              <div className="text-[10px] text-gray-500 font-mono">PIX: {f.chave_pix}</div>
+            )}
+          </div>
+        ),
+      },
+      {
+        key: 'cargo',
+        header: 'Cargo / Função',
+        render: (f) => <span className="font-medium text-gray-800">{f.cargo || '—'}</span>,
+      },
+      {
+        key: 'setor',
+        header: 'Setor',
+        align: 'center',
+        render: (f) => (
+          <span className="inline-block px-1.5 py-0.5 rounded text-[10px] font-semibold bg-gray-100 text-gray-800 border border-gray-300">
+            {f.setor || 'Geral'}
+          </span>
+        ),
+      },
+      {
+        key: 'cpf',
+        header: 'CPF',
+        align: 'center',
+        className: 'font-mono whitespace-nowrap text-gray-700',
+        render: (f) => (f.cpf ? formatarCpf(f.cpf) : '—'),
+      },
+      {
+        key: 'telefone',
+        header: 'Telefone / Contato',
+        align: 'center',
+        className: 'font-mono whitespace-nowrap text-gray-600',
+        render: (f) => (f.telefone ? formatarTelefoneBrasil(f.telefone) : '—'),
+      },
+      {
+        key: 'admissao',
+        header: 'Admissão',
+        align: 'center',
+        className: 'font-mono whitespace-nowrap text-gray-700',
+        render: (f) => (f.data_admissao ? formatDate(f.data_admissao) : '—'),
+      },
+      {
+        key: 'salario',
+        header: 'Salário Base (R$)',
+        align: 'right',
+        className: 'font-mono font-bold whitespace-nowrap text-gray-900',
+        render: (f) => (f.salario ? formatCurrency(f.salario) : '—'),
+      },
+      {
+        key: 'status',
+        header: 'Situação',
+        align: 'center',
+        className: 'whitespace-nowrap',
+        render: (f) => {
+          const rotulo =
+            f.status === 'ativo'
+              ? 'Ativo'
+              : f.status === 'ferias'
+                ? 'Férias'
+                : f.status === 'afastado'
+                  ? 'Afastado'
+                  : 'Demitido'
+          return (
+            <span
+              className={`inline-block px-1.5 py-0.5 rounded text-[10px] font-bold ${
+                f.status === 'ativo'
+                  ? 'text-emerald-800 bg-emerald-50 border border-emerald-300'
+                  : f.status === 'ferias'
+                    ? 'text-blue-800 bg-blue-50 border border-blue-300'
+                    : f.status === 'afastado'
+                      ? 'text-amber-800 bg-amber-50 border border-amber-300'
+                      : 'text-red-800 bg-red-50 border border-red-300'
+              }`}
+            >
+              {rotulo}
+            </span>
+          )
+        },
+      },
+    ],
+    [],
+  )
+
+  // Totalizadores do rodapé do relatório impresso
+  const totalizadoresRelatorioFuncionarios = useMemo<TotalizadorRelatorioImpressao[]>(() => {
+    const somaSalarios = itensParaImpressao.reduce((acc, f) => acc + (f.salario || 0), 0)
+    const totalAtivosNaLista = itensParaImpressao.filter((f) => f.status === 'ativo').length
+
+    return [
+      {
+        label: 'TOTAL DE COLABORADORES:',
+        value: `${itensParaImpressao.length} registro(s) (${totalAtivosNaLista} ativos)`,
+        colSpan: 5,
+        align: 'left',
+      },
+      {
+        label: 'TOTAL SALÁRIOS:',
+        value: formatCurrency(somaSalarios),
+        colSpan: 2,
+        align: 'right',
+        className: 'text-teal-950 font-extrabold',
+      },
+      {
+        label: '',
+        value: '',
+        colSpan: 1,
+        align: 'center',
+      },
+    ]
+  }, [itensParaImpressao])
+
+  // KPIs — recalculados conforme o filtro ativo na tela
+  const totalEquipeFiltrada = filteredFuncionarios.length
+  const totalAtivosFiltrados = filteredFuncionarios.filter((f) => f.status === 'ativo').length
+  const totalFolhaFiltrada = filteredFuncionarios
     .filter((f) => f.status === 'ativo')
     .reduce((acc, f) => acc + (f.salario || 0), 0)
-  const totalSetorBritagem = funcionarios.filter((f) => f.setor === 'Britagem').length
-  const totalSetorConcreto = funcionarios.filter((f) => f.setor === 'Concreto').length
+  const totalSetorBritagem = filteredFuncionarios.filter((f) => f.setor === 'Britagem').length
+  const totalSetorConcreto = filteredFuncionarios.filter((f) => f.setor === 'Concreto').length
+  const totalSetorFrota = filteredFuncionarios.filter((f) => f.setor === 'Frota').length
+
+  const temFiltroAtivo =
+    setorFilter !== 'todos' ||
+    cargoFilter !== 'todos' ||
+    statusFilter !== 'todos' ||
+    searchQuery.trim().length > 0 ||
+    selectedIds.length > 0
 
   return (
     <div className="space-y-6">
@@ -397,7 +637,7 @@ export default function Funcionarios() {
         )}
       </div>
 
-      {/* KPI Cards */}
+      {/* KPI Cards (Recalculados conforme o filtro ativo) */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
         <Card className="rounded-2xl border-[#ECEAE4] bg-white shadow-xs p-4">
           <div className="flex items-center justify-between">
@@ -406,8 +646,19 @@ export default function Funcionarios() {
               <UserCheck className="w-4 h-4" />
             </div>
           </div>
-          <div className="text-2xl font-bold text-gray-900 mt-2 font-mono">{totalAtivos}</div>
-          <p className="text-[11px] text-emerald-600 mt-0.5">Colaboradores ativos</p>
+          <div className="text-2xl font-bold text-gray-900 mt-2 font-mono">
+            {totalAtivosFiltrados}
+            {totalEquipeFiltrada !== totalAtivosFiltrados && (
+              <span className="text-xs text-gray-400 font-normal ml-1.5">
+                / {totalEquipeFiltrada} total
+              </span>
+            )}
+          </div>
+          <p className="text-[11px] text-emerald-600 mt-0.5">
+            {setorFilter !== 'todos' || statusFilter !== 'todos' || cargoFilter !== 'todos'
+              ? 'Ativos no filtro selecionado'
+              : 'Colaboradores ativos'}
+          </p>
         </Card>
 
         <Card className="rounded-2xl border-[#ECEAE4] bg-white shadow-xs p-4">
@@ -418,9 +669,9 @@ export default function Funcionarios() {
             </div>
           </div>
           <div className="text-2xl font-bold text-teal-900 mt-2 font-mono tabular-nums">
-            {formatCurrency(totalFolhaMensal)}
+            {formatCurrency(totalFolhaFiltrada)}
           </div>
-          <p className="text-[11px] text-gray-400 mt-0.5">Soma salários equipe ativa</p>
+          <p className="text-[11px] text-gray-400 mt-0.5">Soma salários equipe ativa (filtrada)</p>
         </Card>
 
         <Card className="rounded-2xl border-[#ECEAE4] bg-white shadow-xs p-4">
@@ -439,75 +690,132 @@ export default function Funcionarios() {
         <Card className="rounded-2xl border-[#ECEAE4] bg-white shadow-xs p-4">
           <div className="flex items-center justify-between">
             <span className="text-xs font-semibold text-gray-500 uppercase">
-              Usinas de Concreto
+              Usinas / Concreto / Frota
             </span>
             <div className="w-7 h-7 rounded-lg bg-blue-50 text-blue-700 flex items-center justify-center">
               <Briefcase className="w-4 h-4" />
             </div>
           </div>
           <div className="text-2xl font-bold text-gray-900 mt-2 font-mono">
-            {totalSetorConcreto}
+            {totalSetorConcreto + totalSetorFrota}
           </div>
-          <p className="text-[11px] text-gray-400 mt-0.5">Encarregados e dosadores</p>
+          <p className="text-[11px] text-gray-400 mt-0.5">
+            Concreto: {totalSetorConcreto} · Frota: {totalSetorFrota}
+          </p>
         </Card>
       </div>
 
-      {/* Filters Bar */}
+      {/* Filters Bar (Padrão ERP: Setor combobox, Cargo combobox, Situação, Busca e Impressão com Seleção) */}
       <Card className="rounded-2xl border-[#ECEAE4] bg-white shadow-xs p-4">
         <div className="flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-3">
           <div className="flex flex-wrap items-center gap-2">
-            <Select value={setorFilter} onValueChange={setSetorFilter}>
-              <SelectTrigger className="w-[180px] bg-[#FAF9F7] border-[#ECEAE4] text-xs h-9">
-                <SelectValue placeholder="Setor / Departamento" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="todos">Todos os Setores</SelectItem>
-                <SelectItem value="Britagem">Britagem</SelectItem>
-                <SelectItem value="Concreto">Concreto</SelectItem>
-                <SelectItem value="Lokotrack">Lokotrack</SelectItem>
-                <SelectItem value="Frota">Frota</SelectItem>
-                <SelectItem value="Administrativo">Administrativo</SelectItem>
-                <SelectItem value="Outro">Outro</SelectItem>
-              </SelectContent>
-            </Select>
+            {/* Filtro Setor via Combobox Pesquisável */}
+            <ComboboxPesquisavel
+              value={setorFilter}
+              onChange={setSetorFilter}
+              placeholder="Setor: Todos"
+              searchPlaceholder="Pesquisar setor..."
+              emptyText="Nenhum setor encontrado."
+              className="w-[190px]"
+              triggerClassName="bg-[#FAF9F7] border-[#ECEAE4] h-9 rounded-xl text-xs"
+              aria-label="Filtrar por setor"
+              options={[
+                { id: 'todos', label: 'Todos os Setores' },
+                ...listaSetoresDisponiveis.map((s) => ({
+                  id: s,
+                  label: s,
+                  sublabel: `Área operacional`,
+                  keywords: [s],
+                })),
+              ]}
+            />
 
+            {/* Filtro Cargo via Combobox Pesquisável */}
+            <ComboboxPesquisavel
+              value={cargoFilter}
+              onChange={setCargoFilter}
+              placeholder="Cargo: Todos"
+              searchPlaceholder="Pesquisar função..."
+              emptyText="Nenhum cargo encontrado."
+              className="w-[200px]"
+              triggerClassName="bg-[#FAF9F7] border-[#ECEAE4] h-9 rounded-xl text-xs"
+              aria-label="Filtrar por cargo"
+              options={[
+                { id: 'todos', label: 'Todos os Cargos' },
+                ...listaCargos.map((c) => ({
+                  id: c,
+                  label: c,
+                  keywords: [c],
+                })),
+              ]}
+            />
+
+            {/* Filtro Situação / Status */}
             <Select value={statusFilter} onValueChange={setStatusFilter}>
-              <SelectTrigger className="w-[150px] bg-[#FAF9F7] border-[#ECEAE4] text-xs h-9">
-                <SelectValue placeholder="Status" />
+              <SelectTrigger className="w-[150px] bg-[#FAF9F7] border-[#ECEAE4] text-xs h-9 rounded-xl">
+                <SelectValue placeholder="Situação" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="todos">Todos os Status</SelectItem>
-                <SelectItem value="ativo">Ativo</SelectItem>
-                <SelectItem value="ferias">Férias</SelectItem>
-                <SelectItem value="afastado">Afastado</SelectItem>
-                <SelectItem value="demitido">Demitido</SelectItem>
+                <SelectItem value="todos">Todas as Situações</SelectItem>
+                <SelectItem value="ativo">● Ativo</SelectItem>
+                <SelectItem value="ferias">● Férias</SelectItem>
+                <SelectItem value="afastado">● Afastado</SelectItem>
+                <SelectItem value="demitido">● Demitido</SelectItem>
               </SelectContent>
             </Select>
 
-            {(setorFilter !== 'todos' || statusFilter !== 'todos' || searchQuery) && (
+            {temFiltroAtivo && (
               <Button
                 variant="ghost"
                 size="sm"
                 onClick={() => {
                   setSetorFilter('todos')
+                  setCargoFilter('todos')
                   setStatusFilter('todos')
                   setSearchQuery('')
+                  setSelectedIds([])
                 }}
-                className="h-9 text-xs text-gray-500"
+                className="h-8 px-2 text-xs text-gray-500 hover:text-gray-900 hover:bg-gray-100 rounded-lg"
               >
-                Limpar filtros
+                <X className="w-3.5 h-3.5 mr-1" />
+                Limpar Filtros
               </Button>
             )}
           </div>
 
-          <div className="relative w-full lg:w-72">
-            <Search className="w-4 h-4 absolute left-3 top-2.5 text-gray-400" />
-            <Input
-              placeholder="Buscar colaborador, cargo, CPF..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="pl-9 bg-[#FAF9F7] border-[#ECEAE4] text-xs h-9 rounded-xl"
-            />
+          <div className="flex items-center gap-2">
+            <div className="relative w-full lg:w-72">
+              <Search className="w-4 h-4 absolute left-3 top-2.5 text-gray-400" />
+              <Input
+                placeholder="Buscar colaborador, cargo, CPF, chave PIX..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="pl-9 bg-[#FAF9F7] border-[#ECEAE4] text-xs h-9 rounded-xl"
+              />
+            </div>
+
+            {/* Botão de Impressão (padrão Imprimir / Imprimir Selecionados com destaque teal) */}
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => setRelatorioImpressaoOpen(true)}
+              className={`h-9 px-3 text-xs font-semibold rounded-xl shadow-xs transition-colors shrink-0 ${
+                selectedIds.length > 0
+                  ? 'bg-teal-700 text-white hover:bg-teal-800 border-teal-700'
+                  : 'border-teal-300 text-teal-800 bg-teal-50/60 hover:bg-teal-100/80 hover:text-teal-950'
+              }`}
+              title={
+                selectedIds.length > 0
+                  ? `Imprimir os ${selectedIds.length} colaboradores selecionados`
+                  : 'Imprimir relatório da lista de colaboradores'
+              }
+            >
+              <Printer className="w-3.5 h-3.5 mr-1.5" />
+              {selectedIds.length > 0
+                ? `Imprimir Selecionados (${selectedIds.length})`
+                : 'Imprimir'}
+            </Button>
           </div>
         </div>
       </Card>
@@ -518,6 +826,17 @@ export default function Funcionarios() {
           <table className="w-full text-left border-collapse text-xs">
             <thead>
               <tr className="bg-[#FAF9F7] border-b border-[#ECEAE4] text-gray-500 uppercase font-semibold">
+                <th className="py-3 px-3 text-center w-8">
+                  <Checkbox
+                    checked={
+                      filteredFuncionarios.length > 0 &&
+                      selectedIds.length === filteredFuncionarios.length
+                    }
+                    onCheckedChange={handleToggleSelectAll}
+                    aria-label="Selecionar todos os colaboradores visíveis"
+                    className="border-gray-300"
+                  />
+                </th>
                 <th className="py-3 px-4">Nome do Colaborador</th>
                 <th className="py-3 px-4">Cargo / Função</th>
                 <th className="py-3 px-4">Setor</th>
@@ -529,17 +848,37 @@ export default function Funcionarios() {
               </tr>
             </thead>
             <tbody className="divide-y divide-[#ECEAE4]">
-              {filteredFuncionarios.length === 0 ? (
+              {loading ? (
                 <tr>
-                  <td colSpan={8} className="py-12 text-center text-gray-400">
+                  <td colSpan={9} className="py-12 text-center text-gray-400">
+                    Carregando colaboradores da pedreira...
+                  </td>
+                </tr>
+              ) : filteredFuncionarios.length === 0 ? (
+                <tr>
+                  <td colSpan={9} className="py-12 text-center text-gray-400">
                     Nenhum colaborador encontrado para os filtros aplicados.
                   </td>
                 </tr>
               ) : (
                 filteredFuncionarios.map((f) => {
                   const sColor = SETOR_COLORS[f.setor] || SETOR_COLORS.Outro
+                  const isSelected = selectedIds.includes(f.id)
                   return (
-                    <tr key={f.id} className="hover:bg-teal-50/20 transition-colors">
+                    <tr
+                      key={f.id}
+                      className={`transition-colors ${
+                        isSelected ? 'bg-teal-50/60 hover:bg-teal-50/80' : 'hover:bg-teal-50/20'
+                      }`}
+                    >
+                      <td className="py-3.5 px-3 text-center">
+                        <Checkbox
+                          checked={isSelected}
+                          onCheckedChange={() => handleToggleSelectOne(f.id)}
+                          aria-label={`Selecionar colaborador ${f.nome}`}
+                          className="border-gray-300"
+                        />
+                      </td>
                       <td className="py-3.5 px-4">
                         <div className="font-semibold text-gray-900">{f.nome}</div>
                         {f.chave_pix && (
@@ -1015,6 +1354,23 @@ export default function Funcionarios() {
           onImportComplete={loadFuncionarios}
         />
       )}
+
+      {/* Relatório A4 Oficial de Listagem de Funcionários (com cabeçalho, filtros descritos e totais) */}
+      <RelatorioListagemImpressaoModal
+        open={relatorioImpressaoOpen}
+        onOpenChange={setRelatorioImpressaoOpen}
+        titulo="Quadro Geral de Funcionários & Equipe"
+        subtitulo="Relação de Colaboradores Operacionais, Cargos, Setores e Salários Base"
+        badgeDestaque="Recursos Humanos"
+        empresa={currentEmpresa}
+        usuarioNome={user?.name || user?.email || 'Administrador'}
+        filtrosDescricao={descricaoFiltrosAplicados}
+        itens={itensParaImpressao}
+        colunas={colunasRelatorioFuncionarios}
+        totais={totalizadoresRelatorioFuncionarios}
+        mensagemVazio="Nenhum funcionário encontrado para os filtros ou seleção atual."
+        orientacao="landscape"
+      />
     </div>
   )
 }
