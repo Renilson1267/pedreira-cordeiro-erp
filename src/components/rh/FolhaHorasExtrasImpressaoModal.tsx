@@ -80,7 +80,8 @@ export const FolhaHorasExtrasImpressaoModal: React.FC<FolhaHorasExtrasImpressaoM
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
-        className="max-w-[98vw] lg:max-w-6xl max-h-[94vh] overflow-y-auto p-4 sm:p-6 bg-white border-[#ECEAE4]"
+        data-documento-impressao="folha-horas-extras"
+        className="max-w-[98vw] lg:max-w-6xl max-h-[94vh] overflow-y-auto p-4 sm:p-6 bg-white border-[#ECEAE4] print-landscape print:static print:transform-none print:max-w-full print:p-0 print:border-none print:shadow-none print:bg-white print:overflow-visible"
         aria-describedby="folha-impressao-description"
       >
         <DialogHeader className="flex flex-row items-center justify-between border-b pb-3 no-print">

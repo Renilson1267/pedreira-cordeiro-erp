@@ -298,7 +298,7 @@
 @media print {
   @page {
     size: A4 portrait;
-    margin: 6mm 8mm;
+    margin: 5mm 6mm;
   }
 
   html,
@@ -314,7 +314,23 @@
     print-color-adjust: exact !important;
   }
 
-  /* Ocultar completamente os backdrops e overlays de Dialog do Radix/shadcn na mídia de impressão */
+  /*
+   * REGRA FUNDAMENTAL DE ISOLAMENTO:
+   * Quando houver modal/dialog aberto na impressão (ou body.modal-aberto-imprimir ou presença de [data-radix-dialog-content]),
+   * o container principal da aplicação (#root) é OCULTADO COMPLETAMENTE (display: none !important).
+   * Isso elimina 100% da tela de trás (ex: a listagem inteira de Gestão de Vendas, botões, tabelas, filtros, etc.),
+   * garantindo que a impressora receba ÚNICA E EXCLUSIVAMENTE o conteúdo do documento emitido no modal!
+   */
+  body.modal-aberto-imprimir #root,
+  body:has([data-radix-dialog-content]) #root,
+  body:has([role='dialog']) #root {
+    display: none !important;
+    visibility: hidden !important;
+    height: 0 !important;
+    overflow: hidden !important;
+  }
+
+  /* Ocultar completamente os backdrops, overlays de Dialog e Sheet do Radix/shadcn na mídia de impressão */
   [data-radix-dialog-overlay],
   [data-state][class*='fixed'][class*='bg-black'],
   div[class*='bg-black/80'],
@@ -328,7 +344,7 @@
     pointer-events: none !important;
   }
 
-  /* Desarmar o posicionamento fixo centralizado do DialogContent na mídia de impressão */
+  /* Desarmar o posicionamento fixo centralizado do DialogContent na mídia de impressão e fixar no topo */
   [data-radix-dialog-content],
   div[role='dialog'] {
     position: static !important;
@@ -366,19 +382,44 @@
     background: #ffffff !important;
   }
 
-  /* Regras para .folha-a4-romaneio caber perfeitamente na folha A4 única sem cortes nem fundo escuro */
+  /*
+   * REGRAS ESPECÍFICAS PARA O ROMANEIO A4 CABER EM EXATAMENTE 1 PÁGINA:
+   * 1 folha A4 = 297mm de altura. Com margem de 5mm superior/inferior, a área útil é ~287mm.
+   * As 2 vias (Cliente e Empresa) + a linha de corte precisam caber com folga total para evitar overflow.
+   */
   .folha-a4-romaneio {
     background: #ffffff !important;
     background-color: #ffffff !important;
     page-break-inside: avoid !important;
     break-inside: avoid !important;
+    page-break-after: avoid !important;
+    break-after: avoid !important;
     width: 100% !important;
+    max-height: 284mm !important;
     box-sizing: border-box !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    display: flex !important;
+    flex-direction: column !important;
+    justify-content: space-between !important;
   }
 
   .via-romaneio {
     background: #ffffff !important;
     background-color: #ffffff !important;
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
+    box-sizing: border-box !important;
+    height: 136mm !important;
+    max-height: 137mm !important;
+    overflow: hidden !important;
+  }
+
+  .linha-corte {
+    height: 9mm !important;
+    max-height: 10mm !important;
+    margin-top: 1mm !important;
+    margin-bottom: 1mm !important;
     page-break-inside: avoid !important;
     break-inside: avoid !important;
   }
@@ -410,5 +451,5 @@
 
 @page landscape {
   size: A4 landscape;
-  margin: 6mm 8mm;
+  margin: 5mm 6mm;
 }

@@ -49,7 +49,8 @@ export const ReciboHorasExtrasModal: React.FC<ReciboHorasExtrasProps> = ({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
-        className="max-w-[96vw] lg:max-w-5xl max-h-[92vh] overflow-y-auto p-4 sm:p-6 bg-white border-[#ECEAE4]"
+        data-documento-impressao="recibo-horas-extras"
+        className="max-w-[96vw] lg:max-w-5xl max-h-[92vh] overflow-y-auto p-4 sm:p-6 bg-white border-[#ECEAE4] print-landscape print:static print:transform-none print:max-w-full print:p-0 print:border-none print:shadow-none print:bg-white print:overflow-visible"
         aria-describedby="recibo-description"
       >
         <DialogHeader className="flex flex-row items-center justify-between border-b pb-3 no-print">

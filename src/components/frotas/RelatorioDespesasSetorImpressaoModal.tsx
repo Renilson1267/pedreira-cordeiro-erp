@@ -102,7 +102,10 @@ export const RelatorioDespesasSetorImpressaoModal: React.FC<
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-[96vw] lg:max-w-5xl max-h-[92vh] overflow-y-auto p-4 sm:p-6 bg-white border-[#ECEAE4]">
+      <DialogContent
+        data-documento-impressao="relatorio-despesas-setor"
+        className="max-w-[96vw] lg:max-w-5xl max-h-[92vh] overflow-y-auto p-4 sm:p-6 bg-white border-[#ECEAE4] print:static print:transform-none print:max-w-full print:p-0 print:border-none print:shadow-none print:bg-white print:overflow-visible"
+      >
         <DialogHeader className="flex flex-row items-center justify-between border-b pb-3 no-print">
           <div>
             <DialogTitle className="text-lg font-bold text-gray-900 flex items-center gap-2">

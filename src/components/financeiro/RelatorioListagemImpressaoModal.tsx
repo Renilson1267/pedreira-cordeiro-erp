@@ -80,9 +80,10 @@ export function RelatorioListagemImpressaoModal<T extends { id?: string | number
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
+        data-documento-impressao="relatorio-listagem"
         className={`max-w-[96vw] ${
-          orientacao === 'landscape' ? 'lg:max-w-6xl' : 'lg:max-w-5xl'
-        } max-h-[92vh] overflow-y-auto p-4 sm:p-6 bg-white border-[#ECEAE4]`}
+          orientacao === 'landscape' ? 'lg:max-w-6xl print-landscape' : 'lg:max-w-5xl'
+        } max-h-[92vh] overflow-y-auto p-4 sm:p-6 bg-white border-[#ECEAE4] print:static print:transform-none print:max-w-full print:p-0 print:border-none print:shadow-none print:bg-white print:overflow-visible`}
         aria-describedby="relatorio-impressao-desc"
       >
         <DialogHeader className="flex flex-row items-center justify-between border-b pb-3 no-print">

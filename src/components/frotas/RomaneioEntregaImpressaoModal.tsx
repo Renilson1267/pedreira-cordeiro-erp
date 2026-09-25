@@ -96,21 +96,21 @@ const ViaRomaneio: React.FC<ViaRomaneioProps> = ({
   const isCliente = tipoVia === 'CLIENTE'
 
   return (
-    <div className="via-romaneio bg-white p-3.5 sm:p-4 rounded-lg border border-gray-300 print:border-gray-800 text-gray-900 font-sans text-[11px] leading-tight flex flex-col justify-between h-[48%] box-border overflow-hidden">
+    <div className="via-romaneio bg-white p-3 sm:p-3.5 print:p-2.5 rounded-lg border border-gray-300 print:border-gray-800 text-gray-900 font-sans text-[10.5px] print:text-[10px] leading-tight flex flex-col justify-between box-border overflow-hidden">
       {/* CABEÇALHO DA VIA */}
       <div>
-        <div className="border-b border-teal-800 pb-2 mb-2 flex items-start justify-between gap-2">
+        <div className="border-b border-teal-800 pb-1.5 mb-1.5 flex items-start justify-between gap-2">
           <div className="flex items-center gap-2">
-            <div className="w-8 h-8 rounded-lg bg-teal-800 text-white flex items-center justify-center font-bold text-sm shrink-0 print:text-teal-900 print:bg-transparent print:border print:border-teal-900">
-              <Building className="w-4 h-4" />
+            <div className="w-7 h-7 print:w-6 print:h-6 rounded-lg bg-teal-800 text-white flex items-center justify-center font-bold text-xs shrink-0 print:text-teal-900 print:bg-transparent print:border print:border-teal-900">
+              <Building className="w-3.5 h-3.5" />
             </div>
             <div>
-              <div className="flex items-center gap-2">
-                <h1 className="text-sm font-extrabold tracking-tight text-teal-950 uppercase leading-none">
+              <div className="flex items-center gap-1.5">
+                <h1 className="text-xs sm:text-sm font-extrabold tracking-tight text-teal-950 uppercase leading-none">
                   {empresaNome}
                 </h1>
                 <span
-                  className={`inline-block px-2 py-0.5 font-bold text-[9px] uppercase tracking-wider rounded border ${
+                  className={`inline-block px-1.5 py-0.5 font-bold text-[8.5px] print:text-[8px] uppercase tracking-wider rounded border ${
                     isCliente
                       ? 'bg-blue-50 text-blue-900 border-blue-300 print:bg-gray-100 print:border-gray-700'
                       : 'bg-amber-50 text-amber-900 border-amber-300 print:bg-gray-100 print:border-gray-700'
@@ -119,11 +119,11 @@ const ViaRomaneio: React.FC<ViaRomaneioProps> = ({
                   {isCliente ? '1ª VIA — CLIENTE' : '2ª VIA — EMPRESA (TRANSPORTADORA)'}
                 </span>
               </div>
-              <div className="text-[10px] text-gray-700 font-medium">
+              <div className="text-[9.5px] print:text-[9px] text-gray-700 font-medium">
                 {empresaRazao} • CNPJ:{' '}
                 <span className="font-mono font-semibold">{empresaCnpj}</span>
               </div>
-              <div className="text-[9px] text-gray-500">
+              <div className="text-[8.5px] print:text-[8px] text-gray-500">
                 Mineração, Britagem, Fabricação de Concreto Usinado, Cargas e Pavimentação
               </div>
             </div>
@@ -131,11 +131,11 @@ const ViaRomaneio: React.FC<ViaRomaneioProps> = ({
 
           {/* DESTAQUE DO SEQUENCIAL NUMERAL (SEM POSSIBILIDADE DE ALTERAÇÃO) */}
           <div className="text-right shrink-0">
-            <div className="inline-flex items-center gap-1 px-2.5 py-1 bg-teal-900 text-white font-mono font-black text-xs tracking-wider rounded shadow-xs print:bg-transparent print:text-gray-950 print:border-2 print:border-gray-900">
-              <Hash className="w-3.5 h-3.5 text-teal-300 print:text-black" />
+            <div className="inline-flex items-center gap-1 px-2 py-0.5 bg-teal-900 text-white font-mono font-black text-xs tracking-wider rounded shadow-xs print:bg-transparent print:text-gray-950 print:border-2 print:border-gray-900">
+              <Hash className="w-3 h-3 text-teal-300 print:text-black" />
               <span>{sequencial}</span>
             </div>
-            <div className="text-[9px] text-gray-600 mt-0.5">
+            <div className="text-[8.5px] print:text-[8px] text-gray-600 mt-0.5">
               Data: <strong className="text-gray-900">{dataCarga}</strong>
               {vendaId && (
                 <span className="ml-1.5 font-mono text-teal-900 font-bold">
@@ -143,50 +143,50 @@ const ViaRomaneio: React.FC<ViaRomaneioProps> = ({
                 </span>
               )}
             </div>
-            <div className="text-[8px] text-gray-400 uppercase tracking-wider font-semibold">
+            <div className="text-[7.5px] print:text-[7.5px] text-gray-400 uppercase tracking-wider font-semibold">
               {subtituloVia}
             </div>
           </div>
         </div>
 
         {/* DADOS DA ROTA E TRANSPORTE */}
-        <div className="mb-2">
-          <div className="grid grid-cols-4 gap-2 bg-gray-50 print:bg-gray-100 p-2 rounded border border-gray-200 text-[10px]">
+        <div className="mb-1.5">
+          <div className="grid grid-cols-4 gap-1.5 bg-gray-50 print:bg-gray-100 p-1.5 rounded border border-gray-200 text-[9.5px] print:text-[9px]">
             <div>
-              <span className="text-gray-500 block text-[8px] uppercase font-bold">
+              <span className="text-gray-500 block text-[7.5px] uppercase font-bold">
                 Origem da Carga
               </span>
               <span className="font-semibold text-gray-900 truncate block">{origem}</span>
             </div>
             <div>
-              <span className="text-gray-500 block text-[8px] uppercase font-bold">
+              <span className="text-gray-500 block text-[7.5px] uppercase font-bold">
                 Destino / Cliente Recebedor
               </span>
               <span className="font-bold text-teal-950 truncate block">{clienteNome}</span>
               {destino && destino !== clienteNome && (
-                <span className="text-[8px] text-gray-500 truncate block">Local: {destino}</span>
+                <span className="text-[7.5px] text-gray-500 truncate block">Local: {destino}</span>
               )}
             </div>
             <div>
-              <span className="text-gray-500 block text-[8px] uppercase font-bold">
+              <span className="text-gray-500 block text-[7.5px] uppercase font-bold">
                 Veículo / Placa
               </span>
               <span className="font-mono font-semibold text-gray-900 truncate block">
                 {veiculoDescricao}
               </span>
               {veiculoPlaca && (
-                <span className="text-[8px] text-gray-500 block font-mono">
+                <span className="text-[7.5px] text-gray-500 block font-mono">
                   Placa: {veiculoPlaca}
                 </span>
               )}
             </div>
             <div>
-              <span className="text-gray-500 block text-[8px] uppercase font-bold">
+              <span className="text-gray-500 block text-[7.5px] uppercase font-bold">
                 Motorista / Condutor
               </span>
               <span className="font-bold text-gray-900 truncate block">{motorista}</span>
               {statusEntrega && (
-                <span className="text-[8px] text-teal-800 uppercase font-semibold block">
+                <span className="text-[7.5px] text-teal-800 uppercase font-semibold block">
                   Status: {statusEntrega}
                 </span>
               )}
@@ -195,53 +195,55 @@ const ViaRomaneio: React.FC<ViaRomaneioProps> = ({
         </div>
 
         {/* TABELA DE PRODUTOS E VALORES */}
-        <div className="mb-2">
-          <table className="w-full text-left border-collapse text-[10px] border border-gray-300">
+        <div className="mb-1.5">
+          <table className="w-full text-left border-collapse text-[9.5px] print:text-[9px] border border-gray-300">
             <thead>
-              <tr className="bg-gray-100 print:bg-gray-200 text-gray-700 font-semibold border-b border-gray-300 text-[9px]">
-                <th className="py-1 px-2">Produto da Pedreira</th>
-                <th className="py-1 px-2 text-center">Unidade</th>
-                <th className="py-1 px-2 text-right">Qtd</th>
-                <th className="py-1 px-2 text-right">Preço Unit.</th>
-                <th className="py-1 px-2 text-right">Valor Total</th>
+              <tr className="bg-gray-100 print:bg-gray-200 text-gray-700 font-semibold border-b border-gray-300 text-[8.5px] print:text-[8px]">
+                <th className="py-0.5 px-2">Produto da Pedreira</th>
+                <th className="py-0.5 px-2 text-center">Unidade</th>
+                <th className="py-0.5 px-2 text-right">Qtd</th>
+                <th className="py-0.5 px-2 text-right">Preço Unit.</th>
+                <th className="py-0.5 px-2 text-right">Valor Total</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-200">
               <tr>
-                <td className="py-1 px-2">
-                  <span className="font-bold text-gray-900 block text-[11px] leading-tight">
+                <td className="py-0.5 px-2">
+                  <span className="font-bold text-gray-900 block text-[10px] leading-tight">
                     {produtoNome}
                   </span>
                   {produtoCodigo && (
-                    <span className="text-[8px] text-gray-400 font-mono">Cód: {produtoCodigo}</span>
+                    <span className="text-[7.5px] text-gray-400 font-mono">
+                      Cód: {produtoCodigo}
+                    </span>
                   )}
                 </td>
-                <td className="py-1 px-2 text-center font-mono text-gray-700 font-medium">
+                <td className="py-0.5 px-2 text-center font-mono text-gray-700 font-medium">
                   {unidadeMedida}
                 </td>
-                <td className="py-1 px-2 text-right font-mono font-bold text-gray-900 text-[11px]">
+                <td className="py-0.5 px-2 text-right font-mono font-bold text-gray-900 text-[10.5px]">
                   <div>
                     {quantidade !== undefined && quantidade !== null
                       ? Number(quantidade).toLocaleString('pt-BR', { maximumFractionDigits: 2 })
                       : '—'}
                   </div>
                   {equivalenciaOriginal && (
-                    <div className="text-[9px] font-sans font-medium text-teal-800 print:text-black">
+                    <div className="text-[8.5px] font-sans font-medium text-teal-800 print:text-black">
                       ≡ {equivalenciaOriginal}
                     </div>
                   )}
                 </td>
-                <td className="py-1 px-2 text-right font-mono text-gray-800">
+                <td className="py-0.5 px-2 text-right font-mono text-gray-800">
                   {precoUnitario && precoUnitario > 0 ? formatCurrency(precoUnitario) : '—'}
                 </td>
-                <td className="py-1 px-2 text-right font-mono font-bold text-emerald-800 text-xs tabular-nums">
+                <td className="py-0.5 px-2 text-right font-mono font-bold text-emerald-800 text-[11px] tabular-nums">
                   {valorTotal > 0 ? formatCurrency(valorTotal) : 'A faturar'}
                 </td>
               </tr>
 
               {/* DESCONTO CONCEDIDO SE HOUVER */}
               {valorDesconto && valorDesconto > 0 ? (
-                <tr className="bg-amber-50/50 print:bg-amber-50/30 text-[9px]">
+                <tr className="bg-amber-50/50 print:bg-amber-50/30 text-[8.5px]">
                   <td colSpan={4} className="py-0.5 px-2 text-right font-semibold text-amber-900">
                     Desconto Concedido {descontoPercentual ? `(${descontoPercentual}%)` : ''}:
                   </td>
@@ -252,8 +254,8 @@ const ViaRomaneio: React.FC<ViaRomaneioProps> = ({
               ) : null}
 
               {/* FORMA DE PAGAMENTO E CUSTO VIAGEM */}
-              <tr className="bg-gray-50 print:bg-gray-100 text-[9px]">
-                <td colSpan={3} className="py-1 px-2 text-gray-600">
+              <tr className="bg-gray-50 print:bg-gray-100 text-[8.5px]">
+                <td colSpan={3} className="py-0.5 px-2 text-gray-600">
                   {formaPagamento && (
                     <span>
                       Forma de Pgto: <strong className="text-gray-800">{formaPagamento}</strong>
@@ -269,8 +271,10 @@ const ViaRomaneio: React.FC<ViaRomaneioProps> = ({
                     </span>
                   ) : null}
                 </td>
-                <td className="py-1 px-2 text-right font-semibold text-gray-700">Total Líquido:</td>
-                <td className="py-1 px-2 text-right font-mono font-black text-teal-950 text-xs tabular-nums">
+                <td className="py-0.5 px-2 text-right font-semibold text-gray-700">
+                  Total Líquido:
+                </td>
+                <td className="py-0.5 px-2 text-right font-mono font-black text-teal-950 text-[11px] tabular-nums">
                   {valorTotal > 0 ? formatCurrency(valorTotal) : '—'}
                 </td>
               </tr>
@@ -279,7 +283,7 @@ const ViaRomaneio: React.FC<ViaRomaneioProps> = ({
         </div>
 
         {/* OBSERVAÇÕES E DECLARAÇÃO */}
-        <div className="grid grid-cols-2 gap-2 text-[9px] text-gray-600 mb-2 border border-gray-200 rounded p-1.5 bg-white">
+        <div className="grid grid-cols-2 gap-2 text-[8.5px] print:text-[8px] text-gray-600 mb-1.5 border border-gray-200 rounded p-1.5 bg-white">
           <div>
             <span className="font-bold text-gray-700 block mb-0.5">Observações Operacionais:</span>
             <p className="italic text-gray-600 truncate">
@@ -298,21 +302,21 @@ const ViaRomaneio: React.FC<ViaRomaneioProps> = ({
 
       {/* RODAPÉ E ASSINATURAS */}
       <div>
-        <div className="grid grid-cols-2 gap-8 pt-1">
+        <div className="grid grid-cols-2 gap-6 pt-1">
           <div className="text-center">
-            <div className="border-t border-gray-900 pt-1 font-bold text-[10px] text-gray-900 leading-none">
+            <div className="border-t border-gray-900 pt-1 font-bold text-[9.5px] print:text-[9px] text-gray-900 leading-none">
               {motorista}
             </div>
-            <div className="text-[8px] text-gray-500 uppercase tracking-wider">
+            <div className="text-[7.5px] print:text-[7px] text-gray-500 uppercase tracking-wider">
               Transportador / Motorista
             </div>
           </div>
 
           <div className="text-center">
-            <div className="border-t border-gray-900 pt-1 font-bold text-[10px] text-gray-900 leading-none">
+            <div className="border-t border-gray-900 pt-1 font-bold text-[9.5px] print:text-[9px] text-gray-900 leading-none">
               {isCliente ? 'ASSINATURA DO CLIENTE / RECEBEDOR' : 'CANHOTO ASSINADO / FISCALIZAÇÃO'}
             </div>
-            <div className="text-[8px] text-gray-500 uppercase tracking-wider">
+            <div className="text-[7.5px] print:text-[7px] text-gray-500 uppercase tracking-wider">
               {isCliente
                 ? 'Nome Legível / RG / CPF / Carimbo da Obra'
                 : 'Devolver via assinada para arquivo fiscal da Pedreira'}
@@ -320,7 +324,7 @@ const ViaRomaneio: React.FC<ViaRomaneioProps> = ({
           </div>
         </div>
 
-        <div className="mt-2 pt-1 border-t border-gray-200 text-center text-[8px] text-gray-400 flex items-center justify-between">
+        <div className="mt-1 pt-1 border-t border-gray-200 text-center text-[7.5px] print:text-[7px] text-gray-400 flex items-center justify-between">
           <span>
             {empresaNome} • CNPJ: {empresaCnpj}
           </span>
@@ -465,6 +469,7 @@ export const RomaneioEntregaImpressaoModal: React.FC<RomaneioEntregaImpressaoMod
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
+        data-documento-impressao="romaneio"
         className="max-w-[96vw] lg:max-w-4xl max-h-[95vh] overflow-y-auto p-4 sm:p-6 bg-white border-[#ECEAE4] print:static print:transform-none print:max-w-full print:p-0 print:border-none print:shadow-none print:bg-white print:overflow-visible"
         aria-describedby="romaneio-description"
       >
@@ -492,8 +497,8 @@ export const RomaneioEntregaImpressaoModal: React.FC<RomaneioEntregaImpressaoMod
         </DialogHeader>
 
         {/* CONTAINER DA FOLHA A4 ÚNICA */}
-        <div className="print-only-container mt-2 print:mt-0 print:p-0">
-          <div className="folha-a4-romaneio bg-white print:bg-white flex flex-col justify-between h-[282mm] max-h-[287mm] w-full box-border">
+        <div className="print-only-container documento-impressao-a4 mt-2 print:mt-0 print:p-0">
+          <div className="folha-a4-romaneio bg-white print:bg-white flex flex-col justify-between w-full box-border">
             {/* 1ª VIA: CLIENTE */}
             <ViaRomaneio
               tipoVia="CLIENTE"
@@ -533,14 +538,14 @@ export const RomaneioEntregaImpressaoModal: React.FC<RomaneioEntregaImpressaoMod
             />
 
             {/* LINHA DE CORTE TRACEJADA COM ÍCONE DE TESOURA */}
-            <div className="linha-corte relative my-1.5 py-1 text-center select-none flex items-center justify-center">
+            <div className="linha-corte relative my-1.5 py-0.5 print:my-1 text-center select-none flex items-center justify-center">
               <div className="absolute inset-0 flex items-center" aria-hidden="true">
                 <div className="w-full border-t-2 border-dashed border-gray-400 print:border-gray-600" />
               </div>
-              <div className="relative inline-flex items-center gap-1.5 bg-white px-3 py-0.5 text-[10px] font-mono font-bold text-gray-500 uppercase tracking-widest border border-gray-300 rounded-full print:border-gray-500 print:text-gray-700">
-                <Scissors className="w-3.5 h-3.5" />
+              <div className="relative inline-flex items-center gap-1.5 bg-white px-2.5 py-0.5 text-[9px] print:text-[8px] font-mono font-bold text-gray-500 uppercase tracking-widest border border-gray-300 rounded-full print:border-gray-500 print:text-gray-700">
+                <Scissors className="w-3 h-3" />
                 <span>Linha de Corte — Destaque aqui</span>
-                <Scissors className="w-3.5 h-3.5 rotate-180" />
+                <Scissors className="w-3 h-3 rotate-180" />
               </div>
             </div>
 
