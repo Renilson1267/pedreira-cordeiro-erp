@@ -46,6 +46,7 @@ import {
 } from 'lucide-react'
 import { formatarCpf, apenasDigitos, formatarTelefoneBrasil, validarCpf } from '@/lib/brasilApi'
 import { ImportadorFuncionariosModal } from '@/components/rh/ImportadorFuncionariosModal'
+import { useDebounce } from '@/hooks/useDebounce'
 
 const SETOR_COLORS: Record<SetorFuncionario, { bg: string; text: string; border: string }> = {
   Britagem: { bg: 'bg-amber-50', text: 'text-amber-800', border: 'border-amber-200' },
@@ -67,6 +68,7 @@ export default function Funcionarios() {
 
   // Filtros da listagem
   const [searchQuery, setSearchQuery] = useState('')
+  const debouncedSearchQuery = useDebounce(searchQuery, 280)
   const [setorFilter, setSetorFilter] = useState<string>('todos')
   const [cargoFilter, setCargoFilter] = useState<string>('todos')
   const [statusFilter, setStatusFilter] = useState<string>('todos')
@@ -377,8 +379,8 @@ export default function Funcionarios() {
         return false
       }
       if (statusFilter !== 'todos' && f.status !== statusFilter) return false
-      if (searchQuery.trim()) {
-        const q = searchQuery.toLowerCase()
+      if (debouncedSearchQuery.trim()) {
+        const q = debouncedSearchQuery.toLowerCase()
         const n = (f.nome || '').toLowerCase()
         const c = (f.cargo || '').toLowerCase()
         const s = (f.setor || '').toLowerCase()
@@ -393,7 +395,7 @@ export default function Funcionarios() {
       }
       return true
     })
-  }, [funcionarios, setorFilter, cargoFilter, statusFilter, searchQuery])
+  }, [funcionarios, setorFilter, cargoFilter, statusFilter, debouncedSearchQuery])
 
   // Handlers de seleção por checkbox (padrão ContasPagar / HorasExtras)
   const handleToggleSelectAll = () => {

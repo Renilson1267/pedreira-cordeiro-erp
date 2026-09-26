@@ -3,6 +3,7 @@ import * as XLSX from 'xlsx'
 import pb from '@/lib/pocketbase/client'
 import { formatCurrency, formatDate } from '@/lib/formatters'
 import { apenasDigitos, formatarCnpj, buscarCnpj } from '@/lib/brasilApi'
+import { normalizarFormaRecebimento } from '@/lib/planilhaRecebimentosUtils'
 import { withRateLimitRetry, sleep, runParallelPool } from '@/lib/pocketbase/rateLimit'
 import { Progress } from '@/components/ui/progress'
 import type { Fornecedor, PlanoConta, CentroCusto, ContaPagar } from '@/types/erp'
@@ -1965,24 +1966,31 @@ export function ImportadorContasPagarModal({
                   ? parseDataPagar(rawPagParaParse, sheetCfg.ano, sheetCfg.mes)
                   : null
 
-              // 6. Forma de Pagamento
-              let finalForma: 'Dinheiro' | 'Pix' | 'Cartão' | 'Boleto' | 'Transferência' = 'Pix'
-              const lowerForma = item.rawForma.toLowerCase()
-              if (lowerForma.includes('bol')) finalForma = 'Boleto'
-              else if (
-                lowerForma.includes('ted') ||
-                lowerForma.includes('doc') ||
-                lowerForma.includes('transf')
-              )
-                finalForma = 'Transferência'
-              else if (
-                lowerForma.includes('cart') ||
-                lowerForma.includes('deb') ||
-                lowerForma.includes('cred')
-              )
-                finalForma = 'Cartão'
-              else if (lowerForma.includes('dinh') || lowerForma.includes('espec'))
-                finalForma = 'Dinheiro'
+              // 6. Forma de Pagamento com normalizarFormaRecebimento
+              let finalForma: string | null = null
+              if (item.rawForma) {
+                const norm = normalizarFormaRecebimento(item.rawForma)
+                finalForma = norm || item.rawForma.trim()
+              }
+              const lowerForma = (item.rawForma || '').toLowerCase()
+              if (!finalForma) {
+                if (lowerForma.includes('bol')) finalForma = 'Boleto'
+                else if (
+                  lowerForma.includes('ted') ||
+                  lowerForma.includes('doc') ||
+                  lowerForma.includes('transf')
+                )
+                  finalForma = 'Transferência Bancária'
+                else if (
+                  lowerForma.includes('cart') ||
+                  lowerForma.includes('deb') ||
+                  lowerForma.includes('cred')
+                )
+                  finalForma = 'Cartão'
+                else if (lowerForma.includes('dinh') || lowerForma.includes('espec'))
+                  finalForma = 'Dinheiro'
+                else finalForma = 'Pix'
+              }
 
               // 7. Centro de Custo
               let finalCentroCustoId: string | null =

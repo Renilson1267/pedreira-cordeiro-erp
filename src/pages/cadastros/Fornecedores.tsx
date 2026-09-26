@@ -27,6 +27,7 @@ import {
   Sparkles,
 } from 'lucide-react'
 import { formatarCpfCnpj, formatarCep, apenasDigitos, buscarCep, buscarCnpj } from '@/lib/brasilApi'
+import { useDebounce } from '@/hooks/useDebounce'
 
 export default function Fornecedores() {
   const { currentEmpresa, canEdit } = useCompany()
@@ -35,6 +36,7 @@ export default function Fornecedores() {
   const [fornecedores, setFornecedores] = useState<Fornecedor[]>([])
   const [contasPagar, setContasPagar] = useState<ContaPagar[]>([])
   const [searchQuery, setSearchQuery] = useState('')
+  const debouncedSearchQuery = useDebounce(searchQuery, 280)
   const [loading, setLoading] = useState(false)
 
   // Drawer Form State
@@ -307,14 +309,14 @@ export default function Fornecedores() {
 
   const filteredFornecedores = useMemo(() => {
     return fornecedores.filter((f) => {
-      const q = searchQuery.toLowerCase()
+      const q = debouncedSearchQuery.toLowerCase()
       return (
         f.nome.toLowerCase().includes(q) ||
         (f.cnpj_cpf && f.cnpj_cpf.includes(q)) ||
         (f.email && f.email.toLowerCase().includes(q))
       )
     })
-  }, [fornecedores, searchQuery])
+  }, [fornecedores, debouncedSearchQuery])
 
   return (
     <div className="space-y-6">

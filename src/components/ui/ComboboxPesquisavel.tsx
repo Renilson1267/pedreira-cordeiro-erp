@@ -1,6 +1,7 @@
 import * as React from 'react'
 import { Check, ChevronsUpDown, X } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { useDebounce } from '@/hooks/useDebounce'
 import { Button } from '@/components/ui/button'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import {
@@ -65,6 +66,7 @@ export const ComboboxPesquisavel: React.FC<ComboboxPesquisavelProps> = ({
 }) => {
   const [open, setOpen] = React.useState(false)
   const [search, setSearch] = React.useState('')
+  const debouncedSearch = useDebounce(search, 180)
 
   const selectedOption = React.useMemo(() => {
     if (!value || value === 'none' || value === 'nenhum' || value === 'nenhuma') {
@@ -73,9 +75,9 @@ export const ComboboxPesquisavel: React.FC<ComboboxPesquisavelProps> = ({
     return options.find((opt) => opt.id === value) || null
   }, [value, options])
 
-  // Normalização e filtro sob demanda
+  // Normalização e filtro sob demanda com debounce de 180ms
   const filteredOptions = React.useMemo(() => {
-    const q = normalizarTexto(search)
+    const q = normalizarTexto(debouncedSearch)
     if (!q) return options
 
     return options.filter((opt) => {
@@ -89,7 +91,7 @@ export const ComboboxPesquisavel: React.FC<ComboboxPesquisavelProps> = ({
         opt.id.toLowerCase().includes(q)
       )
     })
-  }, [options, search])
+  }, [options, debouncedSearch])
 
   const handleSelect = React.useCallback(
     (optId: string) => {

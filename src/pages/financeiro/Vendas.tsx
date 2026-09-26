@@ -4,6 +4,7 @@ import { useCompany } from '@/contexts/CompanyContext'
 import { useAuth } from '@/contexts/AuthContext'
 import pb from '@/lib/pocketbase/client'
 import { useRealtime } from '@/hooks/use-realtime'
+import { useDebounce } from '@/hooks/useDebounce'
 import { formatCurrency, formatDate, toInputDate } from '@/lib/formatters'
 import { calcularDatasPeriodoRapido, estaDentroDoPeriodo } from '@/lib/periodo'
 import FiltroPeriodoBar from '@/components/financeiro/FiltroPeriodoBar'
@@ -129,6 +130,7 @@ export default function Vendas() {
 
   // Filtros
   const [searchQuery, setSearchQuery] = useState('')
+  const debouncedSearchQuery = useDebounce(searchQuery, 280)
   const [selectedClienteFilter, setSelectedClienteFilter] = useState('todos')
   const [selectedProdutoFilter, setSelectedProdutoFilter] = useState('todos')
   const [selectedStatusFilter, setSelectedStatusFilter] = useState('todos')
@@ -980,8 +982,8 @@ export default function Vendas() {
       if (!estaDentroDoPeriodo(v.data_venda, dataInicio, dataFim)) {
         return false
       }
-      if (searchQuery.trim()) {
-        const q = searchQuery.toLowerCase()
+      if (debouncedSearchQuery.trim()) {
+        const q = debouncedSearchQuery.toLowerCase()
         const cliNome = v.expand?.cliente_id?.nome?.toLowerCase() || ''
         const prodNome = (v.produto_nome || '').toLowerCase()
         const nf = (v.nota_fiscal || '').toLowerCase()
@@ -996,7 +998,7 @@ export default function Vendas() {
     selectedStatusFilter,
     dataInicio,
     dataFim,
-    searchQuery,
+    debouncedSearchQuery,
   ])
 
   // KPIs do topo

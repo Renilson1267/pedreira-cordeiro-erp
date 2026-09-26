@@ -29,6 +29,7 @@ import {
   Sparkles,
 } from 'lucide-react'
 import { formatarCpfCnpj, formatarCep, apenasDigitos, buscarCep, buscarCnpj } from '@/lib/brasilApi'
+import { useDebounce } from '@/hooks/useDebounce'
 
 export default function Clientes() {
   const { currentEmpresa, canEdit, isAdmin } = useCompany()
@@ -38,6 +39,7 @@ export default function Clientes() {
   const [contasReceber, setContasReceber] = useState<ContaReceber[]>([])
   const [creditos, setCreditos] = useState<CreditoCliente[]>([])
   const [searchQuery, setSearchQuery] = useState('')
+  const debouncedSearchQuery = useDebounce(searchQuery, 280)
   const [loading, setLoading] = useState(false)
 
   // Modal Lançar Crédito Manual
@@ -374,14 +376,14 @@ export default function Clientes() {
 
   const filteredClientes = useMemo(() => {
     return clientes.filter((c) => {
-      const q = searchQuery.toLowerCase()
+      const q = debouncedSearchQuery.toLowerCase()
       return (
         c.nome.toLowerCase().includes(q) ||
         (c.cnpj_cpf && c.cnpj_cpf.includes(q)) ||
         (c.email && c.email.toLowerCase().includes(q))
       )
     })
-  }, [clientes, searchQuery])
+  }, [clientes, debouncedSearchQuery])
 
   return (
     <div className="space-y-6">
