@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-09-26T19:07:31.442Z",
+  "generatedAt": "2026-09-26T22:29:05.389Z",
   "collections": [
     {
       "name": "users",
@@ -3086,11 +3086,11 @@
       "name": "config_google_drive",
       "type": "base",
       "apiRules": {
-        "list": "@request.auth.id != ''",
-        "view": "@request.auth.id != ''",
-        "create": "@request.auth.id != ''",
-        "update": "@request.auth.id != ''",
-        "delete": "@request.auth.id != ''"
+        "list": null,
+        "view": null,
+        "create": null,
+        "update": null,
+        "delete": null
       },
       "fields": [
         {
@@ -3178,6 +3178,37 @@
           "required": false,
           "system": false,
           "autodateTriggers": ["onCreate", "onUpdate"]
+        },
+        {
+          "name": "service_account_json",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "client_email",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "project_id",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "private_key_id",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "auth_type",
+          "type": "select",
+          "required": false,
+          "system": false,
+          "selectValues": ["service_account", "oauth", "none"]
         }
       ],
       "indexes": [

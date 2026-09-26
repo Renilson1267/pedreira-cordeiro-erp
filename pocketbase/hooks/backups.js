@@ -1,16 +1,377 @@
 // Hook PocketBase para gerenciamento e automação de Backups do ERP Pedreira Cordeiro
-// com Integração Automática ao Google Drive (OAuth2 + Google Drive API v3)
+// com Integração ao Google Drive via CONTA DE SERVIÇO (Service Account / JWT RS256 puro em JS)
 // Endpoints autenticados sob /backend/v1/backups e /backend/v1/google-drive
 // Cron job semanal automático via cronAdd: todo domingo às 00:30 (horário do servidor)
-// NOTA JSVM: Todo o código e variáveis ficam estritamente INLINE dentro de cada callback de hook/cron.
+// NOTA JSVM DO POCKETBASE: As callbacks rodam em pools isoladas, portanto toda função auxiliar
+// deve ser estritamente declarada dentro de cada callback (inline).
 
 // -------------------------------------------------------------
 // 1. REGISTRO DO CRON JOB SEMANAL COM ENVIO AUTOMÁTICO AO GOOGLE DRIVE
 // Executa todo domingo às 00:30 (horário do servidor PocketBase)
-// Expressão cron: "30 0 * * 0" (minuto 30, hora 0, todo dia do mês, todo mês, domingo)
 // -------------------------------------------------------------
 cronAdd('backup_semanal_pedreira_cordeiro', '30 0 * * 0', () => {
   console.log('[CRON] Iniciando execução do backup semanal automático da Pedreira Cordeiro...')
+
+  // Helper Google Service Account Inline
+  function getAccessTokenFromServiceAccount(serviceAccountJson, scope) {
+    var b64chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/'
+    var b64tab = {}
+    for (var i = 0; i < b64chars.length; i++) b64tab[b64chars.charAt(i)] = i
+
+    function base64ToBytes(s) {
+      s = s.replace(/[^A-Za-z0-9+/=]/g, '')
+      var bytes = []
+      var i = 0
+      while (i < s.length) {
+        var enc1 = b64tab[s.charAt(i++)]
+        var enc2 = b64tab[s.charAt(i++)]
+        var enc3 = b64tab[s.charAt(i++)]
+        var enc4 = b64tab[s.charAt(i++)]
+        var chr1 = (enc1 << 2) | (enc2 >> 4)
+        var chr2 = ((enc2 & 15) << 4) | (enc3 >> 2)
+        var chr3 = ((enc3 & 3) << 6) | enc4
+        bytes.push(chr1)
+        if (enc3 !== undefined && s.charAt(i - 2) !== '=') bytes.push(chr2)
+        if (enc4 !== undefined && s.charAt(i - 1) !== '=') bytes.push(chr3)
+      }
+      return bytes
+    }
+
+    function bytesToBase64Url(bytes) {
+      var str = ''
+      for (var i = 0; i < bytes.length; i++) str += String.fromCharCode(bytes[i])
+      var b64 = ''
+      var j = 0
+      while (j < str.length) {
+        var c1 = str.charCodeAt(j++)
+        var c2 = str.charCodeAt(j++)
+        var c3 = str.charCodeAt(j++)
+        var e1 = c1 >> 2
+        var e2 = ((c1 & 3) << 4) | (c2 >> 4)
+        var e3 = isNaN(c2) ? 64 : ((c2 & 15) << 2) | (c3 >> 6)
+        var e4 = isNaN(c2) || isNaN(c3) ? 64 : c3 & 63
+        b64 +=
+          b64chars.charAt(e1) +
+          b64chars.charAt(e2) +
+          (e3 === 64 ? '=' : b64chars.charAt(e3)) +
+          (e4 === 64 ? '=' : b64chars.charAt(e4))
+      }
+      return b64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
+    }
+
+    function utf8ToBase64Url(str) {
+      var bytes = []
+      for (var i = 0; i < str.length; i++) {
+        var c = str.charCodeAt(i)
+        if (c < 128) {
+          bytes.push(c)
+        } else if (c < 2048) {
+          bytes.push((c >> 6) | 192)
+          bytes.push((c & 63) | 128)
+        } else {
+          bytes.push((c >> 12) | 224)
+          bytes.push(((c >> 6) & 63) | 128)
+          bytes.push((c & 63) | 128)
+        }
+      }
+      return bytesToBase64Url(bytes)
+    }
+
+    function parsePKCS8orPKCS1(privateKeyPem) {
+      var clean = privateKeyPem
+        .replace(/-----BEGIN[^-]+-----/g, '')
+        .replace(/-----END[^-]+-----/g, '')
+        .replace(/\s+/g, '')
+      var der = base64ToBytes(clean)
+      var pos = 0
+
+      function readLength() {
+        var b = der[pos++]
+        if (b < 128) return b
+        var nBytes = b & 0x7f
+        var len = 0
+        for (var k = 0; k < nBytes; k++) len = (len << 8) | der[pos++]
+        return len
+      }
+
+      function readTag() {
+        return der[pos++]
+      }
+
+      function readInteger() {
+        var tag = readTag()
+        if (tag !== 0x02)
+          throw new Error('ASN.1 inválido: esperado INTEGER (0x02), recebido ' + tag)
+        var len = readLength()
+        var intBytes = der.slice(pos, pos + len)
+        pos += len
+        while (intBytes.length > 1 && intBytes[0] === 0) intBytes.shift()
+        return intBytes
+      }
+
+      var tag = readTag()
+      if (tag !== 0x30) throw new Error('ASN.1 inválido: esperado SEQUENCE')
+      readLength()
+
+      var nextTag = der[pos]
+      if (nextTag === 0x02) {
+        pos++
+        var vLen = readLength()
+        var ver = der[pos]
+        pos += vLen
+        if (ver === 0 && der[pos] === 0x30) {
+          pos++
+          var algLen = readLength()
+          pos += algLen
+          var octTag = readTag()
+          if (octTag !== 0x04) throw new Error('ASN.1 PKCS#8: esperado OCTET STRING')
+          readLength()
+          var pkcs1Tag = readTag()
+          if (pkcs1Tag !== 0x30) throw new Error('PKCS#1 inválido dentro do PKCS#8')
+          readLength()
+          readInteger()
+          return { n: readInteger(), e: readInteger(), d: readInteger() }
+        } else {
+          return { n: readInteger(), e: readInteger(), d: readInteger() }
+        }
+      }
+      throw new Error('Formato de chave privada RSA não reconhecido')
+    }
+
+    var BASE = 16384
+    var BASE_BITS = 14
+
+    function bytesToBig(bytes) {
+      var res = [0]
+      for (var i = 0; i < bytes.length; i++) {
+        var carry = bytes[i]
+        for (var j = 0; j < res.length; j++) {
+          var v = res[j] * 256 + carry
+          res[j] = v % BASE
+          carry = Math.floor(v / BASE)
+        }
+        while (carry > 0) {
+          res.push(carry % BASE)
+          carry = Math.floor(carry / BASE)
+        }
+      }
+      return trim(res)
+    }
+
+    function bigToBytes(a, expectedLen) {
+      var bytes = []
+      var temp = a.slice()
+      while (temp.length > 1 || temp[0] > 0) {
+        var rem = 0
+        for (var i = temp.length - 1; i >= 0; i--) {
+          var cur = rem * BASE + temp[i]
+          temp[i] = Math.floor(cur / 256)
+          rem = cur % 256
+        }
+        temp = trim(temp)
+        bytes.unshift(rem)
+      }
+      while (bytes.length < expectedLen) bytes.unshift(0)
+      return bytes
+    }
+
+    function trim(a) {
+      while (a.length > 1 && a[a.length - 1] === 0) a.pop()
+      return a
+    }
+
+    function compare(a, b) {
+      if (a.length !== b.length) return a.length > b.length ? 1 : -1
+      for (var i = a.length - 1; i >= 0; i--) {
+        if (a[i] !== b[i]) return a[i] > b[i] ? 1 : -1
+      }
+      return 0
+    }
+
+    function mul(a, b) {
+      var res = []
+      for (var i = 0; i < a.length + b.length; i++) res.push(0)
+      for (var i = 0; i < a.length; i++) {
+        var carry = 0
+        for (var j = 0; j < b.length || carry > 0; j++) {
+          var cur = res[i + j] + a[i] * (j < b.length ? b[j] : 0) + carry
+          res[i + j] = cur % BASE
+          carry = Math.floor(cur / BASE)
+        }
+      }
+      return trim(res)
+    }
+
+    function divRem(u, v) {
+      if (v.length === 1 && v[0] === 0) throw new Error('Divisão por zero')
+      if (compare(u, v) < 0) return { q: [0], r: u.slice() }
+      if (v.length === 1) {
+        var q = []
+        var r = 0
+        var d = v[0]
+        for (var i = u.length - 1; i >= 0; i--) {
+          var cur = r * BASE + u[i]
+          q[i] = Math.floor(cur / d)
+          r = cur % d
+        }
+        return { q: trim(q), r: [r] }
+      }
+
+      var shift = Math.floor(BASE / (v[v.length - 1] + 1))
+      var uNorm = mul(u, [shift])
+      var vNorm = mul(v, [shift])
+      if (uNorm.length === u.length) uNorm.push(0)
+
+      var n = vNorm.length
+      var m = uNorm.length - n
+      var q = []
+      for (var i = 0; i < m; i++) q.push(0)
+
+      var vn1 = vNorm[n - 1]
+      var vn2 = vNorm[n - 2]
+
+      for (var j = m - 1; j >= 0; j--) {
+        var uTop = uNorm[j + n] * BASE + uNorm[j + n - 1]
+        var qHat = Math.floor(uTop / vn1)
+        var rHat = uTop % vn1
+
+        while (qHat >= BASE || qHat * vn2 > rHat * BASE + uNorm[j + n - 2]) {
+          qHat--
+          rHat += vn1
+          if (rHat >= BASE) break
+        }
+
+        var qv = mul(vNorm, [qHat])
+        var borrow = 0
+        for (var k = 0; k <= n; k++) {
+          var uVal = uNorm[j + k]
+          var qvVal = k < qv.length ? qv[k] : 0
+          var diff = uVal - borrow - qvVal
+          if (diff < 0) {
+            diff += BASE
+            borrow = 1
+          } else {
+            borrow = 0
+          }
+          uNorm[j + k] = diff
+        }
+
+        if (borrow > 0) {
+          qHat--
+          var carry = 0
+          for (var k = 0; k <= n; k++) {
+            var sum = uNorm[j + k] + carry + (k < vNorm.length ? vNorm[k] : 0)
+            uNorm[j + k] = sum % BASE
+            carry = Math.floor(sum / BASE)
+          }
+        }
+        q[j] = qHat
+      }
+
+      var divResult = divRem(uNorm, [shift])
+      return { q: trim(q), r: divResult.q }
+    }
+
+    function modPow(baseB, expB, modB) {
+      var res = [1]
+      var cur = baseB.slice()
+      for (var i = 0; i < expB.length; i++) {
+        var chunk = expB[i]
+        for (var b = 0; b < BASE_BITS; b++) {
+          if ((chunk & (1 << b)) !== 0) {
+            res = divRem(mul(res, cur), modB).r
+          }
+          cur = divRem(mul(cur, cur), modB).r
+        }
+      }
+      return res
+    }
+
+    var SHA256_DIGEST_INFO = [
+      0x30, 0x31, 0x30, 0x0d, 0x06, 0x09, 0x60, 0x86, 0x48, 0x01, 0x65, 0x03, 0x04, 0x02, 0x01,
+      0x05, 0x00, 0x04, 0x20,
+    ]
+
+    function rsaSignSha256(dataStr, keyComponents) {
+      var nBig = bytesToBig(keyComponents.n)
+      var dBig = bytesToBig(keyComponents.d)
+      var kLen = keyComponents.n.length
+
+      var hex = $security.sha256(dataStr)
+      var hash = []
+      for (var i = 0; i < hex.length; i += 2) hash.push(parseInt(hex.substr(i, 2), 16))
+
+      var t = SHA256_DIGEST_INFO.concat(hash)
+      if (kLen < t.length + 11) throw new Error('Chave RSA curta demais para SHA256')
+
+      var psLen = kLen - t.length - 3
+      var em = [0x00, 0x01]
+      for (var i = 0; i < psLen; i++) em.push(0xff)
+      em.push(0x00)
+      for (var i = 0; i < t.length; i++) em.push(t[i])
+
+      var emBig = bytesToBig(em)
+      var sBig = modPow(emBig, dBig, nBig)
+      var sigBytes = bigToBytes(sBig, kLen)
+      return bytesToBase64Url(sigBytes)
+    }
+
+    var creds =
+      typeof serviceAccountJson === 'string' ? JSON.parse(serviceAccountJson) : serviceAccountJson
+
+    if (!creds.client_email || !creds.private_key) {
+      throw new Error(
+        'JSON de Conta de Serviço inválido: "client_email" e "private_key" são obrigatórios.',
+      )
+    }
+
+    var nowSec = Math.floor(Date.now() / 1000)
+    var header = { alg: 'RS256', typ: 'JWT' }
+    var claimSet = {
+      iss: creds.client_email,
+      scope: scope || 'https://www.googleapis.com/auth/drive.file',
+      aud: 'https://oauth2.googleapis.com/token',
+      exp: nowSec + 3600,
+      iat: nowSec,
+    }
+
+    var encHeader = utf8ToBase64Url(JSON.stringify(header))
+    var encClaim = utf8ToBase64Url(JSON.stringify(claimSet))
+    var signingInput = encHeader + '.' + encClaim
+
+    var keys = parsePKCS8orPKCS1(creds.private_key)
+    var signature = rsaSignSha256(signingInput, keys)
+    var assertion = signingInput + '.' + signature
+
+    var res = $http.send({
+      url: 'https://oauth2.googleapis.com/token',
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body:
+        'grant_type=' +
+        encodeURIComponent('urn:ietf:params:oauth:grant-type:jwt-bearer') +
+        '&assertion=' +
+        encodeURIComponent(assertion),
+      timeout: 30,
+    })
+
+    if (res.statusCode !== 200) {
+      throw new Error(
+        'Falha no endpoint Google OAuth (HTTP ' + res.statusCode + '): ' + (res.raw || ''),
+      )
+    }
+
+    var data = res.json || JSON.parse(res.raw || '{}')
+    if (!data.access_token) {
+      throw new Error('Access token não retornado pelo Google OAuth.')
+    }
+
+    return {
+      access_token: data.access_token,
+      client_email: creds.client_email,
+      project_id: creds.project_id || '',
+    }
+  }
 
   const colecoesParaDump = [
     'empresas',
@@ -50,7 +411,6 @@ cronAdd('backup_semanal_pedreira_cordeiro', '30 0 * * 0', () => {
     const backupsCol = $app.findCollectionByNameOrId('backups_sistema')
     const dadosCol = $app.findCollectionByNameOrId('backups_dados')
 
-    // Tentativa de backup nativo .zip do PocketBase
     let nativoStatus = 'tentado'
     let nativoArquivo = ''
     let nativoErro = ''
@@ -78,7 +438,6 @@ cronAdd('backup_semanal_pedreira_cordeiro', '30 0 * * 0', () => {
     let totalRegistrosGeral = 0
     let colecoesComErro = 0
 
-    // Criar cabeçalho do backup automático
     const backupRecord = new Record(backupsCol)
     backupRecord.set('nome_arquivo', nomeArquivo)
     backupRecord.set('tipo', 'completo')
@@ -103,7 +462,6 @@ cronAdd('backup_semanal_pedreira_cordeiro', '30 0 * * 0', () => {
     backupRecord.set('observacoes', 'Backup semanal automático em execução programada...')
     $app.save(backupRecord)
 
-    // Percorrer todas as coleções e salvar em chunks de 200 registros
     for (let i = 0; i < colecoesParaDump.length; i++) {
       const colName = colecoesParaDump[i]
       try {
@@ -161,7 +519,6 @@ cronAdd('backup_semanal_pedreira_cordeiro', '30 0 * * 0', () => {
       }
     }
 
-    // Tabela opcional _backup_duplicatas_excluidas
     let backupDuplicatasIncluido = false
     try {
       if ($app.hasTable('_backup_duplicatas_excluidas')) {
@@ -174,7 +531,6 @@ cronAdd('backup_semanal_pedreira_cordeiro', '30 0 * * 0', () => {
 
     const statusFinal = colecoesComErro === 0 ? 'sucesso' : 'parcial'
 
-    // Atualizar cabeçalho do backup
     backupRecord.set('total_registros', totalRegistrosGeral)
     backupRecord.set('total_colecoes', Object.keys(resumo).length)
     backupRecord.set('resumo_colecoes', resumo)
@@ -199,165 +555,38 @@ cronAdd('backup_semanal_pedreira_cordeiro', '30 0 * * 0', () => {
     )
     $app.save(backupRecord)
 
-    // Registrar no histórico de alterações
+    // Envio ao Google Drive via Service Account
     try {
-      const histCol = $app.findCollectionByNameOrId('historico_alteracoes')
-      const recHist = new Record(histCol)
-      recHist.set('empresa_id', '6nt8u83eiyzf6xr')
-      recHist.set('colecao_origem', 'outros')
-      recHist.set('registro_id', backupRecord.id)
-      recHist.set('acao', 'criar')
-      recHist.set('usuario_id', '')
-      recHist.set('usuario_nome', 'Backup Semanal Automático')
-      recHist.set(
-        'descricao',
-        `Backup semanal automático executado: ${totalRegistrosGeral} registros e ${Object.keys(resumo).length} coleções (${statusFinal})`,
-      )
-      recHist.set('detalhes', {
-        backup_id: backupRecord.id,
-        origem: 'semanal_automatico',
-        total_registros: totalRegistrosGeral,
-        total_colecoes: Object.keys(resumo).length,
-        status: statusFinal,
-      })
-      $app.save(recHist)
-    } catch (_) {}
+      console.log('[CRON Drive] Verificando credenciais de Conta de Serviço para envio ao Drive...')
 
-    const duracaoSegundos = ((Date.now() - inicio) / 1000).toFixed(1)
-    console.log(
-      `[CRON] Backup semanal automático concluído em ${duracaoSegundos}s. Total: ${totalRegistrosGeral} registros (${statusFinal}). ID: ${backupRecord.id}`,
-    )
-
-    // -------------------------------------------------------------
-    // ENVIO AUTOMÁTICO AO GOOGLE DRIVE (NÃO DEVE DERRUBAR O BACKUP CASO FALHE)
-    // -------------------------------------------------------------
-    try {
-      console.log('[CRON Drive] Iniciando envio automático do dump para o Google Drive...')
-
-      // Obter credenciais (do environment ou da collection config_google_drive)
-      let clientId = $os.getenv('GOOGLE_CLIENT_ID') || ''
-      let clientSecret = $os.getenv('GOOGLE_CLIENT_SECRET') || ''
-      let refreshToken = $os.getenv('GOOGLE_REFRESH_TOKEN') || ''
+      let serviceAccountJson = $os.getenv('GOOGLE_SERVICE_ACCOUNT_JSON') || ''
       let folderId = $os.getenv('GOOGLE_DRIVE_FOLDER_ID') || ''
-      let folderName = 'Backups ERP'
-
       let configRec = null
+
       try {
         configRec = $app.findFirstRecordByData('config_google_drive', 'chave', 'padrao')
         if (configRec) {
-          if (!clientId) clientId = configRec.getString('client_id')
-          if (!clientSecret) clientSecret = configRec.getString('client_secret')
-          if (!refreshToken) refreshToken = configRec.getString('refresh_token')
+          if (!serviceAccountJson) serviceAccountJson = configRec.getString('service_account_json')
           if (!folderId) folderId = configRec.getString('folder_id')
-          if (configRec.getString('folder_name')) folderName = configRec.getString('folder_name')
         }
       } catch (_) {}
 
-      if (!clientId || !clientSecret || !refreshToken) {
-        console.log(
-          '[CRON Drive] Google Drive não configurado ou refresh token ausente. Pulando upload.',
-        )
+      if (!serviceAccountJson) {
+        console.log('[CRON Drive] Conta de serviço Google não configurada. Pulando upload.')
         backupRecord.set('drive_status', 'nao_configurado')
         backupRecord.set(
           'drive_erro',
-          'Credenciais do Google Drive não configuradas (defina GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET e GOOGLE_REFRESH_TOKEN ou conecte na tela de Backups).',
+          'Conta de serviço Google não configurada no ERP (cole o JSON da chave na tela de Backups).',
         )
         $app.save(backupRecord)
         return
       }
 
-      // 1. Trocar refresh_token por access_token
-      const tokenUrl = 'https://oauth2.googleapis.com/token'
-      const tokenPayload =
-        'grant_type=refresh_token' +
-        '&client_id=' +
-        encodeURIComponent(clientId) +
-        '&client_secret=' +
-        encodeURIComponent(clientSecret) +
-        '&refresh_token=' +
-        encodeURIComponent(refreshToken)
+      const auth = getAccessTokenFromServiceAccount(
+        serviceAccountJson,
+        'https://www.googleapis.com/auth/drive.file',
+      )
 
-      const tokenRes = $http.send({
-        url: tokenUrl,
-        method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: tokenPayload,
-        timeout: 30,
-      })
-
-      if (tokenRes.statusCode !== 200) {
-        const errMsg =
-          'Erro ao renovar token OAuth do Google Drive: ' + (tokenRes.raw || tokenRes.statusCode)
-        console.error('[CRON Drive] ' + errMsg)
-        backupRecord.set('drive_status', 'erro')
-        backupRecord.set('drive_erro', errMsg)
-        $app.save(backupRecord)
-        return
-      }
-
-      const tokenJson = tokenRes.json || JSON.parse(tokenRes.raw || '{}')
-      const accessToken = tokenJson.access_token
-      if (!accessToken) {
-        const errMsg = 'Access token não retornado pelo Google OAuth'
-        console.error('[CRON Drive] ' + errMsg)
-        backupRecord.set('drive_status', 'erro')
-        backupRecord.set('drive_erro', errMsg)
-        $app.save(backupRecord)
-        return
-      }
-
-      // 2. Garantir pasta "Backups ERP" se folderId não estiver setado
-      if (!folderId) {
-        try {
-          const searchFolderUrl =
-            'https://www.googleapis.com/drive/v3/files?q=' +
-            encodeURIComponent(
-              "mimeType='application/vnd.google-apps.folder' and name='" +
-                folderName +
-                "' and trashed=false",
-            ) +
-            '&fields=files(id,name)'
-          const searchRes = $http.send({
-            url: searchFolderUrl,
-            method: 'GET',
-            headers: { Authorization: 'Bearer ' + accessToken },
-            timeout: 30,
-          })
-
-          const searchJson = searchRes.json || JSON.parse(searchRes.raw || '{}')
-          if (searchJson.files && searchJson.files.length > 0) {
-            folderId = searchJson.files[0].id
-          } else {
-            // Criar a pasta
-            const createFolderRes = $http.send({
-              url: 'https://www.googleapis.com/drive/v3/files',
-              method: 'POST',
-              headers: {
-                Authorization: 'Bearer ' + accessToken,
-                'Content-Type': 'application/json',
-              },
-              body: JSON.stringify({
-                name: folderName,
-                mimeType: 'application/vnd.google-apps.folder',
-              }),
-              timeout: 30,
-            })
-            const createdFolderJson =
-              createFolderRes.json || JSON.parse(createFolderRes.raw || '{}')
-            folderId = createdFolderJson.id || ''
-          }
-
-          if (folderId && configRec) {
-            configRec.set('folder_id', folderId)
-            configRec.set('folder_name', folderName)
-            $app.save(configRec)
-          }
-        } catch (eFolder) {
-          console.warn('[CRON Drive] Falha ao localizar/criar pasta no Drive:', eFolder)
-        }
-      }
-
-      // 3. Montar o dump completo a partir dos chunks salvos
       const chunks = $app.findRecordsByFilter(
         'backups_dados',
         `backup_id = '${backupRecord.id}'`,
@@ -398,7 +627,6 @@ cronAdd('backup_semanal_pedreira_cordeiro', '30 0 * * 0', () => {
         2,
       )
 
-      // 4. Upload multipart para Google Drive API v3
       const fileMetadata = {
         name: backupRecord.getString('nome_arquivo'),
         mimeType: 'application/json',
@@ -425,7 +653,7 @@ cronAdd('backup_semanal_pedreira_cordeiro', '30 0 * * 0', () => {
         url: uploadUrl,
         method: 'POST',
         headers: {
-          Authorization: 'Bearer ' + accessToken,
+          Authorization: 'Bearer ' + auth.access_token,
           'Content-Type': 'multipart/related; boundary=' + boundary,
         },
         body: multipartBody,
@@ -435,7 +663,7 @@ cronAdd('backup_semanal_pedreira_cordeiro', '30 0 * * 0', () => {
       if (uploadRes.statusCode === 200 || uploadRes.statusCode === 201) {
         const uploadedJson = uploadRes.json || JSON.parse(uploadRes.raw || '{}')
         const fileId = uploadedJson.id || ''
-        console.log(`[CRON Drive] Sucesso! Backup enviado ao Google Drive com File ID: ${fileId}`)
+        console.log(`[CRON Drive] Sucesso! Backup enviado via Service Account: ${fileId}`)
 
         const agoraIso = new Date().toISOString()
         backupRecord.set('drive_status', 'enviado')
@@ -452,7 +680,7 @@ cronAdd('backup_semanal_pedreira_cordeiro', '30 0 * * 0', () => {
         }
       } else {
         const errDetail =
-          'Erro no upload para o Drive (status ' +
+          'Erro no upload para o Drive (HTTP ' +
           uploadRes.statusCode +
           '): ' +
           (uploadRes.raw || '')
@@ -534,7 +762,6 @@ routerAdd(
       return e.json(401, { error: 'Não autorizado' })
     }
 
-    // Verificar se usuário tem papel admin
     let isAdmin = false
     try {
       const adminMembros = $app.findRecordsByFilter(
@@ -591,7 +818,6 @@ routerAdd(
       .replace('T', '_')
       .slice(0, 19)
 
-    // Tentar backup nativo zip do PocketBase
     let nativoStatus = 'tentado'
     let nativoArquivo = ''
     let nativoErro = ''
@@ -603,15 +829,8 @@ routerAdd(
           nativoStatus = 'sucesso'
           nativoArquivo = zipName
         } catch (e1) {
-          try {
-            const reqCtx = e.request ? e.request.context() : null
-            $app.createBackup(reqCtx, zipName)
-            nativoStatus = 'sucesso'
-            nativoArquivo = zipName
-          } catch (e2) {
-            nativoStatus = 'falha'
-            nativoErro = String(e2?.message || e2)
-          }
+          nativoStatus = 'falha'
+          nativoErro = String(e1?.message || e1)
         }
       } else {
         nativoStatus = 'nao_disponivel_jsvm'
@@ -629,7 +848,6 @@ routerAdd(
     const solicitanteNome =
       authRecord.getString('name') || authRecord.getString('email') || 'Administrador'
 
-    // Salvar cabeçalho inicial
     const backupRecord = new Record(backupsCol)
     backupRecord.set('nome_arquivo', 'backup_completo_erp_' + timestampStr + '.json')
     backupRecord.set('tipo', 'completo')
@@ -654,7 +872,6 @@ routerAdd(
     backupRecord.set('observacoes', 'Backup real sob demanda em andamento...')
     $app.save(backupRecord)
 
-    // Extrair registros de cada coleção e particionar em chunks
     for (let i = 0; i < colecoesParaDump.length; i++) {
       const colName = colecoesParaDump[i]
       try {
@@ -712,7 +929,6 @@ routerAdd(
       }
     }
 
-    // Tabela opcional _backup_duplicatas_excluidas
     let backupDuplicatasIncluido = false
     try {
       if ($app.hasTable('_backup_duplicatas_excluidas')) {
@@ -725,7 +941,6 @@ routerAdd(
 
     const statusFinal = colecoesComErro === 0 ? 'sucesso' : 'parcial'
 
-    // Finalizar cabeçalho
     backupRecord.set('total_registros', totalRegistrosGeral)
     backupRecord.set('total_colecoes', Object.keys(resumo).length)
     backupRecord.set('resumo_colecoes', resumo)
@@ -748,30 +963,6 @@ routerAdd(
       `Backup real completo gerado sob demanda por ${solicitanteNome}. Todos os dados preservados com status "${statusFinal}".`,
     )
     $app.save(backupRecord)
-
-    // Registrar histórico de alterações
-    try {
-      const histCol = $app.findCollectionByNameOrId('historico_alteracoes')
-      const recHist = new Record(histCol)
-      recHist.set('empresa_id', '6nt8u83eiyzf6xr')
-      recHist.set('colecao_origem', 'outros')
-      recHist.set('registro_id', backupRecord.id)
-      recHist.set('acao', 'criar')
-      recHist.set('usuario_id', authRecord.id)
-      recHist.set('usuario_nome', solicitanteNome)
-      recHist.set(
-        'descricao',
-        `Backup manual do sistema executado: ${totalRegistrosGeral} registros e ${Object.keys(resumo).length} coleções (${statusFinal})`,
-      )
-      recHist.set('detalhes', {
-        backup_id: backupRecord.id,
-        origem: 'manual',
-        total_registros: totalRegistrosGeral,
-        total_colecoes: Object.keys(resumo).length,
-        status: statusFinal,
-      })
-      $app.save(recHist)
-    } catch (_) {}
 
     return e.json(200, {
       success: true,
@@ -875,7 +1066,6 @@ routerAdd(
         0,
       )
 
-      // Reconstruir o dump completo estruturado por coleção
       const colecoes = {}
       for (let i = 0; i < chunks.length; i++) {
         const ch = chunks[i]
@@ -922,7 +1112,7 @@ routerAdd(
 )
 
 // -------------------------------------------------------------
-// 6. ENDPOINT: STATUS DA INTEGRAÇÃO COM O GOOGLE DRIVE
+// 6. ENDPOINT: STATUS DA INTEGRAÇÃO COM CONTA DE SERVIÇO GOOGLE DRIVE
 // GET /backend/v1/google-drive/status
 // -------------------------------------------------------------
 routerAdd(
@@ -935,111 +1125,72 @@ routerAdd(
     }
 
     try {
-      let clientId = $os.getenv('GOOGLE_CLIENT_ID') || ''
-      let clientSecret = $os.getenv('GOOGLE_CLIENT_SECRET') || ''
-      let refreshToken = $os.getenv('GOOGLE_REFRESH_TOKEN') || ''
+      let serviceAccountJson = $os.getenv('GOOGLE_SERVICE_ACCOUNT_JSON') || ''
       let folderId = $os.getenv('GOOGLE_DRIVE_FOLDER_ID') || ''
       let folderName = 'Backups ERP'
-      let accountEmail = ''
-      let accountName = ''
+      let clientEmail = ''
+      let projectId = ''
       let ultimoEnvio = ''
       let dbStatus = ''
 
       try {
         const configRec = $app.findFirstRecordByData('config_google_drive', 'chave', 'padrao')
         if (configRec) {
-          if (!clientId) clientId = configRec.getString('client_id')
-          if (!clientSecret) clientSecret = configRec.getString('client_secret')
-          if (!refreshToken) refreshToken = configRec.getString('refresh_token')
+          if (!serviceAccountJson) serviceAccountJson = configRec.getString('service_account_json')
           if (!folderId) folderId = configRec.getString('folder_id')
           if (configRec.getString('folder_name')) folderName = configRec.getString('folder_name')
-          accountEmail = configRec.getString('account_email')
-          accountName = configRec.getString('account_name')
+          clientEmail = configRec.getString('client_email')
+          projectId = configRec.getString('project_id')
           ultimoEnvio = configRec.getString('ultimo_envio')
           dbStatus = configRec.getString('ultimo_status')
         }
       } catch (_) {}
 
-      // Obter URL base do backend para orientar redirect URI
-      const siteUrl = $os.getenv('SITE_URL') || ''
-      const pbUrl = $os.getenv('PB_INSTANCE_URL') || ''
-
-      const isConfigured = Boolean(clientId && clientSecret)
-      const isConnected = Boolean(isConfigured && refreshToken)
-
-      // Se temos refresh token mas não temos os dados da conta, tentar buscar rapidamente
-      if (isConnected && (!accountEmail || !accountName)) {
+      if (serviceAccountJson && !clientEmail) {
         try {
-          const tokenRes = $http.send({
-            url: 'https://oauth2.googleapis.com/token',
-            method: 'POST',
-            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-            body:
-              'grant_type=refresh_token' +
-              '&client_id=' +
-              encodeURIComponent(clientId) +
-              '&client_secret=' +
-              encodeURIComponent(clientSecret) +
-              '&refresh_token=' +
-              encodeURIComponent(refreshToken),
-            timeout: 10,
-          })
-
-          if (tokenRes.statusCode === 200) {
-            const tokenJson = tokenRes.json || JSON.parse(tokenRes.raw || '{}')
-            const accessTok = tokenJson.access_token
-            if (accessTok) {
-              const userinfoRes = $http.send({
-                url: 'https://www.googleapis.com/oauth2/v2/userinfo',
-                method: 'GET',
-                headers: { Authorization: 'Bearer ' + accessTok },
-                timeout: 10,
-              })
-              if (userinfoRes.statusCode === 200) {
-                const uJson = userinfoRes.json || JSON.parse(userinfoRes.raw || '{}')
-                accountEmail = uJson.email || accountEmail
-                accountName = uJson.name || accountName
-                try {
-                  const cfg = $app.findFirstRecordByData('config_google_drive', 'chave', 'padrao')
-                  if (cfg) {
-                    if (accountEmail) cfg.set('account_email', accountEmail)
-                    if (accountName) cfg.set('account_name', accountName)
-                    cfg.set('ultimo_status', 'conectado')
-                    $app.save(cfg)
-                  }
-                } catch (_) {}
-              }
-            }
-          }
+          const parsed = JSON.parse(serviceAccountJson)
+          clientEmail = parsed.client_email || ''
+          projectId = parsed.project_id || ''
         } catch (_) {}
+      }
+
+      const isConfigured = Boolean(
+        serviceAccountJson && (clientEmail || serviceAccountJson.length > 50),
+      )
+
+      let emailMascarado = ''
+      if (clientEmail) {
+        const parts = clientEmail.split('@')
+        if (parts.length === 2) {
+          const userPart = parts[0]
+          const maskedUser =
+            userPart.length > 6 ? userPart.slice(0, 4) + '...' + userPart.slice(-3) : userPart
+          emailMascarado = maskedUser + '@' + parts[1]
+        } else {
+          emailMascarado = clientEmail
+        }
       }
 
       return e.json(200, {
         success: true,
         drive: {
+          tipo_autenticacao: 'service_account',
           configurado: isConfigured,
-          conectado: isConnected,
-          client_id_definido: Boolean(clientId),
-          client_secret_definido: Boolean(clientSecret),
-          refresh_token_definido: Boolean(refreshToken),
+          conectado: isConfigured,
+          chave_configurada: isConfigured,
+          client_email: clientEmail,
+          client_email_mascarado: emailMascarado,
+          project_id: projectId,
           pasta_nome: folderName,
           pasta_id: folderId,
-          conta_email: accountEmail,
-          conta_nome: accountName,
           ultimo_envio: ultimoEnvio,
-          status_conexao: isConnected
-            ? 'conectado'
-            : isConfigured
-              ? 'pendente_autorizacao'
-              : 'desconectado',
-          redirect_uri_recomendada: pbUrl
-            ? pbUrl + '/backend/v1/google-drive/oauth/callback'
-            : '/backend/v1/google-drive/oauth/callback',
+          status_conexao: isConfigured ? 'conectado' : 'desconectado',
         },
       })
     } catch (err) {
       return e.json(500, {
-        error: 'Erro ao consultar status do Google Drive: ' + (err?.message || err),
+        error:
+          'Erro ao consultar status da Conta de Serviço Google Drive: ' + (err?.message || err),
       })
     }
   },
@@ -1047,7 +1198,7 @@ routerAdd(
 )
 
 // -------------------------------------------------------------
-// 7. ENDPOINT: SALVAR CREDENCIAIS DO GOOGLE (CLIENT ID, CLIENT SECRET, FOLDER ID)
+// 7. ENDPOINT: SALVAR CREDENCIAIS DA CONTA DE SERVIÇO (SERVICE ACCOUNT JSON E FOLDER ID)
 // POST /backend/v1/google-drive/config
 // -------------------------------------------------------------
 routerAdd(
@@ -1077,12 +1228,378 @@ routerAdd(
       return e.json(403, { error: 'Apenas administradores podem configurar o Google Drive' })
     }
 
+    // Helper Google Service Account Inline para validar chave no salvamento
+    function testServiceAccountKey(serviceAccountJson) {
+      var b64chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/'
+      var b64tab = {}
+      for (var i = 0; i < b64chars.length; i++) b64tab[b64chars.charAt(i)] = i
+
+      function base64ToBytes(s) {
+        s = s.replace(/[^A-Za-z0-9+/=]/g, '')
+        var bytes = []
+        var i = 0
+        while (i < s.length) {
+          var enc1 = b64tab[s.charAt(i++)]
+          var enc2 = b64tab[s.charAt(i++)]
+          var enc3 = b64tab[s.charAt(i++)]
+          var enc4 = b64tab[s.charAt(i++)]
+          var chr1 = (enc1 << 2) | (enc2 >> 4)
+          var chr2 = ((enc2 & 15) << 4) | (enc3 >> 2)
+          var chr3 = ((enc3 & 3) << 6) | enc4
+          bytes.push(chr1)
+          if (enc3 !== undefined && s.charAt(i - 2) !== '=') bytes.push(chr2)
+          if (enc4 !== undefined && s.charAt(i - 1) !== '=') bytes.push(chr3)
+        }
+        return bytes
+      }
+
+      function bytesToBase64Url(bytes) {
+        var str = ''
+        for (var i = 0; i < bytes.length; i++) str += String.fromCharCode(bytes[i])
+        var b64 = ''
+        var j = 0
+        while (j < str.length) {
+          var c1 = str.charCodeAt(j++)
+          var c2 = str.charCodeAt(j++)
+          var c3 = str.charCodeAt(j++)
+          var e1 = c1 >> 2
+          var e2 = ((c1 & 3) << 4) | (c2 >> 4)
+          var e3 = isNaN(c2) ? 64 : ((c2 & 15) << 2) | (c3 >> 6)
+          var e4 = isNaN(c2) || isNaN(c3) ? 64 : c3 & 63
+          b64 +=
+            b64chars.charAt(e1) +
+            b64chars.charAt(e2) +
+            (e3 === 64 ? '=' : b64chars.charAt(e3)) +
+            (e4 === 64 ? '=' : b64chars.charAt(e4))
+        }
+        return b64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
+      }
+
+      function utf8ToBase64Url(str) {
+        var bytes = []
+        for (var i = 0; i < str.length; i++) {
+          var c = str.charCodeAt(i)
+          if (c < 128) {
+            bytes.push(c)
+          } else if (c < 2048) {
+            bytes.push((c >> 6) | 192)
+            bytes.push((c & 63) | 128)
+          } else {
+            bytes.push((c >> 12) | 224)
+            bytes.push(((c >> 6) & 63) | 128)
+            bytes.push((c & 63) | 128)
+          }
+        }
+        return bytesToBase64Url(bytes)
+      }
+
+      function parsePKCS8orPKCS1(privateKeyPem) {
+        var clean = privateKeyPem
+          .replace(/-----BEGIN[^-]+-----/g, '')
+          .replace(/-----END[^-]+-----/g, '')
+          .replace(/\s+/g, '')
+        var der = base64ToBytes(clean)
+        var pos = 0
+
+        function readLength() {
+          var b = der[pos++]
+          if (b < 128) return b
+          var nBytes = b & 0x7f
+          var len = 0
+          for (var k = 0; k < nBytes; k++) len = (len << 8) | der[pos++]
+          return len
+        }
+
+        function readTag() {
+          return der[pos++]
+        }
+
+        function readInteger() {
+          var tag = readTag()
+          if (tag !== 0x02)
+            throw new Error('ASN.1 inválido: esperado INTEGER (0x02), recebido ' + tag)
+          var len = readLength()
+          var intBytes = der.slice(pos, pos + len)
+          pos += len
+          while (intBytes.length > 1 && intBytes[0] === 0) intBytes.shift()
+          return intBytes
+        }
+
+        var tag = readTag()
+        if (tag !== 0x30) throw new Error('ASN.1 inválido: esperado SEQUENCE')
+        readLength()
+
+        var nextTag = der[pos]
+        if (nextTag === 0x02) {
+          pos++
+          var vLen = readLength()
+          var ver = der[pos]
+          pos += vLen
+          if (ver === 0 && der[pos] === 0x30) {
+            pos++
+            var algLen = readLength()
+            pos += algLen
+            var octTag = readTag()
+            if (octTag !== 0x04) throw new Error('ASN.1 PKCS#8: esperado OCTET STRING')
+            readLength()
+            var pkcs1Tag = readTag()
+            if (pkcs1Tag !== 0x30) throw new Error('PKCS#1 inválido dentro do PKCS#8')
+            readLength()
+            readInteger()
+            return { n: readInteger(), e: readInteger(), d: readInteger() }
+          } else {
+            return { n: readInteger(), e: readInteger(), d: readInteger() }
+          }
+        }
+        throw new Error('Formato de chave privada RSA não reconhecido')
+      }
+
+      var BASE = 16384
+      var BASE_BITS = 14
+
+      function bytesToBig(bytes) {
+        var res = [0]
+        for (var i = 0; i < bytes.length; i++) {
+          var carry = bytes[i]
+          for (var j = 0; j < res.length; j++) {
+            var v = res[j] * 256 + carry
+            res[j] = v % BASE
+            carry = Math.floor(v / BASE)
+          }
+          while (carry > 0) {
+            res.push(carry % BASE)
+            carry = Math.floor(carry / BASE)
+          }
+        }
+        return trim(res)
+      }
+
+      function bigToBytes(a, expectedLen) {
+        var bytes = []
+        var temp = a.slice()
+        while (temp.length > 1 || temp[0] > 0) {
+          var rem = 0
+          for (var i = temp.length - 1; i >= 0; i--) {
+            var cur = rem * BASE + temp[i]
+            temp[i] = Math.floor(cur / 256)
+            rem = cur % 256
+          }
+          temp = trim(temp)
+          bytes.unshift(rem)
+        }
+        while (bytes.length < expectedLen) bytes.unshift(0)
+        return bytes
+      }
+
+      function trim(a) {
+        while (a.length > 1 && a[a.length - 1] === 0) a.pop()
+        return a
+      }
+
+      function compare(a, b) {
+        if (a.length !== b.length) return a.length > b.length ? 1 : -1
+        for (var i = a.length - 1; i >= 0; i--) {
+          if (a[i] !== b[i]) return a[i] > b[i] ? 1 : -1
+        }
+        return 0
+      }
+
+      function mul(a, b) {
+        var res = []
+        for (var i = 0; i < a.length + b.length; i++) res.push(0)
+        for (var i = 0; i < a.length; i++) {
+          var carry = 0
+          for (var j = 0; j < b.length || carry > 0; j++) {
+            var cur = res[i + j] + a[i] * (j < b.length ? b[j] : 0) + carry
+            res[i + j] = cur % BASE
+            carry = Math.floor(cur / BASE)
+          }
+        }
+        return trim(res)
+      }
+
+      function divRem(u, v) {
+        if (v.length === 1 && v[0] === 0) throw new Error('Divisão por zero')
+        if (compare(u, v) < 0) return { q: [0], r: u.slice() }
+        if (v.length === 1) {
+          var q = []
+          var r = 0
+          var d = v[0]
+          for (var i = u.length - 1; i >= 0; i--) {
+            var cur = r * BASE + u[i]
+            q[i] = Math.floor(cur / d)
+            r = cur % d
+          }
+          return { q: trim(q), r: [r] }
+        }
+
+        var shift = Math.floor(BASE / (v[v.length - 1] + 1))
+        var uNorm = mul(u, [shift])
+        var vNorm = mul(v, [shift])
+        if (uNorm.length === u.length) uNorm.push(0)
+
+        var n = vNorm.length
+        var m = uNorm.length - n
+        var q = []
+        for (var i = 0; i < m; i++) q.push(0)
+
+        var vn1 = vNorm[n - 1]
+        var vn2 = vNorm[n - 2]
+
+        for (var j = m - 1; j >= 0; j--) {
+          var uTop = uNorm[j + n] * BASE + uNorm[j + n - 1]
+          var qHat = Math.floor(uTop / vn1)
+          var rHat = uTop % vn1
+
+          while (qHat >= BASE || qHat * vn2 > rHat * BASE + uNorm[j + n - 2]) {
+            qHat--
+            rHat += vn1
+            if (rHat >= BASE) break
+          }
+
+          var qv = mul(vNorm, [qHat])
+          var borrow = 0
+          for (var k = 0; k <= n; k++) {
+            var uVal = uNorm[j + k]
+            var qvVal = k < qv.length ? qv[k] : 0
+            var diff = uVal - borrow - qvVal
+            if (diff < 0) {
+              diff += BASE
+              borrow = 1
+            } else {
+              borrow = 0
+            }
+            uNorm[j + k] = diff
+          }
+
+          if (borrow > 0) {
+            qHat--
+            var carry = 0
+            for (var k = 0; k <= n; k++) {
+              var sum = uNorm[j + k] + carry + (k < vNorm.length ? vNorm[k] : 0)
+              uNorm[j + k] = sum % BASE
+              carry = Math.floor(sum / BASE)
+            }
+          }
+          q[j] = qHat
+        }
+
+        var divResult = divRem(uNorm, [shift])
+        return { q: trim(q), r: divResult.q }
+      }
+
+      function modPow(baseB, expB, modB) {
+        var res = [1]
+        var cur = baseB.slice()
+        for (var i = 0; i < expB.length; i++) {
+          var chunk = expB[i]
+          for (var b = 0; b < BASE_BITS; b++) {
+            if ((chunk & (1 << b)) !== 0) {
+              res = divRem(mul(res, cur), modB).r
+            }
+            cur = divRem(mul(cur, cur), modB).r
+          }
+        }
+        return res
+      }
+
+      var SHA256_DIGEST_INFO = [
+        0x30, 0x31, 0x30, 0x0d, 0x06, 0x09, 0x60, 0x86, 0x48, 0x01, 0x65, 0x03, 0x04, 0x02, 0x01,
+        0x05, 0x00, 0x04, 0x20,
+      ]
+
+      function rsaSignSha256(dataStr, keyComponents) {
+        var nBig = bytesToBig(keyComponents.n)
+        var dBig = bytesToBig(keyComponents.d)
+        var kLen = keyComponents.n.length
+
+        var hex = $security.sha256(dataStr)
+        var hash = []
+        for (var i = 0; i < hex.length; i += 2) hash.push(parseInt(hex.substr(i, 2), 16))
+
+        var t = SHA256_DIGEST_INFO.concat(hash)
+        if (kLen < t.length + 11) throw new Error('Chave RSA curta demais para SHA256')
+
+        var psLen = kLen - t.length - 3
+        var em = [0x00, 0x01]
+        for (var i = 0; i < psLen; i++) em.push(0xff)
+        em.push(0x00)
+        for (var i = 0; i < t.length; i++) em.push(t[i])
+
+        var emBig = bytesToBig(em)
+        var sBig = modPow(emBig, dBig, nBig)
+        var sigBytes = bigToBytes(sBig, kLen)
+        return bytesToBase64Url(sigBytes)
+      }
+
+      var creds =
+        typeof serviceAccountJson === 'string' ? JSON.parse(serviceAccountJson) : serviceAccountJson
+
+      if (!creds.client_email || !creds.private_key) {
+        throw new Error(
+          'JSON de Conta de Serviço inválido: "client_email" e "private_key" são obrigatórios.',
+        )
+      }
+
+      var nowSec = Math.floor(Date.now() / 1000)
+      var header = { alg: 'RS256', typ: 'JWT' }
+      var claimSet = {
+        iss: creds.client_email,
+        scope: 'https://www.googleapis.com/auth/drive.file',
+        aud: 'https://oauth2.googleapis.com/token',
+        exp: nowSec + 3600,
+        iat: nowSec,
+      }
+
+      var encHeader = utf8ToBase64Url(JSON.stringify(header))
+      var encClaim = utf8ToBase64Url(JSON.stringify(claimSet))
+      var signingInput = encHeader + '.' + encClaim
+
+      var keys = parsePKCS8orPKCS1(creds.private_key)
+      var signature = rsaSignSha256(signingInput, keys)
+      var assertion = signingInput + '.' + signature
+
+      var res = $http.send({
+        url: 'https://oauth2.googleapis.com/token',
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body:
+          'grant_type=' +
+          encodeURIComponent('urn:ietf:params:oauth:grant-type:jwt-bearer') +
+          '&assertion=' +
+          encodeURIComponent(assertion),
+        timeout: 30,
+      })
+
+      if (res.statusCode !== 200) {
+        throw new Error(
+          'Falha no teste com Google OAuth (HTTP ' + res.statusCode + '): ' + (res.raw || ''),
+        )
+      }
+
+      var data = res.json || JSON.parse(res.raw || '{}')
+      if (!data.access_token) {
+        throw new Error('Access token não retornado pelo Google OAuth.')
+      }
+
+      return {
+        access_token: data.access_token,
+        client_email: creds.client_email,
+        project_id: creds.project_id || '',
+      }
+    }
+
     const body = e.requestInfo().body || {}
-    const clientId = (body.client_id || '').trim()
-    const clientSecret = (body.client_secret || '').trim()
-    const folderId = (body.folder_id || '').trim()
-    const folderName = (body.folder_name || 'Backups ERP').trim()
-    const manualRefreshToken = (body.refresh_token || '').trim()
+    let serviceAccountJsonInput = (body.service_account_json || '').trim()
+    let folderId = (body.folder_id || '').trim()
+    let folderName = (body.folder_name || 'Backups ERP').trim()
+
+    if (folderId.indexOf('drive.google.com') !== -1) {
+      const match = folderId.match(/folders\/([a-zA-Z0-9_-]+)/)
+      if (match && match[1]) {
+        folderId = match[1]
+      }
+    }
 
     try {
       let configRec = null
@@ -1094,19 +1611,61 @@ routerAdd(
         configRec.set('chave', 'padrao')
       }
 
-      if (clientId) configRec.set('client_id', clientId)
-      if (clientSecret) configRec.set('client_secret', clientSecret)
-      if (folderId) configRec.set('folder_id', folderId)
-      if (folderName) configRec.set('folder_name', folderName)
-      if (manualRefreshToken) {
-        configRec.set('refresh_token', manualRefreshToken)
-        configRec.set('ultimo_status', 'conectado')
+      let parsedEmail = ''
+      let parsedProjectId = ''
+      let parsedPrivateKeyId = ''
+
+      if (serviceAccountJsonInput) {
+        try {
+          const parsed = JSON.parse(serviceAccountJsonInput)
+          if (!parsed.client_email || !parsed.private_key) {
+            return e.json(400, {
+              error:
+                'O JSON colado é inválido ou incompleto. Certifique-se de baixar o arquivo JSON completo de chave da Conta de Serviço no Google Cloud Console (deve conter "client_email" e "private_key").',
+            })
+          }
+          parsedEmail = parsed.client_email
+          parsedProjectId = parsed.project_id || ''
+          parsedPrivateKeyId = parsed.private_key_id || ''
+
+          try {
+            testServiceAccountKey(parsed)
+          } catch (testErr) {
+            return e.json(400, {
+              error:
+                'Falha na validação da chave com o Google: ' +
+                (testErr?.message || testErr) +
+                '. Certifique-se de que a Google Drive API está ativada no seu projeto Google Cloud.',
+            })
+          }
+
+          configRec.set('service_account_json', serviceAccountJsonInput)
+          configRec.set('client_email', parsedEmail)
+          configRec.set('project_id', parsedProjectId)
+          configRec.set('private_key_id', parsedPrivateKeyId)
+          configRec.set('auth_type', 'service_account')
+          configRec.set('ultimo_status', 'conectado')
+        } catch (jsonErr) {
+          return e.json(400, {
+            error: 'Conteúdo colado não é um JSON válido: ' + (jsonErr?.message || jsonErr),
+          })
+        }
       }
+
+      if (folderId !== undefined) {
+        configRec.set('folder_id', folderId)
+      }
+      if (folderName) {
+        configRec.set('folder_name', folderName)
+      }
+      configRec.set('ativo', true)
       $app.save(configRec)
 
       return e.json(200, {
         success: true,
-        message: 'Configurações do Google Drive salvas com sucesso',
+        message: 'Configurações da Conta de Serviço salvas com sucesso!',
+        client_email: parsedEmail || configRec.getString('client_email'),
+        folder_id: folderId,
       })
     } catch (err) {
       return e.json(500, { error: 'Erro ao salvar configurações: ' + (err?.message || err) })
@@ -1116,329 +1675,7 @@ routerAdd(
 )
 
 // -------------------------------------------------------------
-// 8. ENDPOINT: GERAR URL DE AUTORIZAÇÃO OAUTH2 (GOOGLE DRIVE)
-// GET /backend/v1/google-drive/auth-url
-// -------------------------------------------------------------
-routerAdd(
-  'GET',
-  '/backend/v1/google-drive/auth-url',
-  (e) => {
-    const authRecord = e.auth
-    if (!authRecord) {
-      return e.json(401, { error: 'Não autorizado' })
-    }
-
-    try {
-      let clientId = $os.getenv('GOOGLE_CLIENT_ID') || ''
-      try {
-        const configRec = $app.findFirstRecordByData('config_google_drive', 'chave', 'padrao')
-        if (configRec && !clientId) {
-          clientId = configRec.getString('client_id')
-        }
-      } catch (_) {}
-
-      if (!clientId) {
-        return e.json(400, {
-          error:
-            'Client ID do Google não configurado. Forneça o Client ID no formulário de configuração ou na variável GOOGLE_CLIENT_ID.',
-        })
-      }
-
-      // Descobrir a redirect URI
-      const queryRedirect = e.request.url.query().get('redirect_uri')
-      let redirectUri = queryRedirect
-      if (!redirectUri) {
-        const pbUrl = $os.getenv('PB_INSTANCE_URL') || ''
-        redirectUri = pbUrl
-          ? pbUrl + '/backend/v1/google-drive/oauth/callback'
-          : 'https://erp-empresarial-completo-575bb.shrd00.internal.goskip.dev/backend/v1/google-drive/oauth/callback'
-      }
-
-      // Escopos solicitados: drive.file (acesso seguro apenas aos arquivos criados pelo app) e email/profile
-      const scopes = [
-        'https://www.googleapis.com/auth/drive.file',
-        'https://www.googleapis.com/auth/userinfo.email',
-        'https://www.googleapis.com/auth/userinfo.profile',
-      ].join(' ')
-
-      // State para validação e para guardar a URL de retorno ao frontend
-      const stateObj = {
-        uid: authRecord.id,
-        t: Date.now(),
-        origin: e.request.header.get('origin') || '',
-      }
-      const stateStr = encodeURIComponent(JSON.stringify(stateObj))
-
-      const authUrl =
-        'https://accounts.google.com/o/oauth2/v2/auth?' +
-        'client_id=' +
-        encodeURIComponent(clientId) +
-        '&redirect_uri=' +
-        encodeURIComponent(redirectUri) +
-        '&response_type=code' +
-        '&scope=' +
-        encodeURIComponent(scopes) +
-        '&access_type=offline' +
-        '&prompt=consent' +
-        '&state=' +
-        stateStr
-
-      return e.json(200, {
-        success: true,
-        auth_url: authUrl,
-        redirect_uri: redirectUri,
-      })
-    } catch (err) {
-      return e.json(500, { error: 'Erro ao gerar URL de autorização: ' + (err?.message || err) })
-    }
-  },
-  $apis.requireAuth(),
-)
-
-// -------------------------------------------------------------
-// 9. ENDPOINT: CALLBACK OAUTH2 (GOOGLE DRIVE)
-// GET /backend/v1/google-drive/oauth/callback
-// -------------------------------------------------------------
-routerAdd('GET', '/backend/v1/google-drive/oauth/callback', (e) => {
-  const code = e.request.url.query().get('code')
-  const errorParam = e.request.url.query().get('error')
-  const stateParam = e.request.url.query().get('state')
-
-  if (errorParam) {
-    return e.html(
-      400,
-      '<html><body style="font-family:sans-serif;padding:40px;text-align:center;">' +
-        '<h2 style="color:#dc2626;">Autorização Recusada pelo Google</h2>' +
-        '<p>' +
-        errorParam +
-        '</p>' +
-        '<p><a href="/cadastros/backups" style="color:#0f766e;font-weight:bold;">Voltar para o ERP</a></p>' +
-        '</body></html>',
-    )
-  }
-
-  if (!code) {
-    return e.html(
-      400,
-      '<html><body style="font-family:sans-serif;padding:40px;text-align:center;">' +
-        '<h2 style="color:#dc2626;">Código de Autorização Ausente</h2>' +
-        '<p>Nenhum código foi retornado pelo Google.</p>' +
-        '</body></html>',
-    )
-  }
-
-  try {
-    let clientId = $os.getenv('GOOGLE_CLIENT_ID') || ''
-    let clientSecret = $os.getenv('GOOGLE_CLIENT_SECRET') || ''
-    let folderName = 'Backups ERP'
-
-    let configRec = null
-    try {
-      configRec = $app.findFirstRecordByData('config_google_drive', 'chave', 'padrao')
-      if (configRec) {
-        if (!clientId) clientId = configRec.getString('client_id')
-        if (!clientSecret) clientSecret = configRec.getString('client_secret')
-        if (configRec.getString('folder_name')) folderName = configRec.getString('folder_name')
-      }
-    } catch (_) {
-      const configCol = $app.findCollectionByNameOrId('config_google_drive')
-      configRec = new Record(configCol)
-      configRec.set('chave', 'padrao')
-    }
-
-    if (!clientId || !clientSecret) {
-      return e.html(
-        500,
-        '<html><body style="font-family:sans-serif;padding:40px;text-align:center;">' +
-          '<h2 style="color:#dc2626;">Credenciais incompletas</h2>' +
-          '<p>Client ID ou Client Secret do Google não estão configurados no backend.</p>' +
-          '</body></html>',
-      )
-    }
-
-    // Reconstruir o redirect URI exato usado na requisição
-    const pbUrl = $os.getenv('PB_INSTANCE_URL') || ''
-    const redirectUri = pbUrl
-      ? pbUrl + '/backend/v1/google-drive/oauth/callback'
-      : 'https://erp-empresarial-completo-575bb.shrd00.internal.goskip.dev/backend/v1/google-drive/oauth/callback'
-
-    // Trocar código por refresh_token e access_token
-    const tokenUrl = 'https://oauth2.googleapis.com/token'
-    const postBody =
-      'code=' +
-      encodeURIComponent(code) +
-      '&client_id=' +
-      encodeURIComponent(clientId) +
-      '&client_secret=' +
-      encodeURIComponent(clientSecret) +
-      '&redirect_uri=' +
-      encodeURIComponent(redirectUri) +
-      '&grant_type=authorization_code'
-
-    const tokenRes = $http.send({
-      url: tokenUrl,
-      method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: postBody,
-      timeout: 30,
-    })
-
-    if (tokenRes.statusCode !== 200) {
-      const errDetail = tokenRes.raw || 'Status ' + tokenRes.statusCode
-      return e.html(
-        500,
-        '<html><body style="font-family:sans-serif;padding:40px;text-align:center;">' +
-          '<h2 style="color:#dc2626;">Falha ao Obter Token</h2>' +
-          '<pre style="background:#f1f5f9;padding:15px;border-radius:8px;text-align:left;display:inline-block;">' +
-          errDetail +
-          '</pre>' +
-          '<p><a href="/cadastros/backups">Voltar ao ERP</a></p>' +
-          '</body></html>',
-      )
-    }
-
-    const tokenData = tokenRes.json || JSON.parse(tokenRes.raw || '{}')
-    const refreshToken = tokenData.refresh_token
-    const accessToken = tokenData.access_token
-
-    if (!refreshToken && configRec && !configRec.getString('refresh_token')) {
-      // Se não veio refresh token e não tínhamos um antes, avisar o usuário
-      console.warn('[Google OAuth] Nenhum refresh token retornado na troca de código.')
-    }
-
-    // Buscar informações do usuário conectado
-    let userEmail = ''
-    let userName = ''
-    if (accessToken) {
-      try {
-        const userinfoRes = $http.send({
-          url: 'https://www.googleapis.com/oauth2/v2/userinfo',
-          method: 'GET',
-          headers: { Authorization: 'Bearer ' + accessToken },
-          timeout: 10,
-        })
-        if (userinfoRes.statusCode === 200) {
-          const uData = userinfoRes.json || JSON.parse(userinfoRes.raw || '{}')
-          userEmail = uData.email || ''
-          userName = uData.name || ''
-        }
-      } catch (_) {}
-
-      // Garantir existência da pasta "Backups ERP"
-      try {
-        const searchFolderUrl =
-          'https://www.googleapis.com/drive/v3/files?q=' +
-          encodeURIComponent(
-            "mimeType='application/vnd.google-apps.folder' and name='" +
-              folderName +
-              "' and trashed=false",
-          ) +
-          '&fields=files(id,name)'
-        const searchRes = $http.send({
-          url: searchFolderUrl,
-          method: 'GET',
-          headers: { Authorization: 'Bearer ' + accessToken },
-          timeout: 20,
-        })
-
-        const searchJson = searchRes.json || JSON.parse(searchRes.raw || '{}')
-        let folderId = ''
-        if (searchJson.files && searchJson.files.length > 0) {
-          folderId = searchJson.files[0].id
-        } else {
-          const createFolderRes = $http.send({
-            url: 'https://www.googleapis.com/drive/v3/files',
-            method: 'POST',
-            headers: {
-              Authorization: 'Bearer ' + accessToken,
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-              name: folderName,
-              mimeType: 'application/vnd.google-apps.folder',
-            }),
-            timeout: 20,
-          })
-          const createdFolderJson = createFolderRes.json || JSON.parse(createFolderRes.raw || '{}')
-          folderId = createdFolderJson.id || ''
-        }
-
-        if (folderId && configRec) {
-          configRec.set('folder_id', folderId)
-        }
-      } catch (errF) {
-        console.warn('[Google OAuth] Aviso ao criar pasta Backups ERP:', errF)
-      }
-    }
-
-    // Atualizar registro de configuração
-    if (configRec) {
-      if (refreshToken) configRec.set('refresh_token', refreshToken)
-      if (userEmail) configRec.set('account_email', userEmail)
-      if (userName) configRec.set('account_name', userName)
-      configRec.set('folder_name', folderName)
-      configRec.set('ativo', true)
-      configRec.set('ultimo_status', 'conectado')
-      $app.save(configRec)
-    }
-
-    // Página de confirmação amigável com redirecionamento de volta ao ERP
-    const htmlResponse =
-      '<!DOCTYPE html>' +
-      '<html lang="pt-BR">' +
-      '<head>' +
-      '<meta charset="utf-8"/>' +
-      '<title>Google Drive Conectado - ERP Pedreira Cordeiro</title>' +
-      '<meta name="viewport" content="width=device-width, initial-scale=1"/>' +
-      '<style>' +
-      'body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #f8fafc; color: #0f172a; display: flex; align-items: center; justify-content: center; min-height: 100vh; margin: 0; padding: 20px; box-sizing: border-box; }' +
-      '.card { background: white; border: 1px solid #e2e8f0; border-radius: 16px; padding: 32px; max-width: 480px; width: 100%; text-align: center; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05); }' +
-      '.icon { width: 56px; height: 56px; background: #ecfdf5; color: #059669; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; font-size: 28px; margin-bottom: 16px; }' +
-      'h1 { font-size: 20px; font-weight: 700; margin: 0 0 8px 0; color: #064e3b; }' +
-      'p { font-size: 14px; color: #475569; line-height: 1.5; margin: 0 0 20px 0; }' +
-      '.btn { display: inline-block; background: #0f766e; color: white; padding: 10px 20px; border-radius: 8px; text-decoration: none; font-weight: 600; font-size: 14px; transition: background 0.2s; }' +
-      '.btn:hover { background: #115e59; }' +
-      '</style>' +
-      '</head>' +
-      '<body>' +
-      '<div class="card">' +
-      '<div class="icon">✓</div>' +
-      '<h1>Google Drive Conectado com Sucesso!</h1>' +
-      '<p>A integração automática de backups do ERP Grupo Pedreira Cordeiro foi vinculada à conta <strong>' +
-      (userEmail || 'Google') +
-      '</strong> na pasta <strong>Backups ERP</strong>.</p>' +
-      '<p>Você já pode fechar esta aba ou clicar abaixo para retornar ao painel de Backups do ERP.</p>' +
-      '<a href="/cadastros/backups" class="btn">Voltar para o ERP</a>' +
-      '</div>' +
-      '<script>' +
-      'if (window.opener) {' +
-      '  try { window.opener.postMessage({ type: "GOOGLE_DRIVE_CONNECTED", email: "' +
-      userEmail +
-      '" }, "*"); } catch(e){}' +
-      '  setTimeout(function() { window.close(); }, 2000);' +
-      '}' +
-      '</script>' +
-      '</body>' +
-      '</html>'
-
-    return e.html(200, htmlResponse)
-  } catch (errCallback) {
-    console.error('[Google OAuth Callback] Erro:', errCallback)
-    return e.html(
-      500,
-      '<html><body style="font-family:sans-serif;padding:40px;text-align:center;">' +
-        '<h2 style="color:#dc2626;">Erro no Processamento do OAuth</h2>' +
-        '<p>' +
-        String(errCallback?.message || errCallback) +
-        '</p>' +
-        '<p><a href="/cadastros/backups">Voltar ao ERP</a></p>' +
-        '</body></html>',
-    )
-  }
-})
-
-// -------------------------------------------------------------
-// 10. ENDPOINT: DESCONECTAR GOOGLE DRIVE
+// 8. ENDPOINT: REMOVER / DESCONECTAR CONTA DE SERVIÇO
 // POST /backend/v1/google-drive/desconectar
 // -------------------------------------------------------------
 routerAdd(
@@ -1471,6 +1708,10 @@ routerAdd(
     try {
       const configRec = $app.findFirstRecordByData('config_google_drive', 'chave', 'padrao')
       if (configRec) {
+        configRec.set('service_account_json', '')
+        configRec.set('client_email', '')
+        configRec.set('project_id', '')
+        configRec.set('private_key_id', '')
         configRec.set('refresh_token', '')
         configRec.set('account_email', '')
         configRec.set('account_name', '')
@@ -1480,7 +1721,7 @@ routerAdd(
 
       return e.json(200, {
         success: true,
-        message: 'Google Drive desconectado com sucesso',
+        message: 'Configuração da Conta de Serviço do Google Drive removida com sucesso',
       })
     } catch (err) {
       return e.json(500, { error: 'Erro ao desconectar: ' + (err?.message || err) })
@@ -1490,7 +1731,7 @@ routerAdd(
 )
 
 // -------------------------------------------------------------
-// 11. ENDPOINT: ENVIAR MANUALMENTE UM BACKUP ESPECÍFICO AO GOOGLE DRIVE
+// 9. ENDPOINT: ENVIAR MANUALMENTE UM BACKUP ESPECÍFICO AO GOOGLE DRIVE VIA CONTA DE SERVIÇO
 // POST /backend/v1/backups/{id}/enviar-drive
 // -------------------------------------------------------------
 routerAdd(
@@ -1520,6 +1761,367 @@ routerAdd(
       return e.json(403, { error: 'Apenas administradores podem enviar backups ao Google Drive' })
     }
 
+    // Helper Google Service Account Inline para upload manual
+    function getAccessTokenManual(serviceAccountJson, scope) {
+      var b64chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/'
+      var b64tab = {}
+      for (var i = 0; i < b64chars.length; i++) b64tab[b64chars.charAt(i)] = i
+
+      function base64ToBytes(s) {
+        s = s.replace(/[^A-Za-z0-9+/=]/g, '')
+        var bytes = []
+        var i = 0
+        while (i < s.length) {
+          var enc1 = b64tab[s.charAt(i++)]
+          var enc2 = b64tab[s.charAt(i++)]
+          var enc3 = b64tab[s.charAt(i++)]
+          var enc4 = b64tab[s.charAt(i++)]
+          var chr1 = (enc1 << 2) | (enc2 >> 4)
+          var chr2 = ((enc2 & 15) << 4) | (enc3 >> 2)
+          var chr3 = ((enc3 & 3) << 6) | enc4
+          bytes.push(chr1)
+          if (enc3 !== undefined && s.charAt(i - 2) !== '=') bytes.push(chr2)
+          if (enc4 !== undefined && s.charAt(i - 1) !== '=') bytes.push(chr3)
+        }
+        return bytes
+      }
+
+      function bytesToBase64Url(bytes) {
+        var str = ''
+        for (var i = 0; i < bytes.length; i++) str += String.fromCharCode(bytes[i])
+        var b64 = ''
+        var j = 0
+        while (j < str.length) {
+          var c1 = str.charCodeAt(j++)
+          var c2 = str.charCodeAt(j++)
+          var c3 = str.charCodeAt(j++)
+          var e1 = c1 >> 2
+          var e2 = ((c1 & 3) << 4) | (c2 >> 4)
+          var e3 = isNaN(c2) ? 64 : ((c2 & 15) << 2) | (c3 >> 6)
+          var e4 = isNaN(c2) || isNaN(c3) ? 64 : c3 & 63
+          b64 +=
+            b64chars.charAt(e1) +
+            b64chars.charAt(e2) +
+            (e3 === 64 ? '=' : b64chars.charAt(e3)) +
+            (e4 === 64 ? '=' : b64chars.charAt(e4))
+        }
+        return b64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
+      }
+
+      function utf8ToBase64Url(str) {
+        var bytes = []
+        for (var i = 0; i < str.length; i++) {
+          var c = str.charCodeAt(i)
+          if (c < 128) {
+            bytes.push(c)
+          } else if (c < 2048) {
+            bytes.push((c >> 6) | 192)
+            bytes.push((c & 63) | 128)
+          } else {
+            bytes.push((c >> 12) | 224)
+            bytes.push(((c >> 6) & 63) | 128)
+            bytes.push((c & 63) | 128)
+          }
+        }
+        return bytesToBase64Url(bytes)
+      }
+
+      function parsePKCS8orPKCS1(privateKeyPem) {
+        var clean = privateKeyPem
+          .replace(/-----BEGIN[^-]+-----/g, '')
+          .replace(/-----END[^-]+-----/g, '')
+          .replace(/\s+/g, '')
+        var der = base64ToBytes(clean)
+        var pos = 0
+
+        function readLength() {
+          var b = der[pos++]
+          if (b < 128) return b
+          var nBytes = b & 0x7f
+          var len = 0
+          for (var k = 0; k < nBytes; k++) len = (len << 8) | der[pos++]
+          return len
+        }
+
+        function readTag() {
+          return der[pos++]
+        }
+
+        function readInteger() {
+          var tag = readTag()
+          if (tag !== 0x02)
+            throw new Error('ASN.1 inválido: esperado INTEGER (0x02), recebido ' + tag)
+          var len = readLength()
+          var intBytes = der.slice(pos, pos + len)
+          pos += len
+          while (intBytes.length > 1 && intBytes[0] === 0) intBytes.shift()
+          return intBytes
+        }
+
+        var tag = readTag()
+        if (tag !== 0x30) throw new Error('ASN.1 inválido: esperado SEQUENCE')
+        readLength()
+
+        var nextTag = der[pos]
+        if (nextTag === 0x02) {
+          pos++
+          var vLen = readLength()
+          var ver = der[pos]
+          pos += vLen
+          if (ver === 0 && der[pos] === 0x30) {
+            pos++
+            var algLen = readLength()
+            pos += algLen
+            var octTag = readTag()
+            if (octTag !== 0x04) throw new Error('ASN.1 PKCS#8: esperado OCTET STRING')
+            readLength()
+            var pkcs1Tag = readTag()
+            if (pkcs1Tag !== 0x30) throw new Error('PKCS#1 inválido dentro do PKCS#8')
+            readLength()
+            readInteger()
+            return { n: readInteger(), e: readInteger(), d: readInteger() }
+          } else {
+            return { n: readInteger(), e: readInteger(), d: readInteger() }
+          }
+        }
+        throw new Error('Formato de chave privada RSA não reconhecido')
+      }
+
+      var BASE = 16384
+      var BASE_BITS = 14
+
+      function bytesToBig(bytes) {
+        var res = [0]
+        for (var i = 0; i < bytes.length; i++) {
+          var carry = bytes[i]
+          for (var j = 0; j < res.length; j++) {
+            var v = res[j] * 256 + carry
+            res[j] = v % BASE
+            carry = Math.floor(v / BASE)
+          }
+          while (carry > 0) {
+            res.push(carry % BASE)
+            carry = Math.floor(carry / BASE)
+          }
+        }
+        return trim(res)
+      }
+
+      function bigToBytes(a, expectedLen) {
+        var bytes = []
+        var temp = a.slice()
+        while (temp.length > 1 || temp[0] > 0) {
+          var rem = 0
+          for (var i = temp.length - 1; i >= 0; i--) {
+            var cur = rem * BASE + temp[i]
+            temp[i] = Math.floor(cur / 256)
+            rem = cur % 256
+          }
+          temp = trim(temp)
+          bytes.unshift(rem)
+        }
+        while (bytes.length < expectedLen) bytes.unshift(0)
+        return bytes
+      }
+
+      function trim(a) {
+        while (a.length > 1 && a[a.length - 1] === 0) a.pop()
+        return a
+      }
+
+      function compare(a, b) {
+        if (a.length !== b.length) return a.length > b.length ? 1 : -1
+        for (var i = a.length - 1; i >= 0; i--) {
+          if (a[i] !== b[i]) return a[i] > b[i] ? 1 : -1
+        }
+        return 0
+      }
+
+      function mul(a, b) {
+        var res = []
+        for (var i = 0; i < a.length + b.length; i++) res.push(0)
+        for (var i = 0; i < a.length; i++) {
+          var carry = 0
+          for (var j = 0; j < b.length || carry > 0; j++) {
+            var cur = res[i + j] + a[i] * (j < b.length ? b[j] : 0) + carry
+            res[i + j] = cur % BASE
+            carry = Math.floor(cur / BASE)
+          }
+        }
+        return trim(res)
+      }
+
+      function divRem(u, v) {
+        if (v.length === 1 && v[0] === 0) throw new Error('Divisão por zero')
+        if (compare(u, v) < 0) return { q: [0], r: u.slice() }
+        if (v.length === 1) {
+          var q = []
+          var r = 0
+          var d = v[0]
+          for (var i = u.length - 1; i >= 0; i--) {
+            var cur = r * BASE + u[i]
+            q[i] = Math.floor(cur / d)
+            r = cur % d
+          }
+          return { q: trim(q), r: [r] }
+        }
+
+        var shift = Math.floor(BASE / (v[v.length - 1] + 1))
+        var uNorm = mul(u, [shift])
+        var vNorm = mul(v, [shift])
+        if (uNorm.length === u.length) uNorm.push(0)
+
+        var n = vNorm.length
+        var m = uNorm.length - n
+        var q = []
+        for (var i = 0; i < m; i++) q.push(0)
+
+        var vn1 = vNorm[n - 1]
+        var vn2 = vNorm[n - 2]
+
+        for (var j = m - 1; j >= 0; j--) {
+          var uTop = uNorm[j + n] * BASE + uNorm[j + n - 1]
+          var qHat = Math.floor(uTop / vn1)
+          var rHat = uTop % vn1
+
+          while (qHat >= BASE || qHat * vn2 > rHat * BASE + uNorm[j + n - 2]) {
+            qHat--
+            rHat += vn1
+            if (rHat >= BASE) break
+          }
+
+          var qv = mul(vNorm, [qHat])
+          var borrow = 0
+          for (var k = 0; k <= n; k++) {
+            var uVal = uNorm[j + k]
+            var qvVal = k < qv.length ? qv[k] : 0
+            var diff = uVal - borrow - qvVal
+            if (diff < 0) {
+              diff += BASE
+              borrow = 1
+            } else {
+              borrow = 0
+            }
+            uNorm[j + k] = diff
+          }
+
+          if (borrow > 0) {
+            qHat--
+            var carry = 0
+            for (var k = 0; k <= n; k++) {
+              var sum = uNorm[j + k] + carry + (k < vNorm.length ? vNorm[k] : 0)
+              uNorm[j + k] = sum % BASE
+              carry = Math.floor(sum / BASE)
+            }
+          }
+          q[j] = qHat
+        }
+
+        var divResult = divRem(uNorm, [shift])
+        return { q: trim(q), r: divResult.q }
+      }
+
+      function modPow(baseB, expB, modB) {
+        var res = [1]
+        var cur = baseB.slice()
+        for (var i = 0; i < expB.length; i++) {
+          var chunk = expB[i]
+          for (var b = 0; b < BASE_BITS; b++) {
+            if ((chunk & (1 << b)) !== 0) {
+              res = divRem(mul(res, cur), modB).r
+            }
+            cur = divRem(mul(cur, cur), modB).r
+          }
+        }
+        return res
+      }
+
+      var SHA256_DIGEST_INFO = [
+        0x30, 0x31, 0x30, 0x0d, 0x06, 0x09, 0x60, 0x86, 0x48, 0x01, 0x65, 0x03, 0x04, 0x02, 0x01,
+        0x05, 0x00, 0x04, 0x20,
+      ]
+
+      function rsaSignSha256(dataStr, keyComponents) {
+        var nBig = bytesToBig(keyComponents.n)
+        var dBig = bytesToBig(keyComponents.d)
+        var kLen = keyComponents.n.length
+
+        var hex = $security.sha256(dataStr)
+        var hash = []
+        for (var i = 0; i < hex.length; i += 2) hash.push(parseInt(hex.substr(i, 2), 16))
+
+        var t = SHA256_DIGEST_INFO.concat(hash)
+        if (kLen < t.length + 11) throw new Error('Chave RSA curta demais para SHA256')
+
+        var psLen = kLen - t.length - 3
+        var em = [0x00, 0x01]
+        for (var i = 0; i < psLen; i++) em.push(0xff)
+        em.push(0x00)
+        for (var i = 0; i < t.length; i++) em.push(t[i])
+
+        var emBig = bytesToBig(em)
+        var sBig = modPow(emBig, dBig, nBig)
+        var sigBytes = bigToBytes(sBig, kLen)
+        return bytesToBase64Url(sigBytes)
+      }
+
+      var creds =
+        typeof serviceAccountJson === 'string' ? JSON.parse(serviceAccountJson) : serviceAccountJson
+
+      if (!creds.client_email || !creds.private_key) {
+        throw new Error(
+          'JSON de Conta de Serviço inválido: "client_email" e "private_key" são obrigatórios.',
+        )
+      }
+
+      var nowSec = Math.floor(Date.now() / 1000)
+      var header = { alg: 'RS256', typ: 'JWT' }
+      var claimSet = {
+        iss: creds.client_email,
+        scope: scope || 'https://www.googleapis.com/auth/drive.file',
+        aud: 'https://oauth2.googleapis.com/token',
+        exp: nowSec + 3600,
+        iat: nowSec,
+      }
+
+      var encHeader = utf8ToBase64Url(JSON.stringify(header))
+      var encClaim = utf8ToBase64Url(JSON.stringify(claimSet))
+      var signingInput = encHeader + '.' + encClaim
+
+      var keys = parsePKCS8orPKCS1(creds.private_key)
+      var signature = rsaSignSha256(signingInput, keys)
+      var assertion = signingInput + '.' + signature
+
+      var res = $http.send({
+        url: 'https://oauth2.googleapis.com/token',
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body:
+          'grant_type=' +
+          encodeURIComponent('urn:ietf:params:oauth:grant-type:jwt-bearer') +
+          '&assertion=' +
+          encodeURIComponent(assertion),
+        timeout: 30,
+      })
+
+      if (res.statusCode !== 200) {
+        throw new Error(
+          'Falha no endpoint Google OAuth (HTTP ' + res.statusCode + '): ' + (res.raw || ''),
+        )
+      }
+
+      var data = res.json || JSON.parse(res.raw || '{}')
+      if (!data.access_token) {
+        throw new Error('Access token não retornado pelo Google OAuth.')
+      }
+
+      return {
+        access_token: data.access_token,
+        client_email: creds.client_email,
+        project_id: creds.project_id || '',
+      }
+    }
+
     const backupId = e.request.pathValue('id')
     if (!backupId) {
       return e.json(400, { error: 'ID do backup não informado' })
@@ -1528,113 +2130,41 @@ routerAdd(
     try {
       const backupRec = $app.findFirstRecordByData('backups_sistema', 'id', backupId)
 
-      // Obter credenciais
-      let clientId = $os.getenv('GOOGLE_CLIENT_ID') || ''
-      let clientSecret = $os.getenv('GOOGLE_CLIENT_SECRET') || ''
-      let refreshToken = $os.getenv('GOOGLE_REFRESH_TOKEN') || ''
+      let serviceAccountJson = $os.getenv('GOOGLE_SERVICE_ACCOUNT_JSON') || ''
       let folderId = $os.getenv('GOOGLE_DRIVE_FOLDER_ID') || ''
       let folderName = 'Backups ERP'
-
       let configRec = null
+
       try {
         configRec = $app.findFirstRecordByData('config_google_drive', 'chave', 'padrao')
         if (configRec) {
-          if (!clientId) clientId = configRec.getString('client_id')
-          if (!clientSecret) clientSecret = configRec.getString('client_secret')
-          if (!refreshToken) refreshToken = configRec.getString('refresh_token')
+          if (!serviceAccountJson) serviceAccountJson = configRec.getString('service_account_json')
           if (!folderId) folderId = configRec.getString('folder_id')
           if (configRec.getString('folder_name')) folderName = configRec.getString('folder_name')
         }
       } catch (_) {}
 
-      if (!clientId || !clientSecret || !refreshToken) {
+      if (!serviceAccountJson) {
         return e.json(400, {
           error:
-            'Google Drive não está conectado. Conecte sua conta do Google na seção "Integração Google Drive" antes de enviar.',
+            'Conta de Serviço Google Drive não configurada. Cole o JSON da chave na seção "Integração Google Drive" antes de enviar.',
         })
       }
 
-      // 1. Obter Access Token usando Refresh Token
-      const tokenRes = $http.send({
-        url: 'https://oauth2.googleapis.com/token',
-        method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body:
-          'grant_type=refresh_token' +
-          '&client_id=' +
-          encodeURIComponent(clientId) +
-          '&client_secret=' +
-          encodeURIComponent(clientSecret) +
-          '&refresh_token=' +
-          encodeURIComponent(refreshToken),
-        timeout: 30,
-      })
-
-      if (tokenRes.statusCode !== 200) {
-        const errMsg = 'Falha ao renovar token OAuth: ' + (tokenRes.raw || tokenRes.statusCode)
+      let auth
+      try {
+        auth = getAccessTokenManual(
+          serviceAccountJson,
+          'https://www.googleapis.com/auth/drive.file',
+        )
+      } catch (authErr) {
+        const msg = 'Falha na autenticação da Conta de Serviço: ' + (authErr?.message || authErr)
         backupRec.set('drive_status', 'erro')
-        backupRec.set('drive_erro', errMsg)
+        backupRec.set('drive_erro', msg)
         $app.save(backupRec)
-        return e.json(400, { error: errMsg })
+        return e.json(400, { error: msg })
       }
 
-      const tokenJson = tokenRes.json || JSON.parse(tokenRes.raw || '{}')
-      const accessToken = tokenJson.access_token
-      if (!accessToken) {
-        return e.json(400, { error: 'Access token não retornado pelo Google' })
-      }
-
-      // 2. Garantir pasta
-      if (!folderId) {
-        try {
-          const searchFolderUrl =
-            'https://www.googleapis.com/drive/v3/files?q=' +
-            encodeURIComponent(
-              "mimeType='application/vnd.google-apps.folder' and name='" +
-                folderName +
-                "' and trashed=false",
-            ) +
-            '&fields=files(id,name)'
-          const searchRes = $http.send({
-            url: searchFolderUrl,
-            method: 'GET',
-            headers: { Authorization: 'Bearer ' + accessToken },
-            timeout: 30,
-          })
-
-          const searchJson = searchRes.json || JSON.parse(searchRes.raw || '{}')
-          if (searchJson.files && searchJson.files.length > 0) {
-            folderId = searchJson.files[0].id
-          } else {
-            const createFolderRes = $http.send({
-              url: 'https://www.googleapis.com/drive/v3/files',
-              method: 'POST',
-              headers: {
-                Authorization: 'Bearer ' + accessToken,
-                'Content-Type': 'application/json',
-              },
-              body: JSON.stringify({
-                name: folderName,
-                mimeType: 'application/vnd.google-apps.folder',
-              }),
-              timeout: 30,
-            })
-            const createdFolderJson =
-              createFolderRes.json || JSON.parse(createFolderRes.raw || '{}')
-            folderId = createdFolderJson.id || ''
-          }
-
-          if (folderId && configRec) {
-            configRec.set('folder_id', folderId)
-            configRec.set('folder_name', folderName)
-            $app.save(configRec)
-          }
-        } catch (eFolder) {
-          console.warn('[Manual Drive] Aviso ao buscar pasta:', eFolder)
-        }
-      }
-
-      // 3. Montar dados consolidados em JSON
       const chunks = $app.findRecordsByFilter(
         'backups_dados',
         `backup_id = '${backupId}'`,
@@ -1675,7 +2205,6 @@ routerAdd(
         2,
       )
 
-      // 4. Upload multipart
       const fileMetadata = {
         name: backupRec.getString('nome_arquivo'),
         mimeType: 'application/json',
@@ -1702,7 +2231,7 @@ routerAdd(
         url: uploadUrl,
         method: 'POST',
         headers: {
-          Authorization: 'Bearer ' + accessToken,
+          Authorization: 'Bearer ' + auth.access_token,
           'Content-Type': 'multipart/related; boundary=' + boundary,
         },
         body: multipartBody,
@@ -1729,7 +2258,9 @@ routerAdd(
 
         return e.json(200, {
           success: true,
-          message: 'Backup enviado com sucesso ao Google Drive na pasta "' + folderName + '"',
+          message: folderId
+            ? 'Backup enviado com sucesso ao Google Drive na pasta configurada!'
+            : 'Backup enviado com sucesso ao Google Drive da Conta de Serviço!',
           file_id: fileId,
           folder_id: folderId,
           enviado_em: agoraIso,

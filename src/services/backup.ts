@@ -3,9 +3,9 @@ import pb from '@/lib/pocketbase/client'
 export interface BackupItem {
   id: string
   nome_arquivo: string
-  tipo: 'nativo_zip' | 'dump_json' | 'completo'
+  tipo: string
   origem: 'manual' | 'semanal_automatico' | string
-  status: 'sucesso' | 'parcial' | 'falha'
+  status: 'sucesso' | 'parcial' | 'falha' | string
   total_colecoes: number
   total_registros: number
   resumo_colecoes?: Record<string, number | { erro: string }>
@@ -14,20 +14,22 @@ export interface BackupItem {
     versao_pocketbase?: string
     origem?: string
     solicitado_por?: string
+    total_registros_geral?: number
+    colecoes_com_erro?: number
     nativo_zip_status?: string
     nativo_zip_arquivo?: string
     nativo_zip_erro?: string
     colecoes_processadas?: string[]
-    [key: string]: unknown
   }
   backup_duplicatas_incluido?: boolean
   observacoes?: string
-  drive_status?: 'pendente' | 'enviado' | 'erro' | 'nao_configurado' | string
+  created: string
+  // Google Drive
+  drive_status?: 'enviado' | 'pendente' | 'erro' | 'nao_configurado' | string
   drive_file_id?: string
   drive_enviado_em?: string
   drive_erro?: string
   drive_folder_id?: string
-  created: string
 }
 
 export interface BackupAgendamentoInfo {
@@ -50,18 +52,17 @@ export interface BackupAgendamentoInfo {
 }
 
 export interface GoogleDriveStatusInfo {
+  tipo_autenticacao: 'service_account' | 'oauth' | string
   configurado: boolean
   conectado: boolean
-  client_id_definido: boolean
-  client_secret_definido: boolean
-  refresh_token_definido: boolean
+  chave_configurada: boolean
+  client_email?: string
+  client_email_mascarado?: string
+  project_id?: string
   pasta_nome: string
-  pasta_id?: string
-  conta_email?: string
-  conta_nome?: string
+  pasta_id: string
   ultimo_envio?: string
-  status_conexao: 'conectado' | 'pendente_autorizacao' | 'desconectado'
-  redirect_uri_recomendada: string
+  status_conexao: 'conectado' | 'desconectado' | 'erro' | string
 }
 
 export interface GoogleDriveStatusResponse {
@@ -69,26 +70,21 @@ export interface GoogleDriveStatusResponse {
   drive: GoogleDriveStatusInfo
 }
 
-export interface GoogleDriveAuthUrlResponse {
-  success: boolean
-  auth_url: string
-  redirect_uri: string
-}
-
-export interface SalvarConfigDrivePayload {
-  client_id?: string
-  client_secret?: string
+export interface SalvarConfigDriveServiceAccountPayload {
+  service_account_json?: string
   folder_id?: string
   folder_name?: string
-  refresh_token?: string
 }
+
+// Mantido para compatibilidade caso algum ponto ainda referencie o nome antigo
+export type SalvarConfigDrivePayload = SalvarConfigDriveServiceAccountPayload
 
 export interface EnviarDriveResponse {
   success: boolean
   message: string
-  file_id: string
+  file_id?: string
   folder_id?: string
-  enviado_em: string
+  enviado_em?: string
 }
 
 export interface ListarBackupsResponse {
@@ -106,10 +102,14 @@ export interface BackupDownloadPayload {
     id: string
     nome_arquivo: string
     tipo: string
+    origem: string
     total_colecoes: number
     total_registros: number
-    resumo_colecoes: Record<string, number>
-    detalhes_execucao?: Record<string, unknown>
+    resumo_colecoes?: Record<string, number | { erro: string }>
+    detalhes_execucao?: unknown
+    drive_status?: string
+    drive_file_id?: string
+    drive_enviado_em?: string
     created: string
     exportado_em: string
     sistema: string
@@ -119,101 +119,19 @@ export interface BackupDownloadPayload {
 
 export const backupService = {
   /**
-   * Listar backups disponíveis
+   * Lista todos os backups já executados
    */
-  async listar(): Promise<BackupItem[]> {
-    try {
-      const res = await pb.send<ListarBackupsResponse>('/backend/v1/backups', {
-        method: 'GET',
-      })
-      if (res?.backups) {
-        return res.backups
-      }
-    } catch (e) {
-      console.warn('Tentativa via hook falhou, consultando collection backups_sistema:', e)
-    }
-
-    // Fallback direto via SDK na collection backups_sistema
-    const records = await pb.collection('backups_sistema').getFullList({
-      sort: '-created',
+  async listarBackups(): Promise<BackupItem[]> {
+    const res = await pb.send<ListarBackupsResponse>('/backend/v1/backups', {
+      method: 'GET',
     })
-
-    return records.map((r) => ({
-      id: r.id,
-      nome_arquivo: r.nome_arquivo || `backup_${r.id}.json`,
-      tipo: r.tipo || 'completo',
-      origem: r.origem || 'manual',
-      status: r.status || 'sucesso',
-      total_colecoes: r.total_colecoes || 0,
-      total_registros: r.total_registros || 0,
-      resumo_colecoes: r.resumo_colecoes,
-      detalhes_execucao: r.detalhes_execucao,
-      backup_duplicatas_incluido: r.backup_duplicatas_incluido,
-      observacoes: r.observacoes || '',
-      drive_status: r.drive_status || 'pendente',
-      drive_file_id: r.drive_file_id || '',
-      drive_enviado_em: r.drive_enviado_em || '',
-      drive_erro: r.drive_erro || '',
-      drive_folder_id: r.drive_folder_id || '',
-      created: r.created,
-    }))
+    return res.backups || []
   },
 
   /**
-   * Consultar status do agendamento do backup semanal automático
+   * Executa um backup completo imediato sob demanda (admin)
    */
-  async obterStatusAgendamento(): Promise<BackupAgendamentoInfo> {
-    try {
-      const res = await pb.send<{ success: boolean; agendamento: BackupAgendamentoInfo }>(
-        '/backend/v1/backups/status-agendamento',
-        { method: 'GET' },
-      )
-      if (res?.agendamento) {
-        return res.agendamento
-      }
-    } catch (e) {
-      console.warn('Falha ao consultar status de agendamento no hook:', e)
-    }
-
-    // Fallback consultando collection diretamente
-    let ultimoAuto = null
-    try {
-      const records = await pb.collection('backups_sistema').getList(1, 1, {
-        filter: "origem = 'semanal_automatico'",
-        sort: '-created',
-      })
-      if (records.items.length > 0) {
-        const r = records.items[0]
-        ultimoAuto = {
-          id: r.id,
-          nome_arquivo: r.nome_arquivo,
-          status: r.status,
-          origem: 'semanal_automatico',
-          total_registros: r.total_registros,
-          total_colecoes: r.total_colecoes,
-          drive_status: r.drive_status || 'pendente',
-          created: r.created,
-        }
-      }
-    } catch {
-      /* intentionally ignored */
-    }
-
-    return {
-      ativo: true,
-      job_id: 'backup_semanal_pedreira_cordeiro',
-      cron_expressao: '30 0 * * 0',
-      horario_legivel: 'Todo domingo às 00:30 (horário do servidor)',
-      frequencia: 'Semanal',
-      descricao: 'Backup automático semanal cobrindo todas as 28 coleções do ERP',
-      ultimo_backup_automatico: ultimoAuto,
-    }
-  },
-
-  /**
-   * Disparar novo backup completo sob demanda
-   */
-  async executarBackup(): Promise<BackupItem> {
+  async executarBackupManual(): Promise<BackupItem> {
     const res = await pb.send<ExecutarBackupResponse>('/backend/v1/backups/executar', {
       method: 'POST',
     })
@@ -221,93 +139,81 @@ export const backupService = {
   },
 
   /**
-   * Baixar arquivo JSON completo consolidado com todas as tabelas e registros
+   * Obtém o status do agendamento automático semanal (Cron PocketBase)
    */
-  async baixarArquivo(backupId: string, nomeArquivo?: string): Promise<void> {
-    const payload = await pb.send<BackupDownloadPayload>(
-      `/backend/v1/backups/${backupId}/download`,
+  async obterStatusAgendamento(): Promise<BackupAgendamentoInfo> {
+    const res = await pb.send<{ success: boolean; agendamento: BackupAgendamentoInfo }>(
+      '/backend/v1/backups/status-agendamento',
       {
         method: 'GET',
       },
     )
-
-    const blob = new Blob([JSON.stringify(payload, null, 2)], {
-      type: 'application/json',
-    })
-    const url = URL.createObjectURL(blob)
-    const link = document.createElement('a')
-    link.href = url
-    link.download = nomeArquivo || `backup_erp_${backupId}.json`
-    document.body.appendChild(link)
-    link.click()
-    document.body.removeChild(link)
-    URL.revokeObjectURL(url)
+    return res.agendamento
   },
 
   /**
-   * Consultar status da integração com Google Drive
+   * Baixa os dados consolidados do backup em formato JSON
    */
-  async obterStatusDrive(): Promise<GoogleDriveStatusInfo> {
-    try {
-      const res = await pb.send<GoogleDriveStatusResponse>('/backend/v1/google-drive/status', {
-        method: 'GET',
-      })
-      if (res?.drive) {
-        return res.drive
-      }
-    } catch (e) {
-      console.warn('Erro ao consultar status Google Drive:', e)
-    }
-
-    return {
-      configurado: false,
-      conectado: false,
-      client_id_definido: false,
-      client_secret_definido: false,
-      refresh_token_definido: false,
-      pasta_nome: 'Backups ERP',
-      status_conexao: 'desconectado',
-      redirect_uri_recomendada:
-        'https://erp-empresarial-completo-575bb.shrd00.internal.goskip.dev/backend/v1/google-drive/oauth/callback',
-    }
-  },
-
-  /**
-   * Obter URL de autorização OAuth do Google Drive
-   */
-  async obterAuthUrlDrive(): Promise<GoogleDriveAuthUrlResponse> {
-    return pb.send<GoogleDriveAuthUrlResponse>('/backend/v1/google-drive/auth-url', {
+  async baixarDadosBackup(backupId: string): Promise<BackupDownloadPayload> {
+    return await pb.send<BackupDownloadPayload>(`/backend/v1/backups/${backupId}/download`, {
       method: 'GET',
     })
   },
 
   /**
-   * Salvar credenciais/configuração do Google Drive
+   * Consulta o status da integração com a Conta de Serviço do Google Drive
    */
-  async salvarConfigDrive(
-    payload: SalvarConfigDrivePayload,
-  ): Promise<{ success: boolean; message: string }> {
-    return pb.send<{ success: boolean; message: string }>('/backend/v1/google-drive/config', {
+  async obterStatusGoogleDrive(): Promise<GoogleDriveStatusInfo> {
+    const res = await pb.send<GoogleDriveStatusResponse>('/backend/v1/google-drive/status', {
+      method: 'GET',
+    })
+    return res.drive
+  },
+
+  /**
+   * Salva a chave JSON da Conta de Serviço e/ou ID da pasta no Drive
+   */
+  async salvarConfiguracoesDrive(
+    payload: SalvarConfigDriveServiceAccountPayload,
+  ): Promise<{ success: boolean; message: string; client_email?: string; folder_id?: string }> {
+    return await pb.send('/backend/v1/google-drive/config', {
       method: 'POST',
       body: payload,
     })
   },
 
   /**
-   * Desconectar Google Drive (remover refresh token)
+   * Desconecta / apaga a chave da conta de serviço salva
    */
-  async desconectarDrive(): Promise<{ success: boolean; message: string }> {
-    return pb.send<{ success: boolean; message: string }>('/backend/v1/google-drive/desconectar', {
+  async desconectarGoogleDrive(): Promise<{ success: boolean; message: string }> {
+    return await pb.send('/backend/v1/google-drive/desconectar', {
       method: 'POST',
     })
   },
 
   /**
-   * Enviar backup individual ao Google Drive
+   * Envia manualmente um backup específico ao Google Drive via Conta de Serviço
    */
   async enviarBackupAoDrive(backupId: string): Promise<EnviarDriveResponse> {
-    return pb.send<EnviarDriveResponse>(`/backend/v1/backups/${backupId}/enviar-drive`, {
+    return await pb.send<EnviarDriveResponse>(`/backend/v1/backups/${backupId}/enviar-drive`, {
       method: 'POST',
     })
+  },
+
+  /**
+   * Dispara o download de um arquivo JSON pelo navegador do usuário
+   */
+  dispararDownloadNoNavegador(nomeArquivo: string, conteudoObj: unknown) {
+    const jsonStr =
+      typeof conteudoObj === 'string' ? conteudoObj : JSON.stringify(conteudoObj, null, 2)
+    const blob = new Blob([jsonStr], { type: 'application/json;charset=utf-8' })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.setAttribute('download', nomeArquivo)
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+    URL.revokeObjectURL(url)
   },
 }

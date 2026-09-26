@@ -27,20 +27,9 @@ export function useRealtime<TRecord extends RecordModel = RecordModel>(
     let unsubscribeFn: (() => Promise<void>) | undefined
     let cancelled = false
 
-    let throttleTimer: ReturnType<typeof setTimeout> | null = null
-    let latestEvent: RecordSubscription<TRecord> | null = null
-
     pb.collection<TRecord>(collectionName)
       .subscribe('*', (e) => {
-        latestEvent = e
-        if (!throttleTimer) {
-          throttleTimer = setTimeout(() => {
-            throttleTimer = null
-            if (!cancelled && latestEvent) {
-              callbackRef.current(latestEvent)
-            }
-          }, 350)
-        }
+        callbackRef.current(e)
       })
       .then((fn) => {
         if (cancelled) {
@@ -53,10 +42,6 @@ export function useRealtime<TRecord extends RecordModel = RecordModel>(
 
     return () => {
       cancelled = true
-      if (throttleTimer) {
-        clearTimeout(throttleTimer)
-        throttleTimer = null
-      }
       if (unsubscribeFn) {
         unsubscribeFn().catch(() => {})
       }
