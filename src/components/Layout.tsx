@@ -42,6 +42,7 @@ import {
   ShoppingCart,
   BookOpen,
   CreditCard,
+  Database,
 } from 'lucide-react'
 
 export default function Layout() {
@@ -107,7 +108,10 @@ export default function Layout() {
         { label: 'Centros de Custo', path: '/cadastros/centros-de-custo', icon: PieChart },
         { label: 'Formas de Recebimento', path: '/cadastros/formas-recebimento', icon: CreditCard },
         ...(isAdmin
-          ? [{ label: 'Operadores (Usuários)', path: '/cadastros/operadores', icon: Shield }]
+          ? [
+              { label: 'Operadores (Usuários)', path: '/cadastros/operadores', icon: Shield },
+              { label: 'Backups do Sistema', path: '/cadastros/backups', icon: Database },
+            ]
           : []),
       ],
     },

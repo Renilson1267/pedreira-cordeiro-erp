@@ -30,6 +30,7 @@ const PlanoContas = lazy(() => import('@/pages/cadastros/PlanoContas'))
 const CentrosCusto = lazy(() => import('@/pages/cadastros/CentrosCusto'))
 const FormasRecebimento = lazy(() => import('@/pages/cadastros/FormasRecebimento'))
 const Operadores = lazy(() => import('@/pages/cadastros/Operadores'))
+const Backups = lazy(() => import('@/pages/cadastros/Backups'))
 
 const Relatorios = lazy(() => import('@/pages/relatorios/Relatorios'))
 const Perfil = lazy(() => import('@/pages/perfil/Perfil'))
@@ -95,6 +96,7 @@ export default function App() {
                 <Route path="/cadastros/centros-de-custo" element={<CentrosCusto />} />
                 <Route path="/cadastros/formas-recebimento" element={<FormasRecebimento />} />
                 <Route path="/cadastros/operadores" element={<Operadores />} />
+                <Route path="/cadastros/backups" element={<Backups />} />
 
                 {/* Relatórios */}
                 <Route path="/relatorios" element={<Relatorios />} />
