@@ -21,7 +21,6 @@ import {
 } from '@/services/formasRecebimento'
 import { historicoService, calcularDiffAlteracoes, CAMPOS_CONFIG_PAGAR } from '@/services/historico'
 import { HistoricoSecao } from '@/components/financeiro/HistoricoSecao'
-import { HistoricoGeralModal } from '@/components/financeiro/HistoricoGeralModal'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -73,13 +72,10 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
-import { ImportadorContasPagarModal } from '@/components/financeiro/ImportadorContasPagarModal'
-import { ConferirPlanilhaPagarModal } from '@/components/financeiro/ConferirPlanilhaPagarModal'
 import { Checkbox } from '@/components/ui/checkbox'
-import {
-  RelatorioListagemImpressaoModal,
-  type ColunaRelatorioImpressao,
-  type TotalizadorRelatorioImpressao,
+import type {
+  ColunaRelatorioImpressao,
+  TotalizadorRelatorioImpressao,
 } from '@/components/financeiro/RelatorioListagemImpressaoModal'
 import {
   SeletorParcelas,
@@ -87,6 +83,26 @@ import {
   ItemParcela,
   gerarGradeParcelas,
 } from '@/components/financeiro/SeletorParcelas'
+import { useDebounce } from '@/hooks/useDebounce'
+
+const ImportadorContasPagarModal = React.lazy(() =>
+  import('@/components/financeiro/ImportadorContasPagarModal').then((m) => ({
+    default: m.ImportadorContasPagarModal,
+  })),
+)
+const ConferirPlanilhaPagarModal = React.lazy(() =>
+  import('@/components/financeiro/ConferirPlanilhaPagarModal').then((m) => ({
+    default: m.ConferirPlanilhaPagarModal,
+  })),
+)
+const HistoricoGeralModal = React.lazy(() =>
+  import('@/components/financeiro/HistoricoGeralModal').then((m) => ({
+    default: m.HistoricoGeralModal,
+  })),
+)
+const RelatorioListagemImpressaoModal = React.lazy(
+  () => import('@/components/financeiro/RelatorioListagemImpressaoModal'),
+)
 
 export default function ContasPagar() {
   const { currentEmpresa, canEdit, isReadOnly } = useCompany()
@@ -113,12 +129,18 @@ export default function ContasPagar() {
   const [dataFimFilter, setDataFimFilter] = useState('')
   const [opcaoPeriodoRapido, setOpcaoPeriodoRapido] = useState<string>('todos')
 
+  const debouncedSearchQuery = useDebounce(searchQuery, 280)
+
   // Import Modal
   const [importModalOpen, setImportModalOpen] = useState(false)
   // Conferência Modal
   const [conferirModalOpen, setConferirModalOpen] = useState(false)
   // Histórico Geral Modal
   const [historicoModalOpen, setHistoricoModalOpen] = useState(false)
+
+  // Cache de auxiliares (fornecedores, plano_contas, centros_custos, formas_recebimento) sob demanda
+  const [auxiliaresLoaded, setAuxiliaresLoaded] = useState(false)
+  const [loadingAuxiliares, setLoadingAuxiliares] = useState(false)
 
   // Drawer Create / Edit
   const [isDrawerOpen, setIsDrawerOpen] = useState(false)
@@ -179,17 +201,11 @@ export default function ContasPagar() {
 
   useRealtime('contas_pagar', () => loadData())
 
-  const loadData = async () => {
-    if (!currentEmpresa) return
-
+  const loadAuxiliares = async () => {
+    if (!currentEmpresa || auxiliaresLoaded || loadingAuxiliares) return
     try {
-      setLoading(true)
-      const [cpList, fList, pcList, ccList, formasList] = await Promise.all([
-        pb.collection('contas_pagar').getFullList<ContaPagar>({
-          filter: `empresa_id = '${currentEmpresa.id}'`,
-          sort: 'vencimento',
-          expand: 'fornecedor_id,categoria_id,centro_custo_id',
-        }),
+      setLoadingAuxiliares(true)
+      const [fList, pcList, ccList, formasList] = await Promise.all([
         pb.collection('fornecedores').getFullList<Fornecedor>({
           filter: `empresa_id = '${currentEmpresa.id}'`,
           sort: 'nome',
@@ -204,12 +220,30 @@ export default function ContasPagar() {
         }),
         formasRecebimentoService.listar(currentEmpresa.id, true),
       ])
-
-      setContas(cpList)
       setFornecedores(fList)
       setCategorias(pcList)
       setCentrosCusto(ccList)
       setFormasCadastradas(formasList)
+      setAuxiliaresLoaded(true)
+    } catch (err) {
+      console.error('Error loading auxiliares contas a pagar:', err)
+    } finally {
+      setLoadingAuxiliares(false)
+    }
+  }
+
+  const loadData = async () => {
+    if (!currentEmpresa) return
+
+    try {
+      setLoading(true)
+      const cpList = await pb.collection('contas_pagar').getFullList<ContaPagar>({
+        filter: `empresa_id = '${currentEmpresa.id}'`,
+        sort: 'vencimento',
+        expand: 'fornecedor_id,categoria_id,centro_custo_id',
+      })
+
+      setContas(cpList)
 
       // Handle query params e.g. ?novo=1 or ?id=xyz
       const qNovo = searchParams.get('novo')
@@ -241,6 +275,7 @@ export default function ContasPagar() {
   }
 
   useEffect(() => {
+    setAuxiliaresLoaded(false)
     loadData()
   }, [currentEmpresa])
 
@@ -266,6 +301,7 @@ export default function ContasPagar() {
   }, [detailItem?.id])
 
   const openCreateModal = () => {
+    loadAuxiliares()
     const hoje = toInputDate(new Date().toISOString())
     setEditingId(null)
     setFornecedorId('')
@@ -287,6 +323,7 @@ export default function ContasPagar() {
   }
 
   const handleEdit = async (c: ContaPagar) => {
+    loadAuxiliares()
     const venc = toInputDate(c.vencimento)
     const emiss = c.data_emissao ? toInputDate(c.data_emissao) : ''
     const numP = c.parcelas || 1
@@ -737,6 +774,7 @@ export default function ContasPagar() {
   }
 
   const handleOpenSettle = (conta: ContaPagar) => {
+    loadAuxiliares()
     setSettlingConta(conta)
     setDataPagamento(toInputDate(new Date().toISOString()))
     const saldo = getSaldoRestante(conta)
@@ -1001,8 +1039,8 @@ export default function ContasPagar() {
         if (dataFimFilter && campoValorData > dataFimFilter) return false
       }
 
-      if (searchQuery.trim()) {
-        const q = searchQuery.toLowerCase()
+      if (debouncedSearchQuery.trim()) {
+        const q = debouncedSearchQuery.toLowerCase()
         const fornecedorNome = c.expand?.fornecedor_id?.nome?.toLowerCase() || ''
         const matchDesc = c.descricao.toLowerCase().includes(q)
         const matchForn = fornecedorNome.includes(q)
@@ -1017,7 +1055,7 @@ export default function ContasPagar() {
     campoDataFiltro,
     dataInicioFilter,
     dataFimFilter,
-    searchQuery,
+    debouncedSearchQuery,
     nowISO,
   ])
 
@@ -1104,8 +1142,8 @@ export default function ContasPagar() {
       const cc = centrosCusto.find((c) => c.id === centroCustoFilter)
       if (cc) partes.push(`C. Custo: ${cc.codigo} - ${cc.nome}`)
     }
-    if (searchQuery.trim()) {
-      partes.push(`Busca: "${searchQuery.trim()}"`)
+    if (debouncedSearchQuery.trim()) {
+      partes.push(`Busca: "${debouncedSearchQuery.trim()}"`)
     }
     if (selectedIds.length > 0) {
       partes.push(`Seleção ativa: ${selectedIds.length} item(ns) marcado(s)`)
@@ -1119,7 +1157,7 @@ export default function ContasPagar() {
     statusFilter,
     centroCustoFilter,
     centrosCusto,
-    searchQuery,
+    debouncedSearchQuery,
     selectedIds.length,
   ])
 
@@ -1261,6 +1299,52 @@ export default function ContasPagar() {
     ]
   }, [itensParaImpressao])
 
+  // Opções memoizadas para ComboboxPesquisavel
+  const fornecedoresOptions = useMemo(() => {
+    const prefix = descricao.trim()
+      ? `Usar a Descrição ("${descricao.trim()}")`
+      : 'Mesmo da Descrição (Automático)'
+    return [
+      { id: 'none', label: prefix },
+      ...fornecedores.map((f) => ({
+        id: f.id,
+        label: f.nome,
+        sublabel: f.cnpj_cpf || f.cidade || undefined,
+      })),
+    ]
+  }, [fornecedores, descricao])
+
+  const centrosCustoOptions = useMemo(() => {
+    return [
+      { id: 'none', label: 'Nenhum / Não alocado' },
+      ...centrosCusto.map((cc) => ({
+        id: cc.id,
+        label: `${cc.codigo} - ${cc.nome}`,
+      })),
+    ]
+  }, [centrosCusto])
+
+  const categoriasOptions = useMemo(() => {
+    return categorias.map((cat) => ({
+      id: cat.id,
+      label: `${cat.codigo} - ${cat.nome}`,
+      sublabel: cat.tipo,
+    }))
+  }, [categorias])
+
+  const formasOptions = useMemo(() => {
+    if (formasCadastradas.length > 0) {
+      return formasCadastradas.map((f) => ({
+        id: f.nome,
+        label: f.nome,
+      }))
+    }
+    return FORMAS_RECEBIMENTO_PADRAO.map((f) => ({
+      id: f,
+      label: f,
+    }))
+  }, [formasCadastradas])
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -1284,7 +1368,10 @@ export default function ContasPagar() {
           {canEdit && (
             <Button
               variant="outline"
-              onClick={() => setConferirModalOpen(true)}
+              onClick={() => {
+                loadAuxiliares()
+                setConferirModalOpen(true)
+              }}
               className="border-amber-400 text-amber-900 bg-amber-50/50 hover:bg-amber-100 rounded-xl shadow-xs font-medium"
             >
               <CheckCircle className="w-4 h-4 mr-1.5 text-amber-700" />
@@ -1295,7 +1382,10 @@ export default function ContasPagar() {
           {canEdit && (
             <Button
               variant="outline"
-              onClick={() => setImportModalOpen(true)}
+              onClick={() => {
+                loadAuxiliares()
+                setImportModalOpen(true)
+              }}
               className="border-teal-300 text-teal-800 hover:bg-teal-50 rounded-xl shadow-xs"
             >
               <FileSpreadsheet className="w-4 h-4 mr-1.5 text-teal-700" />
@@ -1821,19 +1911,7 @@ export default function ContasPagar() {
                 searchPlaceholder="Digitar nome do fornecedor..."
                 emptyText="Nenhum fornecedor encontrado."
                 className="mt-1"
-                options={[
-                  {
-                    id: 'none',
-                    label: descricao.trim()
-                      ? `Usar a Descrição ("${descricao.trim()}")`
-                      : 'Mesmo da Descrição (Automático)',
-                  },
-                  ...fornecedores.map((f) => ({
-                    id: f.id,
-                    label: f.nome,
-                    sublabel: f.cnpj_cpf || f.cidade || undefined,
-                  })),
-                ]}
+                options={fornecedoresOptions}
               />
               <p className="text-[10px] text-gray-400 mt-1">
                 Digite para buscar por nome ou CNPJ. Se não selecionado, receberá o texto da
@@ -1851,13 +1929,7 @@ export default function ContasPagar() {
                   searchPlaceholder="Buscar centro de custo..."
                   emptyText="Nenhum centro de custo encontrado."
                   className="mt-1"
-                  options={[
-                    { id: 'none', label: 'Nenhum / Não alocado' },
-                    ...centrosCusto.map((cc) => ({
-                      id: cc.id,
-                      label: `${cc.codigo} - ${cc.nome}`,
-                    })),
-                  ]}
+                  options={centrosCustoOptions}
                 />
               </div>
 
@@ -1870,11 +1942,7 @@ export default function ContasPagar() {
                   searchPlaceholder="Buscar categoria contábil..."
                   emptyText="Nenhuma categoria encontrada."
                   className="mt-1"
-                  options={categorias.map((cat) => ({
-                    id: cat.id,
-                    label: `${cat.codigo} - ${cat.nome}`,
-                    sublabel: cat.tipo,
-                  }))}
+                  options={categoriasOptions}
                 />
               </div>
             </div>
@@ -1906,19 +1974,7 @@ export default function ContasPagar() {
                 searchPlaceholder="Buscar forma de pagamento..."
                 emptyText="Nenhuma forma encontrada."
                 className="mt-1"
-                options={[
-                  ...(formasCadastradas.length > 0
-                    ? formasCadastradas.map((f) => ({
-                        id: f.nome,
-                        label: f.nome,
-                        sublabel: f.tipo_padrao || undefined,
-                      }))
-                    : FORMAS_RECEBIMENTO_PADRAO.map((f) => ({
-                        id: f.nome,
-                        label: f.nome,
-                        sublabel: f.tipo_padrao,
-                      }))),
-                ]}
+                options={formasOptions}
               />
             </div>
 
@@ -2249,19 +2305,7 @@ export default function ContasPagar() {
                 searchPlaceholder="Buscar forma de pagamento..."
                 emptyText="Nenhuma forma encontrada."
                 className="mt-1"
-                options={[
-                  ...(formasCadastradas.length > 0
-                    ? formasCadastradas.map((f) => ({
-                        id: f.nome,
-                        label: f.nome,
-                        sublabel: f.tipo_padrao || undefined,
-                      }))
-                    : FORMAS_RECEBIMENTO_PADRAO.map((f) => ({
-                        id: f.nome,
-                        label: f.nome,
-                        sublabel: f.tipo_padrao,
-                      }))),
-                ]}
+                options={formasOptions}
               />
             </div>
           </div>
@@ -2572,52 +2616,104 @@ export default function ContasPagar() {
       </AlertDialog>
 
       {/* Modal Importador XLSX Contas a Pagar */}
-      <ImportadorContasPagarModal
-        open={importModalOpen}
-        onOpenChange={setImportModalOpen}
-        empresaId={currentEmpresa?.id || ''}
-        fornecedores={fornecedores}
-        categorias={categorias}
-        centrosCusto={centrosCusto}
-        contasExistentes={contas}
-        onImportComplete={loadData}
-      />
+      {importModalOpen && (
+        <React.Suspense
+          fallback={
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+              <div className="bg-white rounded-xl p-4 shadow-xl flex items-center gap-2 text-xs text-gray-600">
+                <div className="w-4 h-4 border-2 border-teal-700 border-t-transparent rounded-full animate-spin" />
+                Carregando importador...
+              </div>
+            </div>
+          }
+        >
+          <ImportadorContasPagarModal
+            open={importModalOpen}
+            onOpenChange={setImportModalOpen}
+            empresaId={currentEmpresa?.id || ''}
+            fornecedores={fornecedores}
+            categorias={categorias}
+            centrosCusto={centrosCusto}
+            contasExistentes={contas}
+            onImportComplete={loadData}
+          />
+        </React.Suspense>
+      )}
 
       {/* Modal Conferir Planilha (Comparação com Banco) */}
-      <ConferirPlanilhaPagarModal
-        open={conferirModalOpen}
-        onOpenChange={setConferirModalOpen}
-        empresaId={currentEmpresa?.id || ''}
-        fornecedores={fornecedores}
-        categorias={categorias}
-        centrosCusto={centrosCusto}
-        contasExistentes={contas}
-        onDataChanged={loadData}
-      />
+      {conferirModalOpen && (
+        <React.Suspense
+          fallback={
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+              <div className="bg-white rounded-xl p-4 shadow-xl flex items-center gap-2 text-xs text-gray-600">
+                <div className="w-4 h-4 border-2 border-teal-700 border-t-transparent rounded-full animate-spin" />
+                Carregando conferência...
+              </div>
+            </div>
+          }
+        >
+          <ConferirPlanilhaPagarModal
+            open={conferirModalOpen}
+            onOpenChange={setConferirModalOpen}
+            empresaId={currentEmpresa?.id || ''}
+            fornecedores={fornecedores}
+            categorias={categorias}
+            centrosCusto={centrosCusto}
+            contasExistentes={contas}
+            onDataChanged={loadData}
+          />
+        </React.Suspense>
+      )}
 
       {/* Modal de Trilha de Auditoria Geral */}
-      <HistoricoGeralModal
-        open={historicoModalOpen}
-        onOpenChange={setHistoricoModalOpen}
-        empresaId={currentEmpresa?.id || ''}
-        colecaoPadrao="contas_pagar"
-      />
+      {historicoModalOpen && (
+        <React.Suspense
+          fallback={
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+              <div className="bg-white rounded-xl p-4 shadow-xl flex items-center gap-2 text-xs text-gray-600">
+                <div className="w-4 h-4 border-2 border-teal-700 border-t-transparent rounded-full animate-spin" />
+                Carregando histórico...
+              </div>
+            </div>
+          }
+        >
+          <HistoricoGeralModal
+            open={historicoModalOpen}
+            onOpenChange={setHistoricoModalOpen}
+            empresaId={currentEmpresa?.id || ''}
+            colecaoPadrao="contas_pagar"
+          />
+        </React.Suspense>
+      )}
 
       {/* Relatório de Impressão A4 das Contas a Pagar */}
-      <RelatorioListagemImpressaoModal
-        open={relatorioImpressaoOpen}
-        onOpenChange={setRelatorioImpressaoOpen}
-        titulo="Contas a Pagar — Relatório de Itens"
-        subtitulo="Demonstrativo de Obrigações Financeiras, Vencimentos e Fornecedores"
-        badgeDestaque="Contas a Pagar"
-        empresa={currentEmpresa}
-        usuarioNome={user?.name || user?.email || 'Administrador'}
-        filtrosDescricao={descricaoFiltrosAplicados}
-        itens={itensParaImpressao}
-        colunas={colunasRelatorioPagar}
-        totais={totalizadoresRelatorioPagar}
-        mensagemVazio="Nenhuma conta a pagar encontrada para os filtros ou seleção atual."
-      />
+      {relatorioImpressaoOpen && (
+        <React.Suspense
+          fallback={
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+              <div className="bg-white rounded-xl p-4 shadow-xl flex items-center gap-2 text-xs text-gray-600">
+                <div className="w-4 h-4 border-2 border-teal-700 border-t-transparent rounded-full animate-spin" />
+                Carregando relatório de impressão...
+              </div>
+            </div>
+          }
+        >
+          <RelatorioListagemImpressaoModal
+            open={relatorioImpressaoOpen}
+            onOpenChange={setRelatorioImpressaoOpen}
+            titulo="Contas a Pagar — Relatório de Itens"
+            subtitulo="Demonstrativo de Obrigações Financeiras, Vencimentos e Fornecedores"
+            badgeDestaque="Contas a Pagar"
+            empresa={currentEmpresa}
+            usuarioNome={user?.name || user?.email || 'Administrador'}
+            filtrosDescricao={descricaoFiltrosAplicados}
+            itens={itensParaImpressao}
+            colunas={colunasRelatorioPagar}
+            totais={totalizadoresRelatorioPagar}
+            mensagemVazio="Nenhuma conta a pagar encontrada para os filtros ou seleção atual."
+          />
+        </React.Suspense>
+      )}
     </div>
   )
 }

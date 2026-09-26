@@ -19,13 +19,10 @@ import {
   CAMPOS_CONFIG_RECEBER,
 } from '@/services/historico'
 import { HistoricoSecao } from '@/components/financeiro/HistoricoSecao'
-import { HistoricoGeralModal } from '@/components/financeiro/HistoricoGeralModal'
-import { ImportadorRecebimentosModal } from '@/components/financeiro/ImportadorRecebimentosModal'
 import { Checkbox } from '@/components/ui/checkbox'
-import {
-  RelatorioListagemImpressaoModal,
-  type ColunaRelatorioImpressao,
-  type TotalizadorRelatorioImpressao,
+import type {
+  ColunaRelatorioImpressao,
+  TotalizadorRelatorioImpressao,
 } from '@/components/financeiro/RelatorioListagemImpressaoModal'
 import {
   SeletorParcelas,
@@ -33,6 +30,21 @@ import {
   ItemParcela,
   gerarGradeParcelas,
 } from '@/components/financeiro/SeletorParcelas'
+import { useDebounce } from '@/hooks/useDebounce'
+
+const ImportadorRecebimentosModal = React.lazy(() =>
+  import('@/components/financeiro/ImportadorRecebimentosModal').then((m) => ({
+    default: m.ImportadorRecebimentosModal,
+  })),
+)
+const HistoricoGeralModal = React.lazy(() =>
+  import('@/components/financeiro/HistoricoGeralModal').then((m) => ({
+    default: m.HistoricoGeralModal,
+  })),
+)
+const RelatorioListagemImpressaoModal = React.lazy(
+  () => import('@/components/financeiro/RelatorioListagemImpressaoModal'),
+)
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -118,6 +130,7 @@ export default function ContasReceber() {
   const [opcaoPeriodoRapido, setOpcaoPeriodoRapido] = useState<string>('todos')
   const [centroCustoFilter, setCentroCustoFilter] = useState<string>('todos')
   const [searchQuery, setSearchQuery] = useState('')
+  const debouncedSearchQuery = useDebounce(searchQuery, 280)
 
   // Seleção múltipla para impressão
   const [selectedIds, setSelectedIds] = useState<string[]>([])
@@ -1494,8 +1507,8 @@ export default function ContasReceber() {
         if (dataFimFilter && campoValorData > dataFimFilter) return false
       }
 
-      if (searchQuery.trim()) {
-        const q = searchQuery.toLowerCase()
+      if (debouncedSearchQuery.trim()) {
+        const q = debouncedSearchQuery.toLowerCase()
         const clienteNome = c.expand?.cliente_id?.nome?.toLowerCase() || ''
         const matchDesc = c.descricao.toLowerCase().includes(q)
         const matchCli = clienteNome.includes(q)
@@ -1512,7 +1525,7 @@ export default function ContasReceber() {
     campoDataFiltro,
     dataInicioFilter,
     dataFimFilter,
-    searchQuery,
+    debouncedSearchQuery,
     nowISO,
   ])
 
@@ -1640,8 +1653,8 @@ export default function ContasReceber() {
       const cc = centrosCusto.find((c) => c.id === centroCustoFilter)
       if (cc) partes.push(`C. Custo: ${cc.codigo} - ${cc.nome}`)
     }
-    if (searchQuery.trim()) {
-      partes.push(`Busca: "${searchQuery.trim()}"`)
+    if (debouncedSearchQuery.trim()) {
+      partes.push(`Busca: "${debouncedSearchQuery.trim()}"`)
     }
     if (selectedIds.length > 0) {
       partes.push(`Seleção ativa: ${selectedIds.length} item(ns) marcado(s)`)
@@ -1655,7 +1668,7 @@ export default function ContasReceber() {
     statusFilter,
     centroCustoFilter,
     centrosCusto,
-    searchQuery,
+    debouncedSearchQuery,
     selectedIds.length,
   ])
 
@@ -1769,6 +1782,65 @@ export default function ContasReceber() {
       },
     ]
   }, [])
+
+  // Opções memoizadas para ComboboxPesquisavel
+  const clientesOptions = useMemo(() => {
+    return [
+      { id: 'none', label: 'Nenhum / Não informado' },
+      ...clientes.map((cli) => ({
+        id: cli.id,
+        label: cli.nome,
+        sublabel: cli.cnpj_cpf || cli.cidade || undefined,
+      })),
+    ]
+  }, [clientes])
+
+  const centrosCustoOptions = useMemo(() => {
+    return [
+      { id: 'none', label: 'Nenhum / Não alocado' },
+      ...centrosCusto.map((cc) => ({
+        id: cc.id,
+        label: `${cc.codigo} - ${cc.nome}`,
+      })),
+    ]
+  }, [centrosCusto])
+
+  const categoriasOptions = useMemo(() => {
+    return categorias.map((cat) => ({
+      id: cat.id,
+      label: `${cat.codigo} - ${cat.nome}`,
+      sublabel: cat.tipo,
+    }))
+  }, [categorias])
+
+  const formasRecebimentoFormOptions = useMemo(() => {
+    if (formasCadastradas.length > 0) {
+      return formasCadastradas.map((f) => ({ id: f.nome, label: f.nome }))
+    }
+    return FORMAS_RECEBIMENTO_PADRAO.map((f) => ({ id: f, label: f }))
+  }, [formasCadastradas])
+
+  const formasRecebimentoSettleOptions = useMemo(() => {
+    if (usarCreditoCliente) {
+      return [
+        {
+          id: 'Crédito do Cliente',
+          label: 'Crédito do Cliente (Saldo Antecipado)',
+        },
+      ]
+    }
+    const base =
+      formasCadastradas.length > 0
+        ? formasCadastradas.map((f) => ({ id: f.nome, label: f.nome }))
+        : FORMAS_RECEBIMENTO_PADRAO.map((f) => ({ id: f, label: f }))
+    return [
+      ...base,
+      {
+        id: 'Crédito do Cliente',
+        label: 'Crédito do Cliente (Saldo Antecipado)',
+      },
+    ]
+  }, [usarCreditoCliente, formasCadastradas])
 
   // Totalizadores do rodapé do relatório
   const totalizadoresRelatorioReceber = useMemo<TotalizadorRelatorioImpressao[]>(() => {
@@ -2443,14 +2515,7 @@ export default function ContasReceber() {
                 searchPlaceholder="Digitar nome do cliente..."
                 emptyText="Nenhum cliente encontrado."
                 className="mt-1"
-                options={[
-                  { id: 'none', label: 'Nenhum / Não informado' },
-                  ...clientes.map((cli) => ({
-                    id: cli.id,
-                    label: cli.nome,
-                    sublabel: cli.cnpj_cpf || cli.cidade || undefined,
-                  })),
-                ]}
+                options={clientesOptions}
               />
             </div>
 
@@ -2486,13 +2551,7 @@ export default function ContasReceber() {
                   searchPlaceholder="Buscar centro de custo..."
                   emptyText="Nenhum centro de custo encontrado."
                   className="mt-1"
-                  options={[
-                    { id: 'none', label: 'Nenhum / Não alocado' },
-                    ...centrosCusto.map((cc) => ({
-                      id: cc.id,
-                      label: `${cc.codigo} - ${cc.nome}`,
-                    })),
-                  ]}
+                  options={centrosCustoOptions}
                 />
               </div>
 
@@ -2505,11 +2564,7 @@ export default function ContasReceber() {
                   searchPlaceholder="Buscar categoria..."
                   emptyText="Nenhuma categoria encontrada."
                   className="mt-1"
-                  options={categorias.map((cat) => ({
-                    id: cat.id,
-                    label: `${cat.codigo} - ${cat.nome}`,
-                    sublabel: cat.tipo,
-                  }))}
+                  options={categoriasOptions}
                 />
               </div>
             </div>
@@ -2556,11 +2611,7 @@ export default function ContasReceber() {
                 <Label className="text-xs font-semibold text-gray-700">Forma de Recebimento</Label>
                 <div className="mt-1">
                   <ComboboxPesquisavel
-                    options={
-                      formasCadastradas.length > 0
-                        ? formasCadastradas.map((f) => ({ id: f.nome, label: f.nome }))
-                        : FORMAS_RECEBIMENTO_PADRAO.map((f) => ({ id: f, label: f }))
-                    }
+                    options={formasRecebimentoFormOptions}
                     value={formaRecebimentoForm}
                     onChange={(val) => {
                       setFormaRecebimentoForm(val)
@@ -3152,24 +3203,7 @@ export default function ContasReceber() {
               <Label className="text-xs font-semibold text-gray-700">Forma de Recebimento</Label>
               <div className="mt-1">
                 <ComboboxPesquisavel
-                  options={
-                    usarCreditoCliente
-                      ? [
-                          {
-                            id: 'Crédito do Cliente',
-                            label: 'Crédito do Cliente (Saldo Antecipado)',
-                          },
-                        ]
-                      : [
-                          ...(formasCadastradas.length > 0
-                            ? formasCadastradas.map((f) => ({ id: f.nome, label: f.nome }))
-                            : FORMAS_RECEBIMENTO_PADRAO.map((f) => ({ id: f, label: f }))),
-                          {
-                            id: 'Crédito do Cliente',
-                            label: 'Crédito do Cliente (Saldo Antecipado)',
-                          },
-                        ]
-                  }
+                  options={formasRecebimentoSettleOptions}
                   value={formaRecebimento}
                   onChange={(v) => setFormaRecebimento(v)}
                   placeholder="Selecione a forma..."
@@ -3544,40 +3578,79 @@ export default function ContasReceber() {
       </AlertDialog>
 
       {/* Modal Importador XLSX */}
-      <ImportadorRecebimentosModal
-        open={importModalOpen}
-        onOpenChange={setImportModalOpen}
-        empresaId={currentEmpresa?.id || ''}
-        clientes={clientes}
-        categorias={categorias}
-        centrosCusto={centrosCusto}
-        contasExistentes={contas}
-        onImportComplete={loadData}
-      />
+      {importModalOpen && (
+        <React.Suspense
+          fallback={
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+              <div className="bg-white rounded-xl p-4 shadow-xl flex items-center gap-2 text-xs text-gray-600">
+                <div className="w-4 h-4 border-2 border-teal-700 border-t-transparent rounded-full animate-spin" />
+                Carregando importador...
+              </div>
+            </div>
+          }
+        >
+          <ImportadorRecebimentosModal
+            open={importModalOpen}
+            onOpenChange={setImportModalOpen}
+            empresaId={currentEmpresa?.id || ''}
+            clientes={clientes}
+            categorias={categorias}
+            centrosCusto={centrosCusto}
+            contasExistentes={contas}
+            onImportComplete={loadData}
+          />
+        </React.Suspense>
+      )}
 
       {/* Modal de Trilha de Auditoria Geral */}
-      <HistoricoGeralModal
-        open={historicoModalOpen}
-        onOpenChange={setHistoricoModalOpen}
-        empresaId={currentEmpresa?.id || ''}
-        colecaoPadrao="contas_receber"
-      />
+      {historicoModalOpen && (
+        <React.Suspense
+          fallback={
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+              <div className="bg-white rounded-xl p-4 shadow-xl flex items-center gap-2 text-xs text-gray-600">
+                <div className="w-4 h-4 border-2 border-teal-700 border-t-transparent rounded-full animate-spin" />
+                Carregando histórico...
+              </div>
+            </div>
+          }
+        >
+          <HistoricoGeralModal
+            open={historicoModalOpen}
+            onOpenChange={setHistoricoModalOpen}
+            empresaId={currentEmpresa?.id || ''}
+            colecaoPadrao="contas_receber"
+          />
+        </React.Suspense>
+      )}
 
       {/* Relatório de Impressão A4 das Contas a Receber */}
-      <RelatorioListagemImpressaoModal
-        open={relatorioImpressaoOpen}
-        onOpenChange={setRelatorioImpressaoOpen}
-        titulo="Contas a Receber — Relatório de Itens"
-        subtitulo="Demonstrativo de Direitos Creditórios, Faturamento e Clientes"
-        badgeDestaque="Contas a Receber"
-        empresa={currentEmpresa}
-        usuarioNome={user?.name || user?.email || 'Administrador'}
-        filtrosDescricao={descricaoFiltrosAplicados}
-        itens={itensParaImpressao}
-        colunas={colunasRelatorioReceber}
-        totais={totalizadoresRelatorioReceber}
-        mensagemVazio="Nenhuma conta a receber encontrada para os filtros ou seleção atual."
-      />
+      {relatorioImpressaoOpen && (
+        <React.Suspense
+          fallback={
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+              <div className="bg-white rounded-xl p-4 shadow-xl flex items-center gap-2 text-xs text-gray-600">
+                <div className="w-4 h-4 border-2 border-teal-700 border-t-transparent rounded-full animate-spin" />
+                Carregando relatório de impressão...
+              </div>
+            </div>
+          }
+        >
+          <RelatorioListagemImpressaoModal
+            open={relatorioImpressaoOpen}
+            onOpenChange={setRelatorioImpressaoOpen}
+            titulo="Contas a Receber — Relatório de Itens"
+            subtitulo="Demonstrativo de Direitos Creditórios, Faturamento e Clientes"
+            badgeDestaque="Contas a Receber"
+            empresa={currentEmpresa}
+            usuarioNome={user?.name || user?.email || 'Administrador'}
+            filtrosDescricao={descricaoFiltrosAplicados}
+            itens={itensParaImpressao}
+            colunas={colunasRelatorioReceber}
+            totais={totalizadoresRelatorioReceber}
+            mensagemVazio="Nenhuma conta a receber encontrada para os filtros ou seleção atual."
+          />
+        </React.Suspense>
+      )}
     </div>
   )
 }
