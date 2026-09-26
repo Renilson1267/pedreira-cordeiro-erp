@@ -6,6 +6,7 @@ import { ProtectedRoute } from '@/components/ProtectedRoute'
 import Layout from '@/components/Layout'
 import { Toaster } from '@/components/ui/toaster'
 import { PageLoadingFallback } from '@/components/PageLoadingFallback'
+import { ErrorBoundary } from '@/components/ErrorBoundary'
 
 // Telas principais com carregamento sob demanda (Code-Splitting por rota)
 // Mantemos a rota inicial "/" rápida carregando sob demanda apenas o que o usuário visita.
@@ -50,66 +51,68 @@ export default function App() {
     <BrowserRouter>
       <AuthProvider>
         <CompanyProvider>
-          <Suspense fallback={<PageLoadingFallback />}>
-            <Routes>
-              {/* Public Auth Routes */}
-              <Route path="/login" element={<Login />} />
-              <Route path="/forgot-password" element={<ForgotPassword />} />
-              <Route path="/reset-password" element={<ResetPassword />} />
-              <Route path="/verify-email" element={<VerifyEmail />} />
-              <Route path="/convite" element={<AcceptInvite />} />
+          <ErrorBoundary screenName="Aplicação Geral">
+            <Suspense fallback={<PageLoadingFallback />}>
+              <Routes>
+                {/* Public Auth Routes */}
+                <Route path="/login" element={<Login />} />
+                <Route path="/forgot-password" element={<ForgotPassword />} />
+                <Route path="/reset-password" element={<ResetPassword />} />
+                <Route path="/verify-email" element={<VerifyEmail />} />
+                <Route path="/convite" element={<AcceptInvite />} />
 
-              {/* Authenticated Application Routes with Main Layout */}
-              <Route
-                element={
-                  <ProtectedRoute>
-                    <Layout />
-                  </ProtectedRoute>
-                }
-              >
-                <Route path="/" element={<Index />} />
-                <Route path="/manual" element={<ManualPage />} />
+                {/* Authenticated Application Routes with Main Layout */}
+                <Route
+                  element={
+                    <ProtectedRoute>
+                      <Layout />
+                    </ProtectedRoute>
+                  }
+                >
+                  <Route path="/" element={<Index />} />
+                  <Route path="/manual" element={<ManualPage />} />
 
-                {/* Financeiro */}
-                <Route path="/financeiro/vendas" element={<Vendas />} />
-                <Route path="/financeiro/entrega" element={<EntregaPage />} />
-                <Route path="/financeiro/pagar" element={<ContasPagar />} />
-                <Route path="/financeiro/receber" element={<ContasReceber />} />
-                <Route path="/financeiro/conciliacao" element={<Conciliacao />} />
-                <Route path="/financeiro/dre" element={<DRE />} />
+                  {/* Financeiro */}
+                  <Route path="/financeiro/vendas" element={<Vendas />} />
+                  <Route path="/financeiro/entrega" element={<EntregaPage />} />
+                  <Route path="/financeiro/pagar" element={<ContasPagar />} />
+                  <Route path="/financeiro/receber" element={<ContasReceber />} />
+                  <Route path="/financeiro/conciliacao" element={<Conciliacao />} />
+                  <Route path="/financeiro/dre" element={<DRE />} />
 
-                {/* Frotas & Pedreira */}
-                <Route path="/frotas/veiculos" element={<Veiculos />} />
-                <Route path="/frotas/abastecimentos" element={<Abastecimentos />} />
-                <Route path="/frotas/manutencoes" element={<Manutencoes />} />
-                <Route path="/frotas/entregas" element={<Entregas />} />
+                  {/* Frotas & Pedreira */}
+                  <Route path="/frotas/veiculos" element={<Veiculos />} />
+                  <Route path="/frotas/abastecimentos" element={<Abastecimentos />} />
+                  <Route path="/frotas/manutencoes" element={<Manutencoes />} />
+                  <Route path="/frotas/entregas" element={<Entregas />} />
 
-                {/* Recursos Humanos (RH) */}
-                <Route path="/rh/funcionarios" element={<Funcionarios />} />
-                <Route path="/rh/horas-extras" element={<HorasExtras />} />
+                  {/* Recursos Humanos (RH) */}
+                  <Route path="/rh/funcionarios" element={<Funcionarios />} />
+                  <Route path="/rh/horas-extras" element={<HorasExtras />} />
 
-                {/* Cadastros */}
-                <Route path="/cadastros/clientes" element={<Clientes />} />
-                <Route path="/cadastros/fornecedores" element={<Fornecedores />} />
-                <Route path="/cadastros/produtos" element={<Produtos />} />
-                <Route path="/cadastros/plano-de-contas" element={<PlanoContas />} />
-                <Route path="/cadastros/centros-de-custo" element={<CentrosCusto />} />
-                <Route path="/cadastros/formas-recebimento" element={<FormasRecebimento />} />
-                <Route path="/cadastros/operadores" element={<Operadores />} />
-                <Route path="/cadastros/backups" element={<Backups />} />
+                  {/* Cadastros */}
+                  <Route path="/cadastros/clientes" element={<Clientes />} />
+                  <Route path="/cadastros/fornecedores" element={<Fornecedores />} />
+                  <Route path="/cadastros/produtos" element={<Produtos />} />
+                  <Route path="/cadastros/plano-de-contas" element={<PlanoContas />} />
+                  <Route path="/cadastros/centros-de-custo" element={<CentrosCusto />} />
+                  <Route path="/cadastros/formas-recebimento" element={<FormasRecebimento />} />
+                  <Route path="/cadastros/operadores" element={<Operadores />} />
+                  <Route path="/cadastros/backups" element={<Backups />} />
 
-                {/* Relatórios */}
-                <Route path="/relatorios" element={<Relatorios />} />
+                  {/* Relatórios */}
+                  <Route path="/relatorios" element={<Relatorios />} />
 
-                {/* Perfil */}
-                <Route path="/perfil" element={<Perfil />} />
-              </Route>
+                  {/* Perfil */}
+                  <Route path="/perfil" element={<Perfil />} />
+                </Route>
 
-              {/* 404 Route */}
-              <Route path="*" element={<NotFound />} />
-            </Routes>
-          </Suspense>
-          <Toaster />
+                {/* 404 Route */}
+                <Route path="*" element={<NotFound />} />
+              </Routes>
+            </Suspense>
+            <Toaster />
+          </ErrorBoundary>
         </CompanyProvider>
       </AuthProvider>
     </BrowserRouter>

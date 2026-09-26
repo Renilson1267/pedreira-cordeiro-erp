@@ -2,6 +2,10 @@
 import { createRoot } from 'react-dom/client'
 import App from './App.tsx'
 import './main.css'
+import { setupGlobalChunkErrorHandler } from './lib/chunkAutoReload'
+
+// Ativa guardião global contra chunks desatualizados do Vite/PWA
+setupGlobalChunkErrorHandler()
 
 // Registro silencioso do Service Worker para suporte a PWA (Progressive Web App)
 if ('serviceWorker' in navigator && import.meta.env.PROD) {

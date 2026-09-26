@@ -1,5 +1,6 @@
 import React, { useState } from 'react'
 import { Outlet, NavLink, useNavigate, useLocation } from 'react-router-dom'
+import { ErrorBoundary } from '@/components/ErrorBoundary'
 import { useAuth } from '@/contexts/AuthContext'
 import { useCompany } from '@/contexts/CompanyContext'
 import { CompanySwitcherModal } from '@/components/CompanySwitcherModal'
@@ -418,7 +419,10 @@ export default function Layout() {
         {/* Scrollable Page Body */}
         <main className="flex-1 overflow-y-auto px-4 sm:px-6 py-6 min-w-0">
           <div className="max-w-[1400px] mx-auto animate-fade-in">
-            <Outlet />
+            {/* ErrorBoundary em torno do conteúdo roteado (protege contra tela branca silenciosa) */}
+            <ErrorBoundary screenName={location.pathname}>
+              <Outlet />
+            </ErrorBoundary>
           </div>
         </main>
 
