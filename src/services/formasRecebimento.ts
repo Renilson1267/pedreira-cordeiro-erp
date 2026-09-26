@@ -177,6 +177,14 @@ export const chequesPredatadosService = {
     return await pb.collection('cheques_predatados').delete(id)
   },
 
+  async compensar(id: string, dataCompensacaoIso?: string): Promise<ChequePredatado> {
+    const dataIso = dataCompensacaoIso || new Date().toISOString()
+    return await this.atualizar(id, {
+      status: 'compensado',
+      data_compensacao: dataIso,
+    })
+  },
+
   async salvarLote(
     empresaId: string,
     tituloId: string,

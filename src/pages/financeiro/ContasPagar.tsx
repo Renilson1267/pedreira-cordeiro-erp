@@ -5,7 +5,20 @@ import { useAuth } from '@/contexts/AuthContext'
 import pb from '@/lib/pocketbase/client'
 import { useRealtime } from '@/hooks/use-realtime'
 import { formatCurrency, formatDate, toInputDate } from '@/lib/formatters'
-import type { ContaPagar, Fornecedor, PlanoConta, CentroCusto, StatusContaPagar } from '@/types/erp'
+import type {
+  ContaPagar,
+  Fornecedor,
+  PlanoConta,
+  CentroCusto,
+  StatusContaPagar,
+  FormaRecebimento,
+  ChequePredatado,
+} from '@/types/erp'
+import {
+  formasRecebimentoService,
+  chequesPredatadosService,
+  FORMAS_RECEBIMENTO_PADRAO,
+} from '@/services/formasRecebimento'
 import { historicoService, calcularDiffAlteracoes, CAMPOS_CONFIG_PAGAR } from '@/services/historico'
 import { HistoricoSecao } from '@/components/financeiro/HistoricoSecao'
 import { HistoricoGeralModal } from '@/components/financeiro/HistoricoGeralModal'
@@ -47,6 +60,8 @@ import {
   X,
   History,
   Printer,
+  Tag,
+  CheckSquare,
 } from 'lucide-react'
 import {
   AlertDialog,
@@ -82,6 +97,7 @@ export default function ContasPagar() {
   const [fornecedores, setFornecedores] = useState<Fornecedor[]>([])
   const [categorias, setCategorias] = useState<PlanoConta[]>([])
   const [centrosCusto, setCentrosCusto] = useState<CentroCusto[]>([])
+  const [formasCadastradas, setFormasCadastradas] = useState<FormaRecebimento[]>([])
   const [loading, setLoading] = useState(true)
 
   // Filters
@@ -122,15 +138,23 @@ export default function ContasPagar() {
   const [datasCustomizadasManuais, setDatasCustomizadasManuais] = useState(false)
   const [status, setStatus] = useState<'Aberta' | 'Paga'>('Aberta')
   const [observacoes, setObservacoes] = useState('')
+  const [formaPagamentoForm, setFormaPagamentoForm] = useState<string>('Pix')
+  const [chequesPredatadosForm, setChequesPredatadosForm] = useState<
+    Array<{
+      id?: string
+      data: string
+      valor: number
+      numero?: string
+      banco?: string
+    }>
+  >([])
 
   // Settle (Baixar) Modal
   const [settleModalOpen, setSettleModalOpen] = useState(false)
   const [settlingConta, setSettlingConta] = useState<ContaPagar | null>(null)
   const [dataPagamento, setDataPagamento] = useState('')
   const [valorPago, setValorPago] = useState<number>(0)
-  const [formaPagamento, setFormaPagamento] = useState<
-    'Dinheiro' | 'Pix' | 'Cartão' | 'Boleto' | 'Transferência'
-  >('Pix')
+  const [formaPagamento, setFormaPagamento] = useState<string>('Pix')
   const [isSubmitting, setIsSubmitting] = useState(false)
 
   // Confirmation Alert Dialog State
@@ -145,6 +169,8 @@ export default function ContasPagar() {
 
   // Read-only Detail Drawer
   const [detailItem, setDetailItem] = useState<ContaPagar | null>(null)
+  const [chequesDetail, setChequesDetail] = useState<ChequePredatado[]>([])
+  const [loadingChequesDetail, setLoadingChequesDetail] = useState(false)
 
   // Seleção múltipla para impressão
   const [selectedIds, setSelectedIds] = useState<string[]>([])
@@ -158,7 +184,7 @@ export default function ContasPagar() {
 
     try {
       setLoading(true)
-      const [cpList, fList, pcList, ccList] = await Promise.all([
+      const [cpList, fList, pcList, ccList, formasList] = await Promise.all([
         pb.collection('contas_pagar').getFullList<ContaPagar>({
           filter: `empresa_id = '${currentEmpresa.id}'`,
           sort: 'vencimento',
@@ -176,12 +202,14 @@ export default function ContasPagar() {
           filter: `empresa_id = '${currentEmpresa.id}'`,
           sort: 'codigo',
         }),
+        formasRecebimentoService.listar(currentEmpresa.id, true),
       ])
 
       setContas(cpList)
       setFornecedores(fList)
       setCategorias(pcList)
       setCentrosCusto(ccList)
+      setFormasCadastradas(formasList)
 
       // Handle query params e.g. ?novo=1 or ?id=xyz
       const qNovo = searchParams.get('novo')
@@ -216,6 +244,27 @@ export default function ContasPagar() {
     loadData()
   }, [currentEmpresa])
 
+  // Carregar cheques ao abrir detalhes do título a pagar
+  const carregarChequesDoTitulo = async (tituloPagarId: string) => {
+    try {
+      setLoadingChequesDetail(true)
+      const chks = await chequesPredatadosService.listarPorTituloPagar(tituloPagarId)
+      setChequesDetail(chks)
+    } catch (err) {
+      console.warn('Erro ao carregar cheques do título a pagar:', err)
+    } finally {
+      setLoadingChequesDetail(false)
+    }
+  }
+
+  useEffect(() => {
+    if (detailItem?.id) {
+      carregarChequesDoTitulo(detailItem.id)
+    } else {
+      setChequesDetail([])
+    }
+  }, [detailItem?.id])
+
   const openCreateModal = () => {
     const hoje = toInputDate(new Date().toISOString())
     setEditingId(null)
@@ -230,12 +279,14 @@ export default function ContasPagar() {
     setPrazoSelecionado('mensal')
     setDatasCustomizadasManuais(false)
     setGradeParcelas(gerarGradeParcelas(hoje, 1, 'mensal', 0))
+    setFormaPagamentoForm('Pix')
+    setChequesPredatadosForm([])
     setStatus('Aberta')
     setObservacoes('')
     setIsDrawerOpen(true)
   }
 
-  const handleEdit = (c: ContaPagar) => {
+  const handleEdit = async (c: ContaPagar) => {
     const venc = toInputDate(c.vencimento)
     const emiss = c.data_emissao ? toInputDate(c.data_emissao) : ''
     const numP = c.parcelas || 1
@@ -251,8 +302,26 @@ export default function ContasPagar() {
     setPrazoSelecionado('mensal')
     setDatasCustomizadasManuais(false)
     setGradeParcelas(gerarGradeParcelas(venc, numP, 'mensal', c.valor))
+    setFormaPagamentoForm(c.forma_pagamento || 'Pix')
     setStatus(c.status === 'Paga' ? 'Paga' : 'Aberta')
     setObservacoes(c.observacoes || '')
+
+    // Carregar cheques pré-datados se houver para este título a pagar
+    try {
+      const chks = await chequesPredatadosService.listarPorTituloPagar(c.id)
+      setChequesPredatadosForm(
+        chks.map((chk) => ({
+          id: chk.id,
+          data: toInputDate(chk.data),
+          valor: chk.valor,
+          numero: chk.numero || '',
+          banco: chk.banco || '',
+        })),
+      )
+    } catch (_) {
+      setChequesPredatadosForm([])
+    }
+
     setIsDrawerOpen(true)
   }
 
@@ -392,12 +461,22 @@ export default function ContasPagar() {
               data_emissao: dataEmissaoIso,
               parcelas: Number(parcelas),
               status: status,
+              forma_pagamento: formaPagamentoForm || null,
               observacoes: observacoes.trim(),
             }
 
             const updatedRecord = await pb
               .collection('contas_pagar')
               .update<ContaPagar>(editingId, novoObj)
+
+            // Se for cheque pré-datado, salvar lote de cheques a pagar
+            if (formaPagamentoForm === 'Cheque Pré-datado' && chequesPredatadosForm.length > 0) {
+              await chequesPredatadosService.salvarLotePagar(
+                currentEmpresa!.id,
+                editingId,
+                chequesPredatadosForm,
+              )
+            }
 
             // Gravar histórico de alteração com diff
             if (registroAntes) {
@@ -456,8 +535,22 @@ export default function ContasPagar() {
                 data_emissao: dataEmissaoIso || undefined,
                 parcelas: numParcelas,
                 status: status,
+                forma_pagamento: formaPagamentoForm || null,
                 observacoes: observacoes.trim(),
               })
+
+              // Se for cheque pré-datado na primeira parcela ou única, salvar cheques associados
+              if (
+                formaPagamentoForm === 'Cheque Pré-datado' &&
+                chequesPredatadosForm.length > 0 &&
+                i === 0
+              ) {
+                await chequesPredatadosService.salvarLotePagar(
+                  currentEmpresa!.id,
+                  createdRecord.id,
+                  chequesPredatadosForm,
+                )
+              }
 
               // Gravar histórico de criação
               await historicoService.registrar({
@@ -650,6 +743,84 @@ export default function ContasPagar() {
     setValorPago(saldo > 0 ? saldo : conta.valor)
     setFormaPagamento('Pix')
     setSettleModalOpen(true)
+  }
+
+  // Ação de compensar cheque pré-datado de conta a pagar
+  const handleCompensarCheque = (cheque: ChequePredatado) => {
+    if (!detailItem) return
+    const dataChequeFormatada = formatDate(cheque.data)
+
+    setConfirmDialogData({
+      title: 'Confirmar compensação de cheque pré-datado',
+      description: `Deseja marcar como compensado o cheque emitido no valor de ${formatCurrency(cheque.valor)} (Vencimento: ${dataChequeFormatada}${cheque.numero ? `, Nº ${cheque.numero}` : ''}${cheque.banco ? `, Banco: ${cheque.banco}` : ''})? Isso atualizará o status do cheque para Compensado e gerará uma SAÍDA no caixa na data do cheque.`,
+      confirmLabel: 'Confirmar Compensação',
+      confirmVariant: 'default',
+      action: async () => {
+        try {
+          setIsSubmitting(true)
+          const dataCompensacaoIso = cheque.data
+            ? new Date(`${toInputDate(cheque.data)}T12:00:00Z`).toISOString()
+            : new Date().toISOString()
+
+          // 1. Atualizar cheque no banco via serviço
+          await chequesPredatadosService.compensar(cheque.id, dataCompensacaoIso)
+
+          // 2. Gerar movimento de caixa de Saída na data do cheque
+          const fornecedorNome =
+            detailItem.expand?.fornecedor_id?.nome || detailItem.descricao || 'Título a Pagar'
+          const mov = await pb.collection('movimentos_financeiros').create({
+            empresa_id: currentEmpresa!.id,
+            tipo: 'Saida',
+            descricao: `Compensação de cheque pré-datado: ${fornecedorNome}${cheque.numero ? ` [Cheque Nº ${cheque.numero}]` : ''}${cheque.banco ? ` [Banco: ${cheque.banco}]` : ''} - Ref: ${detailItem.descricao}`,
+            valor: cheque.valor,
+            data: dataCompensacaoIso,
+            categoria_id: detailItem.categoria_id || null,
+            centro_custo_id: detailItem.centro_custo_id || null,
+            origem: 'ContaPagar',
+            referencia_id: detailItem.id,
+            conciliado: false,
+          })
+
+          // 3. Registrar no histórico de alterações
+          await historicoService.registrar({
+            empresaId: currentEmpresa!.id,
+            colecaoOrigem: 'cheques_predatados',
+            registroId: cheque.id,
+            acao: 'baixa',
+            usuarioId: user?.id,
+            usuarioNome: user?.name || user?.email || 'Usuário',
+            descricao: `Cheque pré-datado de ${formatCurrency(cheque.valor)} compensado em ${formatDate(dataCompensacaoIso)}. Gerado movimento de Saída no caixa ref. título a pagar "${detailItem.descricao}".`,
+            detalhes: {
+              valor: cheque.valor,
+              extra: {
+                cheque_id: cheque.id,
+                numero: cheque.numero,
+                banco: cheque.banco,
+                titulo_pagar_id: detailItem.id,
+                movimento_financeiro_id: mov.id,
+              },
+            },
+          })
+
+          toast({
+            title: 'Cheque compensado com sucesso!',
+            description: `Movimento de saída no caixa gerado no valor de ${formatCurrency(cheque.valor)}.`,
+          })
+
+          await carregarChequesDoTitulo(detailItem.id)
+          await loadData()
+        } catch (err: any) {
+          toast({
+            title: 'Erro ao compensar cheque',
+            description: err.message,
+            variant: 'destructive',
+          })
+        } finally {
+          setIsSubmitting(false)
+        }
+      },
+    })
+    setConfirmDialogOpen(true)
   }
 
   const handleConfirmSettle = async () => {
@@ -989,6 +1160,12 @@ export default function ContasPagar() {
         render: (c) => formatDate(c.vencimento),
       },
       {
+        key: 'forma',
+        header: 'Forma',
+        className: 'whitespace-nowrap text-xs',
+        render: (c) => c.forma_pagamento || '—',
+      },
+      {
         key: 'valor',
         header: 'Valor (R$)',
         align: 'right',
@@ -1051,7 +1228,7 @@ export default function ContasPagar() {
       {
         label: 'TOTAIS:',
         value: `${itensParaImpressao.length} item(ns)`,
-        colSpan: 5,
+        colSpan: 6,
         align: 'left',
       },
       {
@@ -1370,6 +1547,7 @@ export default function ContasPagar() {
                 <th className="py-2.5 px-2.5 text-right whitespace-nowrap">Valor Total</th>
                 <th className="py-2.5 px-2 text-right whitespace-nowrap">Pago</th>
                 <th className="py-2.5 px-2.5 text-right whitespace-nowrap">Saldo</th>
+                <th className="py-2.5 px-2 text-center whitespace-nowrap">Forma</th>
                 <th className="py-2.5 px-2 text-center whitespace-nowrap">Status</th>
                 <th className="py-2.5 px-2 text-center whitespace-nowrap w-32">Doc / NF</th>
                 <th className="py-2.5 px-2.5 text-right whitespace-nowrap">Ações</th>
@@ -1378,7 +1556,7 @@ export default function ContasPagar() {
             <tbody className="divide-y divide-[#ECEAE4]">
               {filteredContas.length === 0 ? (
                 <tr>
-                  <td colSpan={12} className="py-12 text-center text-gray-400">
+                  <td colSpan={13} className="py-12 text-center text-gray-400">
                     Nenhuma conta a pagar encontrada para os filtros atuais.
                   </td>
                 </tr>
@@ -1498,6 +1676,11 @@ export default function ContasPagar() {
                         ) : (
                           <span className="text-emerald-600 font-medium text-[11px]">Quitado</span>
                         )}
+                      </td>
+
+                      {/* Forma */}
+                      <td className="py-2 px-2 text-center whitespace-nowrap text-[11px] text-gray-600">
+                        {c.forma_pagamento || '—'}
                       </td>
 
                       {/* Status */}
@@ -1696,6 +1879,168 @@ export default function ContasPagar() {
               </div>
             </div>
 
+            {/* Forma de Pagamento */}
+            <div>
+              <Label className="text-xs font-semibold text-gray-700">
+                Forma de Pagamento Prevista
+              </Label>
+              <ComboboxPesquisavel
+                value={formaPagamentoForm}
+                onChange={(val) => {
+                  setFormaPagamentoForm(val)
+                  if (val === 'Cheque Pré-datado' && chequesPredatadosForm.length === 0) {
+                    setChequesPredatadosForm([
+                      {
+                        data: vencimento || toInputDate(new Date().toISOString()),
+                        valor: Number(valor) || 0,
+                        numero: '',
+                        banco: '',
+                      },
+                    ])
+                  }
+                  if (val === 'A Prazo' && parcelas <= 1) {
+                    handleChangeNumParcelas(2)
+                  }
+                }}
+                placeholder="Selecione a forma de pagamento..."
+                searchPlaceholder="Buscar forma de pagamento..."
+                emptyText="Nenhuma forma encontrada."
+                className="mt-1"
+                options={[
+                  ...(formasCadastradas.length > 0
+                    ? formasCadastradas.map((f) => ({
+                        id: f.nome,
+                        label: f.nome,
+                        sublabel: f.tipo_padrao || undefined,
+                      }))
+                    : FORMAS_RECEBIMENTO_PADRAO.map((f) => ({
+                        id: f.nome,
+                        label: f.nome,
+                        sublabel: f.tipo_padrao,
+                      }))),
+                ]}
+              />
+            </div>
+
+            {/* Painel Cheques Pré-datados */}
+            {formaPagamentoForm === 'Cheque Pré-datado' && (
+              <div className="p-3.5 bg-amber-50/60 border border-amber-200/80 rounded-xl space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-1.5 font-semibold text-amber-900 text-xs">
+                    <Tag className="w-3.5 h-3.5 text-amber-700" />
+                    Cheques Pré-datados Emitidos
+                  </div>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    onClick={() => {
+                      setChequesPredatadosForm([
+                        ...chequesPredatadosForm,
+                        {
+                          data: vencimento || toInputDate(new Date().toISOString()),
+                          valor: 0,
+                          numero: '',
+                          banco: '',
+                        },
+                      ])
+                    }}
+                    className="h-6 px-2 text-[11px] border-amber-300 text-amber-900 hover:bg-amber-100"
+                  >
+                    <Plus className="w-3 h-3 mr-1" />
+                    Adicionar Cheque
+                  </Button>
+                </div>
+
+                <div className="space-y-2">
+                  {chequesPredatadosForm.map((chk, idx) => (
+                    <div
+                      key={idx}
+                      className="grid grid-cols-12 gap-1.5 items-center bg-white p-2 rounded-lg border border-amber-200"
+                    >
+                      <div className="col-span-3">
+                        <Label className="text-[10px] text-gray-500 font-medium">Vencimento</Label>
+                        <Input
+                          type="date"
+                          value={chk.data}
+                          onChange={(e) => {
+                            const updated = [...chequesPredatadosForm]
+                            updated[idx].data = e.target.value
+                            setChequesPredatadosForm(updated)
+                          }}
+                          className="h-7 text-xs font-mono px-1.5"
+                        />
+                      </div>
+                      <div className="col-span-3">
+                        <Label className="text-[10px] text-gray-500 font-medium">Valor (R$)</Label>
+                        <Input
+                          type="number"
+                          step="0.01"
+                          value={chk.valor || ''}
+                          onChange={(e) => {
+                            const updated = [...chequesPredatadosForm]
+                            updated[idx].valor = parseFloat(e.target.value) || 0
+                            setChequesPredatadosForm(updated)
+                          }}
+                          className="h-7 text-xs font-mono px-1.5 font-semibold"
+                        />
+                      </div>
+                      <div className="col-span-3">
+                        <Label className="text-[10px] text-gray-500 font-medium">Nº Cheque</Label>
+                        <Input
+                          type="text"
+                          placeholder="Ex: 00123"
+                          value={chk.numero || ''}
+                          onChange={(e) => {
+                            const updated = [...chequesPredatadosForm]
+                            updated[idx].numero = e.target.value
+                            setChequesPredatadosForm(updated)
+                          }}
+                          className="h-7 text-xs px-1.5"
+                        />
+                      </div>
+                      <div className="col-span-2">
+                        <Label className="text-[10px] text-gray-500 font-medium">Banco</Label>
+                        <Input
+                          type="text"
+                          placeholder="Ex: BB"
+                          value={chk.banco || ''}
+                          onChange={(e) => {
+                            const updated = [...chequesPredatadosForm]
+                            updated[idx].banco = e.target.value
+                            setChequesPredatadosForm(updated)
+                          }}
+                          className="h-7 text-xs px-1.5"
+                        />
+                      </div>
+                      <div className="col-span-1 flex items-end justify-center pt-3">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const updated = chequesPredatadosForm.filter((_, i) => i !== idx)
+                            setChequesPredatadosForm(updated)
+                          }}
+                          className="text-red-500 hover:text-red-700 p-1"
+                          title="Remover cheque"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                <div className="flex items-center justify-between pt-1 text-xs font-medium text-amber-950 border-t border-amber-200">
+                  <span>Total em Cheques:</span>
+                  <span className="font-mono font-bold">
+                    {formatCurrency(
+                      chequesPredatadosForm.reduce((acc, c) => acc + (Number(c.valor) || 0), 0),
+                    )}
+                  </span>
+                </div>
+              </div>
+            )}
+
             <div className="grid grid-cols-3 gap-3">
               <div>
                 <Label className="text-xs font-semibold text-gray-700">Valor Total (R$) *</Label>
@@ -1734,7 +2079,7 @@ export default function ContasPagar() {
               </div>
             </div>
 
-            {!editingId && (
+            {(!editingId || formaPagamentoForm === 'A Prazo') && (
               <SeletorParcelas
                 parcelas={parcelas}
                 onChangeParcelas={handleChangeNumParcelas}
@@ -1896,19 +2241,28 @@ export default function ContasPagar() {
             </div>
 
             <div>
-              <Label className="text-xs font-semibold text-gray-700">Forma de Pagamento</Label>
-              <Select value={formaPagamento} onValueChange={(v: any) => setFormaPagamento(v)}>
-                <SelectTrigger className="mt-1">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="Pix">Pix</SelectItem>
-                  <SelectItem value="Boleto">Boleto Bancário</SelectItem>
-                  <SelectItem value="Transferência">Transferência (TED/DOC)</SelectItem>
-                  <SelectItem value="Cartão">Cartão de Crédito/Débito</SelectItem>
-                  <SelectItem value="Dinheiro">Dinheiro em Espécie</SelectItem>
-                </SelectContent>
-              </Select>
+              <Label className="text-xs font-semibold text-gray-700">Forma de Pagamento *</Label>
+              <ComboboxPesquisavel
+                value={formaPagamento}
+                onChange={setFormaPagamento}
+                placeholder="Selecione a forma de pagamento..."
+                searchPlaceholder="Buscar forma de pagamento..."
+                emptyText="Nenhuma forma encontrada."
+                className="mt-1"
+                options={[
+                  ...(formasCadastradas.length > 0
+                    ? formasCadastradas.map((f) => ({
+                        id: f.nome,
+                        label: f.nome,
+                        sublabel: f.tipo_padrao || undefined,
+                      }))
+                    : FORMAS_RECEBIMENTO_PADRAO.map((f) => ({
+                        id: f.nome,
+                        label: f.nome,
+                        sublabel: f.tipo_padrao,
+                      }))),
+                ]}
+              />
             </div>
           </div>
 
@@ -2011,10 +2365,103 @@ export default function ContasPagar() {
                 {detailItem.forma_pagamento && (
                   <div className="flex justify-between py-1">
                     <span className="text-gray-500">Forma de Pagamento:</span>
-                    <span className="text-gray-800">{detailItem.forma_pagamento}</span>
+                    <span className="text-gray-800 font-medium">{detailItem.forma_pagamento}</span>
                   </div>
                 )}
               </div>
+
+              {/* Seção Cheques Pré-datados Emitidos */}
+              {(detailItem.forma_pagamento === 'Cheque Pré-datado' || chequesDetail.length > 0) && (
+                <div className="border-t border-[#ECEAE4] pt-4 mt-2 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="font-semibold text-gray-900 flex items-center gap-1.5 text-xs">
+                      <Tag className="w-3.5 h-3.5 text-amber-600" />
+                      Cheques Pré-datados Vinculados ({chequesDetail.length})
+                    </span>
+                    {loadingChequesDetail && (
+                      <span className="text-[10px] text-gray-400">Carregando cheques...</span>
+                    )}
+                  </div>
+
+                  {chequesDetail.length === 0 && !loadingChequesDetail ? (
+                    <p className="text-[11px] text-gray-400 italic">
+                      Nenhum cheque cadastrado para este título.
+                    </p>
+                  ) : (
+                    <div className="space-y-2">
+                      {chequesDetail.map((chk) => (
+                        <div
+                          key={chk.id}
+                          className="p-2.5 rounded-xl border border-amber-200 bg-amber-50/40 space-y-1.5"
+                        >
+                          <div className="flex items-center justify-between">
+                            <span className="font-mono font-bold text-gray-900 text-xs">
+                              {formatCurrency(chk.valor)}
+                            </span>
+                            <Badge
+                              variant="outline"
+                              className={`text-[10px] px-1.5 py-0 ${
+                                chk.status === 'compensado'
+                                  ? 'bg-emerald-50 text-emerald-700 border-emerald-300'
+                                  : 'bg-amber-100/70 text-amber-800 border-amber-300 font-semibold'
+                              }`}
+                            >
+                              {chk.status === 'compensado' ? 'Compensado' : 'Pendente'}
+                            </Badge>
+                          </div>
+
+                          <div className="grid grid-cols-2 gap-2 text-[11px] text-gray-600">
+                            <div>
+                              <span className="text-gray-400 block text-[10px]">
+                                Bom para / Venc:
+                              </span>
+                              <span className="font-mono font-medium text-gray-800">
+                                {formatDate(chk.data)}
+                              </span>
+                            </div>
+                            {chk.numero && (
+                              <div>
+                                <span className="text-gray-400 block text-[10px]">Nº Cheque:</span>
+                                <span className="font-mono text-gray-800">{chk.numero}</span>
+                              </div>
+                            )}
+                            {chk.banco && (
+                              <div>
+                                <span className="text-gray-400 block text-[10px]">Banco:</span>
+                                <span>{chk.banco}</span>
+                              </div>
+                            )}
+                            {chk.data_compensacao && (
+                              <div>
+                                <span className="text-gray-400 block text-[10px]">
+                                  Compensado em:
+                                </span>
+                                <span className="font-mono text-emerald-700">
+                                  {formatDate(chk.data_compensacao)}
+                                </span>
+                              </div>
+                            )}
+                          </div>
+
+                          {canEdit && chk.status !== 'compensado' && (
+                            <div className="pt-1.5 border-t border-amber-200/60 flex justify-end">
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => handleCompensarCheque(chk)}
+                                className="h-6 px-2 text-[11px] border-emerald-300 text-emerald-800 hover:bg-emerald-50 bg-white"
+                              >
+                                <CheckSquare className="w-3 h-3 mr-1 text-emerald-600" />
+                                Marcar como Compensado
+                              </Button>
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
 
               {detailItem.observacoes && (
                 <div className="p-3 bg-[#FAF9F7] rounded-xl border border-[#ECEAE4] mt-4">
