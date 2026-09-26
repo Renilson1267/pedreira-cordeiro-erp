@@ -96,7 +96,8 @@ export const formasRecebimentoService = {
 
 export interface CreateChequePredatadoPayload {
   empresa_id: string
-  titulo_id: string
+  titulo_id?: string
+  titulo_pagar_id?: string
   data: string
   valor: number
   numero?: string
@@ -120,13 +121,26 @@ export const chequesPredatadosService = {
     }
   },
 
+  async listarPorTituloPagar(tituloPagarId: string): Promise<ChequePredatado[]> {
+    if (!tituloPagarId) return []
+    try {
+      return await pb.collection('cheques_predatados').getFullList<ChequePredatado>({
+        filter: `titulo_pagar_id = '${tituloPagarId}'`,
+        sort: 'data,created',
+      })
+    } catch (err) {
+      console.warn('Erro ao listar cheques predatados do título a pagar:', err)
+      return []
+    }
+  },
+
   async listarPorEmpresa(empresaId: string): Promise<ChequePredatado[]> {
     if (!empresaId) return []
     try {
       return await pb.collection('cheques_predatados').getFullList<ChequePredatado>({
         filter: `empresa_id = '${empresaId}'`,
         sort: 'data',
-        expand: 'titulo_id',
+        expand: 'titulo_id,titulo_pagar_id',
       })
     } catch (err) {
       console.warn('Erro ao listar cheques da empresa:', err)
@@ -135,9 +149,8 @@ export const chequesPredatadosService = {
   },
 
   async criar(payload: CreateChequePredatadoPayload): Promise<ChequePredatado> {
-    return await pb.collection('cheques_predatados').create<ChequePredatado>({
+    const dados: Record<string, any> = {
       empresa_id: payload.empresa_id,
-      titulo_id: payload.titulo_id,
       data: payload.data,
       valor: payload.valor,
       numero: payload.numero ? payload.numero.trim() : '',
@@ -145,7 +158,15 @@ export const chequesPredatadosService = {
       status: payload.status || 'pendente',
       data_compensacao: payload.data_compensacao || null,
       observacoes: payload.observacoes ? payload.observacoes.trim() : '',
-    })
+    }
+    if (payload.titulo_id) {
+      dados.titulo_id = payload.titulo_id
+    }
+    if (payload.titulo_pagar_id) {
+      dados.titulo_pagar_id = payload.titulo_pagar_id
+    }
+
+    return await pb.collection('cheques_predatados').create<ChequePredatado>(dados)
   },
 
   async atualizar(id: string, payload: Partial<ChequePredatado>): Promise<ChequePredatado> {
@@ -194,6 +215,57 @@ export const chequesPredatadosService = {
         const criado = await this.criar({
           empresa_id: empresaId,
           titulo_id: tituloId,
+          data: chk.data,
+          valor: chk.valor,
+          numero: chk.numero,
+          banco: chk.banco,
+          status: 'pendente',
+        })
+        resultados.push(criado)
+      }
+    }
+
+    return resultados
+  },
+
+  async salvarLotePagar(
+    empresaId: string,
+    tituloPagarId: string,
+    cheques: Array<{
+      id?: string
+      data: string
+      valor: number
+      numero?: string
+      banco?: string
+    }>,
+  ): Promise<ChequePredatado[]> {
+    const existentes = await this.listarPorTituloPagar(tituloPagarId)
+    const existentesIds = new Set(existentes.map((c) => c.id))
+    const enviadosIds = new Set(cheques.map((c) => c.id).filter(Boolean) as string[])
+
+    // Excluir os que foram removidos pelo usuário
+    for (const c of existentes) {
+      if (!enviadosIds.has(c.id)) {
+        await this.excluir(c.id)
+      }
+    }
+
+    const resultados: ChequePredatado[] = []
+    for (const chk of cheques) {
+      if (chk.id && existentesIds.has(chk.id)) {
+        // Atualizar
+        const atualizado = await this.atualizar(chk.id, {
+          data: chk.data,
+          valor: chk.valor,
+          numero: chk.numero || '',
+          banco: chk.banco || '',
+        })
+        resultados.push(atualizado)
+      } else {
+        // Criar novo
+        const criado = await this.criar({
+          empresa_id: empresaId,
+          titulo_pagar_id: tituloPagarId,
           data: chk.data,
           valor: chk.valor,
           numero: chk.numero,

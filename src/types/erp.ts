@@ -140,7 +140,7 @@ export interface ContaPagar {
   parcelas?: number
   status: StatusContaPagar
   data_pagamento?: string
-  forma_pagamento?: 'Dinheiro' | 'Pix' | 'Cartão' | 'Boleto' | 'Transferência'
+  forma_pagamento?: string
   observacoes?: string
   origem_frota?: string
   veiculo_id?: string
@@ -178,7 +178,8 @@ export type StatusChequePredatado = 'pendente' | 'compensado'
 export interface ChequePredatado {
   id: string
   empresa_id: string
-  titulo_id: string
+  titulo_id?: string
+  titulo_pagar_id?: string
   data: string
   valor: number
   numero?: string
@@ -190,6 +191,7 @@ export interface ChequePredatado {
   updated: string
   expand?: {
     titulo_id?: ContaReceber
+    titulo_pagar_id?: ContaPagar
     empresa_id?: Empresa
   }
 }
