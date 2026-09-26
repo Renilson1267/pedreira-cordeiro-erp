@@ -352,7 +352,7 @@ cronAdd('backup_semanal_pedreira_cordeiro', '30 0 * * 0', () => {
         encodeURIComponent('urn:ietf:params:oauth:grant-type:jwt-bearer') +
         '&assertion=' +
         encodeURIComponent(assertion),
-      timeout: 30,
+      timeout: 15,
     })
 
     if (res.statusCode !== 200) {
@@ -1228,8 +1228,8 @@ routerAdd(
       return e.json(403, { error: 'Apenas administradores podem configurar o Google Drive' })
     }
 
-    // Helper Google Service Account Inline para validar chave no salvamento
-    function testServiceAccountKey(serviceAccountJson) {
+    // Helper Google Service Account Inline para validação online com timeout curto (~10s)
+    function testServiceAccountKeyOnline(serviceAccountJson, timeoutSecs) {
       var b64chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/'
       var b64tab = {}
       for (var i = 0; i < b64chars.length; i++) b64tab[b64chars.charAt(i)] = i
@@ -1568,7 +1568,7 @@ routerAdd(
           encodeURIComponent('urn:ietf:params:oauth:grant-type:jwt-bearer') +
           '&assertion=' +
           encodeURIComponent(assertion),
-        timeout: 30,
+        timeout: timeoutSecs || 10,
       })
 
       if (res.statusCode !== 200) {
@@ -1614,42 +1614,38 @@ routerAdd(
       let parsedEmail = ''
       let parsedProjectId = ''
       let parsedPrivateKeyId = ''
+      let parsedCreds = null
+      let novaChaveEnviada = false
 
+      // 1. Validação estrutural local do JSON (parse imediato sem depender de rede)
       if (serviceAccountJsonInput) {
         try {
-          const parsed = JSON.parse(serviceAccountJsonInput)
-          if (!parsed.client_email || !parsed.private_key) {
-            return e.json(400, {
-              error:
-                'O JSON colado é inválido ou incompleto. Certifique-se de baixar o arquivo JSON completo de chave da Conta de Serviço no Google Cloud Console (deve conter "client_email" e "private_key").',
-            })
-          }
-          parsedEmail = parsed.client_email
-          parsedProjectId = parsed.project_id || ''
-          parsedPrivateKeyId = parsed.private_key_id || ''
-
-          try {
-            testServiceAccountKey(parsed)
-          } catch (testErr) {
-            return e.json(400, {
-              error:
-                'Falha na validação da chave com o Google: ' +
-                (testErr?.message || testErr) +
-                '. Certifique-se de que a Google Drive API está ativada no seu projeto Google Cloud.',
-            })
-          }
-
-          configRec.set('service_account_json', serviceAccountJsonInput)
-          configRec.set('client_email', parsedEmail)
-          configRec.set('project_id', parsedProjectId)
-          configRec.set('private_key_id', parsedPrivateKeyId)
-          configRec.set('auth_type', 'service_account')
-          configRec.set('ultimo_status', 'conectado')
+          parsedCreds = JSON.parse(serviceAccountJsonInput)
         } catch (jsonErr) {
           return e.json(400, {
             error: 'Conteúdo colado não é um JSON válido: ' + (jsonErr?.message || jsonErr),
           })
         }
+
+        if (!parsedCreds.client_email || !parsedCreds.private_key) {
+          return e.json(400, {
+            error:
+              'O JSON colado é inválido ou incompleto. Certifique-se de baixar o arquivo JSON completo de chave da Conta de Serviço no Google Cloud Console (deve conter "client_email" e "private_key").',
+          })
+        }
+
+        parsedEmail = parsedCreds.client_email
+        parsedProjectId = parsedCreds.project_id || ''
+        parsedPrivateKeyId = parsedCreds.private_key_id || ''
+        novaChaveEnviada = true
+
+        // Salvar imediatamente os novos campos no registro
+        configRec.set('service_account_json', serviceAccountJsonInput)
+        configRec.set('client_email', parsedEmail)
+        configRec.set('project_id', parsedProjectId)
+        configRec.set('private_key_id', parsedPrivateKeyId)
+        configRec.set('auth_type', 'service_account')
+        configRec.set('ultimo_status', 'conectado')
       }
 
       if (folderId !== undefined) {
@@ -1659,13 +1655,57 @@ routerAdd(
         configRec.set('folder_name', folderName)
       }
       configRec.set('ativo', true)
+
+      // 2. Persistir imediatamente no banco ANTES de qualquer validação online externa
       $app.save(configRec)
+
+      const finalEmail = parsedEmail || configRec.getString('client_email')
+      const finalFolderId = folderId !== undefined ? folderId : configRec.getString('folder_id')
+
+      // 3. Validação online contra o Google (apenas se nova chave foi enviada ou se explicitamente solicitada)
+      // Executa com timeout curto de 10s. Se demorar ou falhar por rede/timeout, a chave permanece salva!
+      let validacaoGoogle = {
+        testada: false,
+        sucesso: false,
+        aviso: '',
+      }
+
+      if (novaChaveEnviada && parsedCreds) {
+        validacaoGoogle.testada = true
+        try {
+          testServiceAccountKeyOnline(parsedCreds, 10)
+          validacaoGoogle.sucesso = true
+        } catch (testErr) {
+          const errMsg = String(testErr?.message || testErr)
+          const isTimeout =
+            errMsg.toLowerCase().indexOf('timeout') !== -1 ||
+            errMsg.toLowerCase().indexOf('deadline') !== -1 ||
+            errMsg.toLowerCase().indexOf('context') !== -1
+          console.warn('[Google Drive Config] Validação online da chave retornou aviso:', errMsg)
+
+          validacaoGoogle.sucesso = false
+          if (isTimeout) {
+            validacaoGoogle.aviso =
+              'Chave salva com sucesso, mas a validação com o Google demorou demais. A validação será refeita automaticamente no próximo envio.'
+          } else {
+            validacaoGoogle.aviso =
+              'Chave salva com sucesso. Aviso da validação online com o Google: ' +
+              errMsg +
+              '. A conexão será retestada no próximo envio de backup.'
+          }
+        }
+      }
+
+      const mensagemRetorno = validacaoGoogle.aviso
+        ? validacaoGoogle.aviso
+        : 'Configurações da Conta de Serviço salvas com sucesso!'
 
       return e.json(200, {
         success: true,
-        message: 'Configurações da Conta de Serviço salvas com sucesso!',
-        client_email: parsedEmail || configRec.getString('client_email'),
-        folder_id: folderId,
+        message: mensagemRetorno,
+        client_email: finalEmail,
+        folder_id: finalFolderId,
+        validacao_online: validacaoGoogle,
       })
     } catch (err) {
       return e.json(500, { error: 'Erro ao salvar configurações: ' + (err?.message || err) })
@@ -2101,7 +2141,7 @@ routerAdd(
           encodeURIComponent('urn:ietf:params:oauth:grant-type:jwt-bearer') +
           '&assertion=' +
           encodeURIComponent(assertion),
-        timeout: 30,
+        timeout: 15,
       })
 
       if (res.statusCode !== 200) {

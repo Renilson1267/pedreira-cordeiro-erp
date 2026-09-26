@@ -79,6 +79,10 @@ export function Backups() {
   const [serviceAccountJsonInput, setServiceAccountJsonInput] = useState('')
   const [folderIdInput, setFolderIdInput] = useState('')
   const [salvandoConfig, setSalvandoConfig] = useState(false)
+  const [etapaSalvamento, setEtapaSalvamento] = useState<
+    'ocioso' | 'salvando' | 'validando_google'
+  >('ocioso')
+  const [avisoValidacao, setAvisoValidacao] = useState<string | null>(null)
   const [desconectando, setDesconectando] = useState(false)
   const [emailCopiado, setEmailCopiado] = useState(false)
 
@@ -138,8 +142,40 @@ export function Backups() {
   }
 
   const salvarConfiguracoesDrive = async () => {
+    // Validação estrutural local prévia no cliente
+    if (serviceAccountJsonInput.trim()) {
+      try {
+        const parsed = JSON.parse(serviceAccountJsonInput.trim())
+        if (!parsed.client_email || !parsed.private_key) {
+          toast({
+            title: 'JSON incompleto',
+            description:
+              'O JSON da Conta de Serviço deve conter pelo menos "client_email" e "private_key".',
+            variant: 'destructive',
+          })
+          return
+        }
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : 'JSON inválido'
+        toast({
+          title: 'Arquivo JSON inválido',
+          description: 'O texto inserido não é um JSON válido: ' + msg,
+          variant: 'destructive',
+        })
+        return
+      }
+    }
+
+    const controller = new AbortController()
+    const timeoutId = setTimeout(() => {
+      controller.abort()
+    }, 20000) // Timeout cliente de 20s para segurança absoluta contra travamentos
+
     try {
       setSalvandoConfig(true)
+      setAvisoValidacao(null)
+      setEtapaSalvamento(serviceAccountJsonInput.trim() ? 'validando_google' : 'salvando')
+
       const payload: { service_account_json?: string; folder_id?: string; folder_name?: string } =
         {}
 
@@ -148,25 +184,45 @@ export function Backups() {
       }
       payload.folder_id = folderIdInput.trim()
 
-      const res = await backupService.salvarConfiguracoesDrive(payload)
+      const res = await backupService.salvarConfiguracoesDrive(payload, controller.signal)
+      clearTimeout(timeoutId)
 
-      toast({
-        title: 'Configurações salvas!',
-        description: res.message || 'Conta de Serviço Google Drive configurada com sucesso.',
-      })
+      if (res.validacao_online?.testada && !res.validacao_online.sucesso) {
+        // Chave salva com aviso sobre a validação Google
+        setAvisoValidacao(res.validacao_online.aviso)
+        toast({
+          title: 'Chave salva!',
+          description:
+            res.validacao_online.aviso ||
+            'Chave salva com sucesso. A validação online será refeita no próximo envio.',
+          className: 'bg-amber-500 text-white border-none',
+        })
+      } else {
+        toast({
+          title: 'Chave salva com sucesso!',
+          description: res.message || 'Conta de Serviço Google Drive configurada e validada.',
+        })
+      }
 
       setServiceAccountJsonInput('')
       setModalConfigAberta(false)
       await carregarDados()
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Falha ao salvar configurações.'
+      clearTimeout(timeoutId)
+      let msg = err instanceof Error ? err.message : 'Falha ao salvar configurações.'
+      if (err instanceof DOMException && err.name === 'AbortError') {
+        msg =
+          'A requisição demorou mais de 20s. Verifique se as credenciais foram salvas no status da conta.'
+        await carregarDados()
+      }
       toast({
-        title: 'Erro na configuração',
+        title: 'Aviso na configuração',
         description: msg,
         variant: 'destructive',
       })
     } finally {
       setSalvandoConfig(false)
+      setEtapaSalvamento('ocioso')
     }
   }
 
@@ -481,6 +537,17 @@ export function Backups() {
                   </Button>
                 )}
               </div>
+
+              {/* Alerta de Validação se houver */}
+              {avisoValidacao && (
+                <div className="md:col-span-3 bg-amber-500/10 border border-amber-500/30 p-3 rounded-lg flex items-start gap-2.5 text-xs text-amber-800 dark:text-amber-200">
+                  <AlertTriangle className="h-4 w-4 text-amber-600 shrink-0 mt-0.5" />
+                  <div className="space-y-0.5">
+                    <span className="font-semibold block">Nota sobre a validação da chave:</span>
+                    <span>{avisoValidacao}</span>
+                  </div>
+                </div>
+              )}
 
               {/* Pasta de Destino no Google Drive */}
               <div className="space-y-1 md:col-span-1">
@@ -1066,14 +1133,19 @@ export function Backups() {
             <Button
               onClick={salvarConfiguracoesDrive}
               disabled={
-                salvandoConfig || (!serviceAccountJsonInput.trim() && !driveStatus?.configurado)
+                salvandoConfig ||
+                (!serviceAccountJsonInput.trim() &&
+                  !driveStatus?.configurado &&
+                  !folderIdInput.trim())
               }
               className="gap-2 bg-primary text-primary-foreground"
             >
               {salvandoConfig ? (
                 <>
                   <RefreshCw className="h-4 w-4 animate-spin" />
-                  Validando chave com Google...
+                  {etapaSalvamento === 'validando_google'
+                    ? 'Salvando e testando chave Google...'
+                    : 'Salvando...'}
                 </>
               ) : (
                 'Salvar Configurações'

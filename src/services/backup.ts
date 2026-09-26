@@ -171,14 +171,26 @@ export const backupService = {
   },
 
   /**
-   * Salva a chave JSON da Conta de Serviço e/ou ID da pasta no Drive
+   * Salva a chave JSON da Conta de Serviço e/ou ID da pasta no Drive com timeout seguro (AbortController ~20s)
    */
   async salvarConfiguracoesDrive(
     payload: SalvarConfigDriveServiceAccountPayload,
-  ): Promise<{ success: boolean; message: string; client_email?: string; folder_id?: string }> {
+    signal?: AbortSignal,
+  ): Promise<{
+    success: boolean
+    message: string
+    client_email?: string
+    folder_id?: string
+    validacao_online?: {
+      testada: boolean
+      sucesso: boolean
+      aviso: string
+    }
+  }> {
     return await pb.send('/backend/v1/google-drive/config', {
       method: 'POST',
       body: payload,
+      signal,
     })
   },
 
