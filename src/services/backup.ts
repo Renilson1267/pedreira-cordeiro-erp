@@ -22,6 +22,11 @@ export interface BackupItem {
   }
   backup_duplicatas_incluido?: boolean
   observacoes?: string
+  drive_status?: 'pendente' | 'enviado' | 'erro' | 'nao_configurado' | string
+  drive_file_id?: string
+  drive_enviado_em?: string
+  drive_erro?: string
+  drive_folder_id?: string
   created: string
 }
 
@@ -39,8 +44,51 @@ export interface BackupAgendamentoInfo {
     origem: string
     total_registros: number
     total_colecoes: number
+    drive_status?: string
     created: string
   } | null
+}
+
+export interface GoogleDriveStatusInfo {
+  configurado: boolean
+  conectado: boolean
+  client_id_definido: boolean
+  client_secret_definido: boolean
+  refresh_token_definido: boolean
+  pasta_nome: string
+  pasta_id?: string
+  conta_email?: string
+  conta_nome?: string
+  ultimo_envio?: string
+  status_conexao: 'conectado' | 'pendente_autorizacao' | 'desconectado'
+  redirect_uri_recomendada: string
+}
+
+export interface GoogleDriveStatusResponse {
+  success: boolean
+  drive: GoogleDriveStatusInfo
+}
+
+export interface GoogleDriveAuthUrlResponse {
+  success: boolean
+  auth_url: string
+  redirect_uri: string
+}
+
+export interface SalvarConfigDrivePayload {
+  client_id?: string
+  client_secret?: string
+  folder_id?: string
+  folder_name?: string
+  refresh_token?: string
+}
+
+export interface EnviarDriveResponse {
+  success: boolean
+  message: string
+  file_id: string
+  folder_id?: string
+  enviado_em: string
 }
 
 export interface ListarBackupsResponse {
@@ -102,6 +150,11 @@ export const backupService = {
       detalhes_execucao: r.detalhes_execucao,
       backup_duplicatas_incluido: r.backup_duplicatas_incluido,
       observacoes: r.observacoes || '',
+      drive_status: r.drive_status || 'pendente',
+      drive_file_id: r.drive_file_id || '',
+      drive_enviado_em: r.drive_enviado_em || '',
+      drive_erro: r.drive_erro || '',
+      drive_folder_id: r.drive_folder_id || '',
       created: r.created,
     }))
   },
@@ -138,6 +191,7 @@ export const backupService = {
           origem: 'semanal_automatico',
           total_registros: r.total_registros,
           total_colecoes: r.total_colecoes,
+          drive_status: r.drive_status || 'pendente',
           created: r.created,
         }
       }
@@ -188,5 +242,72 @@ export const backupService = {
     link.click()
     document.body.removeChild(link)
     URL.revokeObjectURL(url)
+  },
+
+  /**
+   * Consultar status da integração com Google Drive
+   */
+  async obterStatusDrive(): Promise<GoogleDriveStatusInfo> {
+    try {
+      const res = await pb.send<GoogleDriveStatusResponse>('/backend/v1/google-drive/status', {
+        method: 'GET',
+      })
+      if (res?.drive) {
+        return res.drive
+      }
+    } catch (e) {
+      console.warn('Erro ao consultar status Google Drive:', e)
+    }
+
+    return {
+      configurado: false,
+      conectado: false,
+      client_id_definido: false,
+      client_secret_definido: false,
+      refresh_token_definido: false,
+      pasta_nome: 'Backups ERP',
+      status_conexao: 'desconectado',
+      redirect_uri_recomendada:
+        'https://erp-empresarial-completo-575bb.shrd00.internal.goskip.dev/backend/v1/google-drive/oauth/callback',
+    }
+  },
+
+  /**
+   * Obter URL de autorização OAuth do Google Drive
+   */
+  async obterAuthUrlDrive(): Promise<GoogleDriveAuthUrlResponse> {
+    return pb.send<GoogleDriveAuthUrlResponse>('/backend/v1/google-drive/auth-url', {
+      method: 'GET',
+    })
+  },
+
+  /**
+   * Salvar credenciais/configuração do Google Drive
+   */
+  async salvarConfigDrive(
+    payload: SalvarConfigDrivePayload,
+  ): Promise<{ success: boolean; message: string }> {
+    return pb.send<{ success: boolean; message: string }>('/backend/v1/google-drive/config', {
+      method: 'POST',
+      body: payload,
+    })
+  },
+
+  /**
+   * Desconectar Google Drive (remover refresh token)
+   */
+  async desconectarDrive(): Promise<{ success: boolean; message: string }> {
+    return pb.send<{ success: boolean; message: string }>('/backend/v1/google-drive/desconectar', {
+      method: 'POST',
+    })
+  },
+
+  /**
+   * Enviar backup individual ao Google Drive
+   */
+  async enviarBackupAoDrive(backupId: string): Promise<EnviarDriveResponse> {
+    return pb.send<EnviarDriveResponse>(`/backend/v1/backups/${backupId}/enviar-drive`, {
+      method: 'POST',
+    })
   },
 }
