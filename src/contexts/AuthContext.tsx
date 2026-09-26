@@ -44,7 +44,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, [])
 
   const login = async (email: string, pass: string) => {
-    await pb.collection('users').authWithPassword(email, pass)
+    const authData = await pb.collection('users').authWithPassword(email, pass)
+    // Se o usuário estiver marcado como inativo no banco, desloga imediatamente e impede acesso
+    const recordAtivo = authData?.record?.ativo
+    if (recordAtivo === false) {
+      pb.authStore.clear()
+      setUser(null)
+      const err = new Error('Usuário inativo. Entre em contato com o administrador do sistema.')
+      ;(err as any).isInativo = true
+      throw err
+    }
     syncUser()
   }
 

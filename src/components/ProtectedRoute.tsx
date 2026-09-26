@@ -18,6 +18,10 @@ export const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ childr
   }
 
   if (!user) {
+    // Evita loop se o próprio location for /login
+    if (location.pathname === '/login') {
+      return null
+    }
     return <Navigate to="/login" state={{ from: location }} replace />
   }
 

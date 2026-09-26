@@ -1,5 +1,5 @@
-import React, { useState } from 'react'
-import { useNavigate, Link } from 'react-router-dom'
+import React, { useState, useEffect } from 'react'
+import { useNavigate, Link, useLocation } from 'react-router-dom'
 import { useAuth } from '@/contexts/AuthContext'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -9,13 +9,28 @@ import { toast } from '@/hooks/use-toast'
 import { Eye, EyeOff, Lock, Mail, ShieldAlert } from 'lucide-react'
 
 export default function Login() {
-  const { login } = useAuth()
+  const { user, loading: authLoading, login } = useAuth()
   const navigate = useNavigate()
+  const location = useLocation()
   const [email, setEmail] = useState('gcmixsje@gmail.com')
   const [password, setPassword] = useState('Skip@Pass')
   const [showPassword, setShowPassword] = useState(false)
   const [loading, setLoading] = useState(false)
   const [errorMsg, setErrorMsg] = useState('')
+
+  // Destino após login (se veio redirecionado por guard ou query param)
+  const stateFrom = (location.state as any)?.from?.pathname
+  const queryRedirect = new URLSearchParams(location.search).get('redirect')
+  const targetPath =
+    (stateFrom && stateFrom !== '/login' ? stateFrom : null) ||
+    (queryRedirect && queryRedirect !== '/login' ? queryRedirect : '/')
+
+  // Se já estiver autenticado e não estiver carregando, redireciona para o destino
+  useEffect(() => {
+    if (!authLoading && user) {
+      navigate(targetPath, { replace: true })
+    }
+  }, [user, authLoading, navigate, targetPath])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -33,13 +48,19 @@ export default function Login() {
         title: 'Bem-vindo ao Grupo Pedreira Cordeiro!',
         description: 'Login realizado com sucesso.',
       })
-      navigate('/')
+      navigate(targetPath, { replace: true })
     } catch (err: any) {
       console.error('Login error:', err)
-      setErrorMsg('Credenciais incorretas ou conta não encontrada.')
+      if (err?.isInativo || err?.message?.includes('inativo')) {
+        setErrorMsg('Este usuário está inativo no sistema. Procure o administrador.')
+      } else {
+        setErrorMsg('Credenciais incorretas ou conta não encontrada.')
+      }
       toast({
         title: 'Erro de autenticação',
-        description: 'Verifique seu e-mail e senha.',
+        description: err?.isInativo
+          ? 'Usuário desativado pelo administrador.'
+          : 'Verifique seu e-mail e senha.',
         variant: 'destructive',
       })
     } finally {
