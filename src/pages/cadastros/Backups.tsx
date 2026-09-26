@@ -10,23 +10,24 @@ import {
   Calendar,
   Shield,
   HelpCircle,
-  ExternalLink,
-  Info,
   HardDrive,
   Copy,
   Check,
+  Clock,
+  Sparkles,
 } from 'lucide-react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { toast } from '@/hooks/use-toast'
 import { formatDateTime } from '@/lib/formatters'
-import { backupService, BackupItem } from '@/services/backup'
+import { backupService, BackupItem, BackupAgendamentoInfo } from '@/services/backup'
 import { useCompany } from '@/contexts/CompanyContext'
 
 export default function Backups() {
   const { isAdmin } = useCompany()
   const [backups, setBackups] = useState<BackupItem[]>([])
+  const [agendamentoInfo, setAgendamentoInfo] = useState<BackupAgendamentoInfo | null>(null)
   const [loading, setLoading] = useState(true)
   const [executando, setExecutando] = useState(false)
   const [baixandoId, setBaixandoId] = useState<string | null>(null)
@@ -36,10 +37,14 @@ export default function Backups() {
   const carregarBackups = async () => {
     try {
       setLoading(true)
-      const data = await backupService.listar()
-      setBackups(data)
-      if (data.length > 0 && !selectedBackup) {
-        setSelectedBackup(data[0])
+      const [dataBackups, infoAgendamento] = await Promise.all([
+        backupService.listar(),
+        backupService.obterStatusAgendamento(),
+      ])
+      setBackups(dataBackups)
+      setAgendamentoInfo(infoAgendamento)
+      if (dataBackups.length > 0 && !selectedBackup) {
+        setSelectedBackup(dataBackups[0])
       }
     } catch (err: unknown) {
       toast({
@@ -55,6 +60,12 @@ export default function Backups() {
   useEffect(() => {
     carregarBackups()
   }, [])
+
+  // Buscar último backup com origem automática real nos dados
+  const ultimoBackupAutomatico =
+    agendamentoInfo?.ultimo_backup_automatico ||
+    backups.find((b) => b.origem === 'semanal_automatico') ||
+    null
 
   const handleExecutarBackup = async () => {
     if (!isAdmin) {
@@ -176,17 +187,64 @@ export default function Backups() {
         </div>
       </div>
 
+      {/* Banner de Status do Backup Semanal Automático */}
+      <div className="bg-gradient-to-r from-teal-50 via-emerald-50/70 to-teal-50 border border-teal-200/80 rounded-xl p-4.5 text-xs text-teal-950 shadow-xs">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <div className="flex items-start gap-3">
+            <div className="p-2 bg-teal-600 text-white rounded-lg shadow-xs shrink-0 mt-0.5">
+              <Clock className="w-5 h-5" />
+            </div>
+            <div className="space-y-1">
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="font-bold text-sm text-gray-900">Backup Automático Semanal:</span>
+                <Badge className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-[11px] px-2.5 py-0.5 shadow-xs">
+                  ATIVO — toda madrugada de domingo
+                </Badge>
+                <span className="text-[11px] text-teal-800 font-mono bg-teal-100/70 px-2 py-0.5 rounded border border-teal-200">
+                  00:30 (horário do servidor)
+                </span>
+              </div>
+              <p className="text-teal-900 leading-relaxed text-xs">
+                O job semanal do backend roda automaticamente sem depender de clique manual. Ele
+                varre as 28 coleções do banco SQLite e grava o dump completo particionado com
+                integridade referencial.
+              </p>
+            </div>
+          </div>
+
+          <div className="flex flex-col sm:flex-row md:flex-col items-start md:items-end justify-center shrink-0 pl-11 md:pl-0 border-t md:border-t-0 pt-2 md:pt-0 border-teal-200/60 text-xs">
+            <span className="text-gray-500 text-[11px] font-medium">
+              Última execução automática:
+            </span>
+            {ultimoBackupAutomatico ? (
+              <span className="font-bold text-emerald-900 flex items-center gap-1.5 mt-0.5">
+                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                {formatDateTime(ultimoBackupAutomatico.created)}
+                <span className="text-gray-500 font-normal">
+                  ({ultimoBackupAutomatico.total_registros.toLocaleString('pt-BR')} reg.)
+                </span>
+              </span>
+            ) : (
+              <span className="font-medium text-amber-800 bg-amber-50 px-2 py-0.5 rounded border border-amber-200 mt-0.5">
+                Aguardando primeira execução (domingo que vem)
+              </span>
+            )}
+          </div>
+        </div>
+      </div>
+
       {/* Banner de Segurança e Dados Reais */}
-      <div className="bg-teal-50 border border-teal-200 rounded-xl p-4 text-xs text-teal-900 flex items-start gap-3">
+      <div className="bg-teal-50/60 border border-teal-200 rounded-xl p-4 text-xs text-teal-900 flex items-start gap-3">
         <Shield className="w-5 h-5 text-teal-700 shrink-0 mt-0.5" />
         <div className="space-y-1">
           <p className="font-semibold text-teal-950">
             Operação Segura e Não-Destrutiva (Somente Leitura)
           </p>
           <p className="text-teal-800 leading-relaxed">
-            O backup varre todas as 28 coleções do banco SQLite do PocketBase sem alterar, mover ou
-            apagar nenhum registro. Todos os ~60 veículos da frota, 63 funcionários, contas a pagar
-            e receber do ano de 2026 e o histórico de alterações estão preservados e respaldados.
+            Tanto o backup manual quanto o semanal automático varrem todas as 28 coleções do banco
+            SQLite do PocketBase sem alterar, mover ou apagar nenhum registro. Todos os ~60 veículos
+            da frota, 63 funcionários, contas a pagar e receber do ano de 2026 e o histórico de
+            alterações estão preservados e respaldados.
           </p>
         </div>
       </div>
@@ -234,15 +292,29 @@ export default function Backups() {
                           <span className="font-semibold text-xs text-gray-900 truncate">
                             {b.nome_arquivo}
                           </span>
-                          <Badge
-                            className={`text-[10px] font-bold px-1.5 py-0.5 ${
-                              b.status === 'sucesso'
-                                ? 'bg-emerald-100 text-emerald-800'
-                                : 'bg-amber-100 text-amber-800'
-                            }`}
-                          >
-                            {b.status === 'sucesso' ? 'Sucesso' : b.status}
-                          </Badge>
+                          <div className="flex items-center gap-1.5 shrink-0">
+                            {b.origem === 'semanal_automatico' ? (
+                              <Badge className="bg-teal-100 text-teal-800 text-[10px] font-bold px-1.5 py-0.5 border border-teal-200">
+                                Semanal Auto
+                              </Badge>
+                            ) : (
+                              <Badge
+                                variant="outline"
+                                className="text-[10px] text-gray-600 px-1.5 py-0.5"
+                              >
+                                Manual
+                              </Badge>
+                            )}
+                            <Badge
+                              className={`text-[10px] font-bold px-1.5 py-0.5 ${
+                                b.status === 'sucesso'
+                                  ? 'bg-emerald-100 text-emerald-800'
+                                  : 'bg-amber-100 text-amber-800'
+                              }`}
+                            >
+                              {b.status === 'sucesso' ? 'Sucesso' : b.status}
+                            </Badge>
+                          </div>
                         </div>
 
                         <div className="flex items-center gap-3 text-[11px] text-gray-500">
@@ -307,6 +379,22 @@ export default function Backups() {
                   {/* Resumo Métricas */}
                   <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
                     <div className="bg-[#FAF9F7] p-3 rounded-xl border border-[#ECEAE4]">
+                      <span className="text-[11px] text-gray-500 block">Origem do Backup</span>
+                      <div className="mt-1">
+                        {selectedBackup.origem === 'semanal_automatico' ? (
+                          <span className="text-xs font-bold text-teal-800 bg-teal-100/80 px-2 py-0.5 rounded border border-teal-200 inline-flex items-center gap-1">
+                            <Clock className="w-3 h-3 text-teal-700" />
+                            Semanal Automático
+                          </span>
+                        ) : (
+                          <span className="text-xs font-bold text-gray-700 bg-gray-100 px-2 py-0.5 rounded border border-gray-200 inline-block">
+                            Manual / Sob Demanda
+                          </span>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="bg-[#FAF9F7] p-3 rounded-xl border border-[#ECEAE4]">
                       <span className="text-[11px] text-gray-500 block">Total de Registros</span>
                       <span className="text-lg font-bold text-gray-900">
                         {selectedBackup.total_registros.toLocaleString('pt-BR')}
@@ -321,15 +409,8 @@ export default function Backups() {
                     </div>
 
                     <div className="bg-[#FAF9F7] p-3 rounded-xl border border-[#ECEAE4]">
-                      <span className="text-[11px] text-gray-500 block">Formato / Tipo</span>
-                      <span className="text-sm font-bold text-teal-800 uppercase">
-                        {selectedBackup.tipo}
-                      </span>
-                    </div>
-
-                    <div className="bg-[#FAF9F7] p-3 rounded-xl border border-[#ECEAE4]">
                       <span className="text-[11px] text-gray-500 block">Status da Cópia</span>
-                      <span className="text-sm font-bold text-emerald-700 flex items-center gap-1 mt-0.5">
+                      <span className="text-sm font-bold text-emerald-700 flex items-center gap-1 mt-1">
                         <CheckCircle2 className="w-3.5 h-3.5" />
                         {selectedBackup.status}
                       </span>

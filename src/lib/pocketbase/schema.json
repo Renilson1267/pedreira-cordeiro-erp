@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-09-26T00:47:07.953Z",
+  "generatedAt": "2026-09-26T00:57:17.405Z",
   "collections": [
     {
       "name": "users",
@@ -2959,11 +2959,19 @@
           "required": false,
           "system": false,
           "autodateTriggers": ["onCreate", "onUpdate"]
+        },
+        {
+          "name": "origem",
+          "type": "select",
+          "required": false,
+          "system": false,
+          "selectValues": ["manual", "semanal_automatico"]
         }
       ],
       "indexes": [
         "CREATE INDEX idx_backups_created ON backups_sistema (created DESC)",
-        "CREATE INDEX idx_backups_tipo ON backups_sistema (tipo)"
+        "CREATE INDEX idx_backups_tipo ON backups_sistema (tipo)",
+        "CREATE INDEX `idx_backups_origem` ON `backups_sistema` (origem)"
       ]
     },
     {
