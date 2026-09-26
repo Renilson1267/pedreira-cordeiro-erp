@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useCallback } from 'react'
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '@/contexts/AuthContext'
 import { useCompany } from '@/contexts/CompanyContext'
@@ -160,10 +160,14 @@ export default function HorasExtras() {
   // Modal / Ação de Lançar no Financeiro (Conta a Pagar)
   const [lancandoContaId, setLancandoContaId] = useState<string | null>(null)
 
+  const isFirstLoad = useRef(true)
+
   const loadDados = useCallback(async () => {
     if (!currentEmpresa?.id) return
     try {
-      setLoading(true)
+      if (isFirstLoad.current) {
+        setLoading(true)
+      }
       const [fList, folhasList, pList] = await Promise.all([
         pb.collection('funcionarios').getFullList<Funcionario>({
           filter: `empresa_id = '${currentEmpresa.id}'`,
@@ -185,13 +189,20 @@ export default function HorasExtras() {
         variant: 'destructive',
       })
     } finally {
+      isFirstLoad.current = false
       setLoading(false)
     }
   }, [currentEmpresa?.id])
 
-  // Realtime com callback estável
-  useRealtime('folha_horas_extras', loadDados, !!currentEmpresa?.id)
-  useRealtime('funcionarios', loadDados, !!currentEmpresa?.id)
+  // Realtime resiliente com callback estável filtrado pela empresa atual
+  useRealtime('folha_horas_extras', loadDados, {
+    enabled: !!currentEmpresa?.id,
+    empresaId: currentEmpresa?.id,
+  })
+  useRealtime('funcionarios', loadDados, {
+    enabled: !!currentEmpresa?.id,
+    empresaId: currentEmpresa?.id,
+  })
 
   useEffect(() => {
     loadDados()
