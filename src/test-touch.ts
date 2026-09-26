@@ -1,1 +1,1 @@
-// Teste ou ajuste de verificação se necessário
+export const testTouch = 3

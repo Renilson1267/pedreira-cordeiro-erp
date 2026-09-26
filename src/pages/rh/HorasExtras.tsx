@@ -195,14 +195,8 @@ export default function HorasExtras() {
   }, [currentEmpresa?.id])
 
   // Realtime resiliente com callback estável filtrado pela empresa atual
-  useRealtime('folha_horas_extras', loadDados, {
-    enabled: !!currentEmpresa?.id,
-    empresaId: currentEmpresa?.id,
-  })
-  useRealtime('funcionarios', loadDados, {
-    enabled: !!currentEmpresa?.id,
-    empresaId: currentEmpresa?.id,
-  })
+  useRealtime('folha_horas_extras', loadDados, !!currentEmpresa?.id)
+  useRealtime('funcionarios', loadDados, !!currentEmpresa?.id)
 
   useEffect(() => {
     loadDados()
