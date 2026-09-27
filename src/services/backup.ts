@@ -76,9 +76,6 @@ export interface SalvarConfigDriveServiceAccountPayload {
   folder_name?: string
 }
 
-// Mantido para compatibilidade caso algum ponto ainda referencie o nome antigo
-export type SalvarConfigDrivePayload = SalvarConfigDriveServiceAccountPayload
-
 export interface EnviarDriveResponse {
   success: boolean
   message: string

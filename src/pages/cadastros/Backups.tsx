@@ -303,20 +303,50 @@ export function Backups() {
     try {
       setEnviandoDriveId(backupId)
       toast({
-        title: 'Enviando ao Google Drive...',
+        title: 'Enviando ao Drive...',
         description: 'Autenticando via Conta de Serviço e transferindo arquivo.',
       })
 
       const res = await backupService.enviarBackupAoDrive(backupId)
 
+      // Atualização imediata no estado local para refletir a última tentativa real
+      setBackups((prev) =>
+        prev.map((b) =>
+          b.id === backupId
+            ? {
+                ...b,
+                drive_status: 'enviado',
+                drive_file_id: res.file_id || b.drive_file_id,
+                drive_folder_id: res.folder_id || b.drive_folder_id,
+                drive_enviado_em: res.enviado_em || new Date().toISOString(),
+                drive_erro: '',
+              }
+            : b,
+        ),
+      )
+
       toast({
-        title: 'Backup enviado com sucesso!',
+        title: 'Backup enviado com sucesso ao Google Drive!',
         description: res.message || 'Arquivo sincronizado na sua pasta do Google Drive.',
       })
 
       await carregarDados()
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Falha ao transferir para o Drive.'
+      const msg = err instanceof Error ? err.message : 'Falha ao transferir para o Google Drive.'
+
+      // Atualização imediata no estado local para refletir a nova mensagem de erro
+      setBackups((prev) =>
+        prev.map((b) =>
+          b.id === backupId
+            ? {
+                ...b,
+                drive_status: 'erro',
+                drive_erro: msg,
+              }
+            : b,
+        ),
+      )
+
       toast({
         title: 'Erro no envio ao Google Drive',
         description: msg,
