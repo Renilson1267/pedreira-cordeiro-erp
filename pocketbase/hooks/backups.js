@@ -36,7 +36,16 @@ routerAdd('GET', '/backend/v1/backups/processar-solicitados-drive', (e) => {
         try {
           var cfgCacheRec = $app.findFirstRecordByData('config_google_drive', 'chave', 'padrao')
           if (cfgCacheRec) {
-            var detalhesCache = cfgCacheRec.get('detalhes') || {}
+            var rawDetCache = cfgCacheRec.get('detalhes')
+            var detalhesCache = {}
+            try {
+              detalhesCache =
+                typeof rawDetCache === 'string'
+                  ? JSON.parse(rawDetCache)
+                  : JSON.parse(JSON.stringify(rawDetCache || {}))
+            } catch (_) {
+              detalhesCache = {}
+            }
             if (detalhesCache && detalhesCache.cached_token && detalhesCache.cached_expiry_ms) {
               // Margem de segurança de 5 minutos (300.000 ms)
               if (nowMs < detalhesCache.cached_expiry_ms - 300000) {
@@ -528,8 +537,23 @@ routerAdd('GET', '/backend/v1/backups/processar-solicitados-drive', (e) => {
       try {
         var cfgSaveRec = $app.findFirstRecordByData('config_google_drive', 'chave', 'padrao')
         if (cfgSaveRec) {
-          var curDetalhes = cfgSaveRec.get('detalhes') || {}
-          if (typeof curDetalhes !== 'object' || curDetalhes === null) curDetalhes = {}
+          var rawDetSave = cfgSaveRec.get('detalhes')
+          var curDetalhes = {}
+          try {
+            curDetalhes =
+              typeof rawDetSave === 'string'
+                ? JSON.parse(rawDetSave)
+                : JSON.parse(JSON.stringify(rawDetSave || {}))
+          } catch (_) {
+            curDetalhes = {}
+          }
+          if (
+            typeof curDetalhes !== 'object' ||
+            curDetalhes === null ||
+            Array.isArray(curDetalhes)
+          ) {
+            curDetalhes = {}
+          }
           curDetalhes.cached_token = data.access_token
           curDetalhes.cached_expiry_ms = Date.now() + (data.expires_in || 3600) * 1000
           curDetalhes.cached_created_at = new Date().toISOString()
@@ -704,7 +728,7 @@ routerAdd('GET', '/backend/v1/backups/processar-solicitados-drive', (e) => {
           var cn = colecoesValidas[ci]
           if (ci > 0) calcBytes += 1
           calcBytes += JSON.stringify(cn).length + ':['
-          var statsRows = []
+          var statsRows = arrayOf(new DynamicModel({ cnt: 0, chars_data: 0 }))
           $app
             .db()
             .newQuery(
@@ -714,8 +738,26 @@ routerAdd('GET', '/backend/v1/backups/processar-solicitados-drive', (e) => {
             .bind({ bid: backupId, cn: cn })
             .all(statsRows)
 
-          var cntChunks = statsRows.length > 0 ? parseInt(statsRows[0].cnt || 0, 10) : 0
-          var charsData = statsRows.length > 0 ? parseInt(statsRows[0].chars_data || 0, 10) : 0
+          var cntChunks =
+            statsRows.length > 0
+              ? parseInt(
+                  statsRows[0].cnt != null
+                    ? statsRows[0].cnt
+                    : (typeof statsRows[0].get === 'function' ? statsRows[0].get('cnt') : 0) || 0,
+                  10,
+                )
+              : 0
+          var charsData =
+            statsRows.length > 0
+              ? parseInt(
+                  statsRows[0].chars_data != null
+                    ? statsRows[0].chars_data
+                    : (typeof statsRows[0].get === 'function'
+                        ? statsRows[0].get('chars_data')
+                        : 0) || 0,
+                  10,
+                )
+              : 0
           calcBytes += charsData
           if (cntChunks > 1) {
             calcBytes += cntChunks - 1
@@ -894,18 +936,18 @@ routerAdd('GET', '/backend/v1/backups/processar-solicitados-drive', (e) => {
           var chunkIndexDb = 0
           while (true) {
             if (curPos >= targetSliceEnd) break
-            var dbRecs = []
-            $app
-              .db()
-              .newQuery(
-                'SELECT id, registros_json FROM backups_dados WHERE backup_id = {:bid} AND colecao_nome = {:cn} ORDER BY chunk_index ASC LIMIT 1 OFFSET {:off}',
-              )
-              .bind({ bid: backupId, cn: nomeColecao, off: chunkIndexDb })
-              .all(dbRecs)
+            var dbRecs = $app.findRecordsByFilter(
+              'backups_dados',
+              'backup_id = {:bid} && colecao_nome = {:cn} && chunk_index = {:ci}',
+              '',
+              1,
+              0,
+              { bid: backupId, cn: nomeColecao, ci: chunkIndexDb },
+            )
 
-            if (dbRecs.length === 0) break
+            if (!dbRecs || dbRecs.length === 0) break
 
-            var rJsonRaw = dbRecs[0].registros_json || ''
+            var rJsonRaw = dbRecs[0].get('registros_json') || ''
             var insideData = ''
             if (
               rJsonRaw.length >= 2 &&
@@ -979,7 +1021,16 @@ routerAdd('GET', '/backend/v1/backups/processar-solicitados-drive', (e) => {
           try {
             var cfg401 = $app.findFirstRecordByData('config_google_drive', 'chave', 'padrao')
             if (cfg401) {
-              var det401 = cfg401.get('detalhes') || {}
+              var rawDet401 = cfg401.get('detalhes')
+              var det401 = {}
+              try {
+                det401 =
+                  typeof rawDet401 === 'string'
+                    ? JSON.parse(rawDet401)
+                    : JSON.parse(JSON.stringify(rawDet401 || {}))
+              } catch (_) {
+                det401 = {}
+              }
               delete det401.cached_token
               delete det401.cached_expiry_ms
               cfg401.set('detalhes', det401)
@@ -1160,7 +1211,16 @@ cronAdd('backup_processador_fila_solicitados', '*/1 * * * *', () => {
         try {
           var cfgCacheRec = $app.findFirstRecordByData('config_google_drive', 'chave', 'padrao')
           if (cfgCacheRec) {
-            var detalhesCache = cfgCacheRec.get('detalhes') || {}
+            var rawDetCache = cfgCacheRec.get('detalhes')
+            var detalhesCache = {}
+            try {
+              detalhesCache =
+                typeof rawDetCache === 'string'
+                  ? JSON.parse(rawDetCache)
+                  : JSON.parse(JSON.stringify(rawDetCache || {}))
+            } catch (_) {
+              detalhesCache = {}
+            }
             if (detalhesCache && detalhesCache.cached_token && detalhesCache.cached_expiry_ms) {
               // Margem de segurança de 5 minutos (300.000 ms)
               if (nowMs < detalhesCache.cached_expiry_ms - 300000) {
@@ -1651,8 +1711,23 @@ cronAdd('backup_processador_fila_solicitados', '*/1 * * * *', () => {
       try {
         var cfgSaveRec = $app.findFirstRecordByData('config_google_drive', 'chave', 'padrao')
         if (cfgSaveRec) {
-          var curDetalhes = cfgSaveRec.get('detalhes') || {}
-          if (typeof curDetalhes !== 'object' || curDetalhes === null) curDetalhes = {}
+          var rawDetSave = cfgSaveRec.get('detalhes')
+          var curDetalhes = {}
+          try {
+            curDetalhes =
+              typeof rawDetSave === 'string'
+                ? JSON.parse(rawDetSave)
+                : JSON.parse(JSON.stringify(rawDetSave || {}))
+          } catch (_) {
+            curDetalhes = {}
+          }
+          if (
+            typeof curDetalhes !== 'object' ||
+            curDetalhes === null ||
+            Array.isArray(curDetalhes)
+          ) {
+            curDetalhes = {}
+          }
           curDetalhes.cached_token = data.access_token
           curDetalhes.cached_expiry_ms = Date.now() + (data.expires_in || 3600) * 1000
           curDetalhes.cached_created_at = new Date().toISOString()
@@ -1827,7 +1902,7 @@ cronAdd('backup_processador_fila_solicitados', '*/1 * * * *', () => {
           var cn = colecoesValidas[ci]
           if (ci > 0) calcBytes += 1
           calcBytes += JSON.stringify(cn).length + ':['
-          var statsRows = []
+          var statsRows = arrayOf(new DynamicModel({ cnt: 0, chars_data: 0 }))
           $app
             .db()
             .newQuery(
@@ -1837,8 +1912,26 @@ cronAdd('backup_processador_fila_solicitados', '*/1 * * * *', () => {
             .bind({ bid: backupId, cn: cn })
             .all(statsRows)
 
-          var cntChunks = statsRows.length > 0 ? parseInt(statsRows[0].cnt || 0, 10) : 0
-          var charsData = statsRows.length > 0 ? parseInt(statsRows[0].chars_data || 0, 10) : 0
+          var cntChunks =
+            statsRows.length > 0
+              ? parseInt(
+                  statsRows[0].cnt != null
+                    ? statsRows[0].cnt
+                    : (typeof statsRows[0].get === 'function' ? statsRows[0].get('cnt') : 0) || 0,
+                  10,
+                )
+              : 0
+          var charsData =
+            statsRows.length > 0
+              ? parseInt(
+                  statsRows[0].chars_data != null
+                    ? statsRows[0].chars_data
+                    : (typeof statsRows[0].get === 'function'
+                        ? statsRows[0].get('chars_data')
+                        : 0) || 0,
+                  10,
+                )
+              : 0
           calcBytes += charsData
           if (cntChunks > 1) {
             calcBytes += cntChunks - 1
@@ -2017,18 +2110,18 @@ cronAdd('backup_processador_fila_solicitados', '*/1 * * * *', () => {
           var chunkIndexDb = 0
           while (true) {
             if (curPos >= targetSliceEnd) break
-            var dbRecs = []
-            $app
-              .db()
-              .newQuery(
-                'SELECT id, registros_json FROM backups_dados WHERE backup_id = {:bid} AND colecao_nome = {:cn} ORDER BY chunk_index ASC LIMIT 1 OFFSET {:off}',
-              )
-              .bind({ bid: backupId, cn: nomeColecao, off: chunkIndexDb })
-              .all(dbRecs)
+            var dbRecs = $app.findRecordsByFilter(
+              'backups_dados',
+              'backup_id = {:bid} && colecao_nome = {:cn} && chunk_index = {:ci}',
+              '',
+              1,
+              0,
+              { bid: backupId, cn: nomeColecao, ci: chunkIndexDb },
+            )
 
-            if (dbRecs.length === 0) break
+            if (!dbRecs || dbRecs.length === 0) break
 
-            var rJsonRaw = dbRecs[0].registros_json || ''
+            var rJsonRaw = dbRecs[0].get('registros_json') || ''
             var insideData = ''
             if (
               rJsonRaw.length >= 2 &&
@@ -2102,7 +2195,16 @@ cronAdd('backup_processador_fila_solicitados', '*/1 * * * *', () => {
           try {
             var cfg401Cron = $app.findFirstRecordByData('config_google_drive', 'chave', 'padrao')
             if (cfg401Cron) {
-              var det401Cron = cfg401Cron.get('detalhes') || {}
+              var rawDet401Cron = cfg401Cron.get('detalhes')
+              var det401Cron = {}
+              try {
+                det401Cron =
+                  typeof rawDet401Cron === 'string'
+                    ? JSON.parse(rawDet401Cron)
+                    : JSON.parse(JSON.stringify(rawDet401Cron || {}))
+              } catch (_) {
+                det401Cron = {}
+              }
               delete det401Cron.cached_token
               delete det401Cron.cached_expiry_ms
               cfg401Cron.set('detalhes', det401Cron)
@@ -3129,14 +3231,22 @@ routerAdd(
     try {
       var cfgReset = $app.findFirstRecordByData('config_google_drive', 'chave', 'padrao')
       if (cfgReset) {
-        var dReset = cfgReset.get('detalhes') || {}
+        var rawDReset = cfgReset.get('detalhes')
+        var dReset = {}
+        try {
+          dReset =
+            typeof rawDReset === 'string'
+              ? JSON.parse(rawDReset)
+              : JSON.parse(JSON.stringify(rawDReset || {}))
+        } catch (_) {
+          dReset = {}
+        }
         delete dReset.cached_token
         delete dReset.cached_expiry_ms
         cfgReset.set('detalhes', dReset)
         $app.save(cfgReset)
       }
     } catch (_) {}
-
     return e.json(200, {
       success: true,
       message:
