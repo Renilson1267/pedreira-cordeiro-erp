@@ -659,20 +659,31 @@ routerAdd('GET', '/backend/v1/backups/processar-solicitados-drive', (e) => {
             'Content-Type': 'application/json',
           },
           body: JSON.stringify({
-            role: 'writer',
+            role: 'reader',
             type: 'user',
             emailAddress: userEmail,
           }),
           timeout: 20,
         })
         if (permRes.statusCode === 200 || permRes.statusCode === 201) {
+          console.log(
+            logPrefix + ' [PERMISSIONS] Arquivo compartilhado com ' + userEmail + ' como reader.',
+          )
           return { success: true }
         }
+        console.warn(
+          logPrefix +
+            ' [PERMISSIONS] Aviso ao compartilhar: HTTP ' +
+            permRes.statusCode +
+            ': ' +
+            (permRes.raw || ''),
+        )
         return {
           success: false,
           error: 'HTTP ' + permRes.statusCode + ': ' + (permRes.raw || ''),
         }
       } catch (eShare) {
+        console.warn(logPrefix + ' [PERMISSIONS] Erro de rede ao compartilhar:', eShare)
         return {
           success: false,
           error: String(eShare?.message || eShare),
@@ -856,7 +867,18 @@ routerAdd('GET', '/backend/v1/backups/processar-solicitados-drive', (e) => {
           timeout: 20,
         })
 
-        if (initRes.statusCode !== 200 && folderId) {
+        var isInitQuotaError =
+          initRes.statusCode === 403 &&
+          ((initRes.raw || '').toLowerCase().indexOf('storage quota') !== -1 ||
+            (initRes.raw || '').toLowerCase().indexOf('storagequota') !== -1)
+
+        if ((initRes.statusCode !== 200 || isInitQuotaError) && fileMetadata.parents) {
+          console.log(
+            logPrefix +
+              ' [FALLBACK INIT] Falha na criação com pasta (HTTP ' +
+              initRes.statusCode +
+              '). Criando sessão resumível no Drive próprio da Conta de Serviço (sem parents)...',
+          )
           delete fileMetadata.parents
           initRes = $http.send({
             url: initUrl,
@@ -902,7 +924,11 @@ routerAdd('GET', '/backend/v1/backups/processar-solicitados-drive', (e) => {
         backupRecord.set('drive_session_url', sessionUrl)
         backupRecord.set('drive_status', 'enviando')
         backupRecord.set('drive_offset', 0)
-        backupRecord.set('drive_erro', '')
+        if (!fileMetadata.parents && folderId) {
+          backupRecord.set('drive_erro', 'Fallback: gravando no Drive da Conta de Serviço')
+        } else {
+          backupRecord.set('drive_erro', '')
+        }
         $app.save(backupRecord)
       }
 
@@ -1109,6 +1135,81 @@ routerAdd('GET', '/backend/v1/backups/processar-solicitados-drive', (e) => {
           body: sliceBuf,
           timeout: 20,
         })
+
+        // Se der HTTP 403 de storage quota no PUT (acontece quando a sessão foi criada com pasta de Drive pessoal comum)
+        var putRawLower = (putRes.raw || '').toLowerCase()
+        if (
+          putRes.statusCode === 403 &&
+          (putRawLower.indexOf('storage quota') !== -1 ||
+            putRawLower.indexOf('storagequota') !== -1)
+        ) {
+          console.warn(
+            logPrefix +
+              ' [PUT 403 QUOTA] Conta de Serviço sem cota na pasta do usuário. Recriando sessão no Drive próprio (sem parents)...',
+          )
+          var backupNomeArquivo = backupRecord.getString('nome_arquivo') || 'backup_erp.json'
+          var fbMeta = {
+            name: backupNomeArquivo,
+            mimeType: 'application/json',
+            description: 'Backup automático ERP Pedreira Cordeiro (resumível - Drive próprio)',
+          }
+          var fbInitRes = $http.send({
+            url: 'https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable&supportsAllDrives=true',
+            method: 'POST',
+            headers: {
+              Authorization: 'Bearer ' + auth.access_token,
+              'Content-Type': 'application/json; charset=UTF-8',
+              'X-Upload-Content-Type': 'application/json',
+              'X-Upload-Content-Length': String(totalBytes),
+            },
+            body: JSON.stringify(fbMeta),
+            timeout: 20,
+          })
+
+          var fbHeadersMap = fbInitRes.headers || {}
+          var fbLoc = fbHeadersMap['Location'] || fbHeadersMap['location']
+          if (Array.isArray(fbLoc) && fbLoc.length > 0) fbLoc = fbLoc[0]
+
+          if (fbInitRes.statusCode === 200 && fbLoc) {
+            sessionUrl = String(fbLoc)
+            currentOffset = 0
+            backupRecord.set('drive_session_url', sessionUrl)
+            backupRecord.set('drive_status', 'enviando')
+            backupRecord.set('drive_offset', 0)
+            backupRecord.set('drive_erro', 'Fallback: gravando no Drive da Conta de Serviço')
+            $app.save(backupRecord)
+
+            // Refaz o PUT do primeiro chunk na nova sessão imediatamente
+            var fbSliceEnd = Math.min(CHUNK_BYTES, totalBytes)
+            var fbSliceBuf = sliceBuf.substring(0, fbSliceEnd)
+            var fbPutRangeHeader = 'bytes 0-' + (fbSliceBuf.length - 1) + '/' + totalBytes
+            console.log(
+              logPrefix + ' [FALLBACK CHUNK] PUT ' + fbPutRangeHeader + ' na nova sessão sem pasta',
+            )
+
+            putRes = $http.send({
+              url: sessionUrl,
+              method: 'PUT',
+              headers: {
+                'Content-Length': String(fbSliceBuf.length),
+                'Content-Range': fbPutRangeHeader,
+              },
+              body: fbSliceBuf,
+              timeout: 20,
+            })
+            numActualChunkLen = fbSliceBuf.length
+            numCurrentOffset = 0
+            putEnd = fbSliceBuf.length - 1
+          } else {
+            console.error(
+              logPrefix +
+                ' [FALLBACK INIT ERRO] Falha ao criar sessão sem pasta: HTTP ' +
+                fbInitRes.statusCode +
+                ': ' +
+                (fbInitRes.raw || ''),
+            )
+          }
+        }
 
         // Se retornar 401 Unauthorized (token expirado ou revogado no meio do processo), limpa o cache
         if (putRes.statusCode === 401) {
@@ -1934,20 +2035,31 @@ cronAdd('backup_processador_fila_solicitados', '*/1 * * * *', () => {
             'Content-Type': 'application/json',
           },
           body: JSON.stringify({
-            role: 'writer',
+            role: 'reader',
             type: 'user',
             emailAddress: userEmail,
           }),
           timeout: 20,
         })
         if (permRes.statusCode === 200 || permRes.statusCode === 201) {
+          console.log(
+            logPrefix + ' [PERMISSIONS] Arquivo compartilhado com ' + userEmail + ' como reader.',
+          )
           return { success: true }
         }
+        console.warn(
+          logPrefix +
+            ' [PERMISSIONS] Aviso ao compartilhar: HTTP ' +
+            permRes.statusCode +
+            ': ' +
+            (permRes.raw || ''),
+        )
         return {
           success: false,
           error: 'HTTP ' + permRes.statusCode + ': ' + (permRes.raw || ''),
         }
       } catch (eShare) {
+        console.warn(logPrefix + ' [PERMISSIONS] Erro de rede ao compartilhar:', eShare)
         return {
           success: false,
           error: String(eShare?.message || eShare),
@@ -2131,7 +2243,18 @@ cronAdd('backup_processador_fila_solicitados', '*/1 * * * *', () => {
           timeout: 20,
         })
 
-        if (initRes.statusCode !== 200 && folderId) {
+        var isInitQuotaError =
+          initRes.statusCode === 403 &&
+          ((initRes.raw || '').toLowerCase().indexOf('storage quota') !== -1 ||
+            (initRes.raw || '').toLowerCase().indexOf('storagequota') !== -1)
+
+        if ((initRes.statusCode !== 200 || isInitQuotaError) && fileMetadata.parents) {
+          console.log(
+            logPrefix +
+              ' [FALLBACK INIT] Falha na criação com pasta (HTTP ' +
+              initRes.statusCode +
+              '). Criando sessão resumível no Drive próprio da Conta de Serviço (sem parents)...',
+          )
           delete fileMetadata.parents
           initRes = $http.send({
             url: initUrl,
@@ -2177,7 +2300,11 @@ cronAdd('backup_processador_fila_solicitados', '*/1 * * * *', () => {
         backupRecord.set('drive_session_url', sessionUrl)
         backupRecord.set('drive_status', 'enviando')
         backupRecord.set('drive_offset', 0)
-        backupRecord.set('drive_erro', '')
+        if (!fileMetadata.parents && folderId) {
+          backupRecord.set('drive_erro', 'Fallback: gravando no Drive da Conta de Serviço')
+        } else {
+          backupRecord.set('drive_erro', '')
+        }
         $app.save(backupRecord)
       }
 
@@ -2384,6 +2511,84 @@ cronAdd('backup_processador_fila_solicitados', '*/1 * * * *', () => {
           body: sliceBuf,
           timeout: 20,
         })
+
+        // Se der HTTP 403 de storage quota no PUT (acontece quando a sessão foi criada com pasta de Drive pessoal comum)
+        var putRawLowerCron = (putRes.raw || '').toLowerCase()
+        if (
+          putRes.statusCode === 403 &&
+          (putRawLowerCron.indexOf('storage quota') !== -1 ||
+            putRawLowerCron.indexOf('storagequota') !== -1)
+        ) {
+          console.warn(
+            logPrefix +
+              ' [PUT 403 QUOTA] Conta de Serviço sem cota na pasta do usuário. Recriando sessão no Drive próprio (sem parents)...',
+          )
+          var backupNomeArquivoCron = backupRecord.getString('nome_arquivo') || 'backup_erp.json'
+          var fbMetaCron = {
+            name: backupNomeArquivoCron,
+            mimeType: 'application/json',
+            description: 'Backup automático ERP Pedreira Cordeiro (resumível - Drive próprio)',
+          }
+          var fbInitResCron = $http.send({
+            url: 'https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable&supportsAllDrives=true',
+            method: 'POST',
+            headers: {
+              Authorization: 'Bearer ' + auth.access_token,
+              'Content-Type': 'application/json; charset=UTF-8',
+              'X-Upload-Content-Type': 'application/json',
+              'X-Upload-Content-Length': String(totalBytes),
+            },
+            body: JSON.stringify(fbMetaCron),
+            timeout: 20,
+          })
+
+          var fbHeadersMapCron = fbInitResCron.headers || {}
+          var fbLocCron = fbHeadersMapCron['Location'] || fbHeadersMapCron['location']
+          if (Array.isArray(fbLocCron) && fbLocCron.length > 0) fbLocCron = fbLocCron[0]
+
+          if (fbInitResCron.statusCode === 200 && fbLocCron) {
+            sessionUrl = String(fbLocCron)
+            currentOffset = 0
+            backupRecord.set('drive_session_url', sessionUrl)
+            backupRecord.set('drive_status', 'enviando')
+            backupRecord.set('drive_offset', 0)
+            backupRecord.set('drive_erro', 'Fallback: gravando no Drive da Conta de Serviço')
+            $app.save(backupRecord)
+
+            // Refaz o PUT do primeiro chunk na nova sessão imediatamente
+            var fbSliceEndCron = Math.min(CHUNK_BYTES, totalBytes)
+            var fbSliceBufCron = sliceBuf.substring(0, fbSliceEndCron)
+            var fbPutRangeHeaderCron = 'bytes 0-' + (fbSliceBufCron.length - 1) + '/' + totalBytes
+            console.log(
+              logPrefix +
+                ' [FALLBACK CHUNK] PUT ' +
+                fbPutRangeHeaderCron +
+                ' na nova sessão sem pasta',
+            )
+
+            putRes = $http.send({
+              url: sessionUrl,
+              method: 'PUT',
+              headers: {
+                'Content-Length': String(fbSliceBufCron.length),
+                'Content-Range': fbPutRangeHeaderCron,
+              },
+              body: fbSliceBufCron,
+              timeout: 20,
+            })
+            numActualChunkLen = fbSliceBufCron.length
+            numCurrentOffset = 0
+            putEnd = fbSliceBufCron.length - 1
+          } else {
+            console.error(
+              logPrefix +
+                ' [FALLBACK INIT ERRO] Falha ao criar sessão sem pasta: HTTP ' +
+                fbInitResCron.statusCode +
+                ': ' +
+                (fbInitResCron.raw || ''),
+            )
+          }
+        }
 
         // Se retornar 401 Unauthorized (token expirado ou revogado no meio do processo), limpa o cache
         if (putRes.statusCode === 401) {
