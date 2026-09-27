@@ -1209,6 +1209,22 @@ export function Backups() {
                             <CloudUpload className="h-3 w-3" />
                             ☁️ no Drive
                           </Badge>
+                        ) : item.drive_status === 'enviando' ? (
+                          <Badge className="bg-amber-500 hover:bg-amber-600 text-white text-[10px] gap-1 shadow-xs">
+                            <RefreshCw className="h-3 w-3 animate-spin" />
+                            Enviando ao Drive…{' '}
+                            {item.drive_total_bytes && item.drive_total_bytes > 0
+                              ? `${Math.min(100, Math.round(((item.drive_offset || 0) / item.drive_total_bytes) * 100))}%`
+                              : ''}
+                          </Badge>
+                        ) : item.drive_status === 'solicitado' ? (
+                          <Badge
+                            variant="secondary"
+                            className="text-[10px] gap-1 bg-amber-500/15 text-amber-700 dark:text-amber-300"
+                          >
+                            <Clock className="h-3 w-3" />
+                            Na fila do Drive
+                          </Badge>
                         ) : item.drive_status === 'erro' ? (
                           <Badge
                             variant="destructive"
@@ -1513,9 +1529,13 @@ export function Backups() {
                     <strong className="text-foreground">
                       {backupDetalhe.drive_status === 'enviado'
                         ? '☁️ Enviado com Sucesso'
-                        : backupDetalhe.drive_status === 'erro'
-                          ? 'Falha no Envio'
-                          : 'Pendente'}
+                        : backupDetalhe.drive_status === 'enviando'
+                          ? `Enviando (${backupDetalhe.drive_total_bytes ? Math.min(100, Math.round(((backupDetalhe.drive_offset || 0) / backupDetalhe.drive_total_bytes) * 100)) : 0}%)`
+                          : backupDetalhe.drive_status === 'solicitado'
+                            ? 'Na Fila de Envio'
+                            : backupDetalhe.drive_status === 'erro'
+                              ? 'Falha no Envio'
+                              : 'Pendente'}
                     </strong>
                   </div>
                   <div>

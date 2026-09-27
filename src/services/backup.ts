@@ -25,11 +25,23 @@ export interface BackupItem {
   observacoes?: string
   created: string
   // Google Drive
-  drive_status?: 'enviado' | 'pendente' | 'erro' | 'nao_configurado' | string
+  drive_status?:
+    | 'enviado'
+    | 'pendente'
+    | 'erro'
+    | 'nao_configurado'
+    | 'solicitado'
+    | 'enviando'
+    | string
   drive_file_id?: string
   drive_enviado_em?: string
   drive_erro?: string
   drive_folder_id?: string
+  drive_offset?: number
+  drive_total_bytes?: number
+  drive_session_url?: string
+  drive_tentativas?: number
+  drive_progresso_chunk?: number
 }
 
 export interface BackupAgendamentoInfo {
@@ -159,6 +171,11 @@ export const backupService = {
         drive_enviado_em: String(r.drive_enviado_em || ''),
         drive_erro: String(r.drive_erro || ''),
         drive_folder_id: String(r.drive_folder_id || ''),
+        drive_offset: Number(r.drive_offset || 0),
+        drive_total_bytes: Number(r.drive_total_bytes || 0),
+        drive_session_url: String(r.drive_session_url || ''),
+        drive_tentativas: Number(r.drive_tentativas || 0),
+        drive_progresso_chunk: Number(r.drive_progresso_chunk || 0),
       }))
     } catch (sdkErr) {
       console.error('[backupService.listarBackups] Erro também no fallback SDK:', sdkErr)

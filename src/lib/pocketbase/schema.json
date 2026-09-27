@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-09-27T17:36:40.290Z",
+  "generatedAt": "2026-09-27T18:10:13.046Z",
   "collections": [
     {
       "name": "users",
@@ -2980,7 +2980,14 @@
           "type": "select",
           "required": false,
           "system": false,
-          "selectValues": ["pendente", "enviado", "erro", "nao_configurado", "solicitado"]
+          "selectValues": [
+            "pendente",
+            "enviado",
+            "erro",
+            "nao_configurado",
+            "solicitado",
+            "enviando"
+          ]
         },
         {
           "name": "drive_file_id",
@@ -3003,6 +3010,36 @@
         {
           "name": "drive_folder_id",
           "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "drive_offset",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "drive_total_bytes",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "drive_session_url",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "drive_tentativas",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "drive_progresso_chunk",
+          "type": "number",
           "required": false,
           "system": false
         }
