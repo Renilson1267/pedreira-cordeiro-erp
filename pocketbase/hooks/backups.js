@@ -891,8 +891,8 @@ routerAdd('GET', '/backend/v1/backups/processar-solicitados-drive', (e) => {
   })
 })
 
-    function getAccessTokenHelper(serviceAccountJson, scope) {
-      var b64chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/'
+REMOVED_DUPLICATE_MONOLITHIC_CODE */
+/* REMOVED_DUPLICATE_MONOLITHIC_CODE      var b64chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/'
       var b64tab = {}
       for (var i = 0; i < b64chars.length; i++) b64tab[b64chars.charAt(i)] = i
 
