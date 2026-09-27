@@ -276,9 +276,20 @@ routerAdd('GET', '/backend/v1/backups/processar-solicitados-drive', (e) => {
       function modPow(baseB, expB, modB) {
         var res = [1]
         var cur = baseB.slice()
-        for (var i = 0; i < expB.length; i++) {
+        // Encontra o bit mais significativo do expoente para evitar iterações desnecessárias
+        var maxChunk = 0
+        var maxBit = 0
+        for (var i = expB.length - 1; i >= 0; i--) {
+          if (expB[i] > 0) {
+            maxChunk = i
+            maxBit = Math.floor(Math.log2 ? Math.log2(expB[i]) : Math.log(expB[i]) / Math.LN2)
+            break
+          }
+        }
+        for (var i = 0; i <= maxChunk; i++) {
           var chunk = expB[i]
-          for (var b = 0; b < BASE_BITS; b++) {
+          var limitBits = i === maxChunk ? maxBit + 1 : BASE_BITS
+          for (var b = 0; b < limitBits; b++) {
             if ((chunk & (1 << b)) !== 0) {
               res = divRem(mul(res, cur), modB).r
             }
@@ -478,7 +489,8 @@ routerAdd('GET', '/backend/v1/backups/processar-solicitados-drive', (e) => {
 
       if (!totalBytes || totalBytes === 0) {
         console.log(
-          logPrefix + ' Calculando tamanho total somando metadados e chunks individualmente...',
+          logPrefix +
+            ' Calculando tamanho total via SQL LENGTH para economia extrema de memória e tempo...',
         )
         var metaObj = {
           meta: {
@@ -494,47 +506,46 @@ routerAdd('GET', '/backend/v1/backups/processar-solicitados-drive', (e) => {
             sistema: 'Pedreira Cordeiro ERP (NovaGest)',
           },
         }
-        var metaStr = JSON.stringify(metaObj)
         var headerPrefix = '{"meta":' + JSON.stringify(metaObj.meta) + ',"dados":{'
         var calcBytes = headerPrefix.length + 2 // fecha com '}}\n'
 
-        // Consulta contagem e lista ordenada por created,id
-        var allChunksMeta = $app.findRecordsByFilter(
-          'backups_dados',
-          "backup_id = '" + backupId + "'",
-          'created,id',
-          5000,
-          0,
-        )
+        try {
+          var queryRows = []
+          $app
+            .db()
+            .newQuery(
+              'SELECT colecao_nome, COUNT(*) as cnt, SUM(CASE WHEN LENGTH(registros_json) > 2 THEN LENGTH(registros_json) - 2 ELSE 0 END) as chars_dados ' +
+                'FROM backups_dados WHERE backup_id = {:bid} GROUP BY colecao_nome ORDER BY MIN(created), MIN(id)',
+            )
+            .bind({ bid: backupId })
+            .all(queryRows)
 
-        var curCol = null
-        var curColCount = 0
-        for (var cm = 0; cm < allChunksMeta.length; cm++) {
-          var recM = allChunksMeta[cm]
-          var colName = recM.getString('colecao_nome')
-          var chunkJsonStr = JSON.stringify(recM.get('registros_json') || [])
-          var itemsLen = 0
-          if (chunkJsonStr && chunkJsonStr.length >= 2) {
-            itemsLen = chunkJsonStr.length - 2 // remove '[' e ']'
-          }
+          for (var qr = 0; qr < queryRows.length; qr++) {
+            var row = queryRows[qr]
+            var cName = String(row.colecao_nome || '')
+            var cCount = parseInt(row.cnt || 0, 10)
+            var cChars = parseInt(row.chars_dados || 0, 10)
 
-          if (colName !== curCol) {
-            if (curCol !== null) calcBytes += 2 // '],'
-            curCol = colName
-            curColCount = 0
-            calcBytes += JSON.stringify(colName).length + ':['
+            if (qr > 0) calcBytes += 2 // '],'
+            calcBytes += JSON.stringify(cName).length + ':['
+            calcBytes += cChars
+            if (cCount > 1) {
+              calcBytes += cCount - 1
+            }
           }
-
-          if (itemsLen > 0) {
-            if (curColCount > 0) calcBytes += 1 // ','
-            calcBytes += itemsLen
-            curColCount++
-          }
+          if (queryRows.length > 0) calcBytes += 1 // ']'
+        } catch (sqlErr) {
+          console.warn(
+            logPrefix + ' Falha no cálculo SQL rápido, usando estimativa segura:',
+            sqlErr,
+          )
+          calcBytes = headerPrefix.length + 2
         }
-        if (curCol !== null) calcBytes += 1 // ']'
 
         totalBytes = calcBytes
         backupRecord.set('drive_total_bytes', totalBytes)
+        backupRecord.set('drive_offset', 0)
+        backupRecord.set('drive_progresso_chunk', 0)
         $app.save(backupRecord)
         console.log(
           logPrefix +
@@ -1177,9 +1188,20 @@ cronAdd('backup_processador_fila_solicitados', '*/1 * * * *', () => {
       function modPow(baseB, expB, modB) {
         var res = [1]
         var cur = baseB.slice()
-        for (var i = 0; i < expB.length; i++) {
+        // Encontra o bit mais significativo do expoente para evitar iterações desnecessárias
+        var maxChunk = 0
+        var maxBit = 0
+        for (var i = expB.length - 1; i >= 0; i--) {
+          if (expB[i] > 0) {
+            maxChunk = i
+            maxBit = Math.floor(Math.log2 ? Math.log2(expB[i]) : Math.log(expB[i]) / Math.LN2)
+            break
+          }
+        }
+        for (var i = 0; i <= maxChunk; i++) {
           var chunk = expB[i]
-          for (var b = 0; b < BASE_BITS; b++) {
+          var limitBits = i === maxChunk ? maxBit + 1 : BASE_BITS
+          for (var b = 0; b < limitBits; b++) {
             if ((chunk & (1 << b)) !== 0) {
               res = divRem(mul(res, cur), modB).r
             }
@@ -2666,6 +2688,51 @@ routerAdd(
     var logPrefix = '[API_MANUAL][' + backupId + ']'
     console.log(logPrefix + ' Disparando envio manual para backup: ' + backupId)
 
+    var backupRecord = null
+    try {
+      backupRecord = $app.findFirstRecordByData('backups_sistema', 'id', backupId)
+    } catch (eBkp) {
+      return e.json(404, { error: 'Backup não encontrado: ' + backupId })
+    }
+
+    // Se o backup possui mais de 10 chunks ou mais de 1000 registros, o envio direto multipart
+    // estoura o limite de tempo da requisição web (60s) e a memória da JSVM.
+    // Nesses casos delegamos o envio para o cron incremental resumível (a cada minuto).
+    var totalRegs = backupRecord.getInt('total_registros') || 0
+    var chunksCount = 0
+    try {
+      chunksCount = $app.countRecords('backups_dados', "backup_id = '" + backupId + "'")
+    } catch (_) {}
+
+    if (chunksCount > 8 || totalRegs > 800) {
+      console.log(
+        logPrefix +
+          ' Backup volumoso (' +
+          totalRegs +
+          ' registros, ' +
+          chunksCount +
+          ' chunks no banco). Delegando para a fila de envio incremental resumível...',
+      )
+      backupRecord.set('drive_status', 'solicitado')
+      backupRecord.set('drive_tentativas', 0)
+      backupRecord.set(
+        'drive_erro',
+        'Fila incremental iniciada. O cron a cada minuto enviará fatias resumíveis.',
+      )
+      $app.save(backupRecord)
+
+      return e.json(200, {
+        success: true,
+        message:
+          'Backup volumoso (' +
+          totalRegs +
+          ' registros) colocado na fila de envio incremental ao Google Drive. O processador em segundo plano enviará fatias a cada minuto.',
+        delegado_fila: true,
+        total_registros: totalRegs,
+        total_chunks: chunksCount,
+      })
+    }
+
     function getAccessTokenHelperManual(serviceAccountJson, scope) {
       var b64chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/'
       var b64tab = {}
@@ -2928,9 +2995,20 @@ routerAdd(
       function modPow(baseB, expB, modB) {
         var res = [1]
         var cur = baseB.slice()
-        for (var i = 0; i < expB.length; i++) {
+        // Encontra o bit mais significativo do expoente para evitar iterações desnecessárias
+        var maxChunk = 0
+        var maxBit = 0
+        for (var i = expB.length - 1; i >= 0; i--) {
+          if (expB[i] > 0) {
+            maxChunk = i
+            maxBit = Math.floor(Math.log2 ? Math.log2(expB[i]) : Math.log(expB[i]) / Math.LN2)
+            break
+          }
+        }
+        for (var i = 0; i <= maxChunk; i++) {
           var chunk = expB[i]
-          for (var b = 0; b < BASE_BITS; b++) {
+          var limitBits = i === maxChunk ? maxBit + 1 : BASE_BITS
+          for (var b = 0; b < limitBits; b++) {
             if ((chunk & (1 << b)) !== 0) {
               res = divRem(mul(res, cur), modB).r
             }
@@ -3087,13 +3165,6 @@ routerAdd(
           error: String(eShare?.message || eShare),
         }
       }
-    }
-
-    var backupRecord = null
-    try {
-      backupRecord = $app.findFirstRecordByData('backups_sistema', 'id', backupId)
-    } catch (eBkp) {
-      return e.json(404, { error: 'Backup não encontrado: ' + backupId })
     }
 
     try {
