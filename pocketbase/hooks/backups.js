@@ -2,9 +2,10 @@
 // com Integração ao Google Drive via CONTA DE SERVIÇO (Service Account / JWT RS256 puro em JS)
 // Endpoints autenticados sob /backend/v1/backups e /backend/v1/google-drive
 // Cron job semanal automático via cronAdd: todo domingo às 00:30 (horário do servidor)
-// Cron job da fila de envio ao Drive: reprocessamento a cada minuto com antiflood e registro garantido de erro/sucesso
-// NOTA JSVM DO POCKETBASE: As callbacks rodam em pools isoladas, portanto toda função auxiliar
-// deve ser estritamente declarada dentro de cada callback (inline).
+// Cron job da fila de envio ao Drive: reprocessamento a cada minuto com fatiamento resumível (256KB por PUT)
+// Orçamento por rodada: ~25s para evitar timeout HTTP do gateway (60s)
+// NOTA JSVM DO POCKETBASE: As callbacks rodam em pools isoladas, portanto todas as funções auxiliares
+// devem ser declaradas dentro de cada callback (inline).
 
 // -------------------------------------------------------------
 // 1. ENDPOINT ADMINISTRATIVO / MANUAL: PROCESSAR SOLICITADOS DRIVE
@@ -13,6 +14,9 @@
 routerAdd('GET', '/backend/v1/backups/processar-solicitados-drive', (e) => {
   function processarBackupIncremental(backupId, logPrefixOrigem) {
     var logPrefix = (logPrefixOrigem || '[INCREMENTAL]') + '[' + backupId + ']'
+    console.log(logPrefix + ' Início de processarBackupIncremental')
+    var startRoundTime = Date.now()
+    var MAX_ROUND_DURATION_MS = 25000 // 25 segundos máximo por rodada
 
     function getAccessTokenShared(serviceAccountJson, scope) {
       var b64chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/'
@@ -276,7 +280,6 @@ routerAdd('GET', '/backend/v1/backups/processar-solicitados-drive', (e) => {
       function modPow(baseB, expB, modB) {
         var res = [1]
         var cur = baseB.slice()
-        // Encontra o bit mais significativo do expoente para evitar iterações desnecessárias
         var maxChunk = 0
         var maxBit = 0
         for (var i = expB.length - 1; i >= 0; i--) {
@@ -364,7 +367,7 @@ routerAdd('GET', '/backend/v1/backups/processar-solicitados-drive', (e) => {
           encodeURIComponent('urn:ietf:params:oauth:grant-type:jwt-bearer') +
           '&assertion=' +
           encodeURIComponent(assertion),
-        timeout: 25,
+        timeout: 20,
       })
 
       if (res.statusCode !== 200) {
@@ -388,7 +391,6 @@ routerAdd('GET', '/backend/v1/backups/processar-solicitados-drive', (e) => {
     function shareFileWithUserShared(fileId, userEmail, token) {
       if (!userEmail) return { success: false, error: 'Email de usuário não informado' }
       try {
-        console.log(logPrefix + ' Compartilhando arquivo ' + fileId + ' com ' + userEmail + '...')
         var permUrl =
           'https://www.googleapis.com/drive/v3/files/' +
           encodeURIComponent(fileId) +
@@ -405,25 +407,16 @@ routerAdd('GET', '/backend/v1/backups/processar-solicitados-drive', (e) => {
             type: 'user',
             emailAddress: userEmail,
           }),
-          timeout: 30,
+          timeout: 20,
         })
         if (permRes.statusCode === 200 || permRes.statusCode === 201) {
-          console.log(logPrefix + ' Arquivo compartilhado com sucesso com ' + userEmail)
           return { success: true }
         }
-        console.warn(
-          logPrefix +
-            ' Falha no compartilhamento (HTTP ' +
-            permRes.statusCode +
-            '): ' +
-            (permRes.raw || ''),
-        )
         return {
           success: false,
           error: 'HTTP ' + permRes.statusCode + ': ' + (permRes.raw || ''),
         }
       } catch (eShare) {
-        console.error(logPrefix + ' Exceção ao compartilhar:', eShare)
         return {
           success: false,
           error: String(eShare?.message || eShare),
@@ -435,14 +428,13 @@ routerAdd('GET', '/backend/v1/backups/processar-solicitados-drive', (e) => {
     try {
       backupRecord = $app.findFirstRecordByData('backups_sistema', 'id', backupId)
     } catch (eFind) {
-      console.error(logPrefix + ' Backup não encontrado:', eFind)
+      console.error(logPrefix + ' Backup não encontrado: ' + backupId)
       return { status: 'erro', erro: 'Backup não encontrado: ' + backupId }
     }
 
     var tentativas = backupRecord.getInt('drive_tentativas') || 0
-    if (tentativas >= 5) {
-      var msgMax =
-        'Limite de 5 tentativas excedido. Reenvio cancelado. Tente manualmente pela tela.'
+    if (tentativas >= 6) {
+      var msgMax = 'Limite de tentativas excedido. Tente novamente pela tela do sistema.'
       console.warn(logPrefix + ' ' + msgMax)
       backupRecord.set('drive_status', 'erro')
       backupRecord.set('drive_erro', msgMax)
@@ -465,9 +457,7 @@ routerAdd('GET', '/backend/v1/backups/processar-solicitados-drive', (e) => {
             usuarioEmailDestino = configRec.getString('usuario_email')
           }
         }
-      } catch (eCfg) {
-        console.warn(logPrefix + ' config_google_drive não encontrada:', eCfg)
-      }
+      } catch (_) {}
 
       if (!serviceAccountJson) {
         var msgSemConta = 'Conta de Serviço Google Drive não configurada no ERP.'
@@ -478,88 +468,93 @@ routerAdd('GET', '/backend/v1/backups/processar-solicitados-drive', (e) => {
         return { status: 'erro', erro: msgSemConta }
       }
 
+      console.log(logPrefix + ' Obtendo access token Google OAuth...')
       var auth = getAccessTokenShared(
         serviceAccountJson,
         'https://www.googleapis.com/auth/drive.file',
       )
+      console.log(logPrefix + ' Token obtido com sucesso para: ' + auth.client_email)
+      var resumoRaw = backupRecord.get('resumo_colecoes') || {}
+      var colecoesValidas = [
+        'empresas',
+        'empresa_membros',
+        'users',
+        'clientes',
+        'fornecedores',
+        'produtos',
+        'plano_contas',
+        'contas_pagar',
+        'contas_receber',
+        'bancos_contas',
+        'movimentos_financeiros',
+        'conciliacoes',
+        'empresa_convites',
+        'veiculos',
+        'abastecimentos',
+        'manutencoes',
+        'centros_custos',
+        'creditos_clientes',
+        'funcionarios',
+        'folha_horas_extras',
+        'entregas',
+        'vendas',
+        'despesas_frota',
+        'historico_alteracoes',
+        'formas_recebimento',
+        'cheques_predatados',
+        'contadores_sequenciais',
+      ]
+      var metaJsonStr = JSON.stringify({
+        id: backupRecord.id,
+        nome_arquivo: backupRecord.getString('nome_arquivo'),
+        tipo: backupRecord.getString('tipo'),
+        origem: backupRecord.getString('origem') || 'manual',
+        total_colecoes: backupRecord.getInt('total_colecoes'),
+        total_registros: backupRecord.getInt('total_registros'),
+        resumo_colecoes: backupRecord.get('resumo_colecoes'),
+        created: backupRecord.getString('created'),
+        exportado_em: new Date().toISOString(),
+        sistema: 'Pedreira Cordeiro ERP (NovaGest)',
+      })
+      var headerPrefix = '{"meta":' + metaJsonStr + ',"dados":{'
+      var footerSuffix = '}}\n'
 
-      // PASSO 1: Cálculo do tamanho total (apenas na primeira rodada ou se drive_total_bytes for 0)
       var totalBytes = backupRecord.getInt('drive_total_bytes') || 0
       var sessionUrl = backupRecord.getString('drive_session_url') || ''
 
       if (!totalBytes || totalBytes === 0) {
-        console.log(
-          logPrefix +
-            ' Calculando tamanho total via SQL LENGTH para economia extrema de memória e tempo...',
-        )
-        var metaObj = {
-          meta: {
-            id: backupRecord.id,
-            nome_arquivo: backupRecord.getString('nome_arquivo'),
-            tipo: backupRecord.getString('tipo'),
-            origem: backupRecord.getString('origem') || 'manual',
-            total_colecoes: backupRecord.getInt('total_colecoes'),
-            total_registros: backupRecord.getInt('total_registros'),
-            resumo_colecoes: backupRecord.get('resumo_colecoes'),
-            created: backupRecord.getString('created'),
-            exportado_em: new Date().toISOString(),
-            sistema: 'Pedreira Cordeiro ERP (NovaGest)',
-          },
-        }
-        var headerPrefix = '{"meta":' + JSON.stringify(metaObj.meta) + ',"dados":{'
-        var calcBytes = headerPrefix.length + 2 // fecha com '}}\n'
-
-        try {
-          var queryRows = []
+        var calcBytes = headerPrefix.length + footerSuffix.length
+        for (var ci = 0; ci < colecoesValidas.length; ci++) {
+          var cn = colecoesValidas[ci]
+          if (ci > 0) calcBytes += 1
+          calcBytes += JSON.stringify(cn).length + ':['
+          var statsRows = []
           $app
             .db()
             .newQuery(
-              'SELECT colecao_nome, COUNT(*) as cnt, SUM(CASE WHEN LENGTH(registros_json) > 2 THEN LENGTH(registros_json) - 2 ELSE 0 END) as chars_dados ' +
-                'FROM backups_dados WHERE backup_id = {:bid} GROUP BY colecao_nome ORDER BY MIN(created), MIN(id)',
+              'SELECT COUNT(*) as cnt, SUM(CASE WHEN LENGTH(registros_json) > 2 THEN LENGTH(registros_json) - 2 ELSE 0 END) as chars_data ' +
+                'FROM backups_dados WHERE backup_id = {:bid} AND colecao_nome = {:cn}',
             )
-            .bind({ bid: backupId })
-            .all(queryRows)
+            .bind({ bid: backupId, cn: cn })
+            .all(statsRows)
 
-          for (var qr = 0; qr < queryRows.length; qr++) {
-            var row = queryRows[qr]
-            var cName = String(row.colecao_nome || '')
-            var cCount = parseInt(row.cnt || 0, 10)
-            var cChars = parseInt(row.chars_dados || 0, 10)
-
-            if (qr > 0) calcBytes += 2 // '],'
-            calcBytes += JSON.stringify(cName).length + ':['
-            calcBytes += cChars
-            if (cCount > 1) {
-              calcBytes += cCount - 1
-            }
+          var cntChunks = statsRows.length > 0 ? parseInt(statsRows[0].cnt || 0, 10) : 0
+          var charsData = statsRows.length > 0 ? parseInt(statsRows[0].chars_data || 0, 10) : 0
+          calcBytes += charsData
+          if (cntChunks > 1) {
+            calcBytes += cntChunks - 1
           }
-          if (queryRows.length > 0) calcBytes += 1 // ']'
-        } catch (sqlErr) {
-          console.warn(
-            logPrefix + ' Falha no cálculo SQL rápido, usando estimativa segura:',
-            sqlErr,
-          )
-          calcBytes = headerPrefix.length + 2
+          calcBytes += 1
         }
 
         totalBytes = calcBytes
+        console.log(logPrefix + ' totalBytes calculado via SQL: ' + totalBytes)
         backupRecord.set('drive_total_bytes', totalBytes)
         backupRecord.set('drive_offset', 0)
-        backupRecord.set('drive_progresso_chunk', 0)
         $app.save(backupRecord)
-        console.log(
-          logPrefix +
-            ' Tamanho total calculado: ' +
-            totalBytes +
-            ' bytes (' +
-            Math.round(totalBytes / 1024) +
-            ' KB)',
-        )
       }
 
-      // PASSO 2: Iniciar sessão de upload resumível se ainda não tiver sessionUrl
       if (!sessionUrl) {
-        console.log(logPrefix + ' Iniciando sessão de upload resumível no Google Drive...')
         var initUrl =
           'https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable&supportsAllDrives=true'
         var fileMetadata = {
@@ -580,19 +575,10 @@ routerAdd('GET', '/backend/v1/backups/processar-solicitados-drive', (e) => {
             'X-Upload-Content-Length': String(totalBytes),
           },
           body: JSON.stringify(fileMetadata),
-          timeout: 30,
+          timeout: 20,
         })
 
-        console.log(logPrefix + ' Resposta início sessão Drive: HTTP ' + initRes.statusCode)
-
-        // Fallback: se pasta configurada der 403 / 404, tenta sem parents (Drive próprio da Conta de Serviço)
         if (initRes.statusCode !== 200 && folderId) {
-          console.warn(
-            logPrefix +
-              ' Falha na pasta configurada (HTTP ' +
-              initRes.statusCode +
-              '), tentando sem pasta...',
-          )
           delete fileMetadata.parents
           initRes = $http.send({
             url: initUrl,
@@ -604,9 +590,8 @@ routerAdd('GET', '/backend/v1/backups/processar-solicitados-drive', (e) => {
               'X-Upload-Content-Length': String(totalBytes),
             },
             body: JSON.stringify(fileMetadata),
-            timeout: 30,
+            timeout: 20,
           })
-          console.log(logPrefix + ' Resposta início sessão sem pasta: HTTP ' + initRes.statusCode)
         }
 
         if (initRes.statusCode !== 200) {
@@ -627,8 +612,7 @@ routerAdd('GET', '/backend/v1/backups/processar-solicitados-drive', (e) => {
         var loc = headersMap['Location'] || headersMap['location']
         if (Array.isArray(loc) && loc.length > 0) loc = loc[0]
         if (!loc && typeof loc !== 'string') {
-          var errLoc = 'Google Drive não retornou header Location na sessão resumível.'
-          console.error(logPrefix + ' ' + errLoc)
+          var errLoc = 'Google Drive não retornou Location para upload resumível.'
           backupRecord.set('drive_status', 'erro')
           backupRecord.set('drive_erro', errLoc)
           backupRecord.set('drive_tentativas', tentativas + 1)
@@ -640,13 +624,10 @@ routerAdd('GET', '/backend/v1/backups/processar-solicitados-drive', (e) => {
         backupRecord.set('drive_session_url', sessionUrl)
         backupRecord.set('drive_status', 'enviando')
         backupRecord.set('drive_offset', 0)
-        backupRecord.set('drive_progresso_chunk', 0)
         backupRecord.set('drive_erro', '')
         $app.save(backupRecord)
-        console.log(logPrefix + ' Sessão resumível criada com sucesso! URL salva.')
       }
 
-      // PASSO 3: Consultar status de offset na Google Drive API (query resume)
       var currentOffset = backupRecord.getInt('drive_offset') || 0
       try {
         var checkRes = $http.send({
@@ -656,8 +637,9 @@ routerAdd('GET', '/backend/v1/backups/processar-solicitados-drive', (e) => {
             'Content-Length': '0',
             'Content-Range': 'bytes */' + totalBytes,
           },
-          timeout: 25,
+          timeout: 15,
         })
+
         if (checkRes.statusCode === 308) {
           var rangeHeader = checkRes.headers?.['Range'] || checkRes.headers?.['range']
           if (Array.isArray(rangeHeader)) rangeHeader = rangeHeader[0]
@@ -666,220 +648,245 @@ routerAdd('GET', '/backend/v1/backups/processar-solicitados-drive', (e) => {
             if (matchRange && matchRange[1]) {
               currentOffset = parseInt(matchRange[1], 10) + 1
               backupRecord.set('drive_offset', currentOffset)
-              console.log(
-                logPrefix + ' Google Drive confirmou bytes recebidos até: ' + currentOffset,
-              )
             }
           }
         } else if (checkRes.statusCode === 200 || checkRes.statusCode === 201) {
-          // Já concluído!
           var dataConcluido = checkRes.json || JSON.parse(checkRes.raw || '{}')
           var fileIdPronto = dataConcluido.id || ''
-          console.log(logPrefix + ' Arquivo já concluído no Drive! File ID: ' + fileIdPronto)
           shareFileWithUserShared(fileIdPronto, usuarioEmailDestino, auth.access_token)
           var agoraIso = new Date().toISOString()
           backupRecord.set('drive_status', 'enviado')
           backupRecord.set('drive_file_id', fileIdPronto)
           backupRecord.set('drive_enviado_em', agoraIso)
           backupRecord.set('drive_offset', totalBytes)
-          backupRecord.set('drive_erro', 'Concluído com sucesso')
+          backupRecord.set(
+            'drive_erro',
+            'Concluído com sucesso (compartilhado com ' + usuarioEmailDestino + ')',
+          )
           $app.save(backupRecord)
+          console.log(
+            logPrefix +
+              ' [FINAL] Arquivo concluído no Drive (HTTP 200/201). Compartilhado com ' +
+              usuarioEmailDestino,
+          )
           return { status: 'concluido', file_id: fileIdPronto }
         }
       } catch (eCheck) {
-        console.warn(logPrefix + ' Aviso ao consultar status do upload resumível:', eCheck)
+        console.warn(logPrefix + ' Aviso na consulta de offset:', eCheck)
       }
 
-      // PASSO 4: Envio de fatia fracionada (máx 15 chunks ou ~1.5MB por rodada)
-      var CHUNKS_POR_RODADA = 15
-      var chunkIndexStart = backupRecord.getInt('drive_progresso_chunk') || 0
+      var CHUNK_BYTES = 256 * 1024
+      var chunksEnviadosNestaRodada = 0
+      var totalChunksEstimado = Math.ceil(totalBytes / CHUNK_BYTES)
 
-      // Carrega apenas os chunks desta rodada usando paginação no banco
-      var chunksRodada = $app.findRecordsByFilter(
-        'backups_dados',
-        "backup_id = '" + backupId + "'",
-        'created,id',
-        CHUNKS_POR_RODADA,
-        chunkIndexStart,
-      )
+      while (currentOffset < totalBytes) {
+        if (Date.now() - startRoundTime >= MAX_ROUND_DURATION_MS) {
+          break
+        }
 
-      console.log(
-        logPrefix +
-          ' Lendo fatia de chunks: de ' +
-          chunkIndexStart +
-          ' a ' +
-          (chunkIndexStart + chunksRodada.length) +
-          ' (offset atual: ' +
-          currentOffset +
-          '/' +
-          totalBytes +
-          ')',
-      )
+        var targetSliceEnd = Math.min(currentOffset + CHUNK_BYTES, totalBytes)
+        var targetSliceLen = targetSliceEnd - currentOffset
+        if (targetSliceEnd < totalBytes && targetSliceLen % CHUNK_BYTES !== 0) {
+          targetSliceLen = Math.floor(targetSliceLen / CHUNK_BYTES) * CHUNK_BYTES
+          targetSliceEnd = currentOffset + targetSliceLen
+        }
 
-      // Se não há mais chunks no banco mas ainda faltam bytes (fechamento do JSON)
-      var bufferStr = ''
-      var isPrimeiraFatia = chunkIndexStart === 0
-      var isUltimaFatia = chunksRodada.length < CHUNKS_POR_RODADA
+        var sliceBuf = ''
+        var curPos = 0
 
-      if (isPrimeiraFatia) {
-        var metaObjInicio = {
-          meta: {
-            id: backupRecord.id,
-            nome_arquivo: backupRecord.getString('nome_arquivo'),
-            tipo: backupRecord.getString('tipo'),
-            origem: backupRecord.getString('origem') || 'manual',
-            total_colecoes: backupRecord.getInt('total_colecoes'),
-            total_registros: backupRecord.getInt('total_registros'),
-            resumo_colecoes: backupRecord.get('resumo_colecoes'),
-            created: backupRecord.getString('created'),
-            exportado_em: new Date().toISOString(),
-            sistema: 'Pedreira Cordeiro ERP (NovaGest)',
+        var hEnd = curPos + headerPrefix.length
+        if (currentOffset < hEnd && targetSliceEnd > curPos) {
+          var sStart = Math.max(0, currentOffset - curPos)
+          var sEnd = Math.min(headerPrefix.length, targetSliceEnd - curPos)
+          sliceBuf += headerPrefix.substring(sStart, sEnd)
+        }
+        curPos = hEnd
+
+        for (var colIdx = 0; colIdx < colecoesValidas.length; colIdx++) {
+          if (curPos >= targetSliceEnd) break
+          var nomeColecao = colecoesValidas[colIdx]
+
+          var cPrefix = (colIdx > 0 ? ',' : '') + JSON.stringify(nomeColecao) + ':['
+          var cpEnd = curPos + cPrefix.length
+          if (currentOffset < cpEnd && targetSliceEnd > curPos) {
+            var s1 = Math.max(0, currentOffset - curPos)
+            var s2 = Math.min(cPrefix.length, targetSliceEnd - curPos)
+            sliceBuf += cPrefix.substring(s1, s2)
+          }
+          curPos = cpEnd
+
+          var chunkIndexDb = 0
+          while (true) {
+            if (curPos >= targetSliceEnd) break
+            var dbRecs = []
+            $app
+              .db()
+              .newQuery(
+                'SELECT id, registros_json FROM backups_dados WHERE backup_id = {:bid} AND colecao_nome = {:cn} ORDER BY chunk_index ASC LIMIT 1 OFFSET {:off}',
+              )
+              .bind({ bid: backupId, cn: nomeColecao, off: chunkIndexDb })
+              .all(dbRecs)
+
+            if (dbRecs.length === 0) break
+
+            var rJsonRaw = dbRecs[0].registros_json || ''
+            var insideData = ''
+            if (
+              rJsonRaw.length >= 2 &&
+              rJsonRaw[0] === '[' &&
+              rJsonRaw[rJsonRaw.length - 1] === ']'
+            ) {
+              insideData = rJsonRaw.slice(1, -1)
+            } else {
+              var strObj = JSON.stringify(rJsonRaw)
+              if (strObj.length >= 2) insideData = strObj.slice(1, -1)
+            }
+
+            if (chunkIndexDb > 0) {
+              var commaPos = curPos
+              var commaEnd = curPos + 1
+              if (currentOffset < commaEnd && targetSliceEnd > commaPos) {
+                sliceBuf += ','
+              }
+              curPos += 1
+            }
+
+            var dEnd = curPos + insideData.length
+            if (currentOffset < dEnd && targetSliceEnd > curPos) {
+              var ds1 = Math.max(0, currentOffset - curPos)
+              var ds2 = Math.min(insideData.length, targetSliceEnd - curPos)
+              sliceBuf += insideData.substring(ds1, ds2)
+            }
+            curPos = dEnd
+            chunkIndexDb++
+          }
+
+          var sufEnd = curPos + 1
+          if (currentOffset < sufEnd && targetSliceEnd > curPos) {
+            sliceBuf += ']'
+          }
+          curPos = sufEnd
+        }
+
+        var footEnd = curPos + footerSuffix.length
+        if (currentOffset < footEnd && targetSliceEnd > curPos) {
+          var fs1 = Math.max(0, currentOffset - curPos)
+          var fs2 = Math.min(footerSuffix.length, targetSliceEnd - curPos)
+          sliceBuf += footerSuffix.substring(fs1, fs2)
+        }
+        curPos = footEnd
+
+        var actualChunkLen = sliceBuf.length
+        if (actualChunkLen === 0) {
+          console.warn(
+            logPrefix + ' Fatia vazia gerada no offset ' + currentOffset + '. Interrompendo.',
+          )
+          break
+        }
+
+        var putEnd = currentOffset + actualChunkLen - 1
+        var putRangeHeader = 'bytes ' + currentOffset + '-' + putEnd + '/' + totalBytes
+
+        var putRes = $http.send({
+          url: sessionUrl,
+          method: 'PUT',
+          headers: {
+            'Content-Length': String(actualChunkLen),
+            'Content-Range': putRangeHeader,
           },
-        }
-        bufferStr += '{"meta":' + JSON.stringify(metaObjInicio.meta) + ',"dados":{'
-      }
+          body: sliceBuf,
+          timeout: 20,
+        })
 
-      var colAnterior = null
-      for (var cr = 0; cr < chunksRodada.length; cr++) {
-        var rChunk = chunksRodada[cr]
-        var nomeC = rChunk.getString('colecao_nome')
-        var rJson = JSON.stringify(rChunk.get('registros_json') || [])
-        var semBrackets = rJson.length >= 2 ? rJson.slice(1, -1) : ''
+        if (putRes.statusCode === 308) {
+          var nextOffset = putEnd + 1
+          var rangeRsp = putRes.headers?.['Range'] || putRes.headers?.['range']
+          if (Array.isArray(rangeRsp)) rangeRsp = rangeRsp[0]
+          if (rangeRsp && typeof rangeRsp === 'string') {
+            var mO = rangeRsp.match(/bytes=0-(\d+)/)
+            if (mO && mO[1]) nextOffset = parseInt(mO[1], 10) + 1
+          }
 
-        if (nomeC !== colAnterior) {
-          if (colAnterior !== null) bufferStr += '],'
-          else if (!isPrimeiraFatia && cr === 0) bufferStr += '],'
-          bufferStr += JSON.stringify(nomeC) + ':['
-          colAnterior = nomeC
+          currentOffset = nextOffset
+          backupRecord.set('drive_status', 'enviando')
+          backupRecord.set('drive_offset', currentOffset)
+          backupRecord.set('drive_erro', '')
+          $app.save(backupRecord)
+
+          chunksEnviadosNestaRodada++
+          var chunkIndexAtual = Math.round(currentOffset / CHUNK_BYTES)
+          console.log(
+            logPrefix +
+              ' chunk ' +
+              chunkIndexAtual +
+              '/' +
+              totalChunksEstimado +
+              ', offset ' +
+              currentOffset +
+              '/' +
+              totalBytes +
+              ' (' +
+              Math.round((currentOffset / totalBytes) * 100) +
+              '%)',
+          )
+        } else if (putRes.statusCode === 200 || putRes.statusCode === 201) {
+          var resFinal = putRes.json || JSON.parse(putRes.raw || '{}')
+          var fileIdSalvo = resFinal.id || ''
+          shareFileWithUserShared(fileIdSalvo, usuarioEmailDestino, auth.access_token)
+
+          var agoraFinal = new Date().toISOString()
+          backupRecord.set('drive_status', 'enviado')
+          backupRecord.set('drive_file_id', fileIdSalvo)
+          backupRecord.set('drive_enviado_em', agoraFinal)
+          backupRecord.set('drive_offset', totalBytes)
+          backupRecord.set(
+            'drive_erro',
+            'Enviado ao Google Drive e compartilhado com ' + usuarioEmailDestino,
+          )
+          $app.save(backupRecord)
+
+          if (configRec) {
+            configRec.set('ultimo_envio', agoraFinal)
+            configRec.set('ultimo_status', 'conectado')
+            $app.save(configRec)
+          }
+
+          console.log(
+            logPrefix +
+              ' [SUCESSO] Upload 100% concluído! File ID: ' +
+              fileIdSalvo +
+              ' compartilhado com ' +
+              usuarioEmailDestino,
+          )
+          return {
+            status: 'enviado',
+            file_id: fileIdSalvo,
+            offset: totalBytes,
+          }
         } else {
-          if (semBrackets.length > 0) bufferStr += ','
+          var errPut =
+            'Falha HTTP PUT chunk (HTTP ' +
+            putRes.statusCode +
+            '): ' +
+            (putRes.raw || '').slice(0, 200)
+          console.error(logPrefix + ' ' + errPut)
+          backupRecord.set('drive_status', 'erro')
+          backupRecord.set('drive_erro', errPut)
+          backupRecord.set('drive_tentativas', tentativas + 1)
+          $app.save(backupRecord)
+          return { status: 'erro', erro: errPut }
         }
-        bufferStr += semBrackets
       }
 
-      if (isUltimaFatia) {
-        if (colAnterior !== null || !isPrimeiraFatia) bufferStr += ']'
-        bufferStr += '}}\n'
-      }
-
-      // Se o buffer estiver vazio e ainda não concluiu
-      if (bufferStr.length === 0 && !isUltimaFatia) {
-        bufferStr = ' '
-      }
-
-      var chunkLen = bufferStr.length
-      var chunkEnd = currentOffset + chunkLen - 1
-      // Ajuste se ultrapassar ou for a fatia final
-      if (isUltimaFatia || chunkEnd >= totalBytes - 1) {
-        chunkEnd = totalBytes - 1
-        chunkLen = chunkEnd - currentOffset + 1
-        bufferStr = bufferStr.slice(0, chunkLen)
-      }
-
-      var contentRangeHeader = 'bytes ' + currentOffset + '-' + chunkEnd + '/' + totalBytes
-      console.log(
-        logPrefix +
-          ' Enviando fatia HTTP PUT: Content-Range: ' +
-          contentRangeHeader +
-          ' (' +
-          chunkLen +
-          ' bytes)...',
-      )
-
-      var putRes = $http.send({
-        url: sessionUrl,
-        method: 'PUT',
-        headers: {
-          'Content-Length': String(chunkLen),
-          'Content-Range': contentRangeHeader,
-        },
-        body: bufferStr,
-        timeout: 120,
-      })
-
-      console.log(logPrefix + ' Resposta fatia: HTTP ' + putRes.statusCode)
-
-      if (putRes.statusCode === 308) {
-        // Chunk aceito, upload incompleto (comportamento esperado da API)
-        var novoOffset = chunkEnd + 1
-        var rangeResp = putRes.headers?.['Range'] || putRes.headers?.['range']
-        if (Array.isArray(rangeResp)) rangeResp = rangeResp[0]
-        if (rangeResp && typeof rangeResp === 'string') {
-          var mR = rangeResp.match(/bytes=0-(\d+)/)
-          if (mR && mR[1]) novoOffset = parseInt(mR[1], 10) + 1
-        }
-
-        backupRecord.set('drive_status', 'enviando')
-        backupRecord.set('drive_offset', novoOffset)
-        backupRecord.set('drive_progresso_chunk', chunkIndexStart + chunksRodada.length)
-        backupRecord.set('drive_erro', '')
-        $app.save(backupRecord)
-
-        console.log(
-          logPrefix +
-            ' Progresso salvo com sucesso! Novo offset: ' +
-            novoOffset +
-            '/' +
-            totalBytes +
-            ' (' +
-            Math.round((novoOffset / totalBytes) * 100) +
-            '%). Próximo cron continuará.',
-        )
-        return {
-          status: 'enviando',
-          offset: novoOffset,
-          total: totalBytes,
-          porcentagem: Math.round((novoOffset / totalBytes) * 100),
-        }
-      } else if (putRes.statusCode === 200 || putRes.statusCode === 201) {
-        // Conclusão com sucesso!
-        var jsonFinal = putRes.json || JSON.parse(putRes.raw || '{}')
-        var finalFileId = jsonFinal.id || ''
-        console.log(logPrefix + ' UPLOAD CONCLUÍDO COM SUCESSO! File ID: ' + finalFileId)
-
-        // Compartilhar com o usuário
-        var destinoInfo = 'Drive da Conta de Serviço'
-        var shareOk = shareFileWithUserShared(finalFileId, usuarioEmailDestino, auth.access_token)
-        if (shareOk.success) {
-          destinoInfo += ' (compartilhado com ' + usuarioEmailDestino + ')'
-        } else {
-          destinoInfo += ' (aviso compartilhamento: ' + shareOk.error + ')'
-        }
-
-        var dataFimIso = new Date().toISOString()
-        backupRecord.set('drive_status', 'enviado')
-        backupRecord.set('drive_file_id', finalFileId)
-        backupRecord.set('drive_enviado_em', dataFimIso)
-        backupRecord.set('drive_offset', totalBytes)
-        backupRecord.set('drive_erro', destinoInfo)
-        $app.save(backupRecord)
-
-        if (configRec) {
-          configRec.set('ultimo_envio', dataFimIso)
-          configRec.set('ultimo_status', 'conectado')
-          $app.save(configRec)
-        }
-
-        return {
-          status: 'enviado',
-          file_id: finalFileId,
-          destino: destinoInfo,
-        }
-      } else {
-        var errChunk =
-          'Falha no envio de fatia ao Google Drive (HTTP ' +
-          putRes.statusCode +
-          '): ' +
-          (putRes.raw || '').slice(0, 300)
-        console.error(logPrefix + ' ' + errChunk)
-        backupRecord.set('drive_status', 'erro')
-        backupRecord.set('drive_erro', errChunk)
-        backupRecord.set('drive_tentativas', tentativas + 1)
-        $app.save(backupRecord)
-        return { status: 'erro', erro: errChunk }
+      return {
+        status: currentOffset >= totalBytes ? 'enviado' : 'enviando',
+        offset: currentOffset,
+        total: totalBytes,
+        porcentagem: Math.round((currentOffset / totalBytes) * 100),
+        chunks_enviados_rodada: chunksEnviadosNestaRodada,
       }
     } catch (errExec) {
-      var msgErr = 'Exceção no processamento incremental: ' + String(errExec?.message || errExec)
+      var msgErr = 'Exceção no envio incremental Drive: ' + String(errExec?.message || errExec)
       console.error(logPrefix + ' ' + msgErr)
       try {
         backupRecord.set('drive_status', 'erro')
@@ -891,13 +898,18 @@ routerAdd('GET', '/backend/v1/backups/processar-solicitados-drive', (e) => {
     }
   }
 
-  var pending = $app.findRecordsByFilter(
-    'backups_sistema',
-    "drive_status = 'solicitado' || drive_status = 'enviando'",
-    '-created',
-    3,
-    0,
-  )
+  var pending = []
+  try {
+    pending = $app.findRecordsByFilter(
+      'backups_sistema',
+      "drive_status = 'solicitado' || drive_status = 'enviando'",
+      '-created',
+      2,
+      0,
+    )
+  } catch (eFind) {
+    return e.json(500, { error: 'Erro ao buscar pendentes: ' + (eFind?.message || eFind) })
+  }
 
   var processados = 0
   var resultado = []
@@ -920,11 +932,15 @@ routerAdd('GET', '/backend/v1/backups/processar-solicitados-drive', (e) => {
 
 // -------------------------------------------------------------
 // 2. CRON JOB DA FILA: REPROCESSADOR DE BACKUPS COM drive_status === 'solicitado' OU 'enviando'
-// Executa a cada minuto de forma incremental e segura para a memória da JSVM.
+// Executa a cada minuto com fatiamento resumível seguro inline.
 // -------------------------------------------------------------
 cronAdd('backup_processador_fila_solicitados', '*/1 * * * *', () => {
+  console.log('[CRON_FILA] Rodada iniciada: verificando fila...')
   function processarBackupIncremental(backupId, logPrefixOrigem) {
     var logPrefix = (logPrefixOrigem || '[INCREMENTAL]') + '[' + backupId + ']'
+    console.log(logPrefix + ' Início de processarBackupIncremental')
+    var startRoundTime = Date.now()
+    var MAX_ROUND_DURATION_MS = 25000 // 25 segundos máximo por rodada
 
     function getAccessTokenShared(serviceAccountJson, scope) {
       var b64chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/'
@@ -1188,7 +1204,6 @@ cronAdd('backup_processador_fila_solicitados', '*/1 * * * *', () => {
       function modPow(baseB, expB, modB) {
         var res = [1]
         var cur = baseB.slice()
-        // Encontra o bit mais significativo do expoente para evitar iterações desnecessárias
         var maxChunk = 0
         var maxBit = 0
         for (var i = expB.length - 1; i >= 0; i--) {
@@ -1276,7 +1291,7 @@ cronAdd('backup_processador_fila_solicitados', '*/1 * * * *', () => {
           encodeURIComponent('urn:ietf:params:oauth:grant-type:jwt-bearer') +
           '&assertion=' +
           encodeURIComponent(assertion),
-        timeout: 25,
+        timeout: 20,
       })
 
       if (res.statusCode !== 200) {
@@ -1300,7 +1315,6 @@ cronAdd('backup_processador_fila_solicitados', '*/1 * * * *', () => {
     function shareFileWithUserShared(fileId, userEmail, token) {
       if (!userEmail) return { success: false, error: 'Email de usuário não informado' }
       try {
-        console.log(logPrefix + ' Compartilhando arquivo ' + fileId + ' com ' + userEmail + '...')
         var permUrl =
           'https://www.googleapis.com/drive/v3/files/' +
           encodeURIComponent(fileId) +
@@ -1317,25 +1331,16 @@ cronAdd('backup_processador_fila_solicitados', '*/1 * * * *', () => {
             type: 'user',
             emailAddress: userEmail,
           }),
-          timeout: 30,
+          timeout: 20,
         })
         if (permRes.statusCode === 200 || permRes.statusCode === 201) {
-          console.log(logPrefix + ' Arquivo compartilhado com sucesso com ' + userEmail)
           return { success: true }
         }
-        console.warn(
-          logPrefix +
-            ' Falha no compartilhamento (HTTP ' +
-            permRes.statusCode +
-            '): ' +
-            (permRes.raw || ''),
-        )
         return {
           success: false,
           error: 'HTTP ' + permRes.statusCode + ': ' + (permRes.raw || ''),
         }
       } catch (eShare) {
-        console.error(logPrefix + ' Exceção ao compartilhar:', eShare)
         return {
           success: false,
           error: String(eShare?.message || eShare),
@@ -1347,14 +1352,13 @@ cronAdd('backup_processador_fila_solicitados', '*/1 * * * *', () => {
     try {
       backupRecord = $app.findFirstRecordByData('backups_sistema', 'id', backupId)
     } catch (eFind) {
-      console.error(logPrefix + ' Backup não encontrado:', eFind)
+      console.error(logPrefix + ' Backup não encontrado: ' + backupId)
       return { status: 'erro', erro: 'Backup não encontrado: ' + backupId }
     }
 
     var tentativas = backupRecord.getInt('drive_tentativas') || 0
-    if (tentativas >= 5) {
-      var msgMax =
-        'Limite de 5 tentativas excedido. Reenvio cancelado. Tente manualmente pela tela.'
+    if (tentativas >= 6) {
+      var msgMax = 'Limite de tentativas excedido. Tente novamente pela tela do sistema.'
       console.warn(logPrefix + ' ' + msgMax)
       backupRecord.set('drive_status', 'erro')
       backupRecord.set('drive_erro', msgMax)
@@ -1377,9 +1381,7 @@ cronAdd('backup_processador_fila_solicitados', '*/1 * * * *', () => {
             usuarioEmailDestino = configRec.getString('usuario_email')
           }
         }
-      } catch (eCfg) {
-        console.warn(logPrefix + ' config_google_drive não encontrada:', eCfg)
-      }
+      } catch (_) {}
 
       if (!serviceAccountJson) {
         var msgSemConta = 'Conta de Serviço Google Drive não configurada no ERP.'
@@ -1390,88 +1392,93 @@ cronAdd('backup_processador_fila_solicitados', '*/1 * * * *', () => {
         return { status: 'erro', erro: msgSemConta }
       }
 
+      console.log(logPrefix + ' Obtendo access token Google OAuth...')
       var auth = getAccessTokenShared(
         serviceAccountJson,
         'https://www.googleapis.com/auth/drive.file',
       )
+      console.log(logPrefix + ' Token obtido com sucesso para: ' + auth.client_email)
+      var resumoRaw = backupRecord.get('resumo_colecoes') || {}
+      var colecoesValidas = [
+        'empresas',
+        'empresa_membros',
+        'users',
+        'clientes',
+        'fornecedores',
+        'produtos',
+        'plano_contas',
+        'contas_pagar',
+        'contas_receber',
+        'bancos_contas',
+        'movimentos_financeiros',
+        'conciliacoes',
+        'empresa_convites',
+        'veiculos',
+        'abastecimentos',
+        'manutencoes',
+        'centros_custos',
+        'creditos_clientes',
+        'funcionarios',
+        'folha_horas_extras',
+        'entregas',
+        'vendas',
+        'despesas_frota',
+        'historico_alteracoes',
+        'formas_recebimento',
+        'cheques_predatados',
+        'contadores_sequenciais',
+      ]
+      var metaJsonStr = JSON.stringify({
+        id: backupRecord.id,
+        nome_arquivo: backupRecord.getString('nome_arquivo'),
+        tipo: backupRecord.getString('tipo'),
+        origem: backupRecord.getString('origem') || 'manual',
+        total_colecoes: backupRecord.getInt('total_colecoes'),
+        total_registros: backupRecord.getInt('total_registros'),
+        resumo_colecoes: backupRecord.get('resumo_colecoes'),
+        created: backupRecord.getString('created'),
+        exportado_em: new Date().toISOString(),
+        sistema: 'Pedreira Cordeiro ERP (NovaGest)',
+      })
+      var headerPrefix = '{"meta":' + metaJsonStr + ',"dados":{'
+      var footerSuffix = '}}\n'
 
-      // PASSO 1: Cálculo do tamanho total (apenas na primeira rodada ou se drive_total_bytes for 0)
       var totalBytes = backupRecord.getInt('drive_total_bytes') || 0
       var sessionUrl = backupRecord.getString('drive_session_url') || ''
 
       if (!totalBytes || totalBytes === 0) {
-        console.log(
-          logPrefix + ' Calculando tamanho total somando metadados e chunks individualmente...',
-        )
-        var metaObj = {
-          meta: {
-            id: backupRecord.id,
-            nome_arquivo: backupRecord.getString('nome_arquivo'),
-            tipo: backupRecord.getString('tipo'),
-            origem: backupRecord.getString('origem') || 'manual',
-            total_colecoes: backupRecord.getInt('total_colecoes'),
-            total_registros: backupRecord.getInt('total_registros'),
-            resumo_colecoes: backupRecord.get('resumo_colecoes'),
-            created: backupRecord.getString('created'),
-            exportado_em: new Date().toISOString(),
-            sistema: 'Pedreira Cordeiro ERP (NovaGest)',
-          },
+        var calcBytes = headerPrefix.length + footerSuffix.length
+        for (var ci = 0; ci < colecoesValidas.length; ci++) {
+          var cn = colecoesValidas[ci]
+          if (ci > 0) calcBytes += 1
+          calcBytes += JSON.stringify(cn).length + ':['
+          var statsRows = []
+          $app
+            .db()
+            .newQuery(
+              'SELECT COUNT(*) as cnt, SUM(CASE WHEN LENGTH(registros_json) > 2 THEN LENGTH(registros_json) - 2 ELSE 0 END) as chars_data ' +
+                'FROM backups_dados WHERE backup_id = {:bid} AND colecao_nome = {:cn}',
+            )
+            .bind({ bid: backupId, cn: cn })
+            .all(statsRows)
+
+          var cntChunks = statsRows.length > 0 ? parseInt(statsRows[0].cnt || 0, 10) : 0
+          var charsData = statsRows.length > 0 ? parseInt(statsRows[0].chars_data || 0, 10) : 0
+          calcBytes += charsData
+          if (cntChunks > 1) {
+            calcBytes += cntChunks - 1
+          }
+          calcBytes += 1
         }
-        var metaStr = JSON.stringify(metaObj)
-        var headerPrefix = '{"meta":' + JSON.stringify(metaObj.meta) + ',"dados":{'
-        var calcBytes = headerPrefix.length + 2 // fecha com '}}\n'
-
-        // Consulta contagem e lista ordenada por created,id
-        var allChunksMeta = $app.findRecordsByFilter(
-          'backups_dados',
-          "backup_id = '" + backupId + "'",
-          'created,id',
-          5000,
-          0,
-        )
-
-        var curCol = null
-        var curColCount = 0
-        for (var cm = 0; cm < allChunksMeta.length; cm++) {
-          var recM = allChunksMeta[cm]
-          var colName = recM.getString('colecao_nome')
-          var chunkJsonStr = JSON.stringify(recM.get('registros_json') || [])
-          var itemsLen = 0
-          if (chunkJsonStr && chunkJsonStr.length >= 2) {
-            itemsLen = chunkJsonStr.length - 2 // remove '[' e ']'
-          }
-
-          if (colName !== curCol) {
-            if (curCol !== null) calcBytes += 2 // '],'
-            curCol = colName
-            curColCount = 0
-            calcBytes += JSON.stringify(colName).length + ':['
-          }
-
-          if (itemsLen > 0) {
-            if (curColCount > 0) calcBytes += 1 // ','
-            calcBytes += itemsLen
-            curColCount++
-          }
-        }
-        if (curCol !== null) calcBytes += 1 // ']'
 
         totalBytes = calcBytes
+        console.log(logPrefix + ' totalBytes calculado via SQL: ' + totalBytes)
         backupRecord.set('drive_total_bytes', totalBytes)
+        backupRecord.set('drive_offset', 0)
         $app.save(backupRecord)
-        console.log(
-          logPrefix +
-            ' Tamanho total calculado: ' +
-            totalBytes +
-            ' bytes (' +
-            Math.round(totalBytes / 1024) +
-            ' KB)',
-        )
       }
 
-      // PASSO 2: Iniciar sessão de upload resumível se ainda não tiver sessionUrl
       if (!sessionUrl) {
-        console.log(logPrefix + ' Iniciando sessão de upload resumível no Google Drive...')
         var initUrl =
           'https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable&supportsAllDrives=true'
         var fileMetadata = {
@@ -1492,19 +1499,10 @@ cronAdd('backup_processador_fila_solicitados', '*/1 * * * *', () => {
             'X-Upload-Content-Length': String(totalBytes),
           },
           body: JSON.stringify(fileMetadata),
-          timeout: 30,
+          timeout: 20,
         })
 
-        console.log(logPrefix + ' Resposta início sessão Drive: HTTP ' + initRes.statusCode)
-
-        // Fallback: se pasta configurada der 403 / 404, tenta sem parents (Drive próprio da Conta de Serviço)
         if (initRes.statusCode !== 200 && folderId) {
-          console.warn(
-            logPrefix +
-              ' Falha na pasta configurada (HTTP ' +
-              initRes.statusCode +
-              '), tentando sem pasta...',
-          )
           delete fileMetadata.parents
           initRes = $http.send({
             url: initUrl,
@@ -1516,9 +1514,8 @@ cronAdd('backup_processador_fila_solicitados', '*/1 * * * *', () => {
               'X-Upload-Content-Length': String(totalBytes),
             },
             body: JSON.stringify(fileMetadata),
-            timeout: 30,
+            timeout: 20,
           })
-          console.log(logPrefix + ' Resposta início sessão sem pasta: HTTP ' + initRes.statusCode)
         }
 
         if (initRes.statusCode !== 200) {
@@ -1539,8 +1536,7 @@ cronAdd('backup_processador_fila_solicitados', '*/1 * * * *', () => {
         var loc = headersMap['Location'] || headersMap['location']
         if (Array.isArray(loc) && loc.length > 0) loc = loc[0]
         if (!loc && typeof loc !== 'string') {
-          var errLoc = 'Google Drive não retornou header Location na sessão resumível.'
-          console.error(logPrefix + ' ' + errLoc)
+          var errLoc = 'Google Drive não retornou Location para upload resumível.'
           backupRecord.set('drive_status', 'erro')
           backupRecord.set('drive_erro', errLoc)
           backupRecord.set('drive_tentativas', tentativas + 1)
@@ -1552,13 +1548,10 @@ cronAdd('backup_processador_fila_solicitados', '*/1 * * * *', () => {
         backupRecord.set('drive_session_url', sessionUrl)
         backupRecord.set('drive_status', 'enviando')
         backupRecord.set('drive_offset', 0)
-        backupRecord.set('drive_progresso_chunk', 0)
         backupRecord.set('drive_erro', '')
         $app.save(backupRecord)
-        console.log(logPrefix + ' Sessão resumível criada com sucesso! URL salva.')
       }
 
-      // PASSO 3: Consultar status de offset na Google Drive API (query resume)
       var currentOffset = backupRecord.getInt('drive_offset') || 0
       try {
         var checkRes = $http.send({
@@ -1568,8 +1561,9 @@ cronAdd('backup_processador_fila_solicitados', '*/1 * * * *', () => {
             'Content-Length': '0',
             'Content-Range': 'bytes */' + totalBytes,
           },
-          timeout: 25,
+          timeout: 15,
         })
+
         if (checkRes.statusCode === 308) {
           var rangeHeader = checkRes.headers?.['Range'] || checkRes.headers?.['range']
           if (Array.isArray(rangeHeader)) rangeHeader = rangeHeader[0]
@@ -1578,220 +1572,245 @@ cronAdd('backup_processador_fila_solicitados', '*/1 * * * *', () => {
             if (matchRange && matchRange[1]) {
               currentOffset = parseInt(matchRange[1], 10) + 1
               backupRecord.set('drive_offset', currentOffset)
-              console.log(
-                logPrefix + ' Google Drive confirmou bytes recebidos até: ' + currentOffset,
-              )
             }
           }
         } else if (checkRes.statusCode === 200 || checkRes.statusCode === 201) {
-          // Já concluído!
           var dataConcluido = checkRes.json || JSON.parse(checkRes.raw || '{}')
           var fileIdPronto = dataConcluido.id || ''
-          console.log(logPrefix + ' Arquivo já concluído no Drive! File ID: ' + fileIdPronto)
           shareFileWithUserShared(fileIdPronto, usuarioEmailDestino, auth.access_token)
           var agoraIso = new Date().toISOString()
           backupRecord.set('drive_status', 'enviado')
           backupRecord.set('drive_file_id', fileIdPronto)
           backupRecord.set('drive_enviado_em', agoraIso)
           backupRecord.set('drive_offset', totalBytes)
-          backupRecord.set('drive_erro', 'Concluído com sucesso')
+          backupRecord.set(
+            'drive_erro',
+            'Concluído com sucesso (compartilhado com ' + usuarioEmailDestino + ')',
+          )
           $app.save(backupRecord)
+          console.log(
+            logPrefix +
+              ' [FINAL] Arquivo concluído no Drive (HTTP 200/201). Compartilhado com ' +
+              usuarioEmailDestino,
+          )
           return { status: 'concluido', file_id: fileIdPronto }
         }
       } catch (eCheck) {
-        console.warn(logPrefix + ' Aviso ao consultar status do upload resumível:', eCheck)
+        console.warn(logPrefix + ' Aviso na consulta de offset:', eCheck)
       }
 
-      // PASSO 4: Envio de fatia fracionada (máx 15 chunks ou ~1.5MB por rodada)
-      var CHUNKS_POR_RODADA = 15
-      var chunkIndexStart = backupRecord.getInt('drive_progresso_chunk') || 0
+      var CHUNK_BYTES = 256 * 1024
+      var chunksEnviadosNestaRodada = 0
+      var totalChunksEstimado = Math.ceil(totalBytes / CHUNK_BYTES)
 
-      // Carrega apenas os chunks desta rodada usando paginação no banco
-      var chunksRodada = $app.findRecordsByFilter(
-        'backups_dados',
-        "backup_id = '" + backupId + "'",
-        'created,id',
-        CHUNKS_POR_RODADA,
-        chunkIndexStart,
-      )
+      while (currentOffset < totalBytes) {
+        if (Date.now() - startRoundTime >= MAX_ROUND_DURATION_MS) {
+          break
+        }
 
-      console.log(
-        logPrefix +
-          ' Lendo fatia de chunks: de ' +
-          chunkIndexStart +
-          ' a ' +
-          (chunkIndexStart + chunksRodada.length) +
-          ' (offset atual: ' +
-          currentOffset +
-          '/' +
-          totalBytes +
-          ')',
-      )
+        var targetSliceEnd = Math.min(currentOffset + CHUNK_BYTES, totalBytes)
+        var targetSliceLen = targetSliceEnd - currentOffset
+        if (targetSliceEnd < totalBytes && targetSliceLen % CHUNK_BYTES !== 0) {
+          targetSliceLen = Math.floor(targetSliceLen / CHUNK_BYTES) * CHUNK_BYTES
+          targetSliceEnd = currentOffset + targetSliceLen
+        }
 
-      // Se não há mais chunks no banco mas ainda faltam bytes (fechamento do JSON)
-      var bufferStr = ''
-      var isPrimeiraFatia = chunkIndexStart === 0
-      var isUltimaFatia = chunksRodada.length < CHUNKS_POR_RODADA
+        var sliceBuf = ''
+        var curPos = 0
 
-      if (isPrimeiraFatia) {
-        var metaObjInicio = {
-          meta: {
-            id: backupRecord.id,
-            nome_arquivo: backupRecord.getString('nome_arquivo'),
-            tipo: backupRecord.getString('tipo'),
-            origem: backupRecord.getString('origem') || 'manual',
-            total_colecoes: backupRecord.getInt('total_colecoes'),
-            total_registros: backupRecord.getInt('total_registros'),
-            resumo_colecoes: backupRecord.get('resumo_colecoes'),
-            created: backupRecord.getString('created'),
-            exportado_em: new Date().toISOString(),
-            sistema: 'Pedreira Cordeiro ERP (NovaGest)',
+        var hEnd = curPos + headerPrefix.length
+        if (currentOffset < hEnd && targetSliceEnd > curPos) {
+          var sStart = Math.max(0, currentOffset - curPos)
+          var sEnd = Math.min(headerPrefix.length, targetSliceEnd - curPos)
+          sliceBuf += headerPrefix.substring(sStart, sEnd)
+        }
+        curPos = hEnd
+
+        for (var colIdx = 0; colIdx < colecoesValidas.length; colIdx++) {
+          if (curPos >= targetSliceEnd) break
+          var nomeColecao = colecoesValidas[colIdx]
+
+          var cPrefix = (colIdx > 0 ? ',' : '') + JSON.stringify(nomeColecao) + ':['
+          var cpEnd = curPos + cPrefix.length
+          if (currentOffset < cpEnd && targetSliceEnd > curPos) {
+            var s1 = Math.max(0, currentOffset - curPos)
+            var s2 = Math.min(cPrefix.length, targetSliceEnd - curPos)
+            sliceBuf += cPrefix.substring(s1, s2)
+          }
+          curPos = cpEnd
+
+          var chunkIndexDb = 0
+          while (true) {
+            if (curPos >= targetSliceEnd) break
+            var dbRecs = []
+            $app
+              .db()
+              .newQuery(
+                'SELECT id, registros_json FROM backups_dados WHERE backup_id = {:bid} AND colecao_nome = {:cn} ORDER BY chunk_index ASC LIMIT 1 OFFSET {:off}',
+              )
+              .bind({ bid: backupId, cn: nomeColecao, off: chunkIndexDb })
+              .all(dbRecs)
+
+            if (dbRecs.length === 0) break
+
+            var rJsonRaw = dbRecs[0].registros_json || ''
+            var insideData = ''
+            if (
+              rJsonRaw.length >= 2 &&
+              rJsonRaw[0] === '[' &&
+              rJsonRaw[rJsonRaw.length - 1] === ']'
+            ) {
+              insideData = rJsonRaw.slice(1, -1)
+            } else {
+              var strObj = JSON.stringify(rJsonRaw)
+              if (strObj.length >= 2) insideData = strObj.slice(1, -1)
+            }
+
+            if (chunkIndexDb > 0) {
+              var commaPos = curPos
+              var commaEnd = curPos + 1
+              if (currentOffset < commaEnd && targetSliceEnd > commaPos) {
+                sliceBuf += ','
+              }
+              curPos += 1
+            }
+
+            var dEnd = curPos + insideData.length
+            if (currentOffset < dEnd && targetSliceEnd > curPos) {
+              var ds1 = Math.max(0, currentOffset - curPos)
+              var ds2 = Math.min(insideData.length, targetSliceEnd - curPos)
+              sliceBuf += insideData.substring(ds1, ds2)
+            }
+            curPos = dEnd
+            chunkIndexDb++
+          }
+
+          var sufEnd = curPos + 1
+          if (currentOffset < sufEnd && targetSliceEnd > curPos) {
+            sliceBuf += ']'
+          }
+          curPos = sufEnd
+        }
+
+        var footEnd = curPos + footerSuffix.length
+        if (currentOffset < footEnd && targetSliceEnd > curPos) {
+          var fs1 = Math.max(0, currentOffset - curPos)
+          var fs2 = Math.min(footerSuffix.length, targetSliceEnd - curPos)
+          sliceBuf += footerSuffix.substring(fs1, fs2)
+        }
+        curPos = footEnd
+
+        var actualChunkLen = sliceBuf.length
+        if (actualChunkLen === 0) {
+          console.warn(
+            logPrefix + ' Fatia vazia gerada no offset ' + currentOffset + '. Interrompendo.',
+          )
+          break
+        }
+
+        var putEnd = currentOffset + actualChunkLen - 1
+        var putRangeHeader = 'bytes ' + currentOffset + '-' + putEnd + '/' + totalBytes
+
+        var putRes = $http.send({
+          url: sessionUrl,
+          method: 'PUT',
+          headers: {
+            'Content-Length': String(actualChunkLen),
+            'Content-Range': putRangeHeader,
           },
-        }
-        bufferStr += '{"meta":' + JSON.stringify(metaObjInicio.meta) + ',"dados":{'
-      }
+          body: sliceBuf,
+          timeout: 20,
+        })
 
-      var colAnterior = null
-      for (var cr = 0; cr < chunksRodada.length; cr++) {
-        var rChunk = chunksRodada[cr]
-        var nomeC = rChunk.getString('colecao_nome')
-        var rJson = JSON.stringify(rChunk.get('registros_json') || [])
-        var semBrackets = rJson.length >= 2 ? rJson.slice(1, -1) : ''
+        if (putRes.statusCode === 308) {
+          var nextOffset = putEnd + 1
+          var rangeRsp = putRes.headers?.['Range'] || putRes.headers?.['range']
+          if (Array.isArray(rangeRsp)) rangeRsp = rangeRsp[0]
+          if (rangeRsp && typeof rangeRsp === 'string') {
+            var mO = rangeRsp.match(/bytes=0-(\d+)/)
+            if (mO && mO[1]) nextOffset = parseInt(mO[1], 10) + 1
+          }
 
-        if (nomeC !== colAnterior) {
-          if (colAnterior !== null) bufferStr += '],'
-          else if (!isPrimeiraFatia && cr === 0) bufferStr += '],'
-          bufferStr += JSON.stringify(nomeC) + ':['
-          colAnterior = nomeC
+          currentOffset = nextOffset
+          backupRecord.set('drive_status', 'enviando')
+          backupRecord.set('drive_offset', currentOffset)
+          backupRecord.set('drive_erro', '')
+          $app.save(backupRecord)
+
+          chunksEnviadosNestaRodada++
+          var chunkIndexAtual = Math.round(currentOffset / CHUNK_BYTES)
+          console.log(
+            logPrefix +
+              ' chunk ' +
+              chunkIndexAtual +
+              '/' +
+              totalChunksEstimado +
+              ', offset ' +
+              currentOffset +
+              '/' +
+              totalBytes +
+              ' (' +
+              Math.round((currentOffset / totalBytes) * 100) +
+              '%)',
+          )
+        } else if (putRes.statusCode === 200 || putRes.statusCode === 201) {
+          var resFinal = putRes.json || JSON.parse(putRes.raw || '{}')
+          var fileIdSalvo = resFinal.id || ''
+          shareFileWithUserShared(fileIdSalvo, usuarioEmailDestino, auth.access_token)
+
+          var agoraFinal = new Date().toISOString()
+          backupRecord.set('drive_status', 'enviado')
+          backupRecord.set('drive_file_id', fileIdSalvo)
+          backupRecord.set('drive_enviado_em', agoraFinal)
+          backupRecord.set('drive_offset', totalBytes)
+          backupRecord.set(
+            'drive_erro',
+            'Enviado ao Google Drive e compartilhado com ' + usuarioEmailDestino,
+          )
+          $app.save(backupRecord)
+
+          if (configRec) {
+            configRec.set('ultimo_envio', agoraFinal)
+            configRec.set('ultimo_status', 'conectado')
+            $app.save(configRec)
+          }
+
+          console.log(
+            logPrefix +
+              ' [SUCESSO] Upload 100% concluído! File ID: ' +
+              fileIdSalvo +
+              ' compartilhado com ' +
+              usuarioEmailDestino,
+          )
+          return {
+            status: 'enviado',
+            file_id: fileIdSalvo,
+            offset: totalBytes,
+          }
         } else {
-          if (semBrackets.length > 0) bufferStr += ','
+          var errPut =
+            'Falha HTTP PUT chunk (HTTP ' +
+            putRes.statusCode +
+            '): ' +
+            (putRes.raw || '').slice(0, 200)
+          console.error(logPrefix + ' ' + errPut)
+          backupRecord.set('drive_status', 'erro')
+          backupRecord.set('drive_erro', errPut)
+          backupRecord.set('drive_tentativas', tentativas + 1)
+          $app.save(backupRecord)
+          return { status: 'erro', erro: errPut }
         }
-        bufferStr += semBrackets
       }
 
-      if (isUltimaFatia) {
-        if (colAnterior !== null || !isPrimeiraFatia) bufferStr += ']'
-        bufferStr += '}}\n'
-      }
-
-      // Se o buffer estiver vazio e ainda não concluiu
-      if (bufferStr.length === 0 && !isUltimaFatia) {
-        bufferStr = ' '
-      }
-
-      var chunkLen = bufferStr.length
-      var chunkEnd = currentOffset + chunkLen - 1
-      // Ajuste se ultrapassar ou for a fatia final
-      if (isUltimaFatia || chunkEnd >= totalBytes - 1) {
-        chunkEnd = totalBytes - 1
-        chunkLen = chunkEnd - currentOffset + 1
-        bufferStr = bufferStr.slice(0, chunkLen)
-      }
-
-      var contentRangeHeader = 'bytes ' + currentOffset + '-' + chunkEnd + '/' + totalBytes
-      console.log(
-        logPrefix +
-          ' Enviando fatia HTTP PUT: Content-Range: ' +
-          contentRangeHeader +
-          ' (' +
-          chunkLen +
-          ' bytes)...',
-      )
-
-      var putRes = $http.send({
-        url: sessionUrl,
-        method: 'PUT',
-        headers: {
-          'Content-Length': String(chunkLen),
-          'Content-Range': contentRangeHeader,
-        },
-        body: bufferStr,
-        timeout: 120,
-      })
-
-      console.log(logPrefix + ' Resposta fatia: HTTP ' + putRes.statusCode)
-
-      if (putRes.statusCode === 308) {
-        // Chunk aceito, upload incompleto (comportamento esperado da API)
-        var novoOffset = chunkEnd + 1
-        var rangeResp = putRes.headers?.['Range'] || putRes.headers?.['range']
-        if (Array.isArray(rangeResp)) rangeResp = rangeResp[0]
-        if (rangeResp && typeof rangeResp === 'string') {
-          var mR = rangeResp.match(/bytes=0-(\d+)/)
-          if (mR && mR[1]) novoOffset = parseInt(mR[1], 10) + 1
-        }
-
-        backupRecord.set('drive_status', 'enviando')
-        backupRecord.set('drive_offset', novoOffset)
-        backupRecord.set('drive_progresso_chunk', chunkIndexStart + chunksRodada.length)
-        backupRecord.set('drive_erro', '')
-        $app.save(backupRecord)
-
-        console.log(
-          logPrefix +
-            ' Progresso salvo com sucesso! Novo offset: ' +
-            novoOffset +
-            '/' +
-            totalBytes +
-            ' (' +
-            Math.round((novoOffset / totalBytes) * 100) +
-            '%). Próximo cron continuará.',
-        )
-        return {
-          status: 'enviando',
-          offset: novoOffset,
-          total: totalBytes,
-          porcentagem: Math.round((novoOffset / totalBytes) * 100),
-        }
-      } else if (putRes.statusCode === 200 || putRes.statusCode === 201) {
-        // Conclusão com sucesso!
-        var jsonFinal = putRes.json || JSON.parse(putRes.raw || '{}')
-        var finalFileId = jsonFinal.id || ''
-        console.log(logPrefix + ' UPLOAD CONCLUÍDO COM SUCESSO! File ID: ' + finalFileId)
-
-        // Compartilhar com o usuário
-        var destinoInfo = 'Drive da Conta de Serviço'
-        var shareOk = shareFileWithUserShared(finalFileId, usuarioEmailDestino, auth.access_token)
-        if (shareOk.success) {
-          destinoInfo += ' (compartilhado com ' + usuarioEmailDestino + ')'
-        } else {
-          destinoInfo += ' (aviso compartilhamento: ' + shareOk.error + ')'
-        }
-
-        var dataFimIso = new Date().toISOString()
-        backupRecord.set('drive_status', 'enviado')
-        backupRecord.set('drive_file_id', finalFileId)
-        backupRecord.set('drive_enviado_em', dataFimIso)
-        backupRecord.set('drive_offset', totalBytes)
-        backupRecord.set('drive_erro', destinoInfo)
-        $app.save(backupRecord)
-
-        if (configRec) {
-          configRec.set('ultimo_envio', dataFimIso)
-          configRec.set('ultimo_status', 'conectado')
-          $app.save(configRec)
-        }
-
-        return {
-          status: 'enviado',
-          file_id: finalFileId,
-          destino: destinoInfo,
-        }
-      } else {
-        var errChunk =
-          'Falha no envio de fatia ao Google Drive (HTTP ' +
-          putRes.statusCode +
-          '): ' +
-          (putRes.raw || '').slice(0, 300)
-        console.error(logPrefix + ' ' + errChunk)
-        backupRecord.set('drive_status', 'erro')
-        backupRecord.set('drive_erro', errChunk)
-        backupRecord.set('drive_tentativas', tentativas + 1)
-        $app.save(backupRecord)
-        return { status: 'erro', erro: errChunk }
+      return {
+        status: currentOffset >= totalBytes ? 'enviado' : 'enviando',
+        offset: currentOffset,
+        total: totalBytes,
+        porcentagem: Math.round((currentOffset / totalBytes) * 100),
+        chunks_enviados_rodada: chunksEnviadosNestaRodada,
       }
     } catch (errExec) {
-      var msgErr = 'Exceção no processamento incremental: ' + String(errExec?.message || errExec)
+      var msgErr = 'Exceção no envio incremental Drive: ' + String(errExec?.message || errExec)
       console.error(logPrefix + ' ' + msgErr)
       try {
         backupRecord.set('drive_status', 'erro')
@@ -1817,17 +1836,24 @@ cronAdd('backup_processador_fila_solicitados', '*/1 * * * *', () => {
     return
   }
 
+  console.log(
+    '[CRON FILA DRIVE] Registros pendentes encontrados: ' + (pending ? pending.length : 0),
+  )
+
   if (!pending || pending.length === 0) {
     return
   }
 
-  console.log('[CRON FILA DRIVE] Encontrados ' + pending.length + ' backup(s) na fila do Drive.')
-
   for (var idx = 0; idx < pending.length; idx++) {
     var backupRecord = pending[idx]
     var backupId = backupRecord.id
-    console.log('[CRON_FILA][' + backupId + '] Processando rodada incremental...')
-    processarBackupIncremental(backupId, '[CRON_FILA]')
+    try {
+      console.log('[CRON_FILA][' + backupId + '] Chamando processarBackupIncremental...')
+      var resInc = processarBackupIncremental(backupId, '[CRON_FILA]')
+      console.log('[CRON_FILA][' + backupId + '] Resultado da rodada:', JSON.stringify(resInc))
+    } catch (eCronLoop) {
+      console.error('[CRON_FILA][' + backupId + '] Erro não capturado:', eCronLoop)
+    }
   }
 })
 
@@ -2023,7 +2049,6 @@ cronAdd('backup_semanal_pedreira_cordeiro', '30 0 * * 0', () => {
         Object.keys(resumo).length +
         ' coleções salvos.',
     )
-    // Marca drive_status como 'solicitado' para a fila de envio processar de forma segura
     backupRecord.set('drive_status', 'solicitado')
     $app.save(backupRecord)
 
@@ -2685,9 +2710,6 @@ routerAdd(
       return e.json(400, { error: 'ID do backup não informado' })
     }
 
-    var logPrefix = '[API_MANUAL][' + backupId + ']'
-    console.log(logPrefix + ' Disparando envio manual para backup: ' + backupId)
-
     var backupRecord = null
     try {
       backupRecord = $app.findFirstRecordByData('backups_sistema', 'id', backupId)
@@ -2695,726 +2717,29 @@ routerAdd(
       return e.json(404, { error: 'Backup não encontrado: ' + backupId })
     }
 
-    // Se o backup possui mais de 10 chunks ou mais de 1000 registros, o envio direto multipart
-    // estoura o limite de tempo da requisição web (60s) e a memória da JSVM.
-    // Nesses casos delegamos o envio para o cron incremental resumível (a cada minuto).
-    var totalRegs = backupRecord.getInt('total_registros') || 0
-    var chunksCount = 0
-    try {
-      chunksCount = $app.countRecords('backups_dados', "backup_id = '" + backupId + "'")
-    } catch (_) {}
+    // Delega com segurança para a fila incremental resumível sem travar a requisição web
+    backupRecord.set('drive_status', 'solicitado')
+    backupRecord.set('drive_tentativas', 0)
+    backupRecord.set(
+      'drive_erro',
+      'Fila de envio iniciada. O processador em segundo plano enviará chunks de 256KB.',
+    )
+    $app.save(backupRecord)
 
-    if (chunksCount > 8 || totalRegs > 800) {
-      console.log(
-        logPrefix +
-          ' Backup volumoso (' +
-          totalRegs +
-          ' registros, ' +
-          chunksCount +
-          ' chunks no banco). Delegando para a fila de envio incremental resumível...',
-      )
-      backupRecord.set('drive_status', 'solicitado')
-      backupRecord.set('drive_tentativas', 0)
-      backupRecord.set(
-        'drive_erro',
-        'Fila incremental iniciada. O cron a cada minuto enviará fatias resumíveis.',
-      )
-      $app.save(backupRecord)
-
-      return e.json(200, {
-        success: true,
-        message:
-          'Backup volumoso (' +
-          totalRegs +
-          ' registros) colocado na fila de envio incremental ao Google Drive. O processador em segundo plano enviará fatias a cada minuto.',
-        delegado_fila: true,
-        total_registros: totalRegs,
-        total_chunks: chunksCount,
-      })
-    }
-
-    function getAccessTokenHelperManual(serviceAccountJson, scope) {
-      var b64chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/'
-      var b64tab = {}
-      for (var i = 0; i < b64chars.length; i++) b64tab[b64chars.charAt(i)] = i
-
-      function base64ToBytes(s) {
-        s = s.replace(/[^A-Za-z0-9+/=]/g, '')
-        var bytes = []
-        var i = 0
-        while (i < s.length) {
-          var enc1 = b64tab[s.charAt(i++)]
-          var enc2 = b64tab[s.charAt(i++)]
-          var enc3 = b64tab[s.charAt(i++)]
-          var enc4 = b64tab[s.charAt(i++)]
-          var chr1 = (enc1 << 2) | (enc2 >> 4)
-          var chr2 = ((enc2 & 15) << 4) | (enc3 >> 2)
-          var chr3 = ((enc3 & 3) << 6) | enc4
-          bytes.push(chr1)
-          if (enc3 !== undefined && s.charAt(i - 2) !== '=') bytes.push(chr2)
-          if (enc4 !== undefined && s.charAt(i - 1) !== '=') bytes.push(chr3)
-        }
-        return bytes
-      }
-
-      function bytesToBase64Url(bytes) {
-        var str = ''
-        for (var i = 0; i < bytes.length; i++) str += String.fromCharCode(bytes[i])
-        var b64 = ''
-        var j = 0
-        while (j < str.length) {
-          var c1 = str.charCodeAt(j++)
-          var c2 = str.charCodeAt(j++)
-          var c3 = str.charCodeAt(j++)
-          var e1 = c1 >> 2
-          var e2 = ((c1 & 3) << 4) | (c2 >> 4)
-          var e3 = isNaN(c2) ? 64 : ((c2 & 15) << 2) | (c3 >> 6)
-          var e4 = isNaN(c2) || isNaN(c3) ? 64 : c3 & 63
-          b64 +=
-            b64chars.charAt(e1) +
-            b64chars.charAt(e2) +
-            (e3 === 64 ? '=' : b64chars.charAt(e3)) +
-            (e4 === 64 ? '=' : b64chars.charAt(e4))
-        }
-        return b64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
-      }
-
-      function utf8ToBase64Url(str) {
-        var bytes = []
-        for (var i = 0; i < str.length; i++) {
-          var c = str.charCodeAt(i)
-          if (c < 128) {
-            bytes.push(c)
-          } else if (c < 2048) {
-            bytes.push((c >> 6) | 192)
-            bytes.push((c & 63) | 128)
-          } else {
-            bytes.push((c >> 12) | 224)
-            bytes.push(((c >> 6) & 63) | 128)
-            bytes.push((c & 63) | 128)
-          }
-        }
-        return bytesToBase64Url(bytes)
-      }
-
-      function parsePKCS8orPKCS1(privateKeyPem) {
-        var clean = privateKeyPem
-          .replace(/-----BEGIN[^-]+-----/g, '')
-          .replace(/-----END[^-]+-----/g, '')
-          .replace(/\s+/g, '')
-        var der = base64ToBytes(clean)
-        var pos = 0
-
-        function readLength() {
-          var b = der[pos++]
-          if (b < 128) return b
-          var nBytes = b & 0x7f
-          var len = 0
-          for (var k = 0; k < nBytes; k++) len = (len << 8) | der[pos++]
-          return len
-        }
-
-        function readTag() {
-          return der[pos++]
-        }
-
-        function readInteger() {
-          var tag = readTag()
-          if (tag !== 0x02)
-            throw new Error('ASN.1 inválido: esperado INTEGER (0x02), recebido ' + tag)
-          var len = readLength()
-          var intBytes = der.slice(pos, pos + len)
-          pos += len
-          while (intBytes.length > 1 && intBytes[0] === 0) intBytes.shift()
-          return intBytes
-        }
-
-        var tag = readTag()
-        if (tag !== 0x30) throw new Error('ASN.1 inválido: esperado SEQUENCE')
-        readLength()
-
-        var nextTag = der[pos]
-        if (nextTag === 0x02) {
-          pos++
-          var vLen = readLength()
-          var ver = der[pos]
-          pos += vLen
-          if (ver === 0 && der[pos] === 0x30) {
-            pos++
-            var algLen = readLength()
-            pos += algLen
-            var octTag = readTag()
-            if (octTag !== 0x04) throw new Error('ASN.1 PKCS#8: esperado OCTET STRING')
-            readLength()
-            var pkcs1Tag = readTag()
-            if (pkcs1Tag !== 0x30) throw new Error('PKCS#1 inválido dentro do PKCS#8')
-            readLength()
-            readInteger()
-            return { n: readInteger(), e: readInteger(), d: readInteger() }
-          } else {
-            return { n: readInteger(), e: readInteger(), d: readInteger() }
-          }
-        }
-        throw new Error('Formato de chave privada RSA não reconhecido')
-      }
-
-      var BASE = 16384
-      var BASE_BITS = 14
-
-      function bytesToBig(bytes) {
-        var res = [0]
-        for (var i = 0; i < bytes.length; i++) {
-          var carry = bytes[i]
-          for (var j = 0; j < res.length; j++) {
-            var v = res[j] * 256 + carry
-            res[j] = v % BASE
-            carry = Math.floor(v / BASE)
-          }
-          while (carry > 0) {
-            res.push(carry % BASE)
-            carry = Math.floor(carry / BASE)
-          }
-        }
-        return trim(res)
-      }
-
-      function bigToBytes(a, expectedLen) {
-        var bytes = []
-        var temp = a.slice()
-        while (temp.length > 1 || temp[0] > 0) {
-          var rem = 0
-          for (var i = temp.length - 1; i >= 0; i--) {
-            var cur = rem * BASE + temp[i]
-            temp[i] = Math.floor(cur / 256)
-            rem = cur % 256
-          }
-          temp = trim(temp)
-          bytes.unshift(rem)
-        }
-        while (bytes.length < expectedLen) bytes.unshift(0)
-        return bytes
-      }
-
-      function trim(a) {
-        while (a.length > 1 && a[a.length - 1] === 0) a.pop()
-        return a
-      }
-
-      function compare(a, b) {
-        if (a.length !== b.length) return a.length > b.length ? 1 : -1
-        for (var i = a.length - 1; i >= 0; i--) {
-          if (a[i] !== b[i]) return a[i] > b[i] ? 1 : -1
-        }
-        return 0
-      }
-
-      function mul(a, b) {
-        var res = []
-        for (var i = 0; i < a.length + b.length; i++) res.push(0)
-        for (var i = 0; i < a.length; i++) {
-          var carry = 0
-          for (var j = 0; j < b.length || carry > 0; j++) {
-            var cur = res[i + j] + a[i] * (j < b.length ? b[j] : 0) + carry
-            res[i + j] = cur % BASE
-            carry = Math.floor(cur / BASE)
-          }
-        }
-        return trim(res)
-      }
-
-      function divRem(u, v) {
-        if (v.length === 1 && v[0] === 0) throw new Error('Divisão por zero')
-        if (compare(u, v) < 0) return { q: [0], r: u.slice() }
-        if (v.length === 1) {
-          var q = []
-          var r = 0
-          var d = v[0]
-          for (var i = u.length - 1; i >= 0; i--) {
-            var cur = r * BASE + u[i]
-            q[i] = Math.floor(cur / d)
-            r = cur % d
-          }
-          return { q: trim(q), r: [r] }
-        }
-
-        var shift = Math.floor(BASE / (v[v.length - 1] + 1))
-        var uNorm = mul(u, [shift])
-        var vNorm = mul(v, [shift])
-        if (uNorm.length === u.length) uNorm.push(0)
-
-        var n = vNorm.length
-        var m = uNorm.length - n
-        var q = []
-        for (var i = 0; i < m; i++) q.push(0)
-
-        var vn1 = vNorm[n - 1]
-        var vn2 = vNorm[n - 2]
-
-        for (var j = m - 1; j >= 0; j--) {
-          var uTop = uNorm[j + n] * BASE + uNorm[j + n - 1]
-          var qHat = Math.floor(uTop / vn1)
-          var rHat = uTop % vn1
-
-          while (qHat >= BASE || qHat * vn2 > rHat * BASE + uNorm[j + n - 2]) {
-            qHat--
-            rHat += vn1
-            if (rHat >= BASE) break
-          }
-
-          var qv = mul(vNorm, [qHat])
-          var borrow = 0
-          for (var k = 0; k <= n; k++) {
-            var uVal = uNorm[j + k]
-            var qvVal = k < qv.length ? qv[k] : 0
-            var diff = uVal - borrow - qvVal
-            if (diff < 0) {
-              diff += BASE
-              borrow = 1
-            } else {
-              borrow = 0
-            }
-            uNorm[j + k] = diff
-          }
-
-          if (borrow > 0) {
-            qHat--
-            var carry = 0
-            for (var k = 0; k <= n; k++) {
-              var sum = uNorm[j + k] + carry + (k < vNorm.length ? vNorm[k] : 0)
-              uNorm[j + k] = sum % BASE
-              carry = Math.floor(sum / BASE)
-            }
-          }
-          q[j] = qHat
-        }
-
-        var divResult = divRem(uNorm, [shift])
-        return { q: trim(q), r: divResult.q }
-      }
-
-      function modPow(baseB, expB, modB) {
-        var res = [1]
-        var cur = baseB.slice()
-        // Encontra o bit mais significativo do expoente para evitar iterações desnecessárias
-        var maxChunk = 0
-        var maxBit = 0
-        for (var i = expB.length - 1; i >= 0; i--) {
-          if (expB[i] > 0) {
-            maxChunk = i
-            maxBit = Math.floor(Math.log2 ? Math.log2(expB[i]) : Math.log(expB[i]) / Math.LN2)
-            break
-          }
-        }
-        for (var i = 0; i <= maxChunk; i++) {
-          var chunk = expB[i]
-          var limitBits = i === maxChunk ? maxBit + 1 : BASE_BITS
-          for (var b = 0; b < limitBits; b++) {
-            if ((chunk & (1 << b)) !== 0) {
-              res = divRem(mul(res, cur), modB).r
-            }
-            cur = divRem(mul(cur, cur), modB).r
-          }
-        }
-        return res
-      }
-
-      var SHA256_DIGEST_INFO = [
-        0x30, 0x31, 0x30, 0x0d, 0x06, 0x09, 0x60, 0x86, 0x48, 0x01, 0x65, 0x03, 0x04, 0x02, 0x01,
-        0x05, 0x00, 0x04, 0x20,
-      ]
-
-      function rsaSignSha256(dataStr, keyComponents) {
-        var nBig = bytesToBig(keyComponents.n)
-        var dBig = bytesToBig(keyComponents.d)
-        var kLen = keyComponents.n.length
-
-        var hex = $security.sha256(dataStr)
-        var hash = []
-        for (var i = 0; i < hex.length; i += 2) hash.push(parseInt(hex.substr(i, 2), 16))
-
-        var t = SHA256_DIGEST_INFO.concat(hash)
-        if (kLen < t.length + 11) throw new Error('Chave RSA curta demais para SHA256')
-
-        var psLen = kLen - t.length - 3
-        var em = [0x00, 0x01]
-        for (var i = 0; i < psLen; i++) em.push(0xff)
-        em.push(0x00)
-        for (var i = 0; i < t.length; i++) em.push(t[i])
-
-        var emBig = bytesToBig(em)
-        var sBig = modPow(emBig, dBig, nBig)
-        var sigBytes = bigToBytes(sBig, kLen)
-        return bytesToBase64Url(sigBytes)
-      }
-
-      var creds =
-        typeof serviceAccountJson === 'string' ? JSON.parse(serviceAccountJson) : serviceAccountJson
-
-      if (!creds.client_email || !creds.private_key) {
-        throw new Error(
-          'JSON de Conta de Serviço inválido: "client_email" e "private_key" são obrigatórios.',
-        )
-      }
-
-      var nowSec = Math.floor(Date.now() / 1000)
-      var header = { alg: 'RS256', typ: 'JWT' }
-      var claimSet = {
-        iss: creds.client_email,
-        scope: scope || 'https://www.googleapis.com/auth/drive.file',
-        aud: 'https://oauth2.googleapis.com/token',
-        exp: nowSec + 3600,
-        iat: nowSec,
-      }
-
-      var encHeader = utf8ToBase64Url(JSON.stringify(header))
-      var encClaim = utf8ToBase64Url(JSON.stringify(claimSet))
-      var signingInput = encHeader + '.' + encClaim
-
-      var keys = parsePKCS8orPKCS1(creds.private_key)
-      var signature = rsaSignSha256(signingInput, keys)
-      var assertion = signingInput + '.' + signature
-
-      var res = $http.send({
-        url: 'https://oauth2.googleapis.com/token',
-        method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body:
-          'grant_type=' +
-          encodeURIComponent('urn:ietf:params:oauth:grant-type:jwt-bearer') +
-          '&assertion=' +
-          encodeURIComponent(assertion),
-        timeout: 25,
-      })
-
-      if (res.statusCode !== 200) {
-        throw new Error(
-          'Falha no endpoint Google OAuth (HTTP ' + res.statusCode + '): ' + (res.raw || ''),
-        )
-      }
-
-      var data = res.json || JSON.parse(res.raw || '{}')
-      if (!data.access_token) {
-        throw new Error('Access token não retornado pelo Google OAuth.')
-      }
-
-      return {
-        access_token: data.access_token,
-        client_email: creds.client_email,
-        project_id: creds.project_id || '',
-      }
-    }
-
-    function buildMultipartBody(metaObj, contentStr) {
-      var boundary = '-------314159265358979323846'
-      var delimiter = '\r\n--' + boundary + '\r\n'
-      var closeDelimiter = '\r\n--' + boundary + '--'
-      return {
-        boundary: boundary,
-        body:
-          delimiter +
-          'Content-Type: application/json; charset=UTF-8\r\n\r\n' +
-          JSON.stringify(metaObj) +
-          delimiter +
-          'Content-Type: application/json; charset=UTF-8\r\n\r\n' +
-          contentStr +
-          closeDelimiter,
-      }
-    }
-
-    function shareFileWithUser(fileId, userEmail, token) {
-      if (!userEmail) return { success: false, error: 'Email de usuário não informado' }
-      try {
-        console.log(logPrefix + ' Compartilhando arquivo ' + fileId + ' com ' + userEmail + '...')
-        var permUrl =
-          'https://www.googleapis.com/drive/v3/files/' +
-          encodeURIComponent(fileId) +
-          '/permissions?supportsAllDrives=true&sendNotificationEmail=false'
-        var permRes = $http.send({
-          url: permUrl,
-          method: 'POST',
-          headers: {
-            Authorization: 'Bearer ' + token,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            role: 'writer',
-            type: 'user',
-            emailAddress: userEmail,
-          }),
-          timeout: 30,
-        })
-        if (permRes.statusCode === 200 || permRes.statusCode === 201) {
-          console.log(logPrefix + ' Arquivo compartilhado com sucesso com ' + userEmail)
-          return { success: true }
-        }
-        console.warn(
-          logPrefix +
-            ' Falha no compartilhamento (HTTP ' +
-            permRes.statusCode +
-            '): ' +
-            (permRes.raw || ''),
-        )
-        return {
-          success: false,
-          error: 'HTTP ' + permRes.statusCode + ': ' + (permRes.raw || ''),
-        }
-      } catch (eShare) {
-        console.error(logPrefix + ' Exceção ao compartilhar:', eShare)
-        return {
-          success: false,
-          error: String(eShare?.message || eShare),
-        }
-      }
-    }
-
-    try {
-      var serviceAccountJson = $os.getenv('GOOGLE_SERVICE_ACCOUNT_JSON') || ''
-      var folderId = $os.getenv('GOOGLE_DRIVE_FOLDER_ID') || ''
-      var usuarioEmailDestino = 'renilsonfmello@gmail.com'
-      var configRec = null
-
-      try {
-        configRec = $app.findFirstRecordByData('config_google_drive', 'chave', 'padrao')
-        if (configRec) {
-          if (!serviceAccountJson) serviceAccountJson = configRec.getString('service_account_json')
-          if (!folderId) folderId = configRec.getString('folder_id')
-          if (configRec.getString('usuario_email')) {
-            usuarioEmailDestino = configRec.getString('usuario_email')
-          }
-        }
-      } catch (eCfg) {
-        console.warn(logPrefix + ' config_google_drive não encontrada:', eCfg)
-      }
-
-      if (!serviceAccountJson) {
-        var msgSemConta =
-          'Conta de Serviço Google Drive não configurada no ERP (cole o JSON da chave na tela de Backups).'
-        backupRecord.set('drive_status', 'erro')
-        backupRecord.set('drive_erro', msgSemConta)
-        $app.save(backupRecord)
-        return e.json(400, { error: msgSemConta })
-      }
-
-      console.log(logPrefix + ' Autenticando via Conta de Serviço JWT RS256...')
-      var auth
-      try {
-        auth = getAccessTokenHelperManual(
-          serviceAccountJson,
-          'https://www.googleapis.com/auth/drive.file',
-        )
-        console.log(logPrefix + ' Token obtido com sucesso para: ' + auth.client_email)
-      } catch (authErr) {
-        var msgAuth = 'Falha na autenticação da Conta de Serviço: ' + (authErr?.message || authErr)
-        console.error(logPrefix + ' ' + msgAuth)
-        backupRecord.set('drive_status', 'erro')
-        backupRecord.set('drive_erro', msgAuth)
-        $app.save(backupRecord)
-        return e.json(400, { error: msgAuth })
-      }
-
-      console.log(logPrefix + ' Carregando chunks da coleção backups_dados...')
-      var chunks = $app.findRecordsByFilter(
-        'backups_dados',
-        "backup_id = '" + backupId + "'",
-        'colecao_nome,chunk_index',
-        5000,
-        0,
-      )
-      console.log(logPrefix + ' Total de chunks encontrados: ' + chunks.length)
-
-      var colecoes = {}
-      for (var i = 0; i < chunks.length; i++) {
-        var ch = chunks[i]
-        var col = ch.getString('colecao_nome')
-        var items = ch.get('registros_json') || []
-        if (!colecoes[col]) colecoes[col] = []
-        if (Array.isArray(items)) {
-          for (var k = 0; k < items.length; k++) {
-            colecoes[col].push(items[k])
-          }
-        }
-      }
-
-      var dumpJsonStr = JSON.stringify({
-        meta: {
-          id: backupRecord.id,
-          nome_arquivo: backupRecord.getString('nome_arquivo'),
-          tipo: backupRecord.getString('tipo'),
-          origem: backupRecord.getString('origem') || 'manual',
-          total_colecoes: backupRecord.getInt('total_colecoes'),
-          total_registros: backupRecord.getInt('total_registros'),
-          resumo_colecoes: backupRecord.get('resumo_colecoes'),
-          created: backupRecord.getString('created'),
-          exportado_em: new Date().toISOString(),
-          sistema: 'Pedreira Cordeiro ERP (NovaGest)',
-        },
-        dados: colecoes,
-      })
-
-      console.log(
-        logPrefix +
-          ' Dump montado. Tamanho: ' +
-          Math.round(dumpJsonStr.length / 1024) +
-          ' KB (' +
-          backupRecord.getInt('total_registros') +
-          ' registros).',
-      )
-
-      var uploadUrl =
-        'https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&supportsAllDrives=true'
-      var uploadedJson = null
-      var fileId = ''
-      var destinoDescricao = ''
-      var mensagemRetorno = ''
-      var tentativaSucesso = false
-
-      if (folderId) {
-        console.log(logPrefix + ' Tentativa 1: Upload na pasta configurada (' + folderId + ')...')
-        var mp1 = buildMultipartBody(
-          {
-            name: backupRecord.getString('nome_arquivo'),
-            mimeType: 'application/json',
-            parents: [folderId],
-          },
-          dumpJsonStr,
-        )
-        var res1 = $http.send({
-          url: uploadUrl,
-          method: 'POST',
-          headers: {
-            Authorization: 'Bearer ' + auth.access_token,
-            'Content-Type': 'multipart/related; boundary=' + mp1.boundary,
-          },
-          body: mp1.body,
-          timeout: 180,
-        })
-
-        console.log(logPrefix + ' Resposta da pasta configurada: HTTP ' + res1.statusCode)
-        if (res1.statusCode === 200 || res1.statusCode === 201) {
-          uploadedJson = res1.json || JSON.parse(res1.raw || '{}')
-          fileId = uploadedJson.id || ''
-          destinoDescricao = 'pasta configurada no Drive (' + folderId + ')'
-          mensagemRetorno = 'Backup enviado com sucesso ao Google Drive na pasta configurada!'
-          tentativaSucesso = true
-        } else {
-          var erro1Corpo = (res1.raw || '').slice(0, 300)
-          console.warn(
-            logPrefix +
-              ' Upload na pasta configurada falhou (HTTP ' +
-              res1.statusCode +
-              '): ' +
-              erro1Corpo +
-              ' — aplicando fallback...',
-          )
-        }
-      }
-
-      if (!tentativaSucesso) {
-        console.log(
-          logPrefix + ' Tentativa 2: Upload no Drive próprio da Conta de Serviço (fallback)...',
-        )
-        var mp2 = buildMultipartBody(
-          {
-            name: backupRecord.getString('nome_arquivo'),
-            mimeType: 'application/json',
-          },
-          dumpJsonStr,
-        )
-        var res2 = $http.send({
-          url: uploadUrl,
-          method: 'POST',
-          headers: {
-            Authorization: 'Bearer ' + auth.access_token,
-            'Content-Type': 'multipart/related; boundary=' + mp2.boundary,
-          },
-          body: mp2.body,
-          timeout: 180,
-        })
-
-        console.log(logPrefix + ' Resposta tentativa 2: HTTP ' + res2.statusCode)
-        if (res2.statusCode === 200 || res2.statusCode === 201) {
-          uploadedJson = res2.json || JSON.parse(res2.raw || '{}')
-          fileId = uploadedJson.id || ''
-          tentativaSucesso = true
-
-          console.log(logPrefix + ' Upload concluído! File ID: ' + fileId)
-          var shareRes = shareFileWithUser(fileId, usuarioEmailDestino, auth.access_token)
-          if (shareRes.success) {
-            destinoDescricao =
-              'Drive da Conta de Serviço (compartilhado com ' + usuarioEmailDestino + ')'
-            mensagemRetorno =
-              'Backup enviado com sucesso! Disponível em "Compartilhado comigo" no Google Drive de ' +
-              usuarioEmailDestino +
-              '.'
-          } else {
-            destinoDescricao =
-              'Drive da Conta de Serviço (aviso compartilhamento: ' + shareRes.error + ')'
-            mensagemRetorno =
-              'Backup enviado ao Drive, mas houve aviso ao compartilhar com ' +
-              usuarioEmailDestino +
-              ': ' +
-              shareRes.error
-          }
-        } else {
-          var errDetail =
-            'Erro no envio ao Google Drive (HTTP ' + res2.statusCode + '): ' + (res2.raw || '')
-          console.error(logPrefix + ' ' + errDetail)
-          backupRecord.set('drive_status', 'erro')
-          backupRecord.set('drive_erro', errDetail)
-          $app.save(backupRecord)
-          return e.json(500, { error: errDetail })
-        }
-      }
-
-      if (tentativaSucesso && fileId) {
-        var agoraIso = new Date().toISOString()
-        console.log(logPrefix + ' Sucesso! File ID: ' + fileId + ' (' + destinoDescricao + ')')
-        backupRecord.set('drive_status', 'enviado')
-        backupRecord.set('drive_file_id', fileId)
-        backupRecord.set('drive_folder_id', folderId || '')
-        backupRecord.set('drive_enviado_em', agoraIso)
-        backupRecord.set('drive_erro', destinoDescricao)
-        $app.save(backupRecord)
-
-        if (configRec) {
-          configRec.set('ultimo_envio', agoraIso)
-          configRec.set('ultimo_status', 'conectado')
-          $app.save(configRec)
-        }
-
-        return e.json(200, {
-          success: true,
-          message: mensagemRetorno,
-          file_id: fileId,
-          folder_id: folderId || '',
-          destino: destinoDescricao,
-          enviado_em: agoraIso,
-        })
-      }
-
-      var msgInesperada =
-        'Processamento do Google Drive concluído sem identificador de arquivo retornado.'
-      backupRecord.set('drive_status', 'erro')
-      backupRecord.set('drive_erro', msgInesperada)
-      $app.save(backupRecord)
-      return e.json(500, { error: msgInesperada })
-    } catch (errGeral) {
-      var errMsg = String(errGeral?.message || errGeral)
-      console.error(logPrefix + ' Exceção não tratada:', errGeral)
-      try {
-        backupRecord.set('drive_status', 'erro')
-        backupRecord.set('drive_erro', 'Exceção interna ao enviar: ' + errMsg)
-        $app.save(backupRecord)
-      } catch (_) {}
-      return e.json(500, { error: errMsg })
-    }
+    return e.json(200, {
+      success: true,
+      message:
+        'Backup colocado na fila de envio incremental ao Google Drive. As fatias resumíveis serão processadas a cada minuto.',
+      delegado_fila: true,
+      backup_id: backupId,
+    })
   },
   $apis.requireAuth(),
 )
 
 // -------------------------------------------------------------
 // 12. TRIGGER REATIVO: onRecordUpdate em backups_sistema
-// Dispara o envio ao Google Drive quando drive_status === "solicitado"
+// Notifica quando backup é marcado como 'solicitado'
 // -------------------------------------------------------------
 onRecordUpdate((e) => {
   e.next()
@@ -3429,7 +2754,7 @@ onRecordUpdate((e) => {
   console.log(
     '[TRIGGER_UPDATE][' +
       backupId +
-      "] Backup marcado como 'solicitado'. Delegando processamento incremental para o cron de fila...",
+      "] Backup marcado como 'solicitado'. Fila incremental processará no próximo minuto.",
   )
 }, 'backups_sistema')
 /* FIM HOOKS BACKUP */

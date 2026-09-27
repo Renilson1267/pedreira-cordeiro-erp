@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-09-27T19:09:30.149Z",
+  "generatedAt": "2026-09-27T19:17:22.544Z",
   "collections": [
     {
       "name": "users",
@@ -3116,7 +3116,8 @@
       ],
       "indexes": [
         "CREATE INDEX idx_bd_backup_id ON backups_dados (backup_id)",
-        "CREATE INDEX idx_bd_colecao ON backups_dados (colecao_nome)"
+        "CREATE INDEX idx_bd_colecao ON backups_dados (colecao_nome)",
+        "CREATE INDEX `idx_bd_backup_created_id` ON `backups_dados` (backup_id, created, id)"
       ]
     },
     {
