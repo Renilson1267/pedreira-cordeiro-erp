@@ -906,51 +906,58 @@ routerAdd('GET', '/backend/v1/backups/processar-solicitados-drive', (e) => {
         $app.save(backupRecord)
       }
 
-      var currentOffset = backupRecord.getInt('drive_offset') || 0
-      try {
-        var checkRes = $http.send({
-          url: sessionUrl,
-          method: 'PUT',
-          headers: {
-            'Content-Length': '0',
-            'Content-Range': 'bytes */' + totalBytes,
-          },
-          timeout: 15,
-        })
+      var currentOffset = parseInt(backupRecord.getInt('drive_offset'), 10) || 0
+      totalBytes = parseInt(totalBytes, 10) || 0
 
-        if (checkRes.statusCode === 308) {
-          var rangeHeader = checkRes.headers?.['Range'] || checkRes.headers?.['range']
-          if (Array.isArray(rangeHeader)) rangeHeader = rangeHeader[0]
-          if (rangeHeader && typeof rangeHeader === 'string') {
-            var matchRange = rangeHeader.match(/bytes=0-(\d+)/)
-            if (matchRange && matchRange[1]) {
-              currentOffset = parseInt(matchRange[1], 10) + 1
-              backupRecord.set('drive_offset', currentOffset)
+      // Só checa o offset no Google se currentOffset > 0 (sessão retomada no meio)
+      if (currentOffset > 0) {
+        try {
+          var checkRangeHeader = 'bytes */' + totalBytes
+          console.log(logPrefix + ' [CHECK_OFFSET] PUT ' + checkRangeHeader)
+          var checkRes = $http.send({
+            url: sessionUrl,
+            method: 'PUT',
+            headers: {
+              'Content-Length': '0',
+              'Content-Range': checkRangeHeader,
+            },
+            timeout: 15,
+          })
+
+          if (checkRes.statusCode === 308) {
+            var rangeHeader = checkRes.headers?.['Range'] || checkRes.headers?.['range']
+            if (Array.isArray(rangeHeader)) rangeHeader = rangeHeader[0]
+            if (rangeHeader && typeof rangeHeader === 'string') {
+              var matchRange = rangeHeader.match(/bytes=0-(\d+)/)
+              if (matchRange && matchRange[1]) {
+                currentOffset = parseInt(matchRange[1], 10) + 1
+                backupRecord.set('drive_offset', currentOffset)
+              }
             }
+          } else if (checkRes.statusCode === 200 || checkRes.statusCode === 201) {
+            var dataConcluido = checkRes.json || JSON.parse(checkRes.raw || '{}')
+            var fileIdPronto = dataConcluido.id || ''
+            shareFileWithUserShared(fileIdPronto, usuarioEmailDestino, auth.access_token)
+            var agoraIso = new Date().toISOString()
+            backupRecord.set('drive_status', 'enviado')
+            backupRecord.set('drive_file_id', fileIdPronto)
+            backupRecord.set('drive_enviado_em', agoraIso)
+            backupRecord.set('drive_offset', totalBytes)
+            backupRecord.set(
+              'drive_erro',
+              'Concluído com sucesso (compartilhado com ' + usuarioEmailDestino + ')',
+            )
+            $app.save(backupRecord)
+            console.log(
+              logPrefix +
+                ' [FINAL] Arquivo concluído no Drive (HTTP 200/201). Compartilhado com ' +
+                usuarioEmailDestino,
+            )
+            return { status: 'concluido', file_id: fileIdPronto }
           }
-        } else if (checkRes.statusCode === 200 || checkRes.statusCode === 201) {
-          var dataConcluido = checkRes.json || JSON.parse(checkRes.raw || '{}')
-          var fileIdPronto = dataConcluido.id || ''
-          shareFileWithUserShared(fileIdPronto, usuarioEmailDestino, auth.access_token)
-          var agoraIso = new Date().toISOString()
-          backupRecord.set('drive_status', 'enviado')
-          backupRecord.set('drive_file_id', fileIdPronto)
-          backupRecord.set('drive_enviado_em', agoraIso)
-          backupRecord.set('drive_offset', totalBytes)
-          backupRecord.set(
-            'drive_erro',
-            'Concluído com sucesso (compartilhado com ' + usuarioEmailDestino + ')',
-          )
-          $app.save(backupRecord)
-          console.log(
-            logPrefix +
-              ' [FINAL] Arquivo concluído no Drive (HTTP 200/201). Compartilhado com ' +
-              usuarioEmailDestino,
-          )
-          return { status: 'concluido', file_id: fileIdPronto }
+        } catch (eCheck) {
+          console.warn(logPrefix + ' Aviso na consulta de offset:', eCheck)
         }
-      } catch (eCheck) {
-        console.warn(logPrefix + ' Aviso na consulta de offset:', eCheck)
       }
 
       var CHUNK_BYTES = 256 * 1024
@@ -962,19 +969,21 @@ routerAdd('GET', '/backend/v1/backups/processar-solicitados-drive', (e) => {
           break
         }
 
-        var targetSliceEnd = Math.min(currentOffset + CHUNK_BYTES, totalBytes)
-        var targetSliceLen = targetSliceEnd - currentOffset
-        if (targetSliceEnd < totalBytes && targetSliceLen % CHUNK_BYTES !== 0) {
+        var numCurrentOffset = parseInt(currentOffset, 10) || 0
+        var numTotalBytes = parseInt(totalBytes, 10) || 0
+        var targetSliceEnd = Math.min(numCurrentOffset + CHUNK_BYTES, numTotalBytes)
+        var targetSliceLen = targetSliceEnd - numCurrentOffset
+        if (targetSliceEnd < numTotalBytes && targetSliceLen % CHUNK_BYTES !== 0) {
           targetSliceLen = Math.floor(targetSliceLen / CHUNK_BYTES) * CHUNK_BYTES
-          targetSliceEnd = currentOffset + targetSliceLen
+          targetSliceEnd = numCurrentOffset + targetSliceLen
         }
 
         var sliceBuf = ''
         var curPos = 0
 
         var hEnd = curPos + headerPrefix.length
-        if (currentOffset < hEnd && targetSliceEnd > curPos) {
-          var sStart = Math.max(0, currentOffset - curPos)
+        if (numCurrentOffset < hEnd && targetSliceEnd > curPos) {
+          var sStart = Math.max(0, numCurrentOffset - curPos)
           var sEnd = Math.min(headerPrefix.length, targetSliceEnd - curPos)
           sliceBuf += headerPrefix.substring(sStart, sEnd)
         }
@@ -986,8 +995,8 @@ routerAdd('GET', '/backend/v1/backups/processar-solicitados-drive', (e) => {
 
           var cPrefix = (colIdx > 0 ? ',' : '') + JSON.stringify(nomeColecao) + ':['
           var cpEnd = curPos + cPrefix.length
-          if (currentOffset < cpEnd && targetSliceEnd > curPos) {
-            var s1 = Math.max(0, currentOffset - curPos)
+          if (numCurrentOffset < cpEnd && targetSliceEnd > curPos) {
+            var s1 = Math.max(0, numCurrentOffset - curPos)
             var s2 = Math.min(cPrefix.length, targetSliceEnd - curPos)
             sliceBuf += cPrefix.substring(s1, s2)
           }
@@ -1023,15 +1032,15 @@ routerAdd('GET', '/backend/v1/backups/processar-solicitados-drive', (e) => {
             if (chunkIndexDb > 0) {
               var commaPos = curPos
               var commaEnd = curPos + 1
-              if (currentOffset < commaEnd && targetSliceEnd > commaPos) {
+              if (numCurrentOffset < commaEnd && targetSliceEnd > commaPos) {
                 sliceBuf += ','
               }
               curPos += 1
             }
 
             var dEnd = curPos + insideData.length
-            if (currentOffset < dEnd && targetSliceEnd > curPos) {
-              var ds1 = Math.max(0, currentOffset - curPos)
+            if (numCurrentOffset < dEnd && targetSliceEnd > curPos) {
+              var ds1 = Math.max(0, numCurrentOffset - curPos)
               var ds2 = Math.min(insideData.length, targetSliceEnd - curPos)
               sliceBuf += insideData.substring(ds1, ds2)
             }
@@ -1040,15 +1049,15 @@ routerAdd('GET', '/backend/v1/backups/processar-solicitados-drive', (e) => {
           }
 
           var sufEnd = curPos + 1
-          if (currentOffset < sufEnd && targetSliceEnd > curPos) {
+          if (numCurrentOffset < sufEnd && targetSliceEnd > curPos) {
             sliceBuf += ']'
           }
           curPos = sufEnd
         }
 
         var footEnd = curPos + footerSuffix.length
-        if (currentOffset < footEnd && targetSliceEnd > curPos) {
-          var fs1 = Math.max(0, currentOffset - curPos)
+        if (numCurrentOffset < footEnd && targetSliceEnd > curPos) {
+          var fs1 = Math.max(0, numCurrentOffset - curPos)
           var fs2 = Math.min(footerSuffix.length, targetSliceEnd - curPos)
           sliceBuf += footerSuffix.substring(fs1, fs2)
         }
@@ -1057,19 +1066,44 @@ routerAdd('GET', '/backend/v1/backups/processar-solicitados-drive', (e) => {
         var actualChunkLen = sliceBuf.length
         if (actualChunkLen === 0) {
           console.warn(
-            logPrefix + ' Fatia vazia gerada no offset ' + currentOffset + '. Interrompendo.',
+            logPrefix + ' Fatia vazia gerada no offset ' + numCurrentOffset + '. Interrompendo.',
           )
           break
         }
 
-        var putEnd = currentOffset + actualChunkLen - 1
-        var putRangeHeader = 'bytes ' + currentOffset + '-' + putEnd + '/' + totalBytes
+        var numActualChunkLen = parseInt(actualChunkLen, 10) || 0
+        if (isNaN(numCurrentOffset) || isNaN(numActualChunkLen) || isNaN(numTotalBytes)) {
+          var errNan =
+            'Valores numéricos inválidos para chunk: offset=' +
+            numCurrentOffset +
+            ' len=' +
+            numActualChunkLen +
+            ' total=' +
+            numTotalBytes
+          console.error(logPrefix + ' ' + errNan)
+          backupRecord.set('drive_status', 'erro')
+          backupRecord.set('drive_erro', errNan)
+          $app.save(backupRecord)
+          return { status: 'erro', erro: errNan }
+        }
+
+        var putEnd = numCurrentOffset + numActualChunkLen - 1
+        var putRangeHeader = 'bytes ' + numCurrentOffset + '-' + putEnd + '/' + numTotalBytes
+
+        console.log(
+          logPrefix +
+            ' [CHUNK] PUT ' +
+            putRangeHeader +
+            ' (Content-Length: ' +
+            numActualChunkLen +
+            ')',
+        )
 
         var putRes = $http.send({
           url: sessionUrl,
           method: 'PUT',
           headers: {
-            'Content-Length': String(actualChunkLen),
+            'Content-Length': String(numActualChunkLen),
             'Content-Range': putRangeHeader,
           },
           body: sliceBuf,
@@ -2147,51 +2181,58 @@ cronAdd('backup_processador_fila_solicitados', '*/1 * * * *', () => {
         $app.save(backupRecord)
       }
 
-      var currentOffset = backupRecord.getInt('drive_offset') || 0
-      try {
-        var checkRes = $http.send({
-          url: sessionUrl,
-          method: 'PUT',
-          headers: {
-            'Content-Length': '0',
-            'Content-Range': 'bytes */' + totalBytes,
-          },
-          timeout: 15,
-        })
+      var currentOffset = parseInt(backupRecord.getInt('drive_offset'), 10) || 0
+      totalBytes = parseInt(totalBytes, 10) || 0
 
-        if (checkRes.statusCode === 308) {
-          var rangeHeader = checkRes.headers?.['Range'] || checkRes.headers?.['range']
-          if (Array.isArray(rangeHeader)) rangeHeader = rangeHeader[0]
-          if (rangeHeader && typeof rangeHeader === 'string') {
-            var matchRange = rangeHeader.match(/bytes=0-(\d+)/)
-            if (matchRange && matchRange[1]) {
-              currentOffset = parseInt(matchRange[1], 10) + 1
-              backupRecord.set('drive_offset', currentOffset)
+      // Só checa o offset no Google se currentOffset > 0 (sessão retomada no meio)
+      if (currentOffset > 0) {
+        try {
+          var checkRangeHeader = 'bytes */' + totalBytes
+          console.log(logPrefix + ' [CHECK_OFFSET] PUT ' + checkRangeHeader)
+          var checkRes = $http.send({
+            url: sessionUrl,
+            method: 'PUT',
+            headers: {
+              'Content-Length': '0',
+              'Content-Range': checkRangeHeader,
+            },
+            timeout: 15,
+          })
+
+          if (checkRes.statusCode === 308) {
+            var rangeHeader = checkRes.headers?.['Range'] || checkRes.headers?.['range']
+            if (Array.isArray(rangeHeader)) rangeHeader = rangeHeader[0]
+            if (rangeHeader && typeof rangeHeader === 'string') {
+              var matchRange = rangeHeader.match(/bytes=0-(\d+)/)
+              if (matchRange && matchRange[1]) {
+                currentOffset = parseInt(matchRange[1], 10) + 1
+                backupRecord.set('drive_offset', currentOffset)
+              }
             }
+          } else if (checkRes.statusCode === 200 || checkRes.statusCode === 201) {
+            var dataConcluido = checkRes.json || JSON.parse(checkRes.raw || '{}')
+            var fileIdPronto = dataConcluido.id || ''
+            shareFileWithUserShared(fileIdPronto, usuarioEmailDestino, auth.access_token)
+            var agoraIso = new Date().toISOString()
+            backupRecord.set('drive_status', 'enviado')
+            backupRecord.set('drive_file_id', fileIdPronto)
+            backupRecord.set('drive_enviado_em', agoraIso)
+            backupRecord.set('drive_offset', totalBytes)
+            backupRecord.set(
+              'drive_erro',
+              'Concluído com sucesso (compartilhado com ' + usuarioEmailDestino + ')',
+            )
+            $app.save(backupRecord)
+            console.log(
+              logPrefix +
+                ' [FINAL] Arquivo concluído no Drive (HTTP 200/201). Compartilhado com ' +
+                usuarioEmailDestino,
+            )
+            return { status: 'concluido', file_id: fileIdPronto }
           }
-        } else if (checkRes.statusCode === 200 || checkRes.statusCode === 201) {
-          var dataConcluido = checkRes.json || JSON.parse(checkRes.raw || '{}')
-          var fileIdPronto = dataConcluido.id || ''
-          shareFileWithUserShared(fileIdPronto, usuarioEmailDestino, auth.access_token)
-          var agoraIso = new Date().toISOString()
-          backupRecord.set('drive_status', 'enviado')
-          backupRecord.set('drive_file_id', fileIdPronto)
-          backupRecord.set('drive_enviado_em', agoraIso)
-          backupRecord.set('drive_offset', totalBytes)
-          backupRecord.set(
-            'drive_erro',
-            'Concluído com sucesso (compartilhado com ' + usuarioEmailDestino + ')',
-          )
-          $app.save(backupRecord)
-          console.log(
-            logPrefix +
-              ' [FINAL] Arquivo concluído no Drive (HTTP 200/201). Compartilhado com ' +
-              usuarioEmailDestino,
-          )
-          return { status: 'concluido', file_id: fileIdPronto }
+        } catch (eCheck) {
+          console.warn(logPrefix + ' Aviso na consulta de offset:', eCheck)
         }
-      } catch (eCheck) {
-        console.warn(logPrefix + ' Aviso na consulta de offset:', eCheck)
       }
 
       var CHUNK_BYTES = 256 * 1024
@@ -2203,19 +2244,21 @@ cronAdd('backup_processador_fila_solicitados', '*/1 * * * *', () => {
           break
         }
 
-        var targetSliceEnd = Math.min(currentOffset + CHUNK_BYTES, totalBytes)
-        var targetSliceLen = targetSliceEnd - currentOffset
-        if (targetSliceEnd < totalBytes && targetSliceLen % CHUNK_BYTES !== 0) {
+        var numCurrentOffset = parseInt(currentOffset, 10) || 0
+        var numTotalBytes = parseInt(totalBytes, 10) || 0
+        var targetSliceEnd = Math.min(numCurrentOffset + CHUNK_BYTES, numTotalBytes)
+        var targetSliceLen = targetSliceEnd - numCurrentOffset
+        if (targetSliceEnd < numTotalBytes && targetSliceLen % CHUNK_BYTES !== 0) {
           targetSliceLen = Math.floor(targetSliceLen / CHUNK_BYTES) * CHUNK_BYTES
-          targetSliceEnd = currentOffset + targetSliceLen
+          targetSliceEnd = numCurrentOffset + targetSliceLen
         }
 
         var sliceBuf = ''
         var curPos = 0
 
         var hEnd = curPos + headerPrefix.length
-        if (currentOffset < hEnd && targetSliceEnd > curPos) {
-          var sStart = Math.max(0, currentOffset - curPos)
+        if (numCurrentOffset < hEnd && targetSliceEnd > curPos) {
+          var sStart = Math.max(0, numCurrentOffset - curPos)
           var sEnd = Math.min(headerPrefix.length, targetSliceEnd - curPos)
           sliceBuf += headerPrefix.substring(sStart, sEnd)
         }
@@ -2227,8 +2270,8 @@ cronAdd('backup_processador_fila_solicitados', '*/1 * * * *', () => {
 
           var cPrefix = (colIdx > 0 ? ',' : '') + JSON.stringify(nomeColecao) + ':['
           var cpEnd = curPos + cPrefix.length
-          if (currentOffset < cpEnd && targetSliceEnd > curPos) {
-            var s1 = Math.max(0, currentOffset - curPos)
+          if (numCurrentOffset < cpEnd && targetSliceEnd > curPos) {
+            var s1 = Math.max(0, numCurrentOffset - curPos)
             var s2 = Math.min(cPrefix.length, targetSliceEnd - curPos)
             sliceBuf += cPrefix.substring(s1, s2)
           }
@@ -2264,15 +2307,15 @@ cronAdd('backup_processador_fila_solicitados', '*/1 * * * *', () => {
             if (chunkIndexDb > 0) {
               var commaPos = curPos
               var commaEnd = curPos + 1
-              if (currentOffset < commaEnd && targetSliceEnd > commaPos) {
+              if (numCurrentOffset < commaEnd && targetSliceEnd > commaPos) {
                 sliceBuf += ','
               }
               curPos += 1
             }
 
             var dEnd = curPos + insideData.length
-            if (currentOffset < dEnd && targetSliceEnd > curPos) {
-              var ds1 = Math.max(0, currentOffset - curPos)
+            if (numCurrentOffset < dEnd && targetSliceEnd > curPos) {
+              var ds1 = Math.max(0, numCurrentOffset - curPos)
               var ds2 = Math.min(insideData.length, targetSliceEnd - curPos)
               sliceBuf += insideData.substring(ds1, ds2)
             }
@@ -2281,15 +2324,15 @@ cronAdd('backup_processador_fila_solicitados', '*/1 * * * *', () => {
           }
 
           var sufEnd = curPos + 1
-          if (currentOffset < sufEnd && targetSliceEnd > curPos) {
+          if (numCurrentOffset < sufEnd && targetSliceEnd > curPos) {
             sliceBuf += ']'
           }
           curPos = sufEnd
         }
 
         var footEnd = curPos + footerSuffix.length
-        if (currentOffset < footEnd && targetSliceEnd > curPos) {
-          var fs1 = Math.max(0, currentOffset - curPos)
+        if (numCurrentOffset < footEnd && targetSliceEnd > curPos) {
+          var fs1 = Math.max(0, numCurrentOffset - curPos)
           var fs2 = Math.min(footerSuffix.length, targetSliceEnd - curPos)
           sliceBuf += footerSuffix.substring(fs1, fs2)
         }
@@ -2298,19 +2341,44 @@ cronAdd('backup_processador_fila_solicitados', '*/1 * * * *', () => {
         var actualChunkLen = sliceBuf.length
         if (actualChunkLen === 0) {
           console.warn(
-            logPrefix + ' Fatia vazia gerada no offset ' + currentOffset + '. Interrompendo.',
+            logPrefix + ' Fatia vazia gerada no offset ' + numCurrentOffset + '. Interrompendo.',
           )
           break
         }
 
-        var putEnd = currentOffset + actualChunkLen - 1
-        var putRangeHeader = 'bytes ' + currentOffset + '-' + putEnd + '/' + totalBytes
+        var numActualChunkLen = parseInt(actualChunkLen, 10) || 0
+        if (isNaN(numCurrentOffset) || isNaN(numActualChunkLen) || isNaN(numTotalBytes)) {
+          var errNan =
+            'Valores numéricos inválidos para chunk: offset=' +
+            numCurrentOffset +
+            ' len=' +
+            numActualChunkLen +
+            ' total=' +
+            numTotalBytes
+          console.error(logPrefix + ' ' + errNan)
+          backupRecord.set('drive_status', 'erro')
+          backupRecord.set('drive_erro', errNan)
+          $app.save(backupRecord)
+          return { status: 'erro', erro: errNan }
+        }
+
+        var putEnd = numCurrentOffset + numActualChunkLen - 1
+        var putRangeHeader = 'bytes ' + numCurrentOffset + '-' + putEnd + '/' + numTotalBytes
+
+        console.log(
+          logPrefix +
+            ' [CHUNK] PUT ' +
+            putRangeHeader +
+            ' (Content-Length: ' +
+            numActualChunkLen +
+            ')',
+        )
 
         var putRes = $http.send({
           url: sessionUrl,
           method: 'PUT',
           headers: {
-            'Content-Length': String(actualChunkLen),
+            'Content-Length': String(numActualChunkLen),
             'Content-Range': putRangeHeader,
           },
           body: sliceBuf,
