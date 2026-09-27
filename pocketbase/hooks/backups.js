@@ -36,26 +36,36 @@ routerAdd('GET', '/backend/v1/backups/processar-solicitados-drive', (e) => {
         try {
           var cfgCacheRec = $app.findFirstRecordByData('config_google_drive', 'chave', 'padrao')
           if (cfgCacheRec) {
-            var rawDetCache = cfgCacheRec.get('detalhes')
-            var detalhesCache = {}
+            var detalhesCache = null
             try {
-              detalhesCache =
-                typeof rawDetCache === 'string'
-                  ? JSON.parse(rawDetCache)
-                  : JSON.parse(JSON.stringify(rawDetCache || {}))
+              detalhesCache = cfgCacheRec.get('detalhes')
+              if (typeof detalhesCache === 'string') {
+                detalhesCache = JSON.parse(detalhesCache)
+              } else if (detalhesCache && typeof detalhesCache === 'object') {
+                detalhesCache = JSON.parse(JSON.stringify(detalhesCache))
+              }
             } catch (_) {
+              detalhesCache = null
+            }
+            if (
+              !detalhesCache ||
+              typeof detalhesCache !== 'object' ||
+              Array.isArray(detalhesCache)
+            ) {
               detalhesCache = {}
             }
-            if (detalhesCache && detalhesCache.cached_token && detalhesCache.cached_expiry_ms) {
+            var cachedToken = detalhesCache.cached_token
+            var cachedExpiryMs = Number(detalhesCache.cached_expiry_ms) || 0
+            if (cachedToken && cachedExpiryMs > 0) {
               // Margem de segurança de 5 minutos (300.000 ms)
-              if (nowMs < detalhesCache.cached_expiry_ms - 300000) {
+              if (nowMs < cachedExpiryMs - 300000) {
                 console.log(
                   logPrefix +
                     ' [CACHE TOKEN] Usando access token em cache válido até ' +
-                    new Date(detalhesCache.cached_expiry_ms).toISOString(),
+                    new Date(cachedExpiryMs).toISOString(),
                 )
                 return {
-                  access_token: detalhesCache.cached_token,
+                  access_token: cachedToken,
                   client_email: creds.client_email,
                   project_id: creds.project_id || '',
                   from_cache: true,
@@ -65,6 +75,8 @@ routerAdd('GET', '/backend/v1/backups/processar-solicitados-drive', (e) => {
                   logPrefix + ' [CACHE TOKEN] Token expirado ou próximo de expirar. Renovando...',
                 )
               }
+            } else {
+              console.log(logPrefix + ' [CACHE TOKEN] Nenhum token válido encontrado no cache.')
             }
           }
         } catch (eCacheRead) {
@@ -623,24 +635,16 @@ routerAdd('GET', '/backend/v1/backups/processar-solicitados-drive', (e) => {
     }
 
     var tentativas = backupRecord.getInt('drive_tentativas') || 0
-    if (tentativas >= 6) {
-      var msgMax = 'Limite de tentativas excedido (6). Tente novamente pela tela do sistema.'
+    var curStatus = backupRecord.getString('drive_status') || 'solicitado'
+    // Limite de tentativas só se aplica a falhas reais consecutivas, não a rodadas normais de upload incremental (status 'enviando')
+    if (curStatus !== 'enviando' && tentativas >= 10) {
+      var msgMax = 'Limite de tentativas excedido (10). Tente novamente pela tela do sistema.'
       console.warn(logPrefix + ' ' + msgMax)
       backupRecord.set('drive_status', 'erro')
       backupRecord.set('drive_erro', msgMax)
       $app.save(backupRecord)
       return { status: 'erro', erro: msgMax }
     }
-
-    // Registra início da tentativa e incrementa contador preventivo
-    backupRecord.set('drive_tentativas', tentativas + 1)
-    backupRecord.set(
-      'drive_erro',
-      'Processando envio ao Google Drive (tentativa ' + (tentativas + 1) + ')...',
-    )
-    try {
-      $app.save(backupRecord)
-    } catch (_) {}
 
     try {
       var serviceAccountJson = $os.getenv('GOOGLE_SERVICE_ACCOUNT_JSON') || ''
@@ -728,41 +732,38 @@ routerAdd('GET', '/backend/v1/backups/processar-solicitados-drive', (e) => {
           var cn = colecoesValidas[ci]
           if (ci > 0) calcBytes += 1
           calcBytes += JSON.stringify(cn).length + ':['
-          var statsRows = arrayOf(new DynamicModel({ cnt: 0, chars_data: 0 }))
-          $app
-            .db()
-            .newQuery(
-              'SELECT COALESCE(COUNT(*), 0) as cnt, ' +
-                'COALESCE(SUM(CASE WHEN LENGTH(registros_json) > 2 THEN LENGTH(registros_json) - 2 ELSE 0 END), 0) as chars_data ' +
-                'FROM backups_dados WHERE backup_id = {:bid} AND colecao_nome = {:cn}',
-            )
-            .bind({ bid: backupId, cn: cn })
-            .all(statsRows)
-
+          var statsModel = new DynamicModel({ cnt: 0, chars_data: 0 })
           var cntChunks = 0
           var charsData = 0
-          if (statsRows && statsRows.length > 0) {
-            var rawCnt = null
-            var rawChars = null
-            try {
-              rawCnt = statsRows[0].cnt
-            } catch (_) {}
-            if (rawCnt == null && typeof statsRows[0].get === 'function') {
+          try {
+            $app
+              .db()
+              .newQuery(
+                'SELECT COALESCE(COUNT(*), 0) as cnt, ' +
+                  'COALESCE(SUM(CASE WHEN LENGTH(registros_json) > 2 THEN LENGTH(registros_json) - 2 ELSE 0 END), 0) as chars_data ' +
+                  'FROM backups_dados WHERE backup_id = {:bid} AND colecao_nome = {:cn}',
+              )
+              .bind({ bid: backupId, cn: cn })
+              .one(statsModel)
+
+            var rawCnt = statsModel.cnt
+            var rawChars = statsModel.chars_data
+            if (rawCnt == null && typeof statsModel.get === 'function') {
               try {
-                rawCnt = statsRows[0].get('cnt')
+                rawCnt = statsModel.get('cnt')
               } catch (_) {}
             }
-            try {
-              rawChars = statsRows[0].chars_data
-            } catch (_) {}
-            if (rawChars == null && typeof statsRows[0].get === 'function') {
+            if (rawChars == null && typeof statsModel.get === 'function') {
               try {
-                rawChars = statsRows[0].get('chars_data')
+                rawChars = statsModel.get('chars_data')
               } catch (_) {}
             }
-            cntChunks = rawCnt != null ? parseInt(rawCnt, 10) || 0 : 0
-            charsData = rawChars != null ? parseInt(rawChars, 10) || 0 : 0
+            cntChunks = parseInt(rawCnt, 10) || 0
+            charsData = parseInt(rawChars, 10) || 0
+          } catch (eStats) {
+            console.warn(logPrefix + ' Aviso ao calcular bytes da coleção ' + cn + ':', eStats)
           }
+
           calcBytes += charsData
           if (cntChunks > 1) {
             calcBytes += cntChunks - 1
@@ -770,7 +771,7 @@ routerAdd('GET', '/backend/v1/backups/processar-solicitados-drive', (e) => {
           calcBytes += 1
         }
 
-        totalBytes = calcBytes
+        totalBytes = parseInt(calcBytes, 10) || 0
         console.log(logPrefix + ' totalBytes calculado via SQL: ' + totalBytes)
         backupRecord.set('drive_total_bytes', totalBytes)
         backupRecord.set('drive_offset', 0)
@@ -1216,26 +1217,36 @@ cronAdd('backup_processador_fila_solicitados', '*/1 * * * *', () => {
         try {
           var cfgCacheRec = $app.findFirstRecordByData('config_google_drive', 'chave', 'padrao')
           if (cfgCacheRec) {
-            var rawDetCache = cfgCacheRec.get('detalhes')
-            var detalhesCache = {}
+            var detalhesCache = null
             try {
-              detalhesCache =
-                typeof rawDetCache === 'string'
-                  ? JSON.parse(rawDetCache)
-                  : JSON.parse(JSON.stringify(rawDetCache || {}))
+              detalhesCache = cfgCacheRec.get('detalhes')
+              if (typeof detalhesCache === 'string') {
+                detalhesCache = JSON.parse(detalhesCache)
+              } else if (detalhesCache && typeof detalhesCache === 'object') {
+                detalhesCache = JSON.parse(JSON.stringify(detalhesCache))
+              }
             } catch (_) {
+              detalhesCache = null
+            }
+            if (
+              !detalhesCache ||
+              typeof detalhesCache !== 'object' ||
+              Array.isArray(detalhesCache)
+            ) {
               detalhesCache = {}
             }
-            if (detalhesCache && detalhesCache.cached_token && detalhesCache.cached_expiry_ms) {
+            var cachedToken = detalhesCache.cached_token
+            var cachedExpiryMs = Number(detalhesCache.cached_expiry_ms) || 0
+            if (cachedToken && cachedExpiryMs > 0) {
               // Margem de segurança de 5 minutos (300.000 ms)
-              if (nowMs < detalhesCache.cached_expiry_ms - 300000) {
+              if (nowMs < cachedExpiryMs - 300000) {
                 console.log(
                   logPrefix +
                     ' [CACHE TOKEN] Usando access token em cache válido até ' +
-                    new Date(detalhesCache.cached_expiry_ms).toISOString(),
+                    new Date(cachedExpiryMs).toISOString(),
                 )
                 return {
-                  access_token: detalhesCache.cached_token,
+                  access_token: cachedToken,
                   client_email: creds.client_email,
                   project_id: creds.project_id || '',
                   from_cache: true,
@@ -1245,6 +1256,8 @@ cronAdd('backup_processador_fila_solicitados', '*/1 * * * *', () => {
                   logPrefix + ' [CACHE TOKEN] Token expirado ou próximo de expirar. Renovando...',
                 )
               }
+            } else {
+              console.log(logPrefix + ' [CACHE TOKEN] Nenhum token válido encontrado no cache.')
             }
           }
         } catch (eCacheRead) {
@@ -1802,24 +1815,16 @@ cronAdd('backup_processador_fila_solicitados', '*/1 * * * *', () => {
     }
 
     var tentativas = backupRecord.getInt('drive_tentativas') || 0
-    if (tentativas >= 6) {
-      var msgMax = 'Limite de tentativas excedido (6). Tente novamente pela tela do sistema.'
+    var curStatus = backupRecord.getString('drive_status') || 'solicitado'
+    // Limite de tentativas só se aplica a falhas reais consecutivas, não a rodadas normais de upload incremental (status 'enviando')
+    if (curStatus !== 'enviando' && tentativas >= 10) {
+      var msgMax = 'Limite de tentativas excedido (10). Tente novamente pela tela do sistema.'
       console.warn(logPrefix + ' ' + msgMax)
       backupRecord.set('drive_status', 'erro')
       backupRecord.set('drive_erro', msgMax)
       $app.save(backupRecord)
       return { status: 'erro', erro: msgMax }
     }
-
-    // Registra início da tentativa e incrementa contador preventivo
-    backupRecord.set('drive_tentativas', tentativas + 1)
-    backupRecord.set(
-      'drive_erro',
-      'Processando envio ao Google Drive (tentativa ' + (tentativas + 1) + ')...',
-    )
-    try {
-      $app.save(backupRecord)
-    } catch (_) {}
 
     try {
       var serviceAccountJson = $os.getenv('GOOGLE_SERVICE_ACCOUNT_JSON') || ''
@@ -1907,41 +1912,38 @@ cronAdd('backup_processador_fila_solicitados', '*/1 * * * *', () => {
           var cn = colecoesValidas[ci]
           if (ci > 0) calcBytes += 1
           calcBytes += JSON.stringify(cn).length + ':['
-          var statsRows = arrayOf(new DynamicModel({ cnt: 0, chars_data: 0 }))
-          $app
-            .db()
-            .newQuery(
-              'SELECT COALESCE(COUNT(*), 0) as cnt, ' +
-                'COALESCE(SUM(CASE WHEN LENGTH(registros_json) > 2 THEN LENGTH(registros_json) - 2 ELSE 0 END), 0) as chars_data ' +
-                'FROM backups_dados WHERE backup_id = {:bid} AND colecao_nome = {:cn}',
-            )
-            .bind({ bid: backupId, cn: cn })
-            .all(statsRows)
-
+          var statsModel = new DynamicModel({ cnt: 0, chars_data: 0 })
           var cntChunks = 0
           var charsData = 0
-          if (statsRows && statsRows.length > 0) {
-            var rawCnt = null
-            var rawChars = null
-            try {
-              rawCnt = statsRows[0].cnt
-            } catch (_) {}
-            if (rawCnt == null && typeof statsRows[0].get === 'function') {
+          try {
+            $app
+              .db()
+              .newQuery(
+                'SELECT COALESCE(COUNT(*), 0) as cnt, ' +
+                  'COALESCE(SUM(CASE WHEN LENGTH(registros_json) > 2 THEN LENGTH(registros_json) - 2 ELSE 0 END), 0) as chars_data ' +
+                  'FROM backups_dados WHERE backup_id = {:bid} AND colecao_nome = {:cn}',
+              )
+              .bind({ bid: backupId, cn: cn })
+              .one(statsModel)
+
+            var rawCnt = statsModel.cnt
+            var rawChars = statsModel.chars_data
+            if (rawCnt == null && typeof statsModel.get === 'function') {
               try {
-                rawCnt = statsRows[0].get('cnt')
+                rawCnt = statsModel.get('cnt')
               } catch (_) {}
             }
-            try {
-              rawChars = statsRows[0].chars_data
-            } catch (_) {}
-            if (rawChars == null && typeof statsRows[0].get === 'function') {
+            if (rawChars == null && typeof statsModel.get === 'function') {
               try {
-                rawChars = statsRows[0].get('chars_data')
+                rawChars = statsModel.get('chars_data')
               } catch (_) {}
             }
-            cntChunks = rawCnt != null ? parseInt(rawCnt, 10) || 0 : 0
-            charsData = rawChars != null ? parseInt(rawChars, 10) || 0 : 0
+            cntChunks = parseInt(rawCnt, 10) || 0
+            charsData = parseInt(rawChars, 10) || 0
+          } catch (eStats) {
+            console.warn(logPrefix + ' Aviso ao calcular bytes da coleção ' + cn + ':', eStats)
           }
+
           calcBytes += charsData
           if (cntChunks > 1) {
             calcBytes += cntChunks - 1
@@ -1949,7 +1951,7 @@ cronAdd('backup_processador_fila_solicitados', '*/1 * * * *', () => {
           calcBytes += 1
         }
 
-        totalBytes = calcBytes
+        totalBytes = parseInt(calcBytes, 10) || 0
         console.log(logPrefix + ' totalBytes calculado via SQL: ' + totalBytes)
         backupRecord.set('drive_total_bytes', totalBytes)
         backupRecord.set('drive_offset', 0)
