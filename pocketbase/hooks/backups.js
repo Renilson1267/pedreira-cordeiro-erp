@@ -732,32 +732,37 @@ routerAdd('GET', '/backend/v1/backups/processar-solicitados-drive', (e) => {
           $app
             .db()
             .newQuery(
-              'SELECT COUNT(*) as cnt, SUM(CASE WHEN LENGTH(registros_json) > 2 THEN LENGTH(registros_json) - 2 ELSE 0 END) as chars_data ' +
+              'SELECT COALESCE(COUNT(*), 0) as cnt, ' +
+                'COALESCE(SUM(CASE WHEN LENGTH(registros_json) > 2 THEN LENGTH(registros_json) - 2 ELSE 0 END), 0) as chars_data ' +
                 'FROM backups_dados WHERE backup_id = {:bid} AND colecao_nome = {:cn}',
             )
             .bind({ bid: backupId, cn: cn })
             .all(statsRows)
 
-          var cntChunks =
-            statsRows.length > 0
-              ? parseInt(
-                  statsRows[0].cnt != null
-                    ? statsRows[0].cnt
-                    : (typeof statsRows[0].get === 'function' ? statsRows[0].get('cnt') : 0) || 0,
-                  10,
-                )
-              : 0
-          var charsData =
-            statsRows.length > 0
-              ? parseInt(
-                  statsRows[0].chars_data != null
-                    ? statsRows[0].chars_data
-                    : (typeof statsRows[0].get === 'function'
-                        ? statsRows[0].get('chars_data')
-                        : 0) || 0,
-                  10,
-                )
-              : 0
+          var cntChunks = 0
+          var charsData = 0
+          if (statsRows && statsRows.length > 0) {
+            var rawCnt = null
+            var rawChars = null
+            try {
+              rawCnt = statsRows[0].cnt
+            } catch (_) {}
+            if (rawCnt == null && typeof statsRows[0].get === 'function') {
+              try {
+                rawCnt = statsRows[0].get('cnt')
+              } catch (_) {}
+            }
+            try {
+              rawChars = statsRows[0].chars_data
+            } catch (_) {}
+            if (rawChars == null && typeof statsRows[0].get === 'function') {
+              try {
+                rawChars = statsRows[0].get('chars_data')
+              } catch (_) {}
+            }
+            cntChunks = rawCnt != null ? parseInt(rawCnt, 10) || 0 : 0
+            charsData = rawChars != null ? parseInt(rawChars, 10) || 0 : 0
+          }
           calcBytes += charsData
           if (cntChunks > 1) {
             calcBytes += cntChunks - 1
@@ -1906,32 +1911,37 @@ cronAdd('backup_processador_fila_solicitados', '*/1 * * * *', () => {
           $app
             .db()
             .newQuery(
-              'SELECT COUNT(*) as cnt, SUM(CASE WHEN LENGTH(registros_json) > 2 THEN LENGTH(registros_json) - 2 ELSE 0 END) as chars_data ' +
+              'SELECT COALESCE(COUNT(*), 0) as cnt, ' +
+                'COALESCE(SUM(CASE WHEN LENGTH(registros_json) > 2 THEN LENGTH(registros_json) - 2 ELSE 0 END), 0) as chars_data ' +
                 'FROM backups_dados WHERE backup_id = {:bid} AND colecao_nome = {:cn}',
             )
             .bind({ bid: backupId, cn: cn })
             .all(statsRows)
 
-          var cntChunks =
-            statsRows.length > 0
-              ? parseInt(
-                  statsRows[0].cnt != null
-                    ? statsRows[0].cnt
-                    : (typeof statsRows[0].get === 'function' ? statsRows[0].get('cnt') : 0) || 0,
-                  10,
-                )
-              : 0
-          var charsData =
-            statsRows.length > 0
-              ? parseInt(
-                  statsRows[0].chars_data != null
-                    ? statsRows[0].chars_data
-                    : (typeof statsRows[0].get === 'function'
-                        ? statsRows[0].get('chars_data')
-                        : 0) || 0,
-                  10,
-                )
-              : 0
+          var cntChunks = 0
+          var charsData = 0
+          if (statsRows && statsRows.length > 0) {
+            var rawCnt = null
+            var rawChars = null
+            try {
+              rawCnt = statsRows[0].cnt
+            } catch (_) {}
+            if (rawCnt == null && typeof statsRows[0].get === 'function') {
+              try {
+                rawCnt = statsRows[0].get('cnt')
+              } catch (_) {}
+            }
+            try {
+              rawChars = statsRows[0].chars_data
+            } catch (_) {}
+            if (rawChars == null && typeof statsRows[0].get === 'function') {
+              try {
+                rawChars = statsRows[0].get('chars_data')
+              } catch (_) {}
+            }
+            cntChunks = rawCnt != null ? parseInt(rawCnt, 10) || 0 : 0
+            charsData = rawChars != null ? parseInt(rawChars, 10) || 0 : 0
+          }
           calcBytes += charsData
           if (cntChunks > 1) {
             calcBytes += cntChunks - 1
