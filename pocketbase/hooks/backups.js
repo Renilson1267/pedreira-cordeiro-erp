@@ -18,10 +18,59 @@ routerAdd('GET', '/backend/v1/backups/processar-solicitados-drive', (e) => {
     var startRoundTime = Date.now()
     var MAX_ROUND_DURATION_MS = 25000 // 25 segundos máximo por rodada
 
-    function getAccessTokenShared(serviceAccountJson, scope) {
+    function getAccessTokenShared(serviceAccountJson, scope, forcarRenovacao) {
+      var creds =
+        typeof serviceAccountJson === 'string' ? JSON.parse(serviceAccountJson) : serviceAccountJson
+
+      if (!creds.client_email || !creds.private_key) {
+        throw new Error(
+          'JSON de Conta de Serviço inválido: "client_email" e "private_key" são obrigatórios.',
+        )
+      }
+
+      var nowMs = Date.now()
+      var nowSec = Math.floor(nowMs / 1000)
+
+      // 1. Tenta reaproveitar o token armazenado em config_google_drive.detalhes
+      if (!forcarRenovacao) {
+        try {
+          var cfgCacheRec = $app.findFirstRecordByData('config_google_drive', 'chave', 'padrao')
+          if (cfgCacheRec) {
+            var detalhesCache = cfgCacheRec.get('detalhes') || {}
+            if (detalhesCache && detalhesCache.cached_token && detalhesCache.cached_expiry_ms) {
+              // Margem de segurança de 5 minutos (300.000 ms)
+              if (nowMs < detalhesCache.cached_expiry_ms - 300000) {
+                console.log(
+                  logPrefix +
+                    ' [CACHE TOKEN] Usando access token em cache válido até ' +
+                    new Date(detalhesCache.cached_expiry_ms).toISOString(),
+                )
+                return {
+                  access_token: detalhesCache.cached_token,
+                  client_email: creds.client_email,
+                  project_id: creds.project_id || '',
+                  from_cache: true,
+                }
+              } else {
+                console.log(
+                  logPrefix + ' [CACHE TOKEN] Token expirado ou próximo de expirar. Renovando...',
+                )
+              }
+            }
+          }
+        } catch (eCacheRead) {
+          console.warn(logPrefix + ' [CACHE TOKEN] Aviso ao ler cache do token:', eCacheRead)
+        }
+      }
+
+      console.log(
+        logPrefix + ' [RSA] Iniciando cálculo de assinatura JWT RS256 com RSA CRT acelerado...',
+      )
+      var rsaStartTime = Date.now()
+
       var b64chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/'
       var b64tab = {}
-      for (var i = 0; i < b64chars.length; i++) b64tab[b64chars.charAt(i)] = i
+      for (var bi = 0; bi < b64chars.length; bi++) b64tab[b64chars.charAt(bi)] = bi
 
       function base64ToBytes(s) {
         s = s.replace(/[^A-Za-z0-9+/=]/g, '')
@@ -125,6 +174,7 @@ routerAdd('GET', '/backend/v1/backups/processar-solicitados-drive', (e) => {
           var ver = der[pos]
           pos += vLen
           if (ver === 0 && der[pos] === 0x30) {
+            // PKCS#8: SEQUENCE { version, AlgorithmIdentifier, OCTET STRING { PKCS#1 RSAPrivateKey } }
             pos++
             var algLen = readLength()
             pos += algLen
@@ -134,10 +184,54 @@ routerAdd('GET', '/backend/v1/backups/processar-solicitados-drive', (e) => {
             var pkcs1Tag = readTag()
             if (pkcs1Tag !== 0x30) throw new Error('PKCS#1 inválido dentro do PKCS#8')
             readLength()
-            readInteger()
-            return { n: readInteger(), e: readInteger(), d: readInteger() }
+            readInteger() // version
+            var n = readInteger()
+            var e = readInteger()
+            var d = readInteger()
+            var p = readInteger()
+            var q = readInteger()
+            var dp = readInteger()
+            var dq = readInteger()
+            var qinv = readInteger()
+            return {
+              n: n,
+              e: e,
+              d: d,
+              p: p,
+              q: q,
+              dp: dp,
+              dq: dq,
+              qinv: qinv,
+              hasCRT: Boolean(p && q && dp && dq && qinv),
+            }
           } else {
-            return { n: readInteger(), e: readInteger(), d: readInteger() }
+            // PKCS#1 direto
+            var n1 = readInteger()
+            var e1 = readInteger()
+            var d1 = readInteger()
+            var p1 = null,
+              q1 = null,
+              dp1 = null,
+              dq1 = null,
+              qinv1 = null
+            try {
+              p1 = readInteger()
+              q1 = readInteger()
+              dp1 = readInteger()
+              dq1 = readInteger()
+              qinv1 = readInteger()
+            } catch (_) {}
+            return {
+              n: n1,
+              e: e1,
+              d: d1,
+              p: p1,
+              q: q1,
+              dp: dp1,
+              dq: dq1,
+              qinv: qinv1,
+              hasCRT: Boolean(p1 && q1 && dp1 && dq1 && qinv1),
+            }
           }
         }
         throw new Error('Formato de chave privada RSA não reconhecido')
@@ -191,6 +285,35 @@ routerAdd('GET', '/backend/v1/backups/processar-solicitados-drive', (e) => {
           if (a[i] !== b[i]) return a[i] > b[i] ? 1 : -1
         }
         return 0
+      }
+
+      function add(a, b) {
+        var res = []
+        var maxL = Math.max(a.length, b.length)
+        var carry = 0
+        for (var i = 0; i < maxL || carry > 0; i++) {
+          var sum = (i < a.length ? a[i] : 0) + (i < b.length ? b[i] : 0) + carry
+          res.push(sum % BASE)
+          carry = Math.floor(sum / BASE)
+        }
+        return trim(res)
+      }
+
+      function sub(a, b) {
+        // assume a >= b
+        var res = []
+        var borrow = 0
+        for (var i = 0; i < a.length; i++) {
+          var diff = a[i] - borrow - (i < b.length ? b[i] : 0)
+          if (diff < 0) {
+            diff += BASE
+            borrow = 1
+          } else {
+            borrow = 0
+          }
+          res.push(diff)
+        }
+        return trim(res)
       }
 
       function mul(a, b) {
@@ -279,7 +402,7 @@ routerAdd('GET', '/backend/v1/backups/processar-solicitados-drive', (e) => {
 
       function modPow(baseB, expB, modB) {
         var res = [1]
-        var cur = baseB.slice()
+        var cur = divRem(baseB, modB).r
         var maxChunk = 0
         var maxBit = 0
         for (var i = expB.length - 1; i >= 0; i--) {
@@ -296,7 +419,9 @@ routerAdd('GET', '/backend/v1/backups/processar-solicitados-drive', (e) => {
             if ((chunk & (1 << b)) !== 0) {
               res = divRem(mul(res, cur), modB).r
             }
-            cur = divRem(mul(cur, cur), modB).r
+            if (i < maxChunk || b < limitBits - 1) {
+              cur = divRem(mul(cur, cur), modB).r
+            }
           }
         }
         return res
@@ -308,8 +433,6 @@ routerAdd('GET', '/backend/v1/backups/processar-solicitados-drive', (e) => {
       ]
 
       function rsaSignSha256(dataStr, keyComponents) {
-        var nBig = bytesToBig(keyComponents.n)
-        var dBig = bytesToBig(keyComponents.d)
         var kLen = keyComponents.n.length
 
         var hex = $security.sha256(dataStr)
@@ -326,21 +449,39 @@ routerAdd('GET', '/backend/v1/backups/processar-solicitados-drive', (e) => {
         for (var i = 0; i < t.length; i++) em.push(t[i])
 
         var emBig = bytesToBig(em)
-        var sBig = modPow(emBig, dBig, nBig)
+        var sBig = null
+
+        if (keyComponents.hasCRT) {
+          // RSA Chinese Remainder Theorem: 4x a 8x mais rápido
+          var pBig = bytesToBig(keyComponents.p)
+          var qBig = bytesToBig(keyComponents.q)
+          var dpBig = bytesToBig(keyComponents.dp)
+          var dqBig = bytesToBig(keyComponents.dq)
+          var qinvBig = bytesToBig(keyComponents.qinv)
+
+          var m1 = modPow(emBig, dpBig, pBig)
+          var m2 = modPow(emBig, dqBig, qBig)
+
+          // h = (qinv * (m1 - m2)) mod p
+          var diff = null
+          if (compare(m1, m2) >= 0) {
+            diff = sub(m1, m2)
+          } else {
+            diff = sub(add(m1, pBig), m2)
+          }
+          var h = divRem(mul(qinvBig, diff), pBig).r
+          // s = m2 + h * q
+          sBig = add(m2, mul(h, qBig))
+        } else {
+          var nBig = bytesToBig(keyComponents.n)
+          var dBig = bytesToBig(keyComponents.d)
+          sBig = modPow(emBig, dBig, nBig)
+        }
+
         var sigBytes = bigToBytes(sBig, kLen)
         return bytesToBase64Url(sigBytes)
       }
 
-      var creds =
-        typeof serviceAccountJson === 'string' ? JSON.parse(serviceAccountJson) : serviceAccountJson
-
-      if (!creds.client_email || !creds.private_key) {
-        throw new Error(
-          'JSON de Conta de Serviço inválido: "client_email" e "private_key" são obrigatórios.',
-        )
-      }
-
-      var nowSec = Math.floor(Date.now() / 1000)
       var header = { alg: 'RS256', typ: 'JWT' }
       var claimSet = {
         iss: creds.client_email,
@@ -357,6 +498,8 @@ routerAdd('GET', '/backend/v1/backups/processar-solicitados-drive', (e) => {
       var keys = parsePKCS8orPKCS1(creds.private_key)
       var signature = rsaSignSha256(signingInput, keys)
       var assertion = signingInput + '.' + signature
+      var rsaElapsed = Date.now() - rsaStartTime
+      console.log(logPrefix + ' [RSA] Assinatura RS256 concluída em ' + rsaElapsed + 'ms!')
 
       var res = $http.send({
         url: 'https://oauth2.googleapis.com/token',
@@ -381,10 +524,33 @@ routerAdd('GET', '/backend/v1/backups/processar-solicitados-drive', (e) => {
         throw new Error('Access token não retornado pelo Google OAuth.')
       }
 
+      // 2. Salva o access token retornado no cache persistente (validade 1h / 3600s)
+      try {
+        var cfgSaveRec = $app.findFirstRecordByData('config_google_drive', 'chave', 'padrao')
+        if (cfgSaveRec) {
+          var curDetalhes = cfgSaveRec.get('detalhes') || {}
+          if (typeof curDetalhes !== 'object' || curDetalhes === null) curDetalhes = {}
+          curDetalhes.cached_token = data.access_token
+          curDetalhes.cached_expiry_ms = Date.now() + (data.expires_in || 3600) * 1000
+          curDetalhes.cached_created_at = new Date().toISOString()
+          cfgSaveRec.set('detalhes', curDetalhes)
+          $app.save(cfgSaveRec)
+          console.log(
+            logPrefix +
+              ' [CACHE TOKEN] Novo token gravado no cache com sucesso (expira em ' +
+              (data.expires_in || 3600) +
+              's).',
+          )
+        }
+      } catch (eSaveCache) {
+        console.warn(logPrefix + ' [CACHE TOKEN] Aviso ao salvar token no cache:', eSaveCache)
+      }
+
       return {
         access_token: data.access_token,
         client_email: creds.client_email,
         project_id: creds.project_id || '',
+        from_cache: false,
       }
     }
 
@@ -434,13 +600,23 @@ routerAdd('GET', '/backend/v1/backups/processar-solicitados-drive', (e) => {
 
     var tentativas = backupRecord.getInt('drive_tentativas') || 0
     if (tentativas >= 6) {
-      var msgMax = 'Limite de tentativas excedido. Tente novamente pela tela do sistema.'
+      var msgMax = 'Limite de tentativas excedido (6). Tente novamente pela tela do sistema.'
       console.warn(logPrefix + ' ' + msgMax)
       backupRecord.set('drive_status', 'erro')
       backupRecord.set('drive_erro', msgMax)
       $app.save(backupRecord)
       return { status: 'erro', erro: msgMax }
     }
+
+    // Registra início da tentativa e incrementa contador preventivo
+    backupRecord.set('drive_tentativas', tentativas + 1)
+    backupRecord.set(
+      'drive_erro',
+      'Processando envio ao Google Drive (tentativa ' + (tentativas + 1) + ')...',
+    )
+    try {
+      $app.save(backupRecord)
+    } catch (_) {}
 
     try {
       var serviceAccountJson = $os.getenv('GOOGLE_SERVICE_ACCOUNT_JSON') || ''
@@ -798,6 +974,23 @@ routerAdd('GET', '/backend/v1/backups/processar-solicitados-drive', (e) => {
           timeout: 20,
         })
 
+        // Se retornar 401 Unauthorized (token expirado ou revogado no meio do processo), limpa o cache
+        if (putRes.statusCode === 401) {
+          try {
+            var cfg401 = $app.findFirstRecordByData('config_google_drive', 'chave', 'padrao')
+            if (cfg401) {
+              var det401 = cfg401.get('detalhes') || {}
+              delete det401.cached_token
+              delete det401.cached_expiry_ms
+              cfg401.set('detalhes', det401)
+              $app.save(cfg401)
+              console.warn(
+                logPrefix + ' [CACHE TOKEN] Google retornou 401; cache do token invalidado.',
+              )
+            }
+          } catch (_) {}
+        }
+
         if (putRes.statusCode === 308) {
           var nextOffset = putEnd + 1
           var rangeRsp = putRes.headers?.['Range'] || putRes.headers?.['range']
@@ -886,12 +1079,19 @@ routerAdd('GET', '/backend/v1/backups/processar-solicitados-drive', (e) => {
         chunks_enviados_rodada: chunksEnviadosNestaRodada,
       }
     } catch (errExec) {
-      var msgErr = 'Exceção no envio incremental Drive: ' + String(errExec?.message || errExec)
+      var rawErr = String(errExec?.message || errExec)
+      var msgErr = 'Exceção no envio incremental Drive: ' + rawErr
+      if (rawErr.indexOf('account not found') !== -1) {
+        msgErr =
+          'Erro Google OAuth (400 account not found): a Conta de Serviço informada foi desativada ou excluída no Google Cloud Console. Por favor, reconfigure a chave na tela de Backups.'
+      } else if (rawErr.indexOf('invalid_grant') !== -1) {
+        msgErr =
+          'Erro Google OAuth (invalid_grant): credenciais da Conta de Serviço inválidas ou expiradas.'
+      }
       console.error(logPrefix + ' ' + msgErr)
       try {
         backupRecord.set('drive_status', 'erro')
         backupRecord.set('drive_erro', msgErr)
-        backupRecord.set('drive_tentativas', tentativas + 1)
         $app.save(backupRecord)
       } catch (_) {}
       return { status: 'erro', erro: msgErr }
@@ -942,10 +1142,59 @@ cronAdd('backup_processador_fila_solicitados', '*/1 * * * *', () => {
     var startRoundTime = Date.now()
     var MAX_ROUND_DURATION_MS = 25000 // 25 segundos máximo por rodada
 
-    function getAccessTokenShared(serviceAccountJson, scope) {
+    function getAccessTokenShared(serviceAccountJson, scope, forcarRenovacao) {
+      var creds =
+        typeof serviceAccountJson === 'string' ? JSON.parse(serviceAccountJson) : serviceAccountJson
+
+      if (!creds.client_email || !creds.private_key) {
+        throw new Error(
+          'JSON de Conta de Serviço inválido: "client_email" e "private_key" são obrigatórios.',
+        )
+      }
+
+      var nowMs = Date.now()
+      var nowSec = Math.floor(nowMs / 1000)
+
+      // 1. Tenta reaproveitar o token armazenado em config_google_drive.detalhes
+      if (!forcarRenovacao) {
+        try {
+          var cfgCacheRec = $app.findFirstRecordByData('config_google_drive', 'chave', 'padrao')
+          if (cfgCacheRec) {
+            var detalhesCache = cfgCacheRec.get('detalhes') || {}
+            if (detalhesCache && detalhesCache.cached_token && detalhesCache.cached_expiry_ms) {
+              // Margem de segurança de 5 minutos (300.000 ms)
+              if (nowMs < detalhesCache.cached_expiry_ms - 300000) {
+                console.log(
+                  logPrefix +
+                    ' [CACHE TOKEN] Usando access token em cache válido até ' +
+                    new Date(detalhesCache.cached_expiry_ms).toISOString(),
+                )
+                return {
+                  access_token: detalhesCache.cached_token,
+                  client_email: creds.client_email,
+                  project_id: creds.project_id || '',
+                  from_cache: true,
+                }
+              } else {
+                console.log(
+                  logPrefix + ' [CACHE TOKEN] Token expirado ou próximo de expirar. Renovando...',
+                )
+              }
+            }
+          }
+        } catch (eCacheRead) {
+          console.warn(logPrefix + ' [CACHE TOKEN] Aviso ao ler cache do token:', eCacheRead)
+        }
+      }
+
+      console.log(
+        logPrefix + ' [RSA] Iniciando cálculo de assinatura JWT RS256 com RSA CRT acelerado...',
+      )
+      var rsaStartTime = Date.now()
+
       var b64chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/'
       var b64tab = {}
-      for (var i = 0; i < b64chars.length; i++) b64tab[b64chars.charAt(i)] = i
+      for (var bi = 0; bi < b64chars.length; bi++) b64tab[b64chars.charAt(bi)] = bi
 
       function base64ToBytes(s) {
         s = s.replace(/[^A-Za-z0-9+/=]/g, '')
@@ -1049,6 +1298,7 @@ cronAdd('backup_processador_fila_solicitados', '*/1 * * * *', () => {
           var ver = der[pos]
           pos += vLen
           if (ver === 0 && der[pos] === 0x30) {
+            // PKCS#8: SEQUENCE { version, AlgorithmIdentifier, OCTET STRING { PKCS#1 RSAPrivateKey } }
             pos++
             var algLen = readLength()
             pos += algLen
@@ -1058,10 +1308,54 @@ cronAdd('backup_processador_fila_solicitados', '*/1 * * * *', () => {
             var pkcs1Tag = readTag()
             if (pkcs1Tag !== 0x30) throw new Error('PKCS#1 inválido dentro do PKCS#8')
             readLength()
-            readInteger()
-            return { n: readInteger(), e: readInteger(), d: readInteger() }
+            readInteger() // version
+            var n = readInteger()
+            var e = readInteger()
+            var d = readInteger()
+            var p = readInteger()
+            var q = readInteger()
+            var dp = readInteger()
+            var dq = readInteger()
+            var qinv = readInteger()
+            return {
+              n: n,
+              e: e,
+              d: d,
+              p: p,
+              q: q,
+              dp: dp,
+              dq: dq,
+              qinv: qinv,
+              hasCRT: Boolean(p && q && dp && dq && qinv),
+            }
           } else {
-            return { n: readInteger(), e: readInteger(), d: readInteger() }
+            // PKCS#1 direto
+            var n1 = readInteger()
+            var e1 = readInteger()
+            var d1 = readInteger()
+            var p1 = null,
+              q1 = null,
+              dp1 = null,
+              dq1 = null,
+              qinv1 = null
+            try {
+              p1 = readInteger()
+              q1 = readInteger()
+              dp1 = readInteger()
+              dq1 = readInteger()
+              qinv1 = readInteger()
+            } catch (_) {}
+            return {
+              n: n1,
+              e: e1,
+              d: d1,
+              p: p1,
+              q: q1,
+              dp: dp1,
+              dq: dq1,
+              qinv: qinv1,
+              hasCRT: Boolean(p1 && q1 && dp1 && dq1 && qinv1),
+            }
           }
         }
         throw new Error('Formato de chave privada RSA não reconhecido')
@@ -1115,6 +1409,34 @@ cronAdd('backup_processador_fila_solicitados', '*/1 * * * *', () => {
           if (a[i] !== b[i]) return a[i] > b[i] ? 1 : -1
         }
         return 0
+      }
+
+      function add(a, b) {
+        var res = []
+        var maxL = Math.max(a.length, b.length)
+        var carry = 0
+        for (var i = 0; i < maxL || carry > 0; i++) {
+          var sum = (i < a.length ? a[i] : 0) + (i < b.length ? b[i] : 0) + carry
+          res.push(sum % BASE)
+          carry = Math.floor(sum / BASE)
+        }
+        return trim(res)
+      }
+
+      function sub(a, b) {
+        var res = []
+        var borrow = 0
+        for (var i = 0; i < a.length; i++) {
+          var diff = a[i] - borrow - (i < b.length ? b[i] : 0)
+          if (diff < 0) {
+            diff += BASE
+            borrow = 1
+          } else {
+            borrow = 0
+          }
+          res.push(diff)
+        }
+        return trim(res)
       }
 
       function mul(a, b) {
@@ -1203,7 +1525,7 @@ cronAdd('backup_processador_fila_solicitados', '*/1 * * * *', () => {
 
       function modPow(baseB, expB, modB) {
         var res = [1]
-        var cur = baseB.slice()
+        var cur = divRem(baseB, modB).r
         var maxChunk = 0
         var maxBit = 0
         for (var i = expB.length - 1; i >= 0; i--) {
@@ -1220,7 +1542,9 @@ cronAdd('backup_processador_fila_solicitados', '*/1 * * * *', () => {
             if ((chunk & (1 << b)) !== 0) {
               res = divRem(mul(res, cur), modB).r
             }
-            cur = divRem(mul(cur, cur), modB).r
+            if (i < maxChunk || b < limitBits - 1) {
+              cur = divRem(mul(cur, cur), modB).r
+            }
           }
         }
         return res
@@ -1232,8 +1556,6 @@ cronAdd('backup_processador_fila_solicitados', '*/1 * * * *', () => {
       ]
 
       function rsaSignSha256(dataStr, keyComponents) {
-        var nBig = bytesToBig(keyComponents.n)
-        var dBig = bytesToBig(keyComponents.d)
         var kLen = keyComponents.n.length
 
         var hex = $security.sha256(dataStr)
@@ -1250,21 +1572,39 @@ cronAdd('backup_processador_fila_solicitados', '*/1 * * * *', () => {
         for (var i = 0; i < t.length; i++) em.push(t[i])
 
         var emBig = bytesToBig(em)
-        var sBig = modPow(emBig, dBig, nBig)
+        var sBig = null
+
+        if (keyComponents.hasCRT) {
+          // RSA Chinese Remainder Theorem: 4x a 8x mais rápido
+          var pBig = bytesToBig(keyComponents.p)
+          var qBig = bytesToBig(keyComponents.q)
+          var dpBig = bytesToBig(keyComponents.dp)
+          var dqBig = bytesToBig(keyComponents.dq)
+          var qinvBig = bytesToBig(keyComponents.qinv)
+
+          var m1 = modPow(emBig, dpBig, pBig)
+          var m2 = modPow(emBig, dqBig, qBig)
+
+          // h = (qinv * (m1 - m2)) mod p
+          var diff = null
+          if (compare(m1, m2) >= 0) {
+            diff = sub(m1, m2)
+          } else {
+            diff = sub(add(m1, pBig), m2)
+          }
+          var h = divRem(mul(qinvBig, diff), pBig).r
+          // s = m2 + h * q
+          sBig = add(m2, mul(h, qBig))
+        } else {
+          var nBig = bytesToBig(keyComponents.n)
+          var dBig = bytesToBig(keyComponents.d)
+          sBig = modPow(emBig, dBig, nBig)
+        }
+
         var sigBytes = bigToBytes(sBig, kLen)
         return bytesToBase64Url(sigBytes)
       }
 
-      var creds =
-        typeof serviceAccountJson === 'string' ? JSON.parse(serviceAccountJson) : serviceAccountJson
-
-      if (!creds.client_email || !creds.private_key) {
-        throw new Error(
-          'JSON de Conta de Serviço inválido: "client_email" e "private_key" são obrigatórios.',
-        )
-      }
-
-      var nowSec = Math.floor(Date.now() / 1000)
       var header = { alg: 'RS256', typ: 'JWT' }
       var claimSet = {
         iss: creds.client_email,
@@ -1281,6 +1621,8 @@ cronAdd('backup_processador_fila_solicitados', '*/1 * * * *', () => {
       var keys = parsePKCS8orPKCS1(creds.private_key)
       var signature = rsaSignSha256(signingInput, keys)
       var assertion = signingInput + '.' + signature
+      var rsaElapsed = Date.now() - rsaStartTime
+      console.log(logPrefix + ' [RSA] Assinatura RS256 concluída em ' + rsaElapsed + 'ms!')
 
       var res = $http.send({
         url: 'https://oauth2.googleapis.com/token',
@@ -1305,10 +1647,33 @@ cronAdd('backup_processador_fila_solicitados', '*/1 * * * *', () => {
         throw new Error('Access token não retornado pelo Google OAuth.')
       }
 
+      // 2. Salva o access token retornado no cache persistente (validade 1h / 3600s)
+      try {
+        var cfgSaveRec = $app.findFirstRecordByData('config_google_drive', 'chave', 'padrao')
+        if (cfgSaveRec) {
+          var curDetalhes = cfgSaveRec.get('detalhes') || {}
+          if (typeof curDetalhes !== 'object' || curDetalhes === null) curDetalhes = {}
+          curDetalhes.cached_token = data.access_token
+          curDetalhes.cached_expiry_ms = Date.now() + (data.expires_in || 3600) * 1000
+          curDetalhes.cached_created_at = new Date().toISOString()
+          cfgSaveRec.set('detalhes', curDetalhes)
+          $app.save(cfgSaveRec)
+          console.log(
+            logPrefix +
+              ' [CACHE TOKEN] Novo token gravado no cache com sucesso (expira em ' +
+              (data.expires_in || 3600) +
+              's).',
+          )
+        }
+      } catch (eSaveCache) {
+        console.warn(logPrefix + ' [CACHE TOKEN] Aviso ao salvar token no cache:', eSaveCache)
+      }
+
       return {
         access_token: data.access_token,
         client_email: creds.client_email,
         project_id: creds.project_id || '',
+        from_cache: false,
       }
     }
 
@@ -1358,13 +1723,23 @@ cronAdd('backup_processador_fila_solicitados', '*/1 * * * *', () => {
 
     var tentativas = backupRecord.getInt('drive_tentativas') || 0
     if (tentativas >= 6) {
-      var msgMax = 'Limite de tentativas excedido. Tente novamente pela tela do sistema.'
+      var msgMax = 'Limite de tentativas excedido (6). Tente novamente pela tela do sistema.'
       console.warn(logPrefix + ' ' + msgMax)
       backupRecord.set('drive_status', 'erro')
       backupRecord.set('drive_erro', msgMax)
       $app.save(backupRecord)
       return { status: 'erro', erro: msgMax }
     }
+
+    // Registra início da tentativa e incrementa contador preventivo
+    backupRecord.set('drive_tentativas', tentativas + 1)
+    backupRecord.set(
+      'drive_erro',
+      'Processando envio ao Google Drive (tentativa ' + (tentativas + 1) + ')...',
+    )
+    try {
+      $app.save(backupRecord)
+    } catch (_) {}
 
     try {
       var serviceAccountJson = $os.getenv('GOOGLE_SERVICE_ACCOUNT_JSON') || ''
@@ -1722,6 +2097,23 @@ cronAdd('backup_processador_fila_solicitados', '*/1 * * * *', () => {
           timeout: 20,
         })
 
+        // Se retornar 401 Unauthorized (token expirado ou revogado no meio do processo), limpa o cache
+        if (putRes.statusCode === 401) {
+          try {
+            var cfg401Cron = $app.findFirstRecordByData('config_google_drive', 'chave', 'padrao')
+            if (cfg401Cron) {
+              var det401Cron = cfg401Cron.get('detalhes') || {}
+              delete det401Cron.cached_token
+              delete det401Cron.cached_expiry_ms
+              cfg401Cron.set('detalhes', det401Cron)
+              $app.save(cfg401Cron)
+              console.warn(
+                logPrefix + ' [CACHE TOKEN] Google retornou 401; cache do token invalidado.',
+              )
+            }
+          } catch (_) {}
+        }
+
         if (putRes.statusCode === 308) {
           var nextOffset = putEnd + 1
           var rangeRsp = putRes.headers?.['Range'] || putRes.headers?.['range']
@@ -1810,12 +2202,19 @@ cronAdd('backup_processador_fila_solicitados', '*/1 * * * *', () => {
         chunks_enviados_rodada: chunksEnviadosNestaRodada,
       }
     } catch (errExec) {
-      var msgErr = 'Exceção no envio incremental Drive: ' + String(errExec?.message || errExec)
+      var rawErr = String(errExec?.message || errExec)
+      var msgErr = 'Exceção no envio incremental Drive: ' + rawErr
+      if (rawErr.indexOf('account not found') !== -1) {
+        msgErr =
+          'Erro Google OAuth (400 account not found): a Conta de Serviço informada foi desativada ou excluída no Google Cloud Console. Por favor, reconfigure a chave na tela de Backups.'
+      } else if (rawErr.indexOf('invalid_grant') !== -1) {
+        msgErr =
+          'Erro Google OAuth (invalid_grant): credenciais da Conta de Serviço inválidas ou expiradas.'
+      }
       console.error(logPrefix + ' ' + msgErr)
       try {
         backupRecord.set('drive_status', 'erro')
         backupRecord.set('drive_erro', msgErr)
-        backupRecord.set('drive_tentativas', tentativas + 1)
         $app.save(backupRecord)
       } catch (_) {}
       return { status: 'erro', erro: msgErr }
@@ -2725,6 +3124,18 @@ routerAdd(
       'Fila de envio iniciada. O processador em segundo plano enviará chunks de 256KB.',
     )
     $app.save(backupRecord)
+
+    // Se solicitado reenvio manual após erro/401, limpa cache do token para garantir novo handshake limpo
+    try {
+      var cfgReset = $app.findFirstRecordByData('config_google_drive', 'chave', 'padrao')
+      if (cfgReset) {
+        var dReset = cfgReset.get('detalhes') || {}
+        delete dReset.cached_token
+        delete dReset.cached_expiry_ms
+        cfgReset.set('detalhes', dReset)
+        $app.save(cfgReset)
+      }
+    } catch (_) {}
 
     return e.json(200, {
       success: true,
