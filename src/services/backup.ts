@@ -76,6 +76,9 @@ export interface GoogleDriveStatusInfo {
   usuario_email?: string
   ultimo_envio?: string
   status_conexao: 'conectado' | 'desconectado' | 'erro' | string
+  oauth_status?: 'conectado' | 'desconectado' | string
+  oauth_client_id?: string
+  oauth_conectado?: boolean
 }
 
 export interface GoogleDriveStatusResponse {
@@ -88,6 +91,11 @@ export interface SalvarConfigDriveServiceAccountPayload {
   folder_id?: string
   folder_name?: string
   usuario_email?: string
+}
+
+export interface SalvarConfigDriveOAuthPayload {
+  client_id: string
+  client_secret: string
 }
 
 export interface EnviarDriveResponse {
@@ -298,6 +306,36 @@ export const backupService = {
    */
   async desconectarGoogleDrive(): Promise<{ success: boolean; message: string }> {
     return await pb.send('/backend/v1/google-drive/desconectar', {
+      method: 'POST',
+    })
+  },
+
+  /**
+   * Salva credenciais do cliente OAuth 2.0 (client_id e client_secret) no backend
+   */
+  async salvarConfiguracoesOAuth(
+    payload: SalvarConfigDriveOAuthPayload,
+  ): Promise<{ success: boolean; message?: string; error?: string }> {
+    return await pb.send('/backend/v1/google-drive/oauth-config', {
+      method: 'POST',
+      body: payload,
+    })
+  },
+
+  /**
+   * Solicita URL de autorização OAuth do Google Drive
+   */
+  async iniciarOAuthDrive(): Promise<{ success: boolean; auth_url?: string; error?: string }> {
+    return await pb.send('/backend/v1/google-drive/drive-oauth-start', {
+      method: 'GET',
+    })
+  },
+
+  /**
+   * Desconecta o OAuth do Google Drive (limpa refresh token e status)
+   */
+  async desconectarOAuthDrive(): Promise<{ success: boolean; message?: string; error?: string }> {
+    return await pb.send('/backend/v1/google-drive/oauth-desconectar', {
       method: 'POST',
     })
   },
