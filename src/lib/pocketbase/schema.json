@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-09-27T23:11:10.932Z",
+  "generatedAt": "2026-09-27T23:17:54.455Z",
   "collections": [
     {
       "name": "users",
@@ -3250,6 +3250,30 @@
         },
         {
           "name": "usuario_email",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "oauth_client_id",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "oauth_client_secret",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "oauth_refresh_token",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "oauth_status",
           "type": "text",
           "required": false,
           "system": false
