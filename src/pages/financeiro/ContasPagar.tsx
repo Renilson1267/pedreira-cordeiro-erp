@@ -155,8 +155,6 @@ export default function ContasPagar() {
   // Histórico Geral Modal
   const [historicoModalOpen, setHistoricoModalOpen] = useState(false)
 
-
-
   const nowISO = new Date().toISOString().slice(0, 10)
 
   // Cache de auxiliares (fornecedores, plano_contas, centros_custos, formas_recebimento) sob demanda
@@ -1116,7 +1114,6 @@ export default function ContasPagar() {
     setConfirmDialogOpen(true)
   }
 
-  const nowISO = new Date().toISOString().slice(0, 10)
   const currentMonth = new Date().getMonth()
   const currentYear = new Date().getFullYear()
 

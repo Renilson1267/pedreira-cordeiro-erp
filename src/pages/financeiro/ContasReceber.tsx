@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useMemo } from 'react'
+import React, { useEffect, useState, useMemo, useCallback } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { useCompany } from '@/contexts/CompanyContext'
 import { useAuth } from '@/contexts/AuthContext'
@@ -135,6 +135,8 @@ export default function ContasReceber() {
   // Impressão sob demanda
   const [loadingImpressao, setLoadingImpressao] = useState(false)
   const [itensImpressaoCarregados, setItensImpressaoCarregados] = useState<ContaReceber[]>([])
+
+  const nowISO = new Date().toISOString().slice(0, 10)
 
   // Filters
   const [statusFilter, setStatusFilter] = useState<
@@ -1644,74 +1646,12 @@ export default function ContasReceber() {
     setConfirmDialogOpen(true)
   }
 
-  const nowISO = new Date().toISOString().slice(0, 10)
-
   const getContaStatusReal = (c: ContaReceber): StatusContaReceber => {
     // Decisão permanente v0.0.65: títulos "Aberta" exibem SEMPRE status Aberta (vencida/aberta/próximo de vencer = Aberta).
     // O controle gerencial de atraso é feito visualmente (destaque vermelho/âmbar) e no KPI de Vencidos.
     if (c.status === 'Aberta') return 'Aberta'
     return c.status
   }
-
-  // Filtragem completa com suporte a período de datas
-  const filteredContas = useMemo(() => {
-    return contas.filter((c) => {
-      const isOverdue =
-        (c.status === 'Aberta' || c.status === 'Parcial') && c.vencimento.slice(0, 10) < nowISO
-
-      if (statusFilter !== 'Todas') {
-        if (statusFilter === 'Aberta') {
-          if (c.status !== 'Aberta') return false
-        } else if (statusFilter === 'Parcial') {
-          if (c.status !== 'Parcial') return false
-        } else if (statusFilter === 'Vencida') {
-          if (!isOverdue) return false
-        } else if (c.status !== statusFilter) {
-          return false
-        }
-      }
-
-      if (centroCustoFilter !== 'todos' && c.centro_custo_id !== centroCustoFilter) {
-        return false
-      }
-
-      // Filtro de período por campo selecionado
-      if (dataInicioFilter || dataFimFilter) {
-        let campoValorData: string | undefined
-        if (campoDataFiltro === 'vencimento') {
-          campoValorData = c.vencimento ? c.vencimento.slice(0, 10) : undefined
-        } else if (campoDataFiltro === 'data_emissao') {
-          campoValorData = c.data_emissao ? c.data_emissao.slice(0, 10) : undefined
-        } else if (campoDataFiltro === 'data_recebimento') {
-          campoValorData = c.data_recebimento ? c.data_recebimento.slice(0, 10) : undefined
-        }
-
-        if (!campoValorData) return false
-        if (dataInicioFilter && campoValorData < dataInicioFilter) return false
-        if (dataFimFilter && campoValorData > dataFimFilter) return false
-      }
-
-      if (debouncedSearchQuery.trim()) {
-        const q = debouncedSearchQuery.toLowerCase()
-        const clienteNome = c.expand?.cliente_id?.nome?.toLowerCase() || ''
-        const matchDesc = c.descricao.toLowerCase().includes(q)
-        const matchCli = clienteNome.includes(q)
-        const matchEnd = (c.endereco || '').toLowerCase().includes(q)
-        const matchNota = (c.nota || '').toLowerCase().includes(q)
-        if (!matchDesc && !matchCli && !matchEnd && !matchNota) return false
-      }
-      return true
-    })
-  }, [
-    contas,
-    statusFilter,
-    centroCustoFilter,
-    campoDataFiltro,
-    dataInicioFilter,
-    dataFimFilter,
-    debouncedSearchQuery,
-    nowISO,
-  ])
 
   // Os itens da página atual já vêm filtrados do servidor
   const filteredContas = contas
