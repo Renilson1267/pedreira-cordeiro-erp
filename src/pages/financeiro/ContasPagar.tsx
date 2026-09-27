@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useMemo } from 'react'
+import React, { useEffect, useState, useMemo, useCallback } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { useCompany } from '@/contexts/CompanyContext'
 import { useAuth } from '@/contexts/AuthContext'
@@ -116,6 +116,23 @@ export default function ContasPagar() {
   const [formasCadastradas, setFormasCadastradas] = useState<FormaRecebimento[]>([])
   const [loading, setLoading] = useState(true)
 
+  // Paginação no servidor
+  const [currentPage, setCurrentPage] = useState<number>(1)
+  const [totalPages, setTotalPages] = useState<number>(1)
+  const [totalItems, setTotalItems] = useState<number>(0)
+  const pageSize = 50
+
+  // Totais agregados leves dos cards
+  const [totaisCards, setTotaisCards] = useState({
+    aberto: 0,
+    vencido: 0,
+    pago: 0,
+  })
+
+  // Impressão sob demanda
+  const [loadingImpressao, setLoadingImpressao] = useState(false)
+  const [itensImpressaoCarregados, setItensImpressaoCarregados] = useState<ContaPagar[]>([])
+
   // Filters
   const [statusFilter, setStatusFilter] = useState<
     'Todas' | 'Aberta' | 'Parcial' | 'Paga' | 'Vencida'
@@ -129,7 +146,7 @@ export default function ContasPagar() {
   const [dataFimFilter, setDataFimFilter] = useState('')
   const [opcaoPeriodoRapido, setOpcaoPeriodoRapido] = useState<string>('todos')
 
-  const debouncedSearchQuery = useDebounce(searchQuery, 280)
+  const debouncedSearchQuery = useDebounce(searchQuery, 350)
 
   // Import Modal
   const [importModalOpen, setImportModalOpen] = useState(false)
@@ -137,6 +154,10 @@ export default function ContasPagar() {
   const [conferirModalOpen, setConferirModalOpen] = useState(false)
   // Histórico Geral Modal
   const [historicoModalOpen, setHistoricoModalOpen] = useState(false)
+
+
+
+  const nowISO = new Date().toISOString().slice(0, 10)
 
   // Cache de auxiliares (fornecedores, plano_contas, centros_custos, formas_recebimento) sob demanda
   const [auxiliaresLoaded, setAuxiliaresLoaded] = useState(false)
@@ -232,18 +253,82 @@ export default function ContasPagar() {
     }
   }
 
-  const loadData = async () => {
+  // Construção de expressão de filtro PocketBase no servidor
+  const buildPocketBaseFilter = useCallback(() => {
+    if (!currentEmpresa) return ''
+    const parts: string[] = [`empresa_id = '${currentEmpresa.id}'`]
+
+    // Status filter
+    if (statusFilter === 'Aberta') {
+      parts.push(`status = 'Aberta' && vencimento >= '${nowISO}'`)
+    } else if (statusFilter === 'Vencida') {
+      parts.push(`(status = 'Vencida' || (status != 'Paga' && vencimento < '${nowISO}'))`)
+    } else if (statusFilter === 'Parcial') {
+      parts.push(`status = 'Parcial'`)
+    } else if (statusFilter === 'Paga') {
+      parts.push(`status = 'Paga'`)
+    }
+
+    // Centro de custo
+    if (centroCustoFilter !== 'todos') {
+      parts.push(`centro_custo_id = '${centroCustoFilter}'`)
+    }
+
+    // Filtro de período por campo
+    const dataCampo =
+      campoDataFiltro === 'vencimento'
+        ? 'vencimento'
+        : campoDataFiltro === 'data_emissao'
+          ? 'data_emissao'
+          : 'data_pagamento'
+
+    if (dataInicioFilter) {
+      parts.push(`${dataCampo} >= '${dataInicioFilter} 00:00:00.000Z'`)
+    }
+    if (dataFimFilter) {
+      parts.push(`${dataCampo} <= '${dataFimFilter} 23:59:59.999Z'`)
+    }
+
+    // Busca textual
+    const termo = debouncedSearchQuery.trim().replace(/'/g, "\\'")
+    if (termo) {
+      parts.push(
+        `(descricao ~ '${termo}' || fornecedor_id.nome ~ '${termo}' || observacoes ~ '${termo}')`,
+      )
+    }
+
+    return parts.join(' && ')
+  }, [
+    currentEmpresa,
+    statusFilter,
+    centroCustoFilter,
+    campoDataFiltro,
+    dataInicioFilter,
+    dataFimFilter,
+    debouncedSearchQuery,
+    nowISO,
+  ])
+
+  // Carrega a página paginada no servidor
+  const loadData = async (targetPage?: number) => {
     if (!currentEmpresa) return
+
+    const pageToLoad = targetPage !== undefined ? targetPage : currentPage
 
     try {
       setLoading(true)
-      const cpList = await pb.collection('contas_pagar').getFullList<ContaPagar>({
-        filter: `empresa_id = '${currentEmpresa.id}'`,
+      const serverFilter = buildPocketBaseFilter()
+
+      const res = await pb.collection('contas_pagar').getList<ContaPagar>(pageToLoad, pageSize, {
+        filter: serverFilter,
         sort: 'vencimento',
         expand: 'fornecedor_id,categoria_id,centro_custo_id',
       })
 
-      setContas(cpList)
+      setContas(res.items)
+      setTotalPages(res.totalPages || 1)
+      setTotalItems(res.totalItems || 0)
+      setCurrentPage(res.page)
 
       // Handle query params e.g. ?novo=1 or ?id=xyz
       const qNovo = searchParams.get('novo')
@@ -251,14 +336,14 @@ export default function ContasPagar() {
       const qAction = searchParams.get('action')
       const qStatus = searchParams.get('status')
 
-      if (qStatus === 'Vencidas') {
+      if (qStatus === 'Vencidas' && statusFilter !== 'Vencida') {
         setStatusFilter('Vencida')
       }
 
       if (qNovo && canEdit) {
         openCreateModal()
       } else if (qId) {
-        const found = cpList.find((c) => c.id === qId)
+        const found = res.items.find((c) => c.id === qId)
         if (found) {
           if (qAction === 'settle' && canEdit && found.status !== 'Paga') {
             handleOpenSettle(found)
@@ -274,10 +359,86 @@ export default function ContasPagar() {
     }
   }
 
+  // Agregação leve dos cards (consulta apenas id,valor,valor_pago,status,vencimento sob os filtros de período e centro)
+  const carregarTotaisCards = useCallback(async () => {
+    if (!currentEmpresa) return
+    try {
+      const parts: string[] = [`empresa_id = '${currentEmpresa.id}'`]
+      if (centroCustoFilter !== 'todos') {
+        parts.push(`centro_custo_id = '${centroCustoFilter}'`)
+      }
+      const dataCampo =
+        campoDataFiltro === 'vencimento'
+          ? 'vencimento'
+          : campoDataFiltro === 'data_emissao'
+            ? 'data_emissao'
+            : 'data_pagamento'
+
+      if (dataInicioFilter) {
+        parts.push(`${dataCampo} >= '${dataInicioFilter} 00:00:00.000Z'`)
+      }
+      if (dataFimFilter) {
+        parts.push(`${dataCampo} <= '${dataFimFilter} 23:59:59.999Z'`)
+      }
+
+      const rows = await pb
+        .collection('contas_pagar')
+        .getFullList<Pick<ContaPagar, 'id' | 'valor' | 'valor_pago' | 'status' | 'vencimento'>>({
+          filter: parts.join(' && '),
+          fields: 'id,valor,valor_pago,status,vencimento',
+        })
+
+      let aberto = 0
+      let vencido = 0
+      let pago = 0
+
+      for (const r of rows) {
+        const valTotal = Number(r.valor || 0)
+        const valPago = Number(r.valor_pago || 0)
+        const saldo = Math.max(0, valTotal - valPago)
+
+        pago += valPago
+
+        if (r.status === 'Paga') {
+          // Já quitado
+        } else {
+          const isAtrasado = (r.vencimento ? r.vencimento.slice(0, 10) : '') < nowISO
+          if (r.status === 'Vencida' || isAtrasado) {
+            vencido += saldo
+          } else {
+            aberto += saldo
+          }
+        }
+      }
+
+      setTotaisCards({ aberto, vencido, pago })
+    } catch (err) {
+      console.warn('Erro ao carregar totais leves dos cards:', err)
+    }
+  }, [currentEmpresa, centroCustoFilter, campoDataFiltro, dataInicioFilter, dataFimFilter, nowISO])
+
+  // Ao mudar filtros, reseta para página 1 e recarrega dados + cards
   useEffect(() => {
-    setAuxiliaresLoaded(false)
-    loadData()
-  }, [currentEmpresa])
+    setCurrentPage(1)
+    setSelectedIds([])
+    loadData(1)
+    carregarTotaisCards()
+  }, [
+    currentEmpresa,
+    statusFilter,
+    centroCustoFilter,
+    campoDataFiltro,
+    dataInicioFilter,
+    dataFimFilter,
+    debouncedSearchQuery,
+  ])
+
+  // Ao trocar de página manualmente
+  const handlePageChange = (novaPagina: number) => {
+    if (novaPagina < 1 || novaPagina > totalPages || novaPagina === currentPage) return
+    setCurrentPage(novaPagina)
+    loadData(novaPagina)
+  }
 
   // Carregar cheques ao abrir detalhes do título a pagar
   const carregarChequesDoTitulo = async (tituloPagarId: string) => {
@@ -1005,88 +1166,15 @@ export default function ContasPagar() {
     return c.status
   }
 
-  // Filtered List com suporte a período de vencimento/emissão/pagamento
-  const filteredContas = useMemo(() => {
-    return contas.filter((c) => {
-      const currentRealStatus = getContaStatusReal(c)
+  // Os itens da página atual já vêm filtrados do servidor
+  const filteredContas = contas
 
-      if (statusFilter !== 'Todas') {
-        if (statusFilter === 'Aberta') {
-          if (c.status !== 'Aberta' || currentRealStatus === 'Vencida') return false
-        } else if (statusFilter === 'Parcial') {
-          if (c.status !== 'Parcial') return false
-        } else if ((currentRealStatus as string) !== (statusFilter as string)) {
-          return false
-        }
-      }
-      if (centroCustoFilter !== 'todos' && c.centro_custo_id !== centroCustoFilter) {
-        return false
-      }
+  // Saldo total em aberto, vencido e pago alimentados pela agregação leve do servidor
+  const totalAberto = totaisCards.aberto
+  const totalVencido = totaisCards.vencido
+  const totalPagoMes = totaisCards.pago
 
-      // Filtro de período por campo selecionado
-      if (dataInicioFilter || dataFimFilter) {
-        let campoValorData: string | undefined
-        if (campoDataFiltro === 'vencimento') {
-          campoValorData = c.vencimento ? c.vencimento.slice(0, 10) : undefined
-        } else if (campoDataFiltro === 'data_emissao') {
-          campoValorData = c.data_emissao ? c.data_emissao.slice(0, 10) : undefined
-        } else if (campoDataFiltro === 'data_pagamento') {
-          campoValorData = c.data_pagamento ? c.data_pagamento.slice(0, 10) : undefined
-        }
-
-        if (!campoValorData) return false
-        if (dataInicioFilter && campoValorData < dataInicioFilter) return false
-        if (dataFimFilter && campoValorData > dataFimFilter) return false
-      }
-
-      if (debouncedSearchQuery.trim()) {
-        const q = debouncedSearchQuery.toLowerCase()
-        const fornecedorNome = c.expand?.fornecedor_id?.nome?.toLowerCase() || ''
-        const matchDesc = c.descricao.toLowerCase().includes(q)
-        const matchForn = fornecedorNome.includes(q)
-        if (!matchDesc && !matchForn) return false
-      }
-      return true
-    })
-  }, [
-    contas,
-    statusFilter,
-    centroCustoFilter,
-    campoDataFiltro,
-    dataInicioFilter,
-    dataFimFilter,
-    debouncedSearchQuery,
-    nowISO,
-  ])
-
-  // Calculations for summary pills aplicando os filtros do período
-  // Saldo total em aberto (não vencido) nos títulos filtrados
-  const totalAberto = useMemo(() => {
-    return filteredContas
-      .filter(
-        (c) =>
-          (c.status === 'Aberta' || c.status === 'Parcial') && c.vencimento.slice(0, 10) >= nowISO,
-      )
-      .reduce((sum, c) => sum + getSaldoRestante(c), 0)
-  }, [filteredContas, nowISO])
-
-  // Saldo total vencido nos títulos filtrados
-  const totalVencido = useMemo(() => {
-    return filteredContas
-      .filter(
-        (c) =>
-          c.status === 'Vencida' ||
-          ((c.status === 'Aberta' || c.status === 'Parcial') && c.vencimento.slice(0, 10) < nowISO),
-      )
-      .reduce((sum, c) => sum + getSaldoRestante(c), 0)
-  }, [filteredContas, nowISO])
-
-  // Total pago nos títulos filtrados
-  const totalPagoMes = useMemo(() => {
-    return filteredContas.reduce((sum, c) => sum + getValorPagoEfetivo(c), 0)
-  }, [filteredContas])
-
-  // Handlers de seleção por checkbox
+  // Handlers de seleção por checkbox na página atual
   const handleToggleSelectAll = () => {
     if (selectedIds.length === filteredContas.length && filteredContas.length > 0) {
       setSelectedIds([])
@@ -1102,14 +1190,46 @@ export default function ContasPagar() {
     )
   }
 
-  // Itens a serem impressos: se houver seleção, imprime os selecionados; senão, todos os filtrados
+  // Abertura do relatório sob demanda: busca todos os registros do filtro ativo no servidor se necessário
+  const handleAbrirRelatorioImpressao = async () => {
+    if (selectedIds.length > 0) {
+      const set = new Set(selectedIds)
+      setItensImpressaoCarregados(contas.filter((c) => set.has(c.id)))
+      setRelatorioImpressaoOpen(true)
+      return
+    }
+
+    try {
+      setLoadingImpressao(true)
+      const serverFilter = buildPocketBaseFilter()
+      const todasDoFiltro = await pb.collection('contas_pagar').getFullList<ContaPagar>({
+        filter: serverFilter,
+        sort: 'vencimento',
+        expand: 'fornecedor_id,categoria_id,centro_custo_id',
+      })
+      setItensImpressaoCarregados(todasDoFiltro)
+      setRelatorioImpressaoOpen(true)
+    } catch (err) {
+      toast({
+        title: 'Erro ao gerar relatório',
+        description: 'Não foi possível buscar a listagem completa dos filtros.',
+        variant: 'destructive',
+      })
+    } finally {
+      setLoadingImpressao(false)
+    }
+  }
+
+  // Itens a serem impressos no modal A4
   const itensParaImpressao = useMemo(() => {
     if (selectedIds.length > 0) {
       const set = new Set(selectedIds)
-      return filteredContas.filter((c) => set.has(c.id))
+      return (itensImpressaoCarregados.length > 0 ? itensImpressaoCarregados : contas).filter((c) =>
+        set.has(c.id),
+      )
     }
-    return filteredContas
-  }, [filteredContas, selectedIds])
+    return itensImpressaoCarregados.length > 0 ? itensImpressaoCarregados : contas
+  }, [itensImpressaoCarregados, contas, selectedIds])
 
   // Descrição legível dos filtros aplicados
   const descricaoFiltrosAplicados = useMemo(() => {
@@ -1575,7 +1695,8 @@ export default function ContasPagar() {
               type="button"
               variant="outline"
               size="sm"
-              onClick={() => setRelatorioImpressaoOpen(true)}
+              disabled={loadingImpressao}
+              onClick={handleAbrirRelatorioImpressao}
               className={`h-8 px-2.5 text-xs font-semibold rounded-lg shadow-xs transition-colors ${
                 selectedIds.length > 0
                   ? 'bg-teal-700 text-white hover:bg-teal-800 border-teal-700'
@@ -1588,9 +1709,11 @@ export default function ContasPagar() {
               }
             >
               <Printer className="w-3.5 h-3.5 mr-1.5" />
-              {selectedIds.length > 0
-                ? `Imprimir Selecionados (${selectedIds.length})`
-                : 'Imprimir'}
+              {loadingImpressao
+                ? 'Carregando relatório...'
+                : selectedIds.length > 0
+                  ? `Imprimir Selecionados (${selectedIds.length})`
+                  : 'Imprimir'}
             </Button>
 
             {(statusFilter !== 'Todas' ||
@@ -1615,6 +1738,75 @@ export default function ContasPagar() {
 
       {/* Table / Cards List */}
       <Card className="rounded-2xl border-[#ECEAE4] bg-white shadow-xs overflow-hidden">
+        {/* Barra superior de paginação e contagem */}
+        <div className="px-4 py-2.5 bg-[#FAF9F7] border-b border-[#ECEAE4] flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs text-gray-600">
+          <div className="flex items-center gap-2">
+            <span className="font-semibold text-gray-800">
+              {totalItems} {totalItems === 1 ? 'registro' : 'registros'}
+            </span>
+            {totalItems > 0 && (
+              <span className="text-gray-400">
+                · Página {currentPage} de {totalPages} (50 por página)
+              </span>
+            )}
+            {loading && (
+              <span className="text-teal-700 animate-pulse font-medium">
+                · Atualizando dados...
+              </span>
+            )}
+          </div>
+
+          {totalPages > 1 && (
+            <div className="flex items-center gap-1.5 self-end sm:self-auto">
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={currentPage <= 1 || loading}
+                onClick={() => handlePageChange(currentPage - 1)}
+                className="h-7 px-2 text-xs border-gray-200"
+              >
+                Anterior
+              </Button>
+              <div className="flex items-center gap-1">
+                {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+                  let pageNum = i + 1
+                  if (totalPages > 5) {
+                    if (currentPage > 3 && currentPage < totalPages - 2) {
+                      pageNum = currentPage - 2 + i
+                    } else if (currentPage >= totalPages - 2) {
+                      pageNum = totalPages - 4 + i
+                    }
+                  }
+                  return (
+                    <button
+                      key={pageNum}
+                      type="button"
+                      disabled={loading}
+                      onClick={() => handlePageChange(pageNum)}
+                      className={`w-7 h-7 rounded text-xs font-semibold transition-colors ${
+                        currentPage === pageNum
+                          ? 'bg-teal-700 text-white shadow-xs'
+                          : 'bg-white border border-gray-200 text-gray-700 hover:bg-gray-100'
+                      }`}
+                    >
+                      {pageNum}
+                    </button>
+                  )
+                })}
+              </div>
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={currentPage >= totalPages || loading}
+                onClick={() => handlePageChange(currentPage + 1)}
+                className="h-7 px-2 text-xs border-gray-200"
+              >
+                Próxima
+              </Button>
+            </div>
+          )}
+        </div>
+
         <div className="overflow-x-auto">
           <table className="w-full text-left border-collapse text-xs">
             <thead>
@@ -1868,6 +2060,63 @@ export default function ContasPagar() {
             </tbody>
           </table>
         </div>
+
+        {/* Rodapé de paginação inferior */}
+        {totalPages > 1 && (
+          <div className="px-4 py-3 bg-[#FAF9F7] border-t border-[#ECEAE4] flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs text-gray-600">
+            <span className="text-gray-500">
+              Mostrando {contas.length} de {totalItems} registros (Página {currentPage} de{' '}
+              {totalPages})
+            </span>
+            <div className="flex items-center gap-1.5 self-end sm:self-auto">
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={currentPage <= 1 || loading}
+                onClick={() => handlePageChange(currentPage - 1)}
+                className="h-7 px-2.5 text-xs border-gray-200"
+              >
+                Anterior
+              </Button>
+              <div className="flex items-center gap-1">
+                {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+                  let pageNum = i + 1
+                  if (totalPages > 5) {
+                    if (currentPage > 3 && currentPage < totalPages - 2) {
+                      pageNum = currentPage - 2 + i
+                    } else if (currentPage >= totalPages - 2) {
+                      pageNum = totalPages - 4 + i
+                    }
+                  }
+                  return (
+                    <button
+                      key={pageNum}
+                      type="button"
+                      disabled={loading}
+                      onClick={() => handlePageChange(pageNum)}
+                      className={`w-7 h-7 rounded text-xs font-semibold transition-colors ${
+                        currentPage === pageNum
+                          ? 'bg-teal-700 text-white shadow-xs'
+                          : 'bg-white border border-gray-200 text-gray-700 hover:bg-gray-100'
+                      }`}
+                    >
+                      {pageNum}
+                    </button>
+                  )
+                })}
+              </div>
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={currentPage >= totalPages || loading}
+                onClick={() => handlePageChange(currentPage + 1)}
+                className="h-7 px-2.5 text-xs border-gray-200"
+              >
+                Próxima
+              </Button>
+            </div>
+          </div>
+        )}
       </Card>
 
       {/* Drawer Create / Edit */}

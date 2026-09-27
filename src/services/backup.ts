@@ -287,11 +287,102 @@ export const backupService = {
 
   /**
    * Envia manualmente um backup específico ao Google Drive via Conta de Serviço
+   * Monta URL absoluta segura sem barra dupla, headers Authorization com token,
+   * Content-Type: application/json e body {}, com fallback nativo via fetch (timeout 60s)
    */
   async enviarBackupAoDrive(backupId: string): Promise<EnviarDriveResponse> {
-    return await pb.send<EnviarDriveResponse>(`/backend/v1/backups/${backupId}/enviar-drive`, {
-      method: 'POST',
-    })
+    const rawBase = (pb.baseUrl || '').replace(/\/+$/, '')
+    const path = `/backend/v1/backups/${encodeURIComponent(backupId)}/enviar-drive`
+    const absoluteUrl = rawBase ? `${rawBase}${path}` : path
+    const token = pb.authStore?.token || ''
+
+    // 1. Tentativa principal via pb.send com token e headers explícitos
+    try {
+      const res = await pb.send<EnviarDriveResponse>(path, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: token } : {}),
+        },
+        body: {},
+      })
+      if (res && typeof res === 'object') {
+        return res
+      }
+    } catch (pbErr: unknown) {
+      const status = (pbErr as { status?: number })?.status
+      console.warn(
+        '[backupService.enviarBackupAoDrive] pb.send retornou erro/status:',
+        status,
+        pbErr,
+      )
+
+      // Se não for status 0 (rede/preflight) ou se já tiver status HTTP conhecido com mensagem, repassa ou tenta o fallback
+      if (status && status !== 0) {
+        throw pbErr
+      }
+    }
+
+    // 2. Fallback resiliente com fetch nativo e timeout de 60s
+    const controller = new AbortController()
+    const timer = setTimeout(() => controller.abort(), 60000)
+
+    try {
+      const fetchHeaders: Record<string, string> = {
+        'Content-Type': 'application/json',
+      }
+      if (token) {
+        fetchHeaders['Authorization'] = token
+      }
+
+      const response = await fetch(absoluteUrl, {
+        method: 'POST',
+        headers: fetchHeaders,
+        body: JSON.stringify({}),
+        signal: controller.signal,
+      })
+
+      clearTimeout(timer)
+
+      let data: unknown = null
+      try {
+        data = await response.json()
+      } catch {
+        data = null
+      }
+
+      if (!response.ok) {
+        const errObj = (data as { error?: string; message?: string }) || {}
+        const serverMsg =
+          errObj.error || errObj.message || `HTTP ${response.status} ${response.statusText}`
+        const error = new Error(serverMsg) as Error & {
+          status?: number
+          data?: unknown
+          response?: unknown
+        }
+        error.status = response.status
+        error.data = data
+        error.response = data
+        throw error
+      }
+
+      return (
+        (data as EnviarDriveResponse) || {
+          success: true,
+          message: 'Backup enviado com sucesso ao Drive',
+        }
+      )
+    } catch (fetchErr: unknown) {
+      clearTimeout(timer)
+      if (fetchErr instanceof DOMException && fetchErr.name === 'AbortError') {
+        const timeoutErr = new Error(
+          'Tempo limite excedido (60s) ao enviar backup para o Google Drive.',
+        ) as Error & { status?: number }
+        timeoutErr.status = 408
+        throw timeoutErr
+      }
+      throw fetchErr
+    }
   },
 
   /**

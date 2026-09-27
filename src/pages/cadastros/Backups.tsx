@@ -457,12 +457,42 @@ export function Backups() {
 
       await carregarDados()
     } catch (err: unknown) {
-      const msg =
-        err instanceof Error
-          ? err.message
-          : typeof err === 'object' && err !== null && 'message' in err
-            ? String((err as { message: unknown }).message)
-            : 'Falha ao transferir para o Google Drive.'
+      // Desempacotamento completo de erro sem mascarar código HTTP nem a causa real
+      const errObj = typeof err === 'object' && err !== null ? (err as Record<string, unknown>) : {}
+      const httpStatus = typeof errObj.status === 'number' ? errObj.status : undefined
+      const responseObj =
+        errObj.response && typeof errObj.response === 'object'
+          ? (errObj.response as Record<string, unknown>)
+          : undefined
+      const dataObj =
+        errObj.data && typeof errObj.data === 'object'
+          ? (errObj.data as Record<string, unknown>)
+          : undefined
+      const origError =
+        errObj.originalError && typeof errObj.originalError === 'object'
+          ? (errObj.originalError as Record<string, unknown>)
+          : undefined
+
+      const backendMessage =
+        (responseObj?.message as string) ||
+        (responseObj?.error as string) ||
+        (dataObj?.message as string) ||
+        (dataObj?.error as string) ||
+        (origError?.message as string) ||
+        (err instanceof Error ? err.message : '') ||
+        'Erro desconhecido'
+
+      let msgFormatada = ''
+      if (
+        httpStatus === 0 ||
+        (!httpStatus && backendMessage.toLowerCase().includes('failed to fetch'))
+      ) {
+        msgFormatada = `Erro de conexão ao contatar o servidor (Status 0): verifique a rede ou preflight CORS. Detalhe: ${backendMessage}`
+      } else if (httpStatus) {
+        msgFormatada = `[HTTP ${httpStatus}] ${backendMessage}`
+      } else {
+        msgFormatada = backendMessage
+      }
 
       // Atualização imediata no estado local para refletir a mensagem real da falha
       setBackups((prev) =>
@@ -471,21 +501,21 @@ export function Backups() {
             ? {
                 ...b,
                 drive_status: 'erro',
-                drive_erro: msg,
+                drive_erro: msgFormatada,
               }
             : b,
         ),
       )
 
-      const dica = analisarCausaProvavelErro(msg)
+      const dica = analisarCausaProvavelErro(msgFormatada)
 
-      // Banner fixo e persistente de erro
+      // Banner fixo e persistente de erro SEMPRE com código HTTP e mensagem real
       setResultadoOperacao({
         tipo: 'erro',
         titulo: 'Falha no envio ao Google Drive',
         mensagem: `O envio do arquivo ${nomeBackupAlvo} para o Google Drive falhou.`,
         nomeBackup: nomeBackupAlvo,
-        detalheTecnico: msg,
+        detalheTecnico: msgFormatada,
         dicaProvavel: dica,
         dataHora: new Date().toLocaleTimeString('pt-BR', {
           hour: '2-digit',
@@ -496,7 +526,7 @@ export function Backups() {
 
       toast({
         title: 'Erro no envio ao Google Drive',
-        description: msg,
+        description: msgFormatada,
         variant: 'destructive',
       })
       await carregarDados()
