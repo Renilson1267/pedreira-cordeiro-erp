@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-09-27T17:08:18.816Z",
+  "generatedAt": "2026-09-27T17:16:19.234Z",
   "collections": [
     {
       "name": "users",
@@ -2980,7 +2980,7 @@
           "type": "select",
           "required": false,
           "system": false,
-          "selectValues": ["pendente", "enviado", "erro", "nao_configurado"]
+          "selectValues": ["pendente", "enviado", "erro", "nao_configurado", "solicitado"]
         },
         {
           "name": "drive_file_id",
