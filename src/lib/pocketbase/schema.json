@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-09-27T01:29:03.301Z",
+  "generatedAt": "2026-09-27T14:58:34.500Z",
   "collections": [
     {
       "name": "users",
@@ -3209,6 +3209,12 @@
           "required": false,
           "system": false,
           "selectValues": ["service_account", "oauth", "none"]
+        },
+        {
+          "name": "usuario_email",
+          "type": "text",
+          "required": false,
+          "system": false
         }
       ],
       "indexes": [

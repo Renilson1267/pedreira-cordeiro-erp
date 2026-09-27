@@ -91,6 +91,7 @@ export function Backups() {
   const [modalConfigAberta, setModalConfigAberta] = useState(false)
   const [serviceAccountJsonInput, setServiceAccountJsonInput] = useState('')
   const [folderIdInput, setFolderIdInput] = useState('')
+  const [usuarioEmailInput, setUsuarioEmailInput] = useState('renilsonfmello@gmail.com')
   const [salvandoConfig, setSalvandoConfig] = useState(false)
   const [etapaSalvamento, setEtapaSalvamento] = useState<
     'ocioso' | 'salvando' | 'validando_google'
@@ -123,6 +124,9 @@ export function Backups() {
         setDriveStatus(drive.value)
         if (drive.value?.pasta_id) {
           setFolderIdInput(drive.value.pasta_id)
+        }
+        if (drive.value?.usuario_email) {
+          setUsuarioEmailInput(drive.value.usuario_email)
         }
       }
     } catch (err) {
@@ -224,13 +228,18 @@ export function Backups() {
       setAvisoValidacao(null)
       setEtapaSalvamento(serviceAccountJsonInput.trim() ? 'validando_google' : 'salvando')
 
-      const payload: { service_account_json?: string; folder_id?: string; folder_name?: string } =
-        {}
+      const payload: {
+        service_account_json?: string
+        folder_id?: string
+        folder_name?: string
+        usuario_email?: string
+      } = {}
 
       if (serviceAccountJsonInput.trim()) {
         payload.service_account_json = serviceAccountJsonInput.trim()
       }
       payload.folder_id = folderIdInput.trim()
+      payload.usuario_email = usuarioEmailInput.trim() || 'renilsonfmello@gmail.com'
 
       const res = await backupService.salvarConfiguracoesDrive(payload, controller.signal)
       clearTimeout(timeoutId)
@@ -308,7 +317,7 @@ export function Backups() {
       txt.includes('quota') ||
       txt.includes('storage')
     ) {
-      return 'Contas de serviço do Google não possuem cota de espaço próprio. É OBRIGATÓRIO compartilhar uma pasta do seu Google Drive pessoal com o email da conta de serviço (com permissão de Editor) e informar o ID dela nas configurações.'
+      return 'Contas de serviço do Google não possuem cota para gravar em pastas normais do Gmail. O ERP agora faz o upload no Drive próprio da conta de serviço e compartilha automaticamente o arquivo com seu email (aparece em "Compartilhado comigo" no Google Drive).'
     }
     if (txt.includes('404') || txt.includes('not found') || txt.includes('file not found')) {
       return 'A pasta configurada no Google Drive não foi encontrada. Verifique se o ID da pasta está correto e se a pasta foi compartilhada com a Conta de Serviço.'
@@ -424,11 +433,15 @@ export function Backups() {
         ),
       )
 
+      const msgSucesso =
+        res?.message ||
+        `O arquivo ${nomeBackupAlvo} foi enviado com sucesso e está disponível em "Compartilhado comigo" no seu Google Drive.`
+
       // Banner fixo e persistente de sucesso
       setResultadoOperacao({
         tipo: 'sucesso',
         titulo: 'Backup enviado com sucesso ao Google Drive',
-        mensagem: `O arquivo ${nomeBackupAlvo} foi transferido e sincronizado com segurança na sua pasta do Google Drive via Conta de Serviço.`,
+        mensagem: msgSucesso,
         nomeBackup: nomeBackupAlvo,
         dataHora: new Date().toLocaleTimeString('pt-BR', {
           hour: '2-digit',
@@ -439,7 +452,7 @@ export function Backups() {
 
       toast({
         title: 'Backup enviado com sucesso ao Google Drive!',
-        description: res?.message || 'Arquivo sincronizado na sua pasta do Google Drive.',
+        description: msgSucesso,
       })
 
       await carregarDados()
@@ -724,46 +737,30 @@ export function Backups() {
                 </div>
               )}
 
-              {/* Pasta de Destino no Google Drive */}
+              {/* Compartilhamento e Destino no Google Drive */}
               <div className="space-y-1 md:col-span-1">
                 <div className="text-xs font-medium text-muted-foreground uppercase flex items-center gap-1.5">
                   <FolderSync className="h-3.5 w-3.5 text-primary" />
-                  Pasta no Google Drive
+                  Destino e Compartilhamento
                 </div>
-                <div className="text-sm font-semibold text-foreground flex items-center gap-1.5">
-                  <span>{driveStatus.pasta_nome || 'Backups ERP'}</span>
-                  {driveStatus.pasta_id ? (
-                    <Badge
-                      variant="outline"
-                      className="text-[10px] font-mono border-emerald-500/30 text-emerald-600 bg-emerald-500/5"
-                    >
-                      ID Definido ✓
-                    </Badge>
-                  ) : (
-                    <Badge
-                      variant="outline"
-                      className="text-[10px] text-amber-600 border-amber-500/30"
-                    >
-                      Drive raiz da conta
-                    </Badge>
-                  )}
-                </div>
-                {driveStatus.pasta_id ? (
-                  <a
-                    href={`https://drive.google.com/drive/folders/${driveStatus.pasta_id}`}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="inline-flex items-center gap-1 text-xs text-primary hover:underline"
+                <div className="text-sm font-semibold text-foreground flex items-center gap-1.5 flex-wrap">
+                  <span>
+                    {driveStatus.usuario_email
+                      ? `Compartilhado com ${driveStatus.usuario_email}`
+                      : 'renilsonfmello@gmail.com'}
+                  </span>
+                  <Badge
+                    variant="outline"
+                    className="text-[10px] font-mono border-emerald-500/30 text-emerald-600 bg-emerald-500/5"
                   >
-                    Abrir pasta no Drive
-                    <ExternalLink className="h-3 w-3" />
-                  </a>
-                ) : (
-                  <p className="text-xs text-amber-600">
-                    Defina o ID da sua pasta compartilhada para ver os arquivos no seu Drive
-                    pessoal.
-                  </p>
-                )}
+                    Compartilhado comigo ✓
+                  </Badge>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  {driveStatus.pasta_id
+                    ? `Fallback automático ativado (pasta ID: ${driveStatus.pasta_id.slice(0, 8)}...)`
+                    : 'Disponível na aba "Compartilhado comigo" no Google Drive.'}
+                </p>
               </div>
 
               {/* Status do Último Envio */}
@@ -778,7 +775,8 @@ export function Backups() {
                     : 'Aguardando primeiro envio'}
                 </div>
                 <p className="text-xs text-muted-foreground">
-                  Envio automático acionado após o término do backup semanal de domingo.
+                  Envio automático semanal (domingo 00h30) com compartilhamento para{' '}
+                  {driveStatus.usuario_email || 'renilsonfmello@gmail.com'}.
                 </p>
               </div>
             </div>
@@ -792,8 +790,8 @@ export function Backups() {
                   </h3>
                   <p className="text-xs text-muted-foreground">
                     Para habilitar o envio automático e seguro dos backups ao Google Drive sem
-                    depender de telas de consentimento ou renovação de token, configure uma Conta de
-                    Serviço gratuita no Google Cloud.
+                    depender de telas de consentimento, configure uma Conta de Serviço gratuita no
+                    Google Cloud.
                   </p>
                 </div>
               </div>
@@ -1329,30 +1327,50 @@ export function Backups() {
               </p>
             </div>
 
-            {/* Campo 2: ID da Pasta Compartilhada no Google Drive */}
+            {/* Campo 2: Email para Compartilhamento do Backup */}
             <div className="space-y-1.5">
-              <Label htmlFor="folder-id" className="text-xs font-semibold">
-                ID ou Link da Pasta no Google Drive (Recomendado)
+              <Label htmlFor="usuario-email" className="text-xs font-semibold">
+                Email do Usuário para Compartilhar o Backup *
+              </Label>
+              <Input
+                id="usuario-email"
+                type="email"
+                placeholder="Ex: renilsonfmello@gmail.com"
+                value={usuarioEmailInput}
+                onChange={(e) => setUsuarioEmailInput(e.target.value)}
+                className="text-xs"
+              />
+              <div className="bg-emerald-500/10 border border-emerald-500/20 p-2.5 rounded text-[11px] text-foreground/90 space-y-1">
+                <div className="font-semibold text-emerald-700 dark:text-emerald-400 flex items-center gap-1">
+                  <CheckCircle2 className="h-3.5 w-3.5 shrink-0" />
+                  Compartilhamento Automático (Compatível com contas normais @gmail.com):
+                </div>
+                <p>
+                  A Conta de Serviço grava o arquivo de backup e o compartilha imediatamente com
+                  este e-mail. O arquivo aparecerá na aba{' '}
+                  <strong>&quot;Compartilhado comigo&quot;</strong> do seu Google Drive, sem
+                  necessidade de Google Workspace ou Unidades Compartilhadas.
+                </p>
+              </div>
+            </div>
+
+            {/* Campo 3: ID da Pasta Compartilhada no Google Drive (Opcional / Fallback) */}
+            <div className="space-y-1.5">
+              <Label htmlFor="folder-id" className="text-xs font-semibold text-muted-foreground">
+                ID da Pasta ou Unidade Compartilhada (Opcional)
               </Label>
               <Input
                 id="folder-id"
-                placeholder="Ex: 1sbDoZucOc8Vea2F0nXtc07FKsSlzdX7V ou cole o link completo da pasta"
+                placeholder="Ex: 1sbDoZucOc8Vea2F0nXtc07FKsSlzdX7V (opcional)"
                 value={folderIdInput}
                 onChange={(e) => setFolderIdInput(e.target.value)}
                 className="text-xs font-mono"
               />
-              <div className="bg-amber-500/10 border border-amber-500/20 p-2.5 rounded text-[11px] text-foreground/90 space-y-1">
-                <div className="font-semibold text-amber-700 dark:text-amber-400 flex items-center gap-1">
-                  <Info className="h-3.5 w-3.5 shrink-0" />
-                  Importante sobre a pasta do Google Drive:
-                </div>
-                <p>
-                  As contas de serviço possuem um armazenamento isolado. Para você enxergar os
-                  backups no seu Google Drive pessoal, você precisa{' '}
-                  <strong>compartilhar uma pasta sua</strong> com o email da conta de serviço como{' '}
-                  <strong>Editor</strong> e colar o ID dela acima.
-                </p>
-              </div>
+              <p className="text-[11px] text-muted-foreground">
+                Se informado, o sistema tenta primeiro gravar nessa pasta; caso a conta não tenha
+                cota (como no Gmail comum), o fallback automático envia para o Drive da conta de
+                serviço e compartilha com o e-mail acima.
+              </p>
             </div>
 
             {/* Email da Conta de Serviço para Copiar */}

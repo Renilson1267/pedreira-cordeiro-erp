@@ -61,6 +61,7 @@ export interface GoogleDriveStatusInfo {
   project_id?: string
   pasta_nome: string
   pasta_id: string
+  usuario_email?: string
   ultimo_envio?: string
   status_conexao: 'conectado' | 'desconectado' | 'erro' | string
 }
@@ -74,6 +75,7 @@ export interface SalvarConfigDriveServiceAccountPayload {
   service_account_json?: string
   folder_id?: string
   folder_name?: string
+  usuario_email?: string
 }
 
 export interface EnviarDriveResponse {
@@ -81,6 +83,7 @@ export interface EnviarDriveResponse {
   message: string
   file_id?: string
   folder_id?: string
+  destino?: string
   enviado_em?: string
 }
 
@@ -242,6 +245,7 @@ export const backupService = {
       project_id: '',
       pasta_nome: 'Backups ERP',
       pasta_id: '',
+      usuario_email: 'renilsonfmello@gmail.com',
       ultimo_envio: '',
       status_conexao: 'desconectado',
     }
@@ -258,6 +262,7 @@ export const backupService = {
     message: string
     client_email?: string
     folder_id?: string
+    usuario_email?: string
     validacao_online?: {
       testada: boolean
       sucesso: boolean

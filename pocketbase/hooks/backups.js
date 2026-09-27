@@ -561,6 +561,7 @@ cronAdd('backup_semanal_pedreira_cordeiro', '30 0 * * 0', () => {
 
       let serviceAccountJson = $os.getenv('GOOGLE_SERVICE_ACCOUNT_JSON') || ''
       let folderId = $os.getenv('GOOGLE_DRIVE_FOLDER_ID') || ''
+      let usuarioEmailDestino = 'renilsonfmello@gmail.com'
       let configRec = null
 
       try {
@@ -568,6 +569,9 @@ cronAdd('backup_semanal_pedreira_cordeiro', '30 0 * * 0', () => {
         if (configRec) {
           if (!serviceAccountJson) serviceAccountJson = configRec.getString('service_account_json')
           if (!folderId) folderId = configRec.getString('folder_id')
+          if (configRec.getString('usuario_email')) {
+            usuarioEmailDestino = configRec.getString('usuario_email')
+          }
         }
       } catch (_) {}
 
@@ -627,51 +631,155 @@ cronAdd('backup_semanal_pedreira_cordeiro', '30 0 * * 0', () => {
         2,
       )
 
-      const fileMetadata = {
-        name: backupRecord.getString('nome_arquivo'),
-        mimeType: 'application/json',
+      function buildMultipartBody(metaObj, contentStr) {
+        var boundary = '-------314159265358979323846'
+        var delimiter = '\r\n--' + boundary + '\r\n'
+        var closeDelimiter = '\r\n--' + boundary + '--'
+        return {
+          boundary: boundary,
+          body:
+            delimiter +
+            'Content-Type: application/json; charset=UTF-8\r\n\r\n' +
+            JSON.stringify(metaObj) +
+            delimiter +
+            'Content-Type: application/json; charset=UTF-8\r\n\r\n' +
+            contentStr +
+            closeDelimiter,
+        }
       }
-      if (folderId) {
-        fileMetadata.parents = [folderId]
+
+      function shareFileWithUser(fileId, userEmail, token) {
+        if (!userEmail) return { success: false, error: 'Email de usuário não informado' }
+        try {
+          var permUrl =
+            'https://www.googleapis.com/drive/v3/files/' +
+            encodeURIComponent(fileId) +
+            '/permissions?supportsAllDrives=true&sendNotificationEmail=false'
+          var permRes = $http.send({
+            url: permUrl,
+            method: 'POST',
+            headers: {
+              Authorization: 'Bearer ' + token,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              role: 'writer',
+              type: 'user',
+              emailAddress: userEmail,
+            }),
+            timeout: 20,
+          })
+          if (permRes.statusCode === 200 || permRes.statusCode === 201) {
+            return { success: true }
+          }
+          return {
+            success: false,
+            error: 'HTTP ' + permRes.statusCode + ': ' + (permRes.raw || ''),
+          }
+        } catch (eShare) {
+          return {
+            success: false,
+            error: String(eShare?.message || eShare),
+          }
+        }
       }
 
-      const boundary = '-------314159265358979323846'
-      const delimiter = '\r\n--' + boundary + '\r\n'
-      const closeDelimiter = '\r\n--' + boundary + '--'
-
-      const multipartBody =
-        delimiter +
-        'Content-Type: application/json; charset=UTF-8\r\n\r\n' +
-        JSON.stringify(fileMetadata) +
-        delimiter +
-        'Content-Type: application/json; charset=UTF-8\r\n\r\n' +
-        dumpJsonStr +
-        closeDelimiter
-
-      const uploadUrl =
+      var uploadUrl =
         'https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&supportsAllDrives=true'
-      const uploadRes = $http.send({
-        url: uploadUrl,
-        method: 'POST',
-        headers: {
-          Authorization: 'Bearer ' + auth.access_token,
-          'Content-Type': 'multipart/related; boundary=' + boundary,
-        },
-        body: multipartBody,
-        timeout: 120,
-      })
+      var uploadedJson = null
+      var fileId = ''
+      var destinoDescricao = ''
+      var tentativaSucesso = false
+      var erroInicial = ''
 
-      if (uploadRes.statusCode === 200 || uploadRes.statusCode === 201) {
-        const uploadedJson = uploadRes.json || JSON.parse(uploadRes.raw || '{}')
-        const fileId = uploadedJson.id || ''
-        console.log(`[CRON Drive] Sucesso! Backup enviado via Service Account: ${fileId}`)
+      // Tentativa 1: se houver folderId, tentar upload na pasta configurada
+      if (folderId) {
+        var mp1 = buildMultipartBody(
+          {
+            name: backupRecord.getString('nome_arquivo'),
+            mimeType: 'application/json',
+            parents: [folderId],
+          },
+          dumpJsonStr,
+        )
+        var res1 = $http.send({
+          url: uploadUrl,
+          method: 'POST',
+          headers: {
+            Authorization: 'Bearer ' + auth.access_token,
+            'Content-Type': 'multipart/related; boundary=' + mp1.boundary,
+          },
+          body: mp1.body,
+          timeout: 120,
+        })
 
-        const agoraIso = new Date().toISOString()
+        if (res1.statusCode === 200 || res1.statusCode === 201) {
+          uploadedJson = res1.json || JSON.parse(res1.raw || '{}')
+          fileId = uploadedJson.id || ''
+          destinoDescricao = 'pasta configurada no Drive (' + folderId + ')'
+          tentativaSucesso = true
+        } else {
+          erroInicial =
+            'Upload na pasta configurada falhou (HTTP ' + res1.statusCode + '): ' + (res1.raw || '')
+          console.warn('[CRON Drive] ' + erroInicial + ' — aplicando fallback...')
+        }
+      }
+
+      // Tentativa 2 / Fallback: upload no Drive próprio da conta de serviço + compartilhamento com email do usuário
+      if (!tentativaSucesso) {
+        var mp2 = buildMultipartBody(
+          {
+            name: backupRecord.getString('nome_arquivo'),
+            mimeType: 'application/json',
+          },
+          dumpJsonStr,
+        )
+        var res2 = $http.send({
+          url: uploadUrl,
+          method: 'POST',
+          headers: {
+            Authorization: 'Bearer ' + auth.access_token,
+            'Content-Type': 'multipart/related; boundary=' + mp2.boundary,
+          },
+          body: mp2.body,
+          timeout: 120,
+        })
+
+        if (res2.statusCode === 200 || res2.statusCode === 201) {
+          uploadedJson = res2.json || JSON.parse(res2.raw || '{}')
+          fileId = uploadedJson.id || ''
+          tentativaSucesso = true
+
+          // Compartilhar arquivo criado com o email do usuário
+          var shareRes = shareFileWithUser(fileId, usuarioEmailDestino, auth.access_token)
+          if (shareRes.success) {
+            destinoDescricao =
+              'Drive da Conta de Serviço (compartilhado com ' + usuarioEmailDestino + ')'
+          } else {
+            destinoDescricao =
+              'Drive da Conta de Serviço (aviso compartilhamento: ' + shareRes.error + ')'
+          }
+        } else {
+          var errDetail =
+            'Erro no upload para o Drive (HTTP ' + res2.statusCode + '): ' + (res2.raw || '')
+          console.error('[CRON Drive] ' + errDetail)
+          backupRecord.set('drive_status', 'erro')
+          backupRecord.set('drive_erro', errDetail)
+          $app.save(backupRecord)
+          return
+        }
+      }
+
+      if (tentativaSucesso && fileId) {
+        console.log(
+          `[CRON Drive] Sucesso! Backup enviado via Service Account: ${fileId} (${destinoDescricao})`,
+        )
+        var agoraIso = new Date().toISOString()
         backupRecord.set('drive_status', 'enviado')
         backupRecord.set('drive_file_id', fileId)
-        backupRecord.set('drive_folder_id', folderId)
+        backupRecord.set('drive_folder_id', folderId || '')
         backupRecord.set('drive_enviado_em', agoraIso)
-        backupRecord.set('drive_erro', '')
+        backupRecord.set('drive_erro', destinoDescricao)
         $app.save(backupRecord)
 
         if (configRec) {
@@ -679,16 +787,6 @@ cronAdd('backup_semanal_pedreira_cordeiro', '30 0 * * 0', () => {
           configRec.set('ultimo_status', 'conectado')
           $app.save(configRec)
         }
-      } else {
-        const errDetail =
-          'Erro no upload para o Drive (HTTP ' +
-          uploadRes.statusCode +
-          '): ' +
-          (uploadRes.raw || '')
-        console.error('[CRON Drive] ' + errDetail)
-        backupRecord.set('drive_status', 'erro')
-        backupRecord.set('drive_erro', errDetail)
-        $app.save(backupRecord)
       }
     } catch (errDrive) {
       console.error('[CRON Drive] Exceção durante envio ao Drive:', errDrive)
@@ -1135,6 +1233,7 @@ routerAdd(
       let projectId = ''
       let ultimoEnvio = ''
       let dbStatus = ''
+      let usuarioEmail = 'renilsonfmello@gmail.com'
 
       try {
         const configRec = $app.findFirstRecordByData('config_google_drive', 'chave', 'padrao')
@@ -1146,9 +1245,11 @@ routerAdd(
           projectId = configRec.getString('project_id')
           ultimoEnvio = configRec.getString('ultimo_envio')
           dbStatus = configRec.getString('ultimo_status')
+          if (configRec.getString('usuario_email')) {
+            usuarioEmail = configRec.getString('usuario_email')
+          }
         }
       } catch (_) {}
-
       if (serviceAccountJson && !clientEmail) {
         try {
           const parsed = JSON.parse(serviceAccountJson)
@@ -1186,6 +1287,7 @@ routerAdd(
           project_id: projectId,
           pasta_nome: folderName,
           pasta_id: folderId,
+          usuario_email: usuarioEmail,
           ultimo_envio: ultimoEnvio,
           status_conexao: isConfigured ? 'conectado' : 'desconectado',
         },
@@ -1596,6 +1698,7 @@ routerAdd(
     let serviceAccountJsonInput = (body.service_account_json || '').trim()
     let folderId = (body.folder_id || '').trim()
     let folderName = (body.folder_name || 'Backups ERP').trim()
+    let usuarioEmailInput = (body.usuario_email || '').trim()
 
     if (folderId.indexOf('drive.google.com') !== -1) {
       const match = folderId.match(/folders\/([a-zA-Z0-9_-]+)/)
@@ -1657,6 +1760,11 @@ routerAdd(
       if (folderName) {
         configRec.set('folder_name', folderName)
       }
+      if (usuarioEmailInput) {
+        configRec.set('usuario_email', usuarioEmailInput)
+      } else if (!configRec.getString('usuario_email')) {
+        configRec.set('usuario_email', 'renilsonfmello@gmail.com')
+      }
       configRec.set('ativo', true)
 
       // 2. Persistir imediatamente no banco ANTES de qualquer validação online externa
@@ -1664,7 +1772,7 @@ routerAdd(
 
       const finalEmail = parsedEmail || configRec.getString('client_email')
       const finalFolderId = folderId !== undefined ? folderId : configRec.getString('folder_id')
-
+      const finalUsuarioEmail = configRec.getString('usuario_email')
       // 3. Validação online contra o Google (apenas se nova chave foi enviada ou se explicitamente solicitada)
       // Executa com timeout curto de 10s. Se demorar ou falhar por rede/timeout, a chave permanece salva!
       let validacaoGoogle = {
@@ -1708,6 +1816,7 @@ routerAdd(
         message: mensagemRetorno,
         client_email: finalEmail,
         folder_id: finalFolderId,
+        usuario_email: finalUsuarioEmail,
         validacao_online: validacaoGoogle,
       })
     } catch (err) {
@@ -2179,6 +2288,7 @@ routerAdd(
       let serviceAccountJson = $os.getenv('GOOGLE_SERVICE_ACCOUNT_JSON') || ''
       let folderId = $os.getenv('GOOGLE_DRIVE_FOLDER_ID') || ''
       let folderName = 'Backups ERP'
+      let usuarioEmailDestino = 'renilsonfmello@gmail.com'
       let configRec = null
 
       try {
@@ -2187,9 +2297,11 @@ routerAdd(
           if (!serviceAccountJson) serviceAccountJson = configRec.getString('service_account_json')
           if (!folderId) folderId = configRec.getString('folder_id')
           if (configRec.getString('folder_name')) folderName = configRec.getString('folder_name')
+          if (configRec.getString('usuario_email')) {
+            usuarioEmailDestino = configRec.getString('usuario_email')
+          }
         }
       } catch (_) {}
-
       if (!serviceAccountJson) {
         return e.json(400, {
           error:
@@ -2251,78 +2363,177 @@ routerAdd(
         2,
       )
 
-      const fileMetadata = {
-        name: backupRec.getString('nome_arquivo'),
-        mimeType: 'application/json',
-      }
-      if (folderId) {
-        fileMetadata.parents = [folderId]
-      }
-
-      const boundary = '-------314159265358979323846'
-      const delimiter = '\r\n--' + boundary + '\r\n'
-      const closeDelimiter = '\r\n--' + boundary + '--'
-
-      const multipartBody =
-        delimiter +
-        'Content-Type: application/json; charset=UTF-8\r\n\r\n' +
-        JSON.stringify(fileMetadata) +
-        delimiter +
-        'Content-Type: application/json; charset=UTF-8\r\n\r\n' +
-        dumpJsonStr +
-        closeDelimiter
-
-      const uploadUrl =
-        'https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&supportsAllDrives=true'
-      const uploadRes = $http.send({
-        url: uploadUrl,
-        method: 'POST',
-        headers: {
-          Authorization: 'Bearer ' + auth.access_token,
-          'Content-Type': 'multipart/related; boundary=' + boundary,
-        },
-        body: multipartBody,
-        timeout: 120,
-      })
-
-      if (uploadRes.statusCode === 200 || uploadRes.statusCode === 201) {
-        const uploadedJson = uploadRes.json || JSON.parse(uploadRes.raw || '{}')
-        const fileId = uploadedJson.id || ''
-        const agoraIso = new Date().toISOString()
-
-        backupRec.set('drive_status', 'enviado')
-        backupRec.set('drive_file_id', fileId)
-        backupRec.set('drive_folder_id', folderId)
-        backupRec.set('drive_enviado_em', agoraIso)
-        backupRec.set('drive_erro', '')
-        $app.save(backupRec)
-
-        if (configRec) {
-          configRec.set('ultimo_envio', agoraIso)
-          configRec.set('ultimo_status', 'conectado')
-          $app.save(configRec)
+      function buildMultipartBody(metaObj, contentStr) {
+        var boundary = '-------314159265358979323846'
+        var delimiter = '\r\n--' + boundary + '\r\n'
+        var closeDelimiter = '\r\n--' + boundary + '--'
+        return {
+          boundary: boundary,
+          body:
+            delimiter +
+            'Content-Type: application/json; charset=UTF-8\r\n\r\n' +
+            JSON.stringify(metaObj) +
+            delimiter +
+            'Content-Type: application/json; charset=UTF-8\r\n\r\n' +
+            contentStr +
+            closeDelimiter,
         }
-
-        return e.json(200, {
-          success: true,
-          message: folderId
-            ? 'Backup enviado com sucesso ao Google Drive na pasta configurada!'
-            : 'Backup enviado com sucesso ao Google Drive da Conta de Serviço!',
-          file_id: fileId,
-          folder_id: folderId,
-          enviado_em: agoraIso,
-        })
-      } else {
-        const errDetail =
-          'Erro no envio ao Google Drive (HTTP ' +
-          uploadRes.statusCode +
-          '): ' +
-          (uploadRes.raw || '')
-        backupRec.set('drive_status', 'erro')
-        backupRec.set('drive_erro', errDetail)
-        $app.save(backupRec)
-        return e.json(500, { error: errDetail })
       }
+
+      function shareFileWithUser(fileId, userEmail, token) {
+        if (!userEmail) return { success: false, error: 'Email de usuário não informado' }
+        try {
+          var permUrl =
+            'https://www.googleapis.com/drive/v3/files/' +
+            encodeURIComponent(fileId) +
+            '/permissions?supportsAllDrives=true&sendNotificationEmail=false'
+          var permRes = $http.send({
+            url: permUrl,
+            method: 'POST',
+            headers: {
+              Authorization: 'Bearer ' + token,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              role: 'writer',
+              type: 'user',
+              emailAddress: userEmail,
+            }),
+            timeout: 20,
+          })
+          if (permRes.statusCode === 200 || permRes.statusCode === 201) {
+            return { success: true }
+          }
+          return {
+            success: false,
+            error: 'HTTP ' + permRes.statusCode + ': ' + (permRes.raw || ''),
+          }
+        } catch (eShare) {
+          return {
+            success: false,
+            error: String(eShare?.message || eShare),
+          }
+        }
+      }
+
+      var uploadUrl =
+        'https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&supportsAllDrives=true'
+      var uploadedJson = null
+      var fileId = ''
+      var destinoDescricao = ''
+      var mensagemRetorno = ''
+      var tentativaSucesso = false
+      var erroInicial = ''
+
+      // Tentativa 1: se houver folderId, tentar upload na pasta configurada
+      if (folderId) {
+        var mp1 = buildMultipartBody(
+          {
+            name: backupRec.getString('nome_arquivo'),
+            mimeType: 'application/json',
+            parents: [folderId],
+          },
+          dumpJsonStr,
+        )
+        var res1 = $http.send({
+          url: uploadUrl,
+          method: 'POST',
+          headers: {
+            Authorization: 'Bearer ' + auth.access_token,
+            'Content-Type': 'multipart/related; boundary=' + mp1.boundary,
+          },
+          body: mp1.body,
+          timeout: 120,
+        })
+
+        if (res1.statusCode === 200 || res1.statusCode === 201) {
+          uploadedJson = res1.json || JSON.parse(res1.raw || '{}')
+          fileId = uploadedJson.id || ''
+          destinoDescricao = 'pasta configurada no Drive (' + folderId + ')'
+          mensagemRetorno = 'Backup enviado com sucesso ao Google Drive na pasta configurada!'
+          tentativaSucesso = true
+        } else {
+          erroInicial =
+            'Upload na pasta configurada falhou (HTTP ' + res1.statusCode + '): ' + (res1.raw || '')
+          console.warn('[Manual Drive] ' + erroInicial + ' — aplicando fallback...')
+        }
+      }
+
+      // Tentativa 2 / Fallback: upload no Drive próprio da conta de serviço + compartilhamento com email do usuário
+      if (!tentativaSucesso) {
+        var mp2 = buildMultipartBody(
+          {
+            name: backupRec.getString('nome_arquivo'),
+            mimeType: 'application/json',
+          },
+          dumpJsonStr,
+        )
+        var res2 = $http.send({
+          url: uploadUrl,
+          method: 'POST',
+          headers: {
+            Authorization: 'Bearer ' + auth.access_token,
+            'Content-Type': 'multipart/related; boundary=' + mp2.boundary,
+          },
+          body: mp2.body,
+          timeout: 120,
+        })
+
+        if (res2.statusCode === 200 || res2.statusCode === 201) {
+          uploadedJson = res2.json || JSON.parse(res2.raw || '{}')
+          fileId = uploadedJson.id || ''
+          tentativaSucesso = true
+
+          // Compartilhar arquivo criado com o email do usuário
+          var shareRes = shareFileWithUser(fileId, usuarioEmailDestino, auth.access_token)
+          if (shareRes.success) {
+            destinoDescricao =
+              'Drive da Conta de Serviço (compartilhado com ' + usuarioEmailDestino + ')'
+            mensagemRetorno =
+              'Backup enviado com sucesso! Disponível em "Compartilhado comigo" no Google Drive de ' +
+              usuarioEmailDestino +
+              '.'
+          } else {
+            destinoDescricao =
+              'Drive da Conta de Serviço (aviso compartilhamento: ' + shareRes.error + ')'
+            mensagemRetorno =
+              'Backup enviado ao Drive, mas houve aviso ao compartilhar com ' +
+              usuarioEmailDestino +
+              ': ' +
+              shareRes.error
+          }
+        } else {
+          var errDetail =
+            'Erro no envio ao Google Drive (HTTP ' + res2.statusCode + '): ' + (res2.raw || '')
+          backupRec.set('drive_status', 'erro')
+          backupRec.set('drive_erro', errDetail)
+          $app.save(backupRec)
+          return e.json(500, { error: errDetail })
+        }
+      }
+
+      var agoraIso = new Date().toISOString()
+      backupRec.set('drive_status', 'enviado')
+      backupRec.set('drive_file_id', fileId)
+      backupRec.set('drive_folder_id', folderId || '')
+      backupRec.set('drive_enviado_em', agoraIso)
+      backupRec.set('drive_erro', destinoDescricao)
+      $app.save(backupRec)
+
+      if (configRec) {
+        configRec.set('ultimo_envio', agoraIso)
+        configRec.set('ultimo_status', 'conectado')
+        $app.save(configRec)
+      }
+
+      return e.json(200, {
+        success: true,
+        message: mensagemRetorno,
+        file_id: fileId,
+        folder_id: folderId || '',
+        destino: destinoDescricao,
+        enviado_em: agoraIso,
+      })
     } catch (err) {
       console.error('[Manual Drive] Erro:', err)
       return e.json(500, { error: 'Erro ao enviar backup ao Drive: ' + (err?.message || err) })
