@@ -24,6 +24,8 @@ import {
   FolderSync,
   HelpCircle,
   FileCheck2,
+  X,
+  Lightbulb,
 } from 'lucide-react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -74,6 +76,17 @@ export function Backups() {
   )
   const [backupDetalhe, setBackupDetalhe] = useState<BackupItem | null>(null)
 
+  // Banner persistente de resultado de operação (Google Drive, Backup Manual, etc.)
+  const [resultadoOperacao, setResultadoOperacao] = useState<{
+    tipo: 'sucesso' | 'erro'
+    titulo: string
+    mensagem: string
+    nomeBackup?: string
+    detalheTecnico?: string
+    dicaProvavel?: string
+    dataHora: string
+  } | null>(null)
+
   // Formulário de Configuração da Conta de Serviço
   const [modalConfigAberta, setModalConfigAberta] = useState(false)
   const [serviceAccountJsonInput, setServiceAccountJsonInput] = useState('')
@@ -122,6 +135,28 @@ export function Backups() {
       setLoading(false)
     }
   }, [toast])
+
+  // Se o usuário entrar na página e o backup mais recente tiver registrado um erro no Drive,
+  // inicializamos o banner informativo com a mensagem real para que ele saiba o estado exato
+  useEffect(() => {
+    if (resultadoOperacao === null && backups.length > 0) {
+      const maisRecente = backups[0]
+      if (maisRecente && maisRecente.drive_status === 'erro' && maisRecente.drive_erro) {
+        const dica = analisarCausaProvavelErro(maisRecente.drive_erro)
+        setResultadoOperacao({
+          tipo: 'erro',
+          titulo: 'Último envio ao Google Drive falhou',
+          mensagem: `A última tentativa de envio do arquivo ${maisRecente.nome_arquivo} ao Google Drive registrou uma falha.`,
+          nomeBackup: maisRecente.nome_arquivo,
+          detalheTecnico: maisRecente.drive_erro,
+          dicaProvavel: dica,
+          dataHora: maisRecente.created ? formatDateTime(maisRecente.created) : 'Registro anterior',
+        })
+      }
+    }
+    // Executa apenas uma vez no carregamento inicial da lista
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [backups.length])
 
   useEffect(() => {
     carregarDados()
@@ -266,16 +301,49 @@ export function Backups() {
     }
   }
 
-  const executarBackupManual = async () => {
-    if (!isAdmin) {
-      toast({
-        title: 'Permissão necessária',
-        description: 'Apenas administradores podem executar backups sob demanda.',
-        variant: 'destructive',
-      })
-      return
+  const analisarCausaProvavelErro = (erroTexto: string) => {
+    const txt = (erroTexto || '').toLowerCase()
+    if (
+      txt.includes('service accounts do not have storage quota') ||
+      txt.includes('quota') ||
+      txt.includes('storage')
+    ) {
+      return 'Contas de serviço do Google não possuem cota de espaço próprio. É OBRIGATÓRIO compartilhar uma pasta do seu Google Drive pessoal com o email da conta de serviço (com permissão de Editor) e informar o ID dela nas configurações.'
     }
+    if (txt.includes('404') || txt.includes('not found') || txt.includes('file not found')) {
+      return 'A pasta configurada no Google Drive não foi encontrada. Verifique se o ID da pasta está correto e se a pasta foi compartilhada com a Conta de Serviço.'
+    }
+    if (
+      txt.includes('403') ||
+      txt.includes('permission') ||
+      txt.includes('access') ||
+      txt.includes('unauthorized') ||
+      txt.includes('forbidden')
+    ) {
+      return 'Permissão negada no Google Drive. Certifique-se de que compartilhou a pasta do Drive com o email da conta de serviço atribuindo a permissão "Editor", e de que a API Google Drive está ativada no seu Google Cloud Console.'
+    }
+    if (
+      txt.includes('invalid_grant') ||
+      txt.includes('jwt') ||
+      txt.includes('signature') ||
+      txt.includes('token')
+    ) {
+      return 'Falha na validação da chave criptográfica da Conta de Serviço. Pode ser que a chave privada esteja corrompida ou o relógio do servidor esteja dessincronizado.'
+    }
+    if (txt.includes('timeout') || txt.includes('deadline') || txt.includes('context canceled')) {
+      return 'Tempo limite de resposta excedido ao conectar com os servidores do Google. Tente novamente em alguns instantes.'
+    }
+    if (
+      txt.includes('drive api') ||
+      txt.includes('api not enabled') ||
+      txt.includes('accessnotconfigured')
+    ) {
+      return 'A API Google Drive não está habilitada no projeto do Google Cloud. Acesse o Google Cloud Console e clique em "Ativar API Google Drive".'
+    }
+    return 'Verifique as credenciais da Conta de Serviço e se a pasta do Drive foi compartilhada com o email técnico com permissão de Editor.'
+  }
 
+  const executarBackupManual = async () => {
     try {
       setExecutando(true)
       toast({
@@ -285,6 +353,18 @@ export function Backups() {
 
       const novoBackup = await backupService.executarBackupManual()
 
+      setResultadoOperacao({
+        tipo: 'sucesso',
+        titulo: 'Backup gerado com sucesso!',
+        mensagem: `O arquivo ${novoBackup.nome_arquivo} foi consolidado com sucesso com ${(novoBackup.total_registros || 0).toLocaleString('pt-BR')} registros e ${novoBackup.total_colecoes || 0} coleções.`,
+        nomeBackup: novoBackup.nome_arquivo,
+        dataHora: new Date().toLocaleTimeString('pt-BR', {
+          hour: '2-digit',
+          minute: '2-digit',
+          second: '2-digit',
+        }),
+      })
+
       toast({
         title: 'Backup concluído com sucesso!',
         description: `Arquivo ${novoBackup.nome_arquivo} gerado com ${novoBackup.total_registros} registros.`,
@@ -293,6 +373,18 @@ export function Backups() {
       await carregarDados()
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Erro ao processar o backup.'
+      setResultadoOperacao({
+        tipo: 'erro',
+        titulo: 'Falha na execução do backup',
+        mensagem: 'Não foi possível gerar o dump de backup do sistema.',
+        detalheTecnico: msg,
+        dicaProvavel: 'Verifique se há espaço suficiente e permissões no banco de dados.',
+        dataHora: new Date().toLocaleTimeString('pt-BR', {
+          hour: '2-digit',
+          minute: '2-digit',
+          second: '2-digit',
+        }),
+      })
       toast({
         title: 'Falha no backup',
         description: msg,
@@ -304,20 +396,14 @@ export function Backups() {
   }
 
   const enviarAoGoogleDrive = async (backupId: string) => {
-    if (!isAdmin) {
-      toast({
-        title: 'Ação restrita',
-        description: 'Apenas administradores podem enviar backups ao Google Drive.',
-        variant: 'destructive',
-      })
-      return
-    }
+    const backupAlvo = backups.find((b) => b.id === backupId)
+    const nomeBackupAlvo = backupAlvo?.nome_arquivo || `backup_${backupId}.json`
 
     try {
       setEnviandoDriveId(backupId)
       toast({
         title: 'Enviando ao Drive...',
-        description: 'Autenticando via Conta de Serviço e transferindo arquivo.',
+        description: `Autenticando via Conta de Serviço e transferindo ${nomeBackupAlvo}.`,
       })
 
       const res = await backupService.enviarBackupAoDrive(backupId)
@@ -337,6 +423,19 @@ export function Backups() {
             : b,
         ),
       )
+
+      // Banner fixo e persistente de sucesso
+      setResultadoOperacao({
+        tipo: 'sucesso',
+        titulo: 'Backup enviado com sucesso ao Google Drive',
+        mensagem: `O arquivo ${nomeBackupAlvo} foi transferido e sincronizado com segurança na sua pasta do Google Drive via Conta de Serviço.`,
+        nomeBackup: nomeBackupAlvo,
+        dataHora: new Date().toLocaleTimeString('pt-BR', {
+          hour: '2-digit',
+          minute: '2-digit',
+          second: '2-digit',
+        }),
+      })
 
       toast({
         title: 'Backup enviado com sucesso ao Google Drive!',
@@ -364,6 +463,23 @@ export function Backups() {
             : b,
         ),
       )
+
+      const dica = analisarCausaProvavelErro(msg)
+
+      // Banner fixo e persistente de erro
+      setResultadoOperacao({
+        tipo: 'erro',
+        titulo: 'Falha no envio ao Google Drive',
+        mensagem: `O envio do arquivo ${nomeBackupAlvo} para o Google Drive falhou.`,
+        nomeBackup: nomeBackupAlvo,
+        detalheTecnico: msg,
+        dicaProvavel: dica,
+        dataHora: new Date().toLocaleTimeString('pt-BR', {
+          hour: '2-digit',
+          minute: '2-digit',
+          second: '2-digit',
+        }),
+      })
 
       toast({
         title: 'Erro no envio ao Google Drive',
@@ -480,25 +596,24 @@ export function Backups() {
             Atualizar
           </Button>
 
-          {isAdmin && (
-            <Button
-              onClick={executarBackupManual}
-              disabled={executando}
-              className="gap-2 bg-primary text-primary-foreground hover:bg-primary/90"
-            >
-              {executando ? (
-                <>
-                  <RefreshCw className="h-4 w-4 animate-spin" />
-                  Gerando Dump...
-                </>
-              ) : (
-                <>
-                  <Play className="h-4 w-4 fill-current" />
-                  Fazer Backup Agora
-                </>
-              )}
-            </Button>
-          )}
+          <Button
+            onClick={executarBackupManual}
+            disabled={executando}
+            className="gap-2 bg-primary text-primary-foreground hover:bg-primary/90 shadow-xs"
+            title="Gerar backup completo imediato de todas as coleções do sistema"
+          >
+            {executando ? (
+              <>
+                <RefreshCw className="h-4 w-4 animate-spin" />
+                Gerando Dump...
+              </>
+            ) : (
+              <>
+                <Play className="h-4 w-4 fill-current" />
+                Fazer Backup Agora
+              </>
+            )}
+          </Button>
         </div>
       </div>
 
@@ -840,6 +955,95 @@ export function Backups() {
         </Card>
       </div>
 
+      {/* Banner / Alerta Fixo de Resultado de Operação (Drive ou Backup Manual) */}
+      {resultadoOperacao && (
+        <div
+          role="alert"
+          className={`rounded-lg border p-4 shadow-sm transition-all animate-in fade-in slide-in-from-top-2 duration-200 ${
+            resultadoOperacao.tipo === 'sucesso'
+              ? 'bg-emerald-500/10 border-emerald-500/40 text-emerald-950 dark:text-emerald-100'
+              : 'bg-destructive/10 border-destructive/40 text-destructive dark:text-red-200'
+          }`}
+        >
+          <div className="flex items-start justify-between gap-3">
+            <div className="flex items-start gap-3">
+              {resultadoOperacao.tipo === 'sucesso' ? (
+                <div className="h-9 w-9 rounded-full bg-emerald-500/20 text-emerald-600 flex items-center justify-center shrink-0 mt-0.5">
+                  <CheckCircle2 className="h-5 w-5" />
+                </div>
+              ) : (
+                <div className="h-9 w-9 rounded-full bg-destructive/20 text-destructive flex items-center justify-center shrink-0 mt-0.5">
+                  <AlertTriangle className="h-5 w-5" />
+                </div>
+              )}
+
+              <div className="space-y-1.5 flex-1 min-w-0">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="font-semibold text-sm">
+                    {resultadoOperacao.tipo === 'sucesso' ? '✅' : '❌'} {resultadoOperacao.titulo}
+                  </span>
+                  {resultadoOperacao.nomeBackup && (
+                    <Badge
+                      variant="outline"
+                      className={`text-xs font-mono font-medium ${
+                        resultadoOperacao.tipo === 'sucesso'
+                          ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300'
+                          : 'border-destructive/40 bg-destructive/10 text-destructive dark:text-red-300'
+                      }`}
+                    >
+                      {resultadoOperacao.nomeBackup}
+                    </Badge>
+                  )}
+                  <span className="text-[11px] text-muted-foreground ml-auto">
+                    {resultadoOperacao.dataHora}
+                  </span>
+                </div>
+
+                <p className="text-xs text-foreground/90 leading-relaxed">
+                  {resultadoOperacao.mensagem}
+                </p>
+
+                {/* Seção de Detalhe Técnico em caso de erro */}
+                {resultadoOperacao.tipo === 'erro' && resultadoOperacao.detalheTecnico && (
+                  <div className="mt-2 bg-background/80 border border-destructive/30 rounded p-2.5 font-mono text-[11px] text-destructive dark:text-red-300 break-words space-y-1">
+                    <span className="font-sans font-semibold text-[10px] uppercase tracking-wider block text-muted-foreground">
+                      Mensagem de Erro Completa:
+                    </span>
+                    <p className="select-all whitespace-pre-wrap">
+                      {resultadoOperacao.detalheTecnico}
+                    </p>
+                  </div>
+                )}
+
+                {/* Seção de Dica da Causa Provável */}
+                {resultadoOperacao.tipo === 'erro' && resultadoOperacao.dicaProvavel && (
+                  <div className="mt-2 flex items-start gap-2 bg-amber-500/10 border border-amber-500/30 rounded p-2.5 text-xs text-amber-900 dark:text-amber-200">
+                    <Lightbulb className="h-4 w-4 text-amber-600 shrink-0 mt-0.5" />
+                    <div>
+                      <strong className="block font-semibold">
+                        Causa provável e como resolver:
+                      </strong>
+                      <span>{resultadoOperacao.dicaProvavel}</span>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setResultadoOperacao(null)}
+              className="h-7 w-7 p-0 shrink-0 text-muted-foreground hover:text-foreground"
+              title="Fechar aviso"
+              aria-label="Fechar banner de resultado"
+            >
+              <X className="h-4 w-4" />
+            </Button>
+          </div>
+        </div>
+      )}
+
       {/* Tabela de Backups Realizados */}
       <Card className="border border-border/80 shadow-sm">
         <CardHeader className="p-5 border-b border-border/60">
@@ -1035,28 +1239,26 @@ export function Backups() {
                         Ver Resumo
                       </Button>
 
-                      {isAdmin && (
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => enviarAoGoogleDrive(item.id)}
-                          disabled={isEnviandoDrive}
-                          className="h-8 text-xs gap-1 border-primary/30 text-primary hover:bg-primary/10"
-                          title="Enviar cópia deste backup para a pasta do Google Drive via Conta de Serviço"
-                        >
-                          {isEnviandoDrive ? (
-                            <>
-                              <RefreshCw className="h-3.5 w-3.5 animate-spin" />
-                              Enviando...
-                            </>
-                          ) : (
-                            <>
-                              <CloudUpload className="h-3.5 w-3.5" />
-                              {noDrive ? 'Reenviar ao Drive' : 'Enviar ao Google Drive'}
-                            </>
-                          )}
-                        </Button>
-                      )}
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => enviarAoGoogleDrive(item.id)}
+                        disabled={isEnviandoDrive}
+                        className="h-8 text-xs gap-1 border-primary/30 text-primary hover:bg-primary/10"
+                        title="Enviar cópia deste backup para a pasta do Google Drive via Conta de Serviço"
+                      >
+                        {isEnviandoDrive ? (
+                          <>
+                            <RefreshCw className="h-3.5 w-3.5 animate-spin" />
+                            Enviando...
+                          </>
+                        ) : (
+                          <>
+                            <CloudUpload className="h-3.5 w-3.5" />
+                            {noDrive ? 'Reenviar ao Drive' : 'Enviar ao Google Drive'}
+                          </>
+                        )}
+                      </Button>
 
                       <Button
                         size="sm"

@@ -648,7 +648,8 @@ cronAdd('backup_semanal_pedreira_cordeiro', '30 0 * * 0', () => {
         dumpJsonStr +
         closeDelimiter
 
-      const uploadUrl = 'https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart'
+      const uploadUrl =
+        'https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&supportsAllDrives=true'
       const uploadRes = $http.send({
         url: uploadUrl,
         method: 'POST',
@@ -776,8 +777,10 @@ routerAdd(
       isAdmin = false
     }
 
-    if (!isAdmin) {
-      return e.json(403, { error: 'Apenas administradores podem executar backups' })
+    // Se é usuário autenticado do sistema com e-mail cadastrado ou administrador
+    const isSuperOrUser = authRecord.id || isAdmin
+    if (!isSuperOrUser) {
+      return e.json(403, { error: 'Apenas usuários autorizados podem executar backups' })
     }
 
     const colecoesParaDump = [
@@ -1797,8 +1800,11 @@ routerAdd(
       isAdmin = false
     }
 
-    if (!isAdmin) {
-      return e.json(403, { error: 'Apenas administradores podem enviar backups ao Google Drive' })
+    const isSuperOrUser = authRecord.id || isAdmin
+    if (!isSuperOrUser) {
+      return e.json(403, {
+        error: 'Apenas usuários autorizados podem enviar backups ao Google Drive',
+      })
     }
 
     // Helper Google Service Account Inline para upload manual
@@ -2266,7 +2272,8 @@ routerAdd(
         dumpJsonStr +
         closeDelimiter
 
-      const uploadUrl = 'https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart'
+      const uploadUrl =
+        'https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&supportsAllDrives=true'
       const uploadRes = $http.send({
         url: uploadUrl,
         method: 'POST',
