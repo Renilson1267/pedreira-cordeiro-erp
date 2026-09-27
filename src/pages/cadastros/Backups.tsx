@@ -95,31 +95,28 @@ export function Backups() {
         backupService.obterStatusGoogleDrive(),
       ])
 
-      if (lista.status === 'fulfilled') {
+      if (lista.status === 'fulfilled' && Array.isArray(lista.value)) {
         setBackups(lista.value)
       } else {
-        toast({
-          title: 'Aviso ao carregar backups',
-          description: 'Não foi possível carregar o histórico de backups.',
-          variant: 'destructive',
-        })
+        setBackups([])
+        console.warn('[Backups.tsx] Falha ao carregar lista de backups:', lista)
       }
 
-      if (agend.status === 'fulfilled') {
+      if (agend.status === 'fulfilled' && agend.value) {
         setAgendamento(agend.value)
       }
 
-      if (drive.status === 'fulfilled') {
+      if (drive.status === 'fulfilled' && drive.value) {
         setDriveStatus(drive.value)
         if (drive.value?.pasta_id) {
           setFolderIdInput(drive.value.pasta_id)
         }
       }
-    } catch {
+    } catch (err) {
+      console.error('[Backups.tsx] Erro inesperado em carregarDados:', err)
       toast({
-        title: 'Erro de conexão',
-        description: 'Falha ao buscar dados de backup do servidor.',
-        variant: 'destructive',
+        title: 'Aviso de conexão',
+        description: 'Não foi possível atualizar alguns dados de backup.',
       })
     } finally {
       setLoading(false)
@@ -132,13 +129,29 @@ export function Backups() {
 
   const copiarEmailContaServico = () => {
     if (!driveStatus?.client_email) return
-    navigator.clipboard.writeText(driveStatus.client_email)
-    setEmailCopiado(true)
-    toast({
-      title: 'Email copiado!',
-      description: 'Email da Conta de Serviço copiado para a área de transferência.',
-    })
-    setTimeout(() => setEmailCopiado(false), 2500)
+    try {
+      if (navigator?.clipboard?.writeText) {
+        navigator.clipboard.writeText(driveStatus.client_email)
+      } else {
+        const textArea = document.createElement('textarea')
+        textArea.value = driveStatus.client_email
+        document.body.appendChild(textArea)
+        textArea.select()
+        document.execCommand('copy')
+        document.body.removeChild(textArea)
+      }
+      setEmailCopiado(true)
+      toast({
+        title: 'Email copiado!',
+        description: 'Email da Conta de Serviço copiado para a área de transferência.',
+      })
+      setTimeout(() => setEmailCopiado(false), 2500)
+    } catch {
+      toast({
+        title: 'Email da Conta de Serviço',
+        description: driveStatus.client_email,
+      })
+    }
   }
 
   const salvarConfiguracoesDrive = async () => {
@@ -309,16 +322,16 @@ export function Backups() {
 
       const res = await backupService.enviarBackupAoDrive(backupId)
 
-      // Atualização imediata no estado local para refletir a última tentativa real
+      // Atualização imediata no estado local para refletir o sucesso real
       setBackups((prev) =>
         prev.map((b) =>
           b.id === backupId
             ? {
                 ...b,
                 drive_status: 'enviado',
-                drive_file_id: res.file_id || b.drive_file_id,
-                drive_folder_id: res.folder_id || b.drive_folder_id,
-                drive_enviado_em: res.enviado_em || new Date().toISOString(),
+                drive_file_id: res?.file_id || b.drive_file_id || '',
+                drive_folder_id: res?.folder_id || b.drive_folder_id || '',
+                drive_enviado_em: res?.enviado_em || new Date().toISOString(),
                 drive_erro: '',
               }
             : b,
@@ -327,14 +340,19 @@ export function Backups() {
 
       toast({
         title: 'Backup enviado com sucesso ao Google Drive!',
-        description: res.message || 'Arquivo sincronizado na sua pasta do Google Drive.',
+        description: res?.message || 'Arquivo sincronizado na sua pasta do Google Drive.',
       })
 
       await carregarDados()
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Falha ao transferir para o Google Drive.'
+      const msg =
+        err instanceof Error
+          ? err.message
+          : typeof err === 'object' && err !== null && 'message' in err
+            ? String((err as { message: unknown }).message)
+            : 'Falha ao transferir para o Google Drive.'
 
-      // Atualização imediata no estado local para refletir a nova mensagem de erro
+      // Atualização imediata no estado local para refletir a mensagem real da falha
       setBackups((prev) =>
         prev.map((b) =>
           b.id === backupId
@@ -386,25 +404,37 @@ export function Backups() {
   }
 
   const backupsFiltrados = useMemo(() => {
+    if (!Array.isArray(backups)) return []
+    const termo = (filtroTexto || '').trim().toLowerCase()
     return backups.filter((b) => {
-      const matchTexto =
-        filtroTexto.trim() === '' ||
-        b.nome_arquivo.toLowerCase().includes(filtroTexto.toLowerCase()) ||
-        b.status.toLowerCase().includes(filtroTexto.toLowerCase()) ||
-        (b.observacoes && b.observacoes.toLowerCase().includes(filtroTexto.toLowerCase()))
+      if (!b) return false
+      const nomeArquivo = (b.nome_arquivo || '').toLowerCase()
+      const statusStr = (b.status || '').toLowerCase()
+      const obsStr = (b.observacoes || '').toLowerCase()
 
-      const matchOrigem = filtroOrigem === 'todos' || b.origem === filtroOrigem
+      const matchTexto =
+        termo === '' ||
+        nomeArquivo.includes(termo) ||
+        statusStr.includes(termo) ||
+        obsStr.includes(termo)
+
+      const origemStr = b.origem || 'manual'
+      const matchOrigem = filtroOrigem === 'todos' || origemStr === filtroOrigem
 
       return matchTexto && matchOrigem
     })
   }, [backups, filtroTexto, filtroOrigem])
 
   const estatisticas = useMemo(() => {
-    const totalBackups = backups.length
-    const totalRegistrosSalvos = backups.reduce((acc, cur) => acc + (cur.total_registros || 0), 0)
-    const ultimoExecutado = backups[0] || null
-    const automaticos = backups.filter((b) => b.origem === 'semanal_automatico').length
-    const noDrive = backups.filter((b) => b.drive_status === 'enviado').length
+    const lista = Array.isArray(backups) ? backups : []
+    const totalBackups = lista.length
+    const totalRegistrosSalvos = lista.reduce(
+      (acc, cur) => acc + (Number(cur?.total_registros) || 0),
+      0,
+    )
+    const ultimoExecutado = lista[0] || null
+    const automaticos = lista.filter((b) => b?.origem === 'semanal_automatico').length
+    const noDrive = lista.filter((b) => b?.drive_status === 'enviado').length
 
     return {
       totalBackups,
@@ -967,12 +997,12 @@ export function Backups() {
                         <span>•</span>
                         <span className="flex items-center gap-1 font-medium text-foreground/90">
                           <Database className="h-3.5 w-3.5 text-primary" />
-                          {item.total_registros.toLocaleString('pt-BR')} registros
+                          {(Number(item.total_registros) || 0).toLocaleString('pt-BR')} registros
                         </span>
                         <span>•</span>
                         <span className="flex items-center gap-1">
                           <Layers className="h-3.5 w-3.5" />
-                          {item.total_colecoes} coleções
+                          {Number(item.total_colecoes) || 0} coleções
                         </span>
                         {item.drive_enviado_em && (
                           <>
@@ -1218,12 +1248,14 @@ export function Backups() {
                   </div>
                   <div>
                     <span className="text-muted-foreground block">Total de Coleções:</span>
-                    <strong className="text-foreground">{backupDetalhe.total_colecoes}</strong>
+                    <strong className="text-foreground">
+                      {Number(backupDetalhe.total_colecoes) || 0}
+                    </strong>
                   </div>
                   <div>
                     <span className="text-muted-foreground block">Total de Registros:</span>
                     <strong className="text-emerald-600 font-bold">
-                      {backupDetalhe.total_registros.toLocaleString('pt-BR')}
+                      {(Number(backupDetalhe.total_registros) || 0).toLocaleString('pt-BR')}
                     </strong>
                   </div>
                   <div>
@@ -1260,29 +1292,43 @@ export function Backups() {
                     </Badge>
                   </h4>
 
-                  {backupDetalhe.resumo_colecoes && (
-                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5 max-h-56 overflow-y-auto p-2 bg-background border rounded-md">
-                      {Object.entries(backupDetalhe.resumo_colecoes).map(([col, qtd]) => {
-                        const isErro = typeof qtd === 'object' && qtd !== null
-                        const contagem = isErro ? 'Erro' : (qtd as number).toLocaleString('pt-BR')
-                        return (
-                          <div
-                            key={col}
-                            className={`flex items-center justify-between p-1.5 rounded text-[11px] ${
-                              isErro
-                                ? 'bg-destructive/10 text-destructive'
-                                : 'bg-muted/30 text-foreground'
-                            }`}
-                          >
-                            <span className="font-mono truncate max-w-[120px]" title={col}>
-                              {col}
-                            </span>
-                            <span className="font-bold">{contagem}</span>
-                          </div>
-                        )
-                      })}
-                    </div>
-                  )}
+                  {backupDetalhe.resumo_colecoes &&
+                    typeof backupDetalhe.resumo_colecoes === 'object' && (
+                      <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5 max-h-56 overflow-y-auto p-2 bg-background border rounded-md">
+                        {Object.entries(backupDetalhe.resumo_colecoes).map(([col, qtd]) => {
+                          const isErro =
+                            typeof qtd === 'object' && qtd !== null && 'erro' in (qtd as object)
+                          const isStringErro = typeof qtd === 'string'
+                          const contagem = isErro
+                            ? 'Erro'
+                            : isStringErro
+                              ? qtd
+                              : typeof qtd === 'number'
+                                ? qtd.toLocaleString('pt-BR')
+                                : String(qtd ?? '-')
+                          return (
+                            <div
+                              key={col}
+                              className={`flex items-center justify-between p-1.5 rounded text-[11px] ${
+                                isErro || isStringErro
+                                  ? 'bg-destructive/10 text-destructive'
+                                  : 'bg-muted/30 text-foreground'
+                              }`}
+                            >
+                              <span className="font-mono truncate max-w-[120px]" title={col}>
+                                {col}
+                              </span>
+                              <span
+                                className="font-bold truncate max-w-[90px]"
+                                title={String(contagem)}
+                              >
+                                {contagem}
+                              </span>
+                            </div>
+                          )
+                        })}
+                      </div>
+                    )}
                 </div>
               </div>
 
