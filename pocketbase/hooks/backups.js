@@ -18,6 +18,99 @@ routerAdd('GET', '/backend/v1/backups/processar-solicitados-drive', (e) => {
     var startRoundTime = Date.now()
     var MAX_ROUND_DURATION_MS = 25000 // 25 segundos máximo por rodada
 
+    function getAccessTokenOAuth(clientId, clientSecret, refreshToken, forcarRenovacao) {
+      var nowMs = Date.now()
+      if (!forcarRenovacao) {
+        try {
+          var oRec = $app.findFirstRecordByData('cache_tokens_drive', 'chave', 'google_drive_oauth')
+          if (oRec) {
+            var tok = oRec.getString('access_token') || ''
+            var rawExp = oRec.get('expiry_ms')
+            if (rawExp == null && typeof oRec.getInt === 'function')
+              rawExp = oRec.getInt('expiry_ms')
+            var expMs = Number(rawExp) || 0
+            if (tok && expMs > 0 && nowMs < expMs - 300000) {
+              console.log(
+                logPrefix +
+                  ' [OAUTH TOKEN CACHE] Usando access token OAuth em cache válido até ' +
+                  new Date(expMs).toISOString(),
+              )
+              return {
+                access_token: tok,
+                client_email: 'gmail_oauth_user',
+                auth_type: 'oauth',
+                from_cache: true,
+              }
+            }
+          }
+        } catch (_) {}
+      }
+
+      console.log(logPrefix + ' [OAUTH TOKEN] Renovando access token via refresh token Google...')
+      var postBody =
+        'client_id=' +
+        encodeURIComponent(clientId) +
+        '&client_secret=' +
+        encodeURIComponent(clientSecret) +
+        '&refresh_token=' +
+        encodeURIComponent(refreshToken) +
+        '&grant_type=refresh_token'
+
+      var res = $http.send({
+        url: 'https://oauth2.googleapis.com/token',
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: postBody,
+        timeout: 25,
+      })
+
+      if (res.statusCode !== 200) {
+        throw new Error(
+          'Falha ao renovar token OAuth do Google (HTTP ' +
+            res.statusCode +
+            '): ' +
+            (res.raw || '').slice(0, 300),
+        )
+      }
+
+      var data = res.json || JSON.parse(res.raw || '{}')
+      if (!data.access_token) {
+        throw new Error('Access token não retornado na renovação OAuth do Google.')
+      }
+
+      var newExpiryMs = nowMs + (data.expires_in || 3600) * 1000
+      try {
+        var cRec = null
+        try {
+          cRec = $app.findFirstRecordByData('cache_tokens_drive', 'chave', 'google_drive_oauth')
+        } catch (_) {
+          var colCache = $app.findCollectionByNameOrId('cache_tokens_drive')
+          cRec = new Record(colCache)
+          cRec.set('chave', 'google_drive_oauth')
+        }
+        cRec.set('access_token', data.access_token)
+        cRec.set('expiry_ms', newExpiryMs)
+        cRec.set('client_email', 'gmail_oauth_user')
+        cRec.set('detalhes', {
+          cached_token: data.access_token,
+          cached_expiry_ms: newExpiryMs,
+          cached_created_at: new Date().toISOString(),
+          tipo: 'oauth',
+        })
+        $app.save(cRec)
+        console.log(logPrefix + ' [OAUTH TOKEN] Novo token gravado em cache com sucesso.')
+      } catch (eSaveO) {
+        console.warn(logPrefix + ' [OAUTH TOKEN] Aviso ao salvar cache:', eSaveO)
+      }
+
+      return {
+        access_token: data.access_token,
+        client_email: 'gmail_oauth_user',
+        auth_type: 'oauth',
+        from_cache: false,
+      }
+    }
+
     function getAccessTokenShared(serviceAccountJson, scope, forcarRenovacao) {
       var creds =
         typeof serviceAccountJson === 'string' ? JSON.parse(serviceAccountJson) : serviceAccountJson
@@ -716,6 +809,10 @@ routerAdd('GET', '/backend/v1/backups/processar-solicitados-drive', (e) => {
       var folderId = $os.getenv('GOOGLE_DRIVE_FOLDER_ID') || ''
       var usuarioEmailDestino = 'renilsonfmello@gmail.com'
       var configRec = null
+      var oauthClientId = ''
+      var oauthClientSecret = ''
+      var oauthRefreshToken = ''
+      var oauthStatus = ''
 
       try {
         configRec = $app.findFirstRecordByData('config_google_drive', 'chave', 'padrao')
@@ -725,11 +822,21 @@ routerAdd('GET', '/backend/v1/backups/processar-solicitados-drive', (e) => {
           if (configRec.getString('usuario_email')) {
             usuarioEmailDestino = configRec.getString('usuario_email')
           }
+          oauthClientId =
+            configRec.getString('oauth_client_id') || configRec.getString('client_id') || ''
+          oauthClientSecret =
+            configRec.getString('oauth_client_secret') || configRec.getString('client_secret') || ''
+          oauthRefreshToken = configRec.getString('oauth_refresh_token') || ''
+          oauthStatus = configRec.getString('oauth_status') || ''
         }
       } catch (_) {}
 
-      if (!serviceAccountJson) {
-        var msgSemConta = 'Conta de Serviço Google Drive não configurada no ERP.'
+      var temOAuth = Boolean(oauthRefreshToken && oauthClientId && oauthClientSecret)
+      var temSA = Boolean(serviceAccountJson)
+
+      if (!temOAuth && !temSA) {
+        var msgSemConta =
+          'Google Drive não configurado no ERP (nem OAuth nem Conta de Serviço cadastrados).'
         console.warn(logPrefix + ' ' + msgSemConta)
         backupRecord.set('drive_status', 'erro')
         backupRecord.set('drive_erro', msgSemConta)
@@ -737,12 +844,24 @@ routerAdd('GET', '/backend/v1/backups/processar-solicitados-drive', (e) => {
         return { status: 'erro', erro: msgSemConta }
       }
 
-      console.log(logPrefix + ' Obtendo access token Google OAuth...')
-      var auth = getAccessTokenShared(
-        serviceAccountJson,
-        'https://www.googleapis.com/auth/drive.file',
-      )
-      console.log(logPrefix + ' Token obtido com sucesso para: ' + auth.client_email)
+      var auth = null
+      if (temOAuth) {
+        console.log(
+          logPrefix + ' Obtendo access token Google via OAuth do usuário (Gmail pessoal)...',
+        )
+        auth = getAccessTokenOAuth(oauthClientId, oauthClientSecret, oauthRefreshToken, false)
+        console.log(logPrefix + ' Token OAuth obtido com sucesso (tipo: ' + auth.auth_type + ')')
+      } else {
+        console.log(logPrefix + ' Obtendo access token Google via Conta de Serviço (fallback)...')
+        auth = getAccessTokenShared(
+          serviceAccountJson,
+          'https://www.googleapis.com/auth/drive.file',
+          false,
+        )
+        console.log(
+          logPrefix + ' Token Conta de Serviço obtido com sucesso para: ' + auth.client_email,
+        )
+      }
       var resumoRaw = backupRecord.get('resumo_colecoes') || {}
       var colecoesValidas = [
         'empresas',
@@ -1394,6 +1513,99 @@ cronAdd('backup_processador_fila_solicitados', '*/1 * * * *', () => {
     console.log(logPrefix + ' Início de processarBackupIncremental')
     var startRoundTime = Date.now()
     var MAX_ROUND_DURATION_MS = 25000 // 25 segundos máximo por rodada
+
+    function getAccessTokenOAuth(clientId, clientSecret, refreshToken, forcarRenovacao) {
+      var nowMs = Date.now()
+      if (!forcarRenovacao) {
+        try {
+          var oRec = $app.findFirstRecordByData('cache_tokens_drive', 'chave', 'google_drive_oauth')
+          if (oRec) {
+            var tok = oRec.getString('access_token') || ''
+            var rawExp = oRec.get('expiry_ms')
+            if (rawExp == null && typeof oRec.getInt === 'function')
+              rawExp = oRec.getInt('expiry_ms')
+            var expMs = Number(rawExp) || 0
+            if (tok && expMs > 0 && nowMs < expMs - 300000) {
+              console.log(
+                logPrefix +
+                  ' [OAUTH TOKEN CACHE] Usando access token OAuth em cache válido até ' +
+                  new Date(expMs).toISOString(),
+              )
+              return {
+                access_token: tok,
+                client_email: 'gmail_oauth_user',
+                auth_type: 'oauth',
+                from_cache: true,
+              }
+            }
+          }
+        } catch (_) {}
+      }
+
+      console.log(logPrefix + ' [OAUTH TOKEN] Renovando access token via refresh token Google...')
+      var postBody =
+        'client_id=' +
+        encodeURIComponent(clientId) +
+        '&client_secret=' +
+        encodeURIComponent(clientSecret) +
+        '&refresh_token=' +
+        encodeURIComponent(refreshToken) +
+        '&grant_type=refresh_token'
+
+      var res = $http.send({
+        url: 'https://oauth2.googleapis.com/token',
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: postBody,
+        timeout: 25,
+      })
+
+      if (res.statusCode !== 200) {
+        throw new Error(
+          'Falha ao renovar token OAuth do Google (HTTP ' +
+            res.statusCode +
+            '): ' +
+            (res.raw || '').slice(0, 300),
+        )
+      }
+
+      var data = res.json || JSON.parse(res.raw || '{}')
+      if (!data.access_token) {
+        throw new Error('Access token não retornado na renovação OAuth do Google.')
+      }
+
+      var newExpiryMs = nowMs + (data.expires_in || 3600) * 1000
+      try {
+        var cRec = null
+        try {
+          cRec = $app.findFirstRecordByData('cache_tokens_drive', 'chave', 'google_drive_oauth')
+        } catch (_) {
+          var colCache = $app.findCollectionByNameOrId('cache_tokens_drive')
+          cRec = new Record(colCache)
+          cRec.set('chave', 'google_drive_oauth')
+        }
+        cRec.set('access_token', data.access_token)
+        cRec.set('expiry_ms', newExpiryMs)
+        cRec.set('client_email', 'gmail_oauth_user')
+        cRec.set('detalhes', {
+          cached_token: data.access_token,
+          cached_expiry_ms: newExpiryMs,
+          cached_created_at: new Date().toISOString(),
+          tipo: 'oauth',
+        })
+        $app.save(cRec)
+        console.log(logPrefix + ' [OAUTH TOKEN] Novo token gravado em cache com sucesso.')
+      } catch (eSaveO) {
+        console.warn(logPrefix + ' [OAUTH TOKEN] Aviso ao salvar cache:', eSaveO)
+      }
+
+      return {
+        access_token: data.access_token,
+        client_email: 'gmail_oauth_user',
+        auth_type: 'oauth',
+        from_cache: false,
+      }
+    }
 
     function getAccessTokenShared(serviceAccountJson, scope, forcarRenovacao) {
       var creds =
@@ -2092,6 +2304,10 @@ cronAdd('backup_processador_fila_solicitados', '*/1 * * * *', () => {
       var folderId = $os.getenv('GOOGLE_DRIVE_FOLDER_ID') || ''
       var usuarioEmailDestino = 'renilsonfmello@gmail.com'
       var configRec = null
+      var oauthClientId = ''
+      var oauthClientSecret = ''
+      var oauthRefreshToken = ''
+      var oauthStatus = ''
 
       try {
         configRec = $app.findFirstRecordByData('config_google_drive', 'chave', 'padrao')
@@ -2101,11 +2317,21 @@ cronAdd('backup_processador_fila_solicitados', '*/1 * * * *', () => {
           if (configRec.getString('usuario_email')) {
             usuarioEmailDestino = configRec.getString('usuario_email')
           }
+          oauthClientId =
+            configRec.getString('oauth_client_id') || configRec.getString('client_id') || ''
+          oauthClientSecret =
+            configRec.getString('oauth_client_secret') || configRec.getString('client_secret') || ''
+          oauthRefreshToken = configRec.getString('oauth_refresh_token') || ''
+          oauthStatus = configRec.getString('oauth_status') || ''
         }
       } catch (_) {}
 
-      if (!serviceAccountJson) {
-        var msgSemConta = 'Conta de Serviço Google Drive não configurada no ERP.'
+      var temOAuth = Boolean(oauthRefreshToken && oauthClientId && oauthClientSecret)
+      var temSA = Boolean(serviceAccountJson)
+
+      if (!temOAuth && !temSA) {
+        var msgSemConta =
+          'Google Drive não configurado no ERP (nem OAuth nem Conta de Serviço cadastrados).'
         console.warn(logPrefix + ' ' + msgSemConta)
         backupRecord.set('drive_status', 'erro')
         backupRecord.set('drive_erro', msgSemConta)
@@ -2113,12 +2339,24 @@ cronAdd('backup_processador_fila_solicitados', '*/1 * * * *', () => {
         return { status: 'erro', erro: msgSemConta }
       }
 
-      console.log(logPrefix + ' Obtendo access token Google OAuth...')
-      var auth = getAccessTokenShared(
-        serviceAccountJson,
-        'https://www.googleapis.com/auth/drive.file',
-      )
-      console.log(logPrefix + ' Token obtido com sucesso para: ' + auth.client_email)
+      var auth = null
+      if (temOAuth) {
+        console.log(
+          logPrefix + ' Obtendo access token Google via OAuth do usuário (Gmail pessoal)...',
+        )
+        auth = getAccessTokenOAuth(oauthClientId, oauthClientSecret, oauthRefreshToken, false)
+        console.log(logPrefix + ' Token OAuth obtido com sucesso (tipo: ' + auth.auth_type + ')')
+      } else {
+        console.log(logPrefix + ' Obtendo access token Google via Conta de Serviço (fallback)...')
+        auth = getAccessTokenShared(
+          serviceAccountJson,
+          'https://www.googleapis.com/auth/drive.file',
+          false,
+        )
+        console.log(
+          logPrefix + ' Token Conta de Serviço obtido com sucesso para: ' + auth.client_email,
+        )
+      }
       var resumoRaw = backupRecord.get('resumo_colecoes') || {}
       var colecoesValidas = [
         'empresas',
@@ -3414,8 +3652,19 @@ routerAdd(
         } catch (_) {}
       }
 
+      var oauthClientId = ''
+      var oauthRefreshToken = ''
+      var oauthStatus = ''
+      if (configRec) {
+        oauthClientId = configRec.getString('oauth_client_id') || ''
+        oauthRefreshToken = configRec.getString('oauth_refresh_token') || ''
+        oauthStatus = configRec.getString('oauth_status') || ''
+      }
+
+      var isOauthConectado = Boolean(oauthRefreshToken && oauthStatus === 'conectado')
+
       var isConfigured = Boolean(
-        serviceAccountJson && (clientEmail || serviceAccountJson.length > 50),
+        isOauthConectado || (serviceAccountJson && (clientEmail || serviceAccountJson.length > 50)),
       )
 
       var emailMascarado = ''
@@ -3434,10 +3683,10 @@ routerAdd(
       return e.json(200, {
         success: true,
         drive: {
-          tipo_autenticacao: 'service_account',
+          tipo_autenticacao: isOauthConectado ? 'oauth' : 'service_account',
           configurado: isConfigured,
-          conectado: isConfigured,
-          chave_configurada: isConfigured,
+          conectado: isOauthConectado || isConfigured,
+          chave_configurada: Boolean(serviceAccountJson && clientEmail),
           client_email: clientEmail,
           client_email_mascarado: emailMascarado,
           project_id: projectId,
@@ -3445,7 +3694,14 @@ routerAdd(
           pasta_id: folderId,
           usuario_email: usuarioEmail,
           ultimo_envio: ultimoEnvio,
-          status_conexao: isConfigured ? 'conectado' : 'desconectado',
+          status_conexao: isOauthConectado
+            ? 'conectado'
+            : isConfigured
+              ? 'conectado'
+              : 'desconectado',
+          oauth_status: oauthStatus,
+          oauth_client_id: oauthClientId,
+          oauth_conectado: isOauthConectado,
         },
       })
     } catch (err) {
@@ -3595,6 +3851,533 @@ routerAdd(
 )
 
 // -------------------------------------------------------------
+// 10.1. ROTAS OAUTH 2.0 (GMAIL DO USUÁRIO)
+// GET  /backend/v1/google-drive/drive-oauth-start (ou /oauth-start)
+// GET  /backend/v1/google-drive/oauth-callback
+// POST /backend/v1/google-drive/oauth-config
+// POST /backend/v1/google-drive/oauth-desconectar
+// -------------------------------------------------------------
+
+// Suporta tanto /drive-oauth-start quanto /oauth-start
+routerAdd(
+  'GET',
+  '/backend/v1/google-drive/drive-oauth-start',
+  (e) => {
+    var authRecord = e.auth
+    if (!authRecord) {
+      return e.json(401, { error: 'Não autorizado' })
+    }
+
+    var clientId = ''
+    try {
+      var configRec = $app.findFirstRecordByData('config_google_drive', 'chave', 'padrao')
+      if (configRec) {
+        clientId = configRec.getString('oauth_client_id') || configRec.getString('client_id') || ''
+      }
+    } catch (_) {}
+
+    if (!clientId) {
+      return e.json(400, {
+        error:
+          'Client ID do OAuth não configurado. Por favor, cadastre o Client ID e Client Secret antes de conectar.',
+      })
+    }
+
+    var host = ''
+    try {
+      if (e && e.request) {
+        host = e.request.header.get('x-forwarded-host') || e.request.header.get('host') || ''
+      }
+    } catch (_) {}
+
+    var proto = 'https'
+    try {
+      if (e && e.request) {
+        var xfp = e.request.header.get('x-forwarded-proto')
+        if (xfp) proto = xfp
+      }
+    } catch (_) {}
+
+    var redirectUri = ''
+    if (host) {
+      redirectUri = proto + '://' + host + '/backend/v1/google-drive/oauth-callback'
+    } else {
+      var envSiteUrl = $os.getenv('PB_INSTANCE_URL') || $os.getenv('SITE_URL') || ''
+      if (envSiteUrl) {
+        redirectUri = envSiteUrl.replace(/\/+$/, '') + '/backend/v1/google-drive/oauth-callback'
+      } else {
+        redirectUri =
+          'https://erp-empresarial-completo-575bb.shrd00.internal.goskip.dev/backend/v1/google-drive/oauth-callback'
+      }
+    }
+
+    var scope = 'https://www.googleapis.com/auth/drive.file'
+
+    var consentUrl =
+      'https://accounts.google.com/o/oauth2/v2/auth' +
+      '?client_id=' +
+      encodeURIComponent(clientId) +
+      '&redirect_uri=' +
+      encodeURIComponent(redirectUri) +
+      '&response_type=code' +
+      '&scope=' +
+      encodeURIComponent(scope) +
+      '&access_type=offline' +
+      '&prompt=consent'
+
+    return e.json(200, {
+      success: true,
+      url: consentUrl,
+      auth_url: consentUrl,
+      redirect_uri: redirectUri,
+    })
+  },
+  $apis.requireAuth(),
+)
+
+routerAdd(
+  'GET',
+  '/backend/v1/google-drive/oauth-start',
+  (e) => {
+    var authRecord = e.auth
+    if (!authRecord) {
+      return e.json(401, { error: 'Não autorizado' })
+    }
+
+    var clientId = ''
+    try {
+      var configRec = $app.findFirstRecordByData('config_google_drive', 'chave', 'padrao')
+      if (configRec) {
+        clientId = configRec.getString('oauth_client_id') || configRec.getString('client_id') || ''
+      }
+    } catch (_) {}
+
+    if (!clientId) {
+      return e.json(400, {
+        error:
+          'Client ID do OAuth não configurado. Por favor, cadastre o Client ID e Client Secret antes de conectar.',
+      })
+    }
+
+    var host = ''
+    try {
+      if (e && e.request) {
+        host = e.request.header.get('x-forwarded-host') || e.request.header.get('host') || ''
+      }
+    } catch (_) {}
+
+    var proto = 'https'
+    try {
+      if (e && e.request) {
+        var xfp = e.request.header.get('x-forwarded-proto')
+        if (xfp) proto = xfp
+      }
+    } catch (_) {}
+
+    var redirectUri = ''
+    if (host) {
+      redirectUri = proto + '://' + host + '/backend/v1/google-drive/oauth-callback'
+    } else {
+      var envSiteUrl = $os.getenv('PB_INSTANCE_URL') || $os.getenv('SITE_URL') || ''
+      if (envSiteUrl) {
+        redirectUri = envSiteUrl.replace(/\/+$/, '') + '/backend/v1/google-drive/oauth-callback'
+      } else {
+        redirectUri =
+          'https://erp-empresarial-completo-575bb.shrd00.internal.goskip.dev/backend/v1/google-drive/oauth-callback'
+      }
+    }
+
+    var scope = 'https://www.googleapis.com/auth/drive.file'
+
+    var consentUrl =
+      'https://accounts.google.com/o/oauth2/v2/auth' +
+      '?client_id=' +
+      encodeURIComponent(clientId) +
+      '&redirect_uri=' +
+      encodeURIComponent(redirectUri) +
+      '&response_type=code' +
+      '&scope=' +
+      encodeURIComponent(scope) +
+      '&access_type=offline' +
+      '&prompt=consent'
+
+    return e.json(200, {
+      success: true,
+      url: consentUrl,
+      auth_url: consentUrl,
+      redirect_uri: redirectUri,
+    })
+  },
+  $apis.requireAuth(),
+)
+
+// POST /backend/v1/google-drive/oauth-config
+routerAdd(
+  'POST',
+  '/backend/v1/google-drive/oauth-config',
+  (e) => {
+    var authRecord = e.auth
+    if (!authRecord) {
+      return e.json(401, { error: 'Não autorizado' })
+    }
+
+    var body = e.requestInfo().body || {}
+    var clientId = (body.client_id || body.oauth_client_id || '').trim()
+    var clientSecret = (body.client_secret || body.oauth_client_secret || '').trim()
+
+    if (!clientId) {
+      return e.json(400, { error: 'Client ID é obrigatório' })
+    }
+    if (!clientSecret) {
+      return e.json(400, { error: 'Client Secret é obrigatório' })
+    }
+
+    try {
+      var configRec = null
+      try {
+        configRec = $app.findFirstRecordByData('config_google_drive', 'chave', 'padrao')
+      } catch (_) {
+        var configCol = $app.findCollectionByNameOrId('config_google_drive')
+        configRec = new Record(configCol)
+        configRec.set('chave', 'padrao')
+      }
+
+      configRec.set('oauth_client_id', clientId)
+      configRec.set('oauth_client_secret', clientSecret)
+      configRec.set('client_id', clientId)
+      configRec.set('client_secret', clientSecret)
+      configRec.set('ativo', true)
+      $app.save(configRec)
+
+      var host = ''
+      try {
+        if (e && e.request) {
+          host = e.request.header.get('x-forwarded-host') || e.request.header.get('host') || ''
+        }
+      } catch (_) {}
+
+      var proto = 'https'
+      try {
+        if (e && e.request) {
+          var xfp = e.request.header.get('x-forwarded-proto')
+          if (xfp) proto = xfp
+        }
+      } catch (_) {}
+
+      var redirectUri = ''
+      if (host) {
+        redirectUri = proto + '://' + host + '/backend/v1/google-drive/oauth-callback'
+      } else {
+        var envSiteUrl = $os.getenv('PB_INSTANCE_URL') || $os.getenv('SITE_URL') || ''
+        if (envSiteUrl) {
+          redirectUri = envSiteUrl.replace(/\/+$/, '') + '/backend/v1/google-drive/oauth-callback'
+        } else {
+          redirectUri =
+            'https://erp-empresarial-completo-575bb.shrd00.internal.goskip.dev/backend/v1/google-drive/oauth-callback'
+        }
+      }
+
+      return e.json(200, {
+        success: true,
+        message: 'Credenciais OAuth salvas com sucesso!',
+        client_id: clientId,
+        redirect_uri: redirectUri,
+      })
+    } catch (err) {
+      return e.json(500, {
+        error: 'Erro ao salvar configurações OAuth: ' + (err?.message || err),
+      })
+    }
+  },
+  $apis.requireAuth(),
+)
+
+// GET /backend/v1/google-drive/oauth-callback
+routerAdd('GET', '/backend/v1/google-drive/oauth-callback', (e) => {
+  var code = ''
+  try {
+    code = e.request.url.query().get('code') || ''
+  } catch (_) {}
+
+  var errorQuery = ''
+  try {
+    errorQuery = e.request.url.query().get('error') || ''
+  } catch (_) {}
+
+  function renderHtml(titulo, mensagem, isSucesso, detalhes) {
+    var cor = isSucesso ? '#10b981' : '#ef4444'
+    var icone = isSucesso ? '✓' : '✗'
+    var html =
+      '<!DOCTYPE html>' +
+      '<html lang="pt-BR">' +
+      '<head>' +
+      '<meta charset="utf-8">' +
+      '<meta name="viewport" content="width=device-width, initial-scale=1.0">' +
+      '<title>' +
+      titulo +
+      '</title>' +
+      '<style>' +
+      'body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; background: #0f172a; color: #f8fafc; display: flex; align-items: center; justify-content: center; min-height: 100vh; margin: 0; padding: 20px; }' +
+      '.card { background: #1e293b; border: 1px solid #334155; border-radius: 12px; padding: 32px; max-width: 480px; width: 100%; text-align: center; box-shadow: 0 10px 25px rgba(0,0,0,0.5); }' +
+      '.icon { width: 56px; height: 56px; border-radius: 50%; background: ' +
+      cor +
+      '20; color: ' +
+      cor +
+      '; display: inline-flex; align-items: center; justify-content: center; font-size: 28px; font-weight: bold; margin-bottom: 20px; }' +
+      'h1 { font-size: 20px; font-weight: 600; margin: 0 0 12px 0; color: #ffffff; }' +
+      'p { font-size: 14px; line-height: 1.5; color: #94a3b8; margin: 0 0 24px 0; }' +
+      '.detalhe { font-size: 12px; font-family: monospace; background: #0f172a; padding: 10px; border-radius: 6px; color: #fca5a5; word-break: break-all; margin-bottom: 20px; }' +
+      '.btn { display: inline-block; background: #2563eb; color: white; padding: 10px 24px; border-radius: 6px; text-decoration: none; font-size: 14px; font-weight: 500; cursor: pointer; border: none; }' +
+      '.btn:hover { background: #1d4ed8; }' +
+      '</style>' +
+      '</head>' +
+      '<body>' +
+      '<div class="card">' +
+      '<div class="icon">' +
+      icone +
+      '</div>' +
+      '<h1>' +
+      titulo +
+      '</h1>' +
+      '<p>' +
+      mensagem +
+      '</p>' +
+      (detalhes ? '<div class="detalhe">' + detalhes + '</div>' : '') +
+      '<button class="btn" onclick="window.close(); if(!window.closed){ window.location.href=\'/\'; }">Fechar Janela</button>' +
+      '<script>' +
+      'try { if (window.opener) { window.opener.postMessage({ type: "GOOGLE_DRIVE_OAUTH_SUCCESS" }, "*"); } } catch(e){} ' +
+      'setTimeout(function(){ try { window.close(); } catch(e){} }, 4000);' +
+      '</script>' +
+      '</div>' +
+      '</body>' +
+      '</html>'
+    return e.html(isSucesso ? 200 : 400, html)
+  }
+
+  if (errorQuery) {
+    return renderHtml(
+      'Autorização Cancelada',
+      'O Google retornou um erro ou você cancelou o consentimento.',
+      false,
+      'Erro retornado: ' + errorQuery,
+    )
+  }
+
+  if (!code) {
+    return renderHtml(
+      'Código de Autorização Ausente',
+      'Nenhum código retornado pelo Google. Tente iniciar a conexão novamente no ERP.',
+      false,
+      'Parâmetro code vazio.',
+    )
+  }
+
+  var configRec = null
+  try {
+    configRec = $app.findFirstRecordByData('config_google_drive', 'chave', 'padrao')
+  } catch (_) {}
+
+  var clientId = configRec ? configRec.getString('oauth_client_id') : ''
+  var clientSecret = configRec ? configRec.getString('oauth_client_secret') : ''
+
+  if (!clientId || !clientSecret) {
+    return renderHtml(
+      'Configuração Ausente',
+      'Client ID ou Client Secret não foram localizados na configuração do ERP.',
+      false,
+      'Configure o Client ID e Secret antes de autorizar.',
+    )
+  }
+
+  var host = ''
+  try {
+    if (e && e.request) {
+      host = e.request.header.get('x-forwarded-host') || e.request.header.get('host') || ''
+    }
+  } catch (_) {}
+
+  var proto = 'https'
+  try {
+    if (e && e.request) {
+      var xfp = e.request.header.get('x-forwarded-proto')
+      if (xfp) proto = xfp
+    }
+  } catch (_) {}
+
+  var redirectUri = ''
+  if (host) {
+    redirectUri = proto + '://' + host + '/backend/v1/google-drive/oauth-callback'
+  } else {
+    var envSiteUrl = $os.getenv('PB_INSTANCE_URL') || $os.getenv('SITE_URL') || ''
+    if (envSiteUrl) {
+      redirectUri = envSiteUrl.replace(/\/+$/, '') + '/backend/v1/google-drive/oauth-callback'
+    } else {
+      redirectUri =
+        'https://erp-empresarial-completo-575bb.shrd00.internal.goskip.dev/backend/v1/google-drive/oauth-callback'
+    }
+  }
+
+  try {
+    var tokenBody =
+      'code=' +
+      encodeURIComponent(code) +
+      '&client_id=' +
+      encodeURIComponent(clientId) +
+      '&client_secret=' +
+      encodeURIComponent(clientSecret) +
+      '&redirect_uri=' +
+      encodeURIComponent(redirectUri) +
+      '&grant_type=authorization_code'
+
+    var tokenRes = $http.send({
+      url: 'https://oauth2.googleapis.com/token',
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: tokenBody,
+      timeout: 25,
+    })
+
+    if (tokenRes.statusCode !== 200) {
+      console.error(
+        '[OAUTH_CALLBACK] Falha na troca do code por token: HTTP ' +
+          tokenRes.statusCode +
+          ': ' +
+          (tokenRes.raw || ''),
+      )
+      return renderHtml(
+        'Falha na Troca de Credenciais',
+        'O Google recusou a troca do código de autorização.',
+        false,
+        'HTTP ' + tokenRes.statusCode + ': ' + (tokenRes.raw || '').slice(0, 300),
+      )
+    }
+
+    var tokenData = tokenRes.json || JSON.parse(tokenRes.raw || '{}')
+    var refreshToken = tokenData.refresh_token || ''
+    var accessToken = tokenData.access_token || ''
+    var expiresIn = tokenData.expires_in || 3600
+
+    if (!refreshToken && configRec.getString('oauth_refresh_token')) {
+      // O Google não reenvia refresh_token se o usuário já havia consentido antes
+      refreshToken = configRec.getString('oauth_refresh_token')
+    }
+
+    if (!refreshToken) {
+      return renderHtml(
+        'Aviso de Refresh Token',
+        'Conta autenticada, mas o Google não devolveu um novo Refresh Token. Vá nas permissões de sua Conta Google, revogue o acesso ao aplicativo e conecte novamente com prompt=consent.',
+        false,
+        'refresh_token ausente na resposta do Google OAuth',
+      )
+    }
+
+    configRec.set('oauth_refresh_token', refreshToken)
+    configRec.set('oauth_status', 'conectado')
+    configRec.set('auth_type', 'oauth')
+    configRec.set('ultimo_status', 'conectado')
+    $app.save(configRec)
+
+    // Atualiza cache persistente imediatamente
+    if (accessToken) {
+      var expiryMsCalculado = Date.now() + expiresIn * 1000
+      try {
+        var cRec = null
+        try {
+          cRec = $app.findFirstRecordByData('cache_tokens_drive', 'chave', 'google_drive_oauth')
+        } catch (_) {
+          var cacheTokensCol = $app.findCollectionByNameOrId('cache_tokens_drive')
+          cRec = new Record(cacheTokensCol)
+          cRec.set('chave', 'google_drive_oauth')
+        }
+        cRec.set('access_token', accessToken)
+        cRec.set('expiry_ms', expiryMsCalculado)
+        cRec.set('client_email', 'oauth_user')
+        cRec.set('detalhes', {
+          cached_token: accessToken,
+          cached_expiry_ms: expiryMsCalculado,
+          cached_created_at: new Date().toISOString(),
+          tipo: 'oauth',
+        })
+        $app.save(cRec)
+      } catch (eCache) {
+        console.warn('[OAUTH_CALLBACK] Aviso ao gravar cache token:', eCache)
+      }
+    }
+
+    // Resetar backup jpc5w1b0o13nvim (e qualquer backup recente travado em erro) para a fila pegar de imediato com o novo OAuth
+    try {
+      $app
+        .db()
+        .newQuery(
+          "UPDATE backups_sistema SET drive_status = 'solicitado', drive_tentativas = 0, drive_offset = 0, drive_session_url = '', drive_erro = '' WHERE id = 'jpc5w1b0o13nvim' OR (drive_status = 'erro' AND drive_erro LIKE '%quota%')",
+        )
+        .execute()
+      console.log(
+        '[OAUTH_CALLBACK] Backup jpc5w1b0o13nvim recolocado em solicitado com sucesso após conexão OAuth!',
+      )
+    } catch (_) {}
+
+    return renderHtml(
+      'Conta Google Conectada com Sucesso!',
+      'Sua conta Gmail foi vinculada com sucesso ao ERP Pedreira Cordeiro. Os backups automáticos agora serão gravados diretamente no seu Google Drive com cota total.',
+      true,
+      '',
+    )
+  } catch (errToken) {
+    console.error('[OAUTH_CALLBACK] Exceção na troca de token:', errToken)
+    return renderHtml(
+      'Erro Inesperado na Conexão',
+      'Ocorreu uma exceção ao processar a resposta do Google.',
+      false,
+      String(errToken?.message || errToken),
+    )
+  }
+})
+
+// POST /backend/v1/google-drive/oauth-desconectar
+routerAdd(
+  'POST',
+  '/backend/v1/google-drive/oauth-desconectar',
+  (e) => {
+    var authRecord = e.auth
+    if (!authRecord) {
+      return e.json(401, { error: 'Não autorizado' })
+    }
+
+    try {
+      var configRec = $app.findFirstRecordByData('config_google_drive', 'chave', 'padrao')
+      if (configRec) {
+        configRec.set('oauth_refresh_token', '')
+        configRec.set('oauth_status', '')
+        if (configRec.getString('auth_type') === 'oauth') {
+          configRec.set('auth_type', 'none')
+        }
+        $app.save(configRec)
+      }
+
+      // Limpar cache de token oauth
+      try {
+        var cRec = $app.findFirstRecordByData('cache_tokens_drive', 'chave', 'google_drive_oauth')
+        if (cRec) {
+          cRec.set('access_token', '')
+          cRec.set('expiry_ms', 0)
+          cRec.set('detalhes', {})
+          $app.save(cRec)
+        }
+      } catch (_) {}
+
+      return e.json(200, {
+        success: true,
+        message: 'Conta Google (OAuth) desconectada com sucesso!',
+      })
+    } catch (err) {
+      return e.json(500, { error: 'Erro ao desconectar OAuth: ' + (err?.message || err) })
+    }
+  },
+  $apis.requireAuth(),
+)
+
+// -------------------------------------------------------------
 // 11. ENDPOINT: ENVIAR MANUALMENTE UM BACKUP ESPECÍFICO AO GOOGLE DRIVE VIA CONTA DE SERVIÇO
 // OPTIONS & POST /backend/v1/backups/{id}/enviar-drive
 // -------------------------------------------------------------
@@ -3646,6 +4429,19 @@ routerAdd(
         cReset.set('expiry_ms', 0)
         cReset.set('detalhes', {})
         $app.save(cReset)
+      }
+    } catch (_) {}
+    try {
+      var cOAuthReset = $app.findFirstRecordByData(
+        'cache_tokens_drive',
+        'chave',
+        'google_drive_oauth',
+      )
+      if (cOAuthReset) {
+        cOAuthReset.set('access_token', '')
+        cOAuthReset.set('expiry_ms', 0)
+        cOAuthReset.set('detalhes', {})
+        $app.save(cOAuthReset)
       }
     } catch (_) {}
     try {

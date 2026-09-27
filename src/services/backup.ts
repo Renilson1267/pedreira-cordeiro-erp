@@ -325,7 +325,13 @@ export const backupService = {
   /**
    * Solicita URL de autorização OAuth do Google Drive
    */
-  async iniciarOAuthDrive(): Promise<{ success: boolean; auth_url?: string; error?: string }> {
+  async iniciarOAuthDrive(): Promise<{
+    success: boolean
+    url?: string
+    auth_url?: string
+    redirect_uri?: string
+    error?: string
+  }> {
     return await pb.send('/backend/v1/google-drive/drive-oauth-start', {
       method: 'GET',
     })

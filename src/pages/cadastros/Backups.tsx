@@ -100,6 +100,16 @@ export function Backups() {
   const [desconectando, setDesconectando] = useState(false)
   const [emailCopiado, setEmailCopiado] = useState(false)
 
+  // Estado OAuth Google (Gmail Pessoal)
+  const [modalOAuthAberta, setModalOAuthAberta] = useState(false)
+  const [oauthClientIdInput, setOauthClientIdInput] = useState('')
+  const [oauthClientSecretInput, setOauthClientSecretInput] = useState('')
+  const [salvandoOAuth, setSalvandoOAuth] = useState(false)
+  const [iniciandoOAuth, setIniciandoOAuth] = useState(false)
+  const [desconectandoOAuth, setDesconectandoOAuth] = useState(false)
+  const [redirectUriExibida, setRedirectUriExibida] = useState('')
+  const [uriCopiada, setUriCopiada] = useState(false)
+
   const carregarDados = useCallback(async () => {
     try {
       setLoading(true)
@@ -165,6 +175,157 @@ export function Backups() {
   useEffect(() => {
     carregarDados()
   }, [carregarDados])
+
+  // Atualizar redirect URI esperada baseada na origem atual do app
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const origin = window.location.origin
+      setRedirectUriExibida(`${origin}/backend/v1/google-drive/oauth-callback`)
+    }
+  }, [])
+
+  // Ouvinte de mensagem da janela de popup do OAuth do Google
+  useEffect(() => {
+    const handleMessage = (event: MessageEvent) => {
+      if (event.data && event.data.type === 'GOOGLE_DRIVE_OAUTH_SUCCESS') {
+        toast({
+          title: 'Conta Google conectada!',
+          description: 'OAuth concluído com sucesso. O Google Drive está pronto para backups.',
+        })
+        carregarDados()
+      }
+    }
+    window.addEventListener('message', handleMessage)
+    return () => window.removeEventListener('message', handleMessage)
+  }, [carregarDados, toast])
+
+  const copiarRedirectUri = () => {
+    if (!redirectUriExibida) return
+    try {
+      if (navigator?.clipboard?.writeText) {
+        navigator.clipboard.writeText(redirectUriExibida)
+      } else {
+        const textArea = document.createElement('textarea')
+        textArea.value = redirectUriExibida
+        document.body.appendChild(textArea)
+        textArea.select()
+        document.execCommand('copy')
+        document.body.removeChild(textArea)
+      }
+      setUriCopiada(true)
+      toast({
+        title: 'URI copiada!',
+        description:
+          'Cole esta URI em "URIs de redirecionamento autorizados" no Google Cloud Console.',
+      })
+      setTimeout(() => setUriCopiada(false), 2500)
+    } catch {
+      toast({
+        title: 'URI de redirecionamento',
+        description: redirectUriExibida,
+      })
+    }
+  }
+
+  const salvarCredenciaisOAuth = async () => {
+    const cid = oauthClientIdInput.trim()
+    const csec = oauthClientSecretInput.trim()
+    if (!cid || !csec) {
+      toast({
+        title: 'Campos obrigatórios',
+        description: 'Preencha o Client ID e o Client Secret para salvar.',
+        variant: 'destructive',
+      })
+      return
+    }
+
+    try {
+      setSalvandoOAuth(true)
+      const res = await backupService.salvarConfiguracoesOAuth({
+        client_id: cid,
+        client_secret: csec,
+      })
+      toast({
+        title: 'Credenciais salvas!',
+        description: res.message || 'Client ID e Secret configurados com sucesso.',
+      })
+      setModalOAuthAberta(false)
+      await carregarDados()
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Falha ao salvar credenciais OAuth.'
+      toast({
+        title: 'Erro ao salvar',
+        description: msg,
+        variant: 'destructive',
+      })
+    } finally {
+      setSalvandoOAuth(false)
+    }
+  }
+
+  const conectarComGoogleOAuth = async () => {
+    try {
+      setIniciandoOAuth(true)
+      const res = await backupService.iniciarOAuthDrive()
+      const targetUrl = res.url || res.auth_url
+      if (!targetUrl) {
+        throw new Error(res.error || 'URL de autorização não retornada pelo servidor.')
+      }
+
+      // Abre em janela popup ou na mesma aba se popup for bloqueado
+      const w = 550
+      const h = 650
+      const left = window.screen.width / 2 - w / 2
+      const top = window.screen.height / 2 - h / 2
+      const popup = window.open(
+        targetUrl,
+        'google_oauth_drive',
+        `toolbar=no, location=no, directories=no, status=no, menubar=no, scrollbars=yes, resizable=yes, copyhistory=no, width=${w}, height=${h}, top=${top}, left=${left}`,
+      )
+
+      if (!popup || popup.closed || typeof popup.closed === 'undefined') {
+        window.location.href = targetUrl
+      } else {
+        toast({
+          title: 'Janela de consentimento aberta',
+          description: 'Faça login com seu Gmail e conceda permissão para a gravação dos backups.',
+        })
+      }
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Falha ao iniciar conexão com Google.'
+      toast({
+        title: 'Erro na conexão Google',
+        description: msg,
+        variant: 'destructive',
+      })
+    } finally {
+      setIniciandoOAuth(false)
+    }
+  }
+
+  const desconectarOAuth = async () => {
+    if (!confirm('Deseja realmente desconectar sua conta Google Gmail pessoal dos backups?')) {
+      return
+    }
+    try {
+      setDesconectandoOAuth(true)
+      await backupService.desconectarOAuthDrive()
+      toast({
+        title: 'Conta desconectada',
+        description: 'A autorização OAuth com o Google Drive foi removida.',
+      })
+      await carregarDados()
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Falha ao desconectar conta Google.'
+      toast({
+        title: 'Erro ao desconectar',
+        description: msg,
+        variant: 'destructive',
+      })
+    } finally {
+      setDesconectandoOAuth(false)
+    }
+  }
 
   const copiarEmailContaServico = () => {
     if (!driveStatus?.client_email) return
@@ -660,19 +821,19 @@ export function Backups() {
         </div>
       </div>
 
-      {/* Cartão de Integração Google Drive via Conta de Serviço */}
-      <Card className="border border-border/80 shadow-sm overflow-hidden bg-gradient-to-br from-card via-card to-muted/20">
-        <div className="bg-primary/5 border-b border-primary/10 px-6 py-4 flex flex-col md:flex-row md:items-center justify-between gap-4">
+      {/* Card 1: Conectar sua Conta Google Pessoal via OAuth (Recomendado) */}
+      <Card className="border-2 border-primary/20 shadow-sm overflow-hidden bg-gradient-to-br from-card via-card to-primary/5">
+        <div className="bg-primary/10 border-b border-primary/20 px-6 py-4 flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div className="flex items-center gap-3">
-            <div className="h-10 w-10 rounded-lg bg-primary/10 text-primary flex items-center justify-center shrink-0">
+            <div className="h-10 w-10 rounded-lg bg-primary text-primary-foreground flex items-center justify-center shrink-0 shadow-sm">
               <Cloud className="h-6 w-6" />
             </div>
             <div>
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 flex-wrap">
                 <h2 className="text-base font-semibold text-foreground">
-                  Integração Google Drive (Conta de Serviço)
+                  Conectar sua conta Google Drive (Recomendado)
                 </h2>
-                {driveStatus?.configurado ? (
+                {driveStatus?.oauth_status === 'conectado' ? (
                   <Badge className="bg-emerald-500 hover:bg-emerald-600 text-white text-xs gap-1">
                     <CheckCircle2 className="h-3.5 w-3.5" />
                     Conta Conectada
@@ -682,13 +843,274 @@ export function Backups() {
                     variant="outline"
                     className="text-amber-600 border-amber-500/40 bg-amber-500/10 text-xs"
                   >
-                    Não configurada
+                    OAuth Pendente
+                  </Badge>
+                )}
+                <Badge
+                  variant="secondary"
+                  className="text-[10px] uppercase font-bold tracking-wider"
+                >
+                  Cota Total do seu Gmail
+                </Badge>
+              </div>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                Grava os backups automaticamente no seu próprio Google Drive pessoal, com cota
+                completa e sem bloqueio de Service Account.
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2 flex-wrap">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                if (driveStatus?.oauth_client_id) {
+                  setOauthClientIdInput(driveStatus.oauth_client_id)
+                }
+                setModalOAuthAberta(true)
+              }}
+              className="gap-1.5"
+            >
+              <KeyRound className="h-4 w-4 text-primary" />
+              {driveStatus?.oauth_client_id ? 'Editar Client ID / Secret' : 'Configurar Client ID'}
+            </Button>
+
+            {driveStatus?.oauth_status === 'conectado' ? (
+              isAdmin && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={desconectarOAuth}
+                  disabled={desconectandoOAuth}
+                  className="gap-1 text-destructive hover:text-destructive hover:bg-destructive/10"
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                  {desconectandoOAuth ? 'Desconectando...' : 'Desconectar'}
+                </Button>
+              )
+            ) : (
+              <Button
+                size="sm"
+                onClick={conectarComGoogleOAuth}
+                disabled={iniciandoOAuth}
+                className="gap-2 bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm"
+              >
+                {iniciandoOAuth ? (
+                  <RefreshCw className="h-4 w-4 animate-spin" />
+                ) : (
+                  <ExternalLink className="h-4 w-4" />
+                )}
+                Conectar com Google
+              </Button>
+            )}
+          </div>
+        </div>
+
+        <CardContent className="p-6 space-y-4">
+          {driveStatus?.oauth_status === 'conectado' ? (
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 bg-muted/40 p-4 rounded-lg border border-emerald-500/30">
+              <div className="space-y-1">
+                <div className="text-xs font-medium text-muted-foreground uppercase flex items-center gap-1.5">
+                  <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" />
+                  Status da Autenticação
+                </div>
+                <div className="text-sm font-semibold text-emerald-600 flex items-center gap-1.5">
+                  <span>Autorizado via OAuth 2.0</span>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Refresh token ativo. Os envios de fatias (256KB) renovam tokens com cota pessoal.
+                </p>
+              </div>
+
+              <div className="space-y-1">
+                <div className="text-xs font-medium text-muted-foreground uppercase flex items-center gap-1.5">
+                  <ShieldCheck className="h-3.5 w-3.5 text-primary" />
+                  Client ID Configurado
+                </div>
+                <div
+                  className="text-xs font-mono text-foreground truncate"
+                  title={driveStatus.oauth_client_id || ''}
+                >
+                  {driveStatus.oauth_client_id
+                    ? `${driveStatus.oauth_client_id.slice(0, 18)}...apps.googleusercontent.com`
+                    : 'Configurado ✓'}
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Permissão restrita aos arquivos gerados pelo ERP (
+                  <code className="text-[10px]">drive.file</code>).
+                </p>
+              </div>
+
+              <div className="space-y-1">
+                <div className="text-xs font-medium text-muted-foreground uppercase flex items-center gap-1.5">
+                  <Clock className="h-3.5 w-3.5 text-primary" />
+                  Último Envio ao Drive
+                </div>
+                <div className="text-sm font-medium text-foreground">
+                  {driveStatus.ultimo_envio
+                    ? formatDateTime(driveStatus.ultimo_envio)
+                    : 'Aguardando primeiro envio'}
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Envio automático semanal ou manual direto da tabela abaixo.
+                </p>
+              </div>
+            </div>
+          ) : (
+            <div className="bg-amber-500/10 border border-amber-500/30 rounded-lg p-4 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+              <div className="space-y-1">
+                <div className="flex items-center gap-2">
+                  <AlertTriangle className="h-4 w-4 text-amber-600 shrink-0" />
+                  <h3 className="text-sm font-semibold text-foreground">
+                    Passo 1: Configure seu Client ID e conecte sua conta Google
+                  </h3>
+                </div>
+                <p className="text-xs text-muted-foreground leading-relaxed">
+                  Para o Google permitir a conexão com seu Gmail, crie um{' '}
+                  <strong>ID do cliente OAuth (Aplicativo da Web)</strong> no Google Cloud Console e
+                  informe a URI de redirecionamento autorizada exibida abaixo.
+                </p>
+                <div className="pt-2 flex items-center gap-2 flex-wrap">
+                  <span className="text-[11px] font-semibold text-foreground">
+                    URI de redirecionamento exata:
+                  </span>
+                  <code className="bg-background px-2 py-1 rounded text-xs font-mono border text-primary font-medium select-all">
+                    {redirectUriExibida ||
+                      'https://erp-empresarial-completo-575bb.shrd00.internal.goskip.dev/backend/v1/google-drive/oauth-callback'}
+                  </code>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={copiarRedirectUri}
+                    className="h-7 text-xs gap-1"
+                  >
+                    {uriCopiada ? (
+                      <Check className="h-3 w-3 text-emerald-600" />
+                    ) : (
+                      <Copy className="h-3 w-3" />
+                    )}
+                    {uriCopiada ? 'Copiada!' : 'Copiar URI'}
+                  </Button>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2 shrink-0">
+                <Button
+                  size="sm"
+                  onClick={() => setModalOAuthAberta(true)}
+                  variant="outline"
+                  className="gap-1.5"
+                >
+                  <KeyRound className="h-4 w-4 text-primary" />
+                  Cadastrar Chaves
+                </Button>
+                <Button
+                  size="sm"
+                  onClick={conectarComGoogleOAuth}
+                  disabled={iniciandoOAuth}
+                  className="gap-2 bg-emerald-600 hover:bg-emerald-700 text-white"
+                >
+                  {iniciandoOAuth ? (
+                    <RefreshCw className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <ExternalLink className="h-4 w-4" />
+                  )}
+                  Conectar com Google
+                </Button>
+              </div>
+            </div>
+          )}
+
+          {/* Instruções passo a passo do OAuth em acordeão recolhível */}
+          <Accordion
+            type="single"
+            collapsible
+            className="w-full border rounded-lg px-4 bg-muted/20"
+          >
+            <AccordionItem value="passo-oauth" className="border-none">
+              <AccordionTrigger className="text-xs font-medium text-muted-foreground hover:text-foreground py-3">
+                <span className="flex items-center gap-2">
+                  <HelpCircle className="h-4 w-4 text-primary" />
+                  Como criar o OAuth Client ID no Google Cloud Console (Passo a passo rápido)
+                </span>
+              </AccordionTrigger>
+              <AccordionContent className="text-xs text-muted-foreground space-y-3 pt-1 pb-4">
+                <ol className="list-decimal pl-5 space-y-2 text-foreground/90">
+                  <li>
+                    Acesse o{' '}
+                    <a
+                      href="https://console.cloud.google.com/apis/credentials"
+                      target="_blank"
+                      rel="noreferrer"
+                      className="text-primary underline font-medium inline-flex items-center gap-0.5"
+                    >
+                      Google Cloud Console &rarr; Credenciais
+                      <ExternalLink className="h-3 w-3" />
+                    </a>
+                    .
+                  </li>
+                  <li>
+                    Se for a primeira vez, configure a <strong>Tela de consentimento OAuth</strong>{' '}
+                    (Tipo de usuário: Externo, adicione seu email como usuário de teste).
+                  </li>
+                  <li>
+                    Clique em <strong>+ Criar credenciais</strong> &rarr; selecione{' '}
+                    <strong>ID do cliente OAuth</strong>.
+                  </li>
+                  <li>
+                    Em <em>Tipo de aplicativo</em>, selecione <strong>Aplicativo da Web</strong>.
+                  </li>
+                  <li>
+                    Em <strong>URIs de redirecionamento autorizados</strong>, clique em{' '}
+                    <strong>+ Adicionar URI</strong> e cole exatamente:
+                    <div className="mt-1">
+                      <code className="bg-background px-2 py-1 rounded text-[11px] font-mono border text-primary block w-fit select-all">
+                        {redirectUriExibida ||
+                          'https://erp-empresarial-completo-575bb.shrd00.internal.goskip.dev/backend/v1/google-drive/oauth-callback'}
+                      </code>
+                    </div>
+                  </li>
+                  <li>
+                    Clique em <strong>Criar</strong>, copie o <strong>Client ID</strong> e o{' '}
+                    <strong>Client Secret</strong> e cole no botão <strong>Cadastrar Chaves</strong>{' '}
+                    acima.
+                  </li>
+                  <li>
+                    Clique em <strong>Conectar com Google</strong> para autorizar o acesso à sua
+                    conta pessoal do Google Drive. Pronto!
+                  </li>
+                </ol>
+              </AccordionContent>
+            </AccordionItem>
+          </Accordion>
+        </CardContent>
+      </Card>
+
+      {/* Cartão de Integração Google Drive via Conta de Serviço (Método Alternativo / Fallback) */}
+      <Card className="border border-border/80 shadow-sm overflow-hidden bg-gradient-to-br from-card via-card to-muted/20">
+        <div className="bg-muted/40 border-b border-border/60 px-6 py-4 flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <div className="h-9 w-9 rounded-lg bg-muted text-muted-foreground flex items-center justify-center shrink-0">
+              <KeyRound className="h-5 w-5" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <h2 className="text-sm font-semibold text-foreground">
+                  Método Alternativo: Conta de Serviço (Service Account)
+                </h2>
+                {driveStatus?.chave_configurada ? (
+                  <Badge variant="outline" className="text-xs text-muted-foreground">
+                    Configurada (Fallback)
+                  </Badge>
+                ) : (
+                  <Badge variant="outline" className="text-xs text-muted-foreground/60">
+                    Opcional
                   </Badge>
                 )}
               </div>
               <p className="text-xs text-muted-foreground mt-0.5">
-                Envio direto via API do Google Cloud usando chave técnica de serviço (sem expiração
-                de token).
+                Utilizado como plano B caso o OAuth do Gmail não esteja conectado.
               </p>
             </div>
           </div>
@@ -704,10 +1126,10 @@ export function Backups() {
               className="gap-2"
             >
               <KeyRound className="h-4 w-4 text-primary" />
-              {driveStatus?.configurado ? 'Alterar Credenciais' : 'Configurar Chave Google'}
+              {driveStatus?.chave_configurada ? 'Alterar Credenciais SA' : 'Configurar Chave JSON'}
             </Button>
 
-            {driveStatus?.configurado && isAdmin && (
+            {driveStatus?.chave_configurada && isAdmin && (
               <Button
                 variant="ghost"
                 size="sm"
@@ -716,7 +1138,7 @@ export function Backups() {
                 className="gap-1 text-destructive hover:text-destructive hover:bg-destructive/10"
               >
                 <Trash2 className="h-3.5 w-3.5" />
-                Desconectar
+                Desconectar SA
               </Button>
             )}
           </div>
@@ -935,7 +1357,11 @@ export function Backups() {
               {estatisticas.noDrive}
             </div>
             <p className="text-xs text-muted-foreground mt-1">
-              {driveStatus?.configurado ? 'Conta de serviço ativa' : 'Drive pendente'}
+              {driveStatus?.oauth_status === 'conectado'
+                ? 'OAuth Gmail conectado'
+                : driveStatus?.configurado
+                  ? 'Drive ativo'
+                  : 'Drive pendente'}
             </p>
           </CardContent>
         </Card>
@@ -1330,6 +1756,109 @@ export function Backups() {
           )}
         </CardContent>
       </Card>
+
+      {/* Modal de Configuração do OAuth Client ID (Gmail Pessoal) */}
+      <Dialog open={modalOAuthAberta} onOpenChange={setModalOAuthAberta}>
+        <DialogContent className="max-w-xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <KeyRound className="h-5 w-5 text-primary" />
+              Configurar OAuth 2.0 (Google Drive Pessoal)
+            </DialogTitle>
+            <DialogDescription>
+              Insira o Client ID e Client Secret criados no Google Cloud Console para autorizar o
+              acesso à sua conta pessoal do Google Drive.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 py-2">
+            <div className="space-y-1.5">
+              <Label htmlFor="oauth-client-id" className="text-xs font-semibold">
+                Client ID do OAuth (Google Cloud) *
+              </Label>
+              <Input
+                id="oauth-client-id"
+                placeholder="Ex: 123456789-abcdefgh.apps.googleusercontent.com"
+                value={oauthClientIdInput}
+                onChange={(e) => setOauthClientIdInput(e.target.value)}
+                className="text-xs font-mono"
+              />
+            </div>
+
+            <div className="space-y-1.5">
+              <Label htmlFor="oauth-client-secret" className="text-xs font-semibold">
+                Client Secret do OAuth *
+              </Label>
+              <Input
+                id="oauth-client-secret"
+                type="password"
+                placeholder="Ex: GOCSPX-xxxxxxxxxxxxxxxxxxxxxxxx"
+                value={oauthClientSecretInput}
+                onChange={(e) => setOauthClientSecretInput(e.target.value)}
+                className="text-xs font-mono"
+              />
+              <p className="text-[11px] text-muted-foreground">
+                O Client Secret é armazenado com proteção no banco de dados e nunca é compartilhado
+                publicamente.
+              </p>
+            </div>
+
+            <div className="bg-muted p-3 rounded-lg border space-y-1.5 text-xs">
+              <div className="font-semibold text-foreground flex items-center justify-between">
+                <span>URI de Redirecionamento autorizada necessária no Google Cloud:</span>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="ghost"
+                  onClick={copiarRedirectUri}
+                  className="h-6 text-[11px] gap-1 px-1.5 text-primary"
+                >
+                  {uriCopiada ? (
+                    <Check className="h-3 w-3 text-emerald-600" />
+                  ) : (
+                    <Copy className="h-3 w-3" />
+                  )}
+                  {uriCopiada ? 'Copiada' : 'Copiar'}
+                </Button>
+              </div>
+              <code className="block bg-background p-2 rounded text-[11px] font-mono border break-all text-primary select-all">
+                {redirectUriExibida ||
+                  'https://erp-empresarial-completo-575bb.shrd00.internal.goskip.dev/backend/v1/google-drive/oauth-callback'}
+              </code>
+              <p className="text-[11px] text-muted-foreground">
+                No Google Cloud Console, cole exatamente esta URL no campo{' '}
+                <strong>URIs de redirecionamento autorizados</strong> das suas credenciais.
+              </p>
+            </div>
+          </div>
+
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button
+              variant="outline"
+              onClick={() => setModalOAuthAberta(false)}
+              disabled={salvandoOAuth}
+            >
+              Cancelar
+            </Button>
+            <Button
+              onClick={salvarCredenciaisOAuth}
+              disabled={
+                salvandoOAuth || !oauthClientIdInput.trim() || !oauthClientSecretInput.trim()
+              }
+              className="gap-2 bg-primary text-primary-foreground"
+            >
+              {salvandoOAuth ? (
+                <>
+                  <RefreshCw className="h-4 w-4 animate-spin" />
+                  Salvando...
+                </>
+              ) : (
+                'Salvar Credenciais'
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Modal de Configuração da Conta de Serviço Google Drive */}
       <Dialog open={modalConfigAberta} onOpenChange={setModalConfigAberta}>
