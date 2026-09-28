@@ -5402,6 +5402,9 @@ routerAdd(
     var totalAtualizados = Number(body.total_atualizados) || 0
     var totalErros = Number(body.total_erros) || 0
     var duracaoMs = Number(body.duracao_ms) || 0
+    var origemRestauracao =
+      body.origem_restauracao || (body.backup_id ? 'direta_sistema' : 'local_computador')
+    var backupIdRef = body.backup_id || ''
 
     var usuarioNome =
       authRecord.getString('name') || authRecord.getString('email') || 'Administrador'
@@ -5416,9 +5419,16 @@ routerAdd(
       recHist.set('acao', 'editar')
       recHist.set('usuario_id', authRecord.id)
       recHist.set('usuario_nome', usuarioNome)
+
+      var textoOrigem =
+        origemRestauracao === 'direta_sistema'
+          ? 'Restauração direta de backup do sistema'
+          : 'Restauração de backup local do computador'
+
       recHist.set(
         'descricao',
-        'Restauração local de backup executada a partir do arquivo "' +
+        textoOrigem +
+          ' executada a partir de "' +
           nomeArquivo +
           '". Criados: ' +
           totalCriados +
@@ -5430,6 +5440,8 @@ routerAdd(
       )
       recHist.set('detalhes', {
         nome_arquivo: nomeArquivo,
+        origem_restauracao: origemRestauracao,
+        backup_id: backupIdRef,
         total_criados: totalCriados,
         total_atualizados: totalAtualizados,
         total_erros: totalErros,

@@ -125,6 +125,11 @@ export function Backups() {
     unknown[]
   > | null>(null)
   const [nomeArquivoParaRestaurar, setNomeArquivoParaRestaurar] = useState('')
+  const [backupIdParaRestaurar, setBackupIdParaRestaurar] = useState<string | null>(null)
+  const [origemRestauracaoAtiva, setOrigemRestauracaoAtiva] = useState<
+    'direta_sistema' | 'local_computador'
+  >('local_computador')
+  const [carregandoBackupDiretoId, setCarregandoBackupDiretoId] = useState<string | null>(null)
   const [textoConfirmacaoRestaurar, setTextoConfirmacaoRestaurar] = useState('')
   const [restaurando, setRestaurando] = useState(false)
   const [progressoRestauracao, setProgressoRestauracao] = useState({
@@ -766,6 +771,76 @@ export function Backups() {
     }
   }
 
+  // Inicia restauração direta a partir de um backup já armazenado no sistema (sem download)
+  const restaurarBackupDiretoDoSistema = async (item: BackupItem) => {
+    if (!item || !item.id) return
+
+    try {
+      setCarregandoBackupDiretoId(item.id)
+      setErroValidacao(null)
+      setNomeArquivoParaRestaurar(item.nome_arquivo || `backup_${item.id}.json`)
+      setBackupIdParaRestaurar(item.id)
+      setOrigemRestauracaoAtiva('direta_sistema')
+      setTextoConfirmacaoRestaurar('')
+      setResultadoRestauracaoFinal(null)
+
+      toast({
+        title: 'Buscando backup no sistema...',
+        description: `Obtendo dados armazenados de ${item.nome_arquivo}...`,
+      })
+
+      // Busca os dados consolidados do backup no banco
+      const dumpColecoes = await backupService.obterDumpBackupArmazenado(item.id)
+      setConteudoDumpCarregado(dumpColecoes)
+
+      toast({
+        title: 'Validando integridade no servidor...',
+        description: 'Analisando coleções, tipos e integridade referencial.',
+      })
+
+      const payloadParaValidacao = {
+        meta: {
+          origem: item.origem || 'sistema',
+          criado_em: item.created,
+          total_registros: Number(item.total_registros) || 0,
+          total_colecoes: Number(item.total_colecoes) || 0,
+        },
+        dados: dumpColecoes,
+      }
+
+      const validacao = await backupService.validarBackupLocal(
+        payloadParaValidacao,
+        item.nome_arquivo || `backup_${item.id}.json`,
+      )
+
+      setResultadoValidacao(validacao)
+      setModalRestauracaoAberta(true)
+
+      toast({
+        title: 'Backup pronto para restauração!',
+        description: `${validacao.meta.total_registros_arquivo.toLocaleString('pt-BR')} registros e ${validacao.meta.total_colecoes_arquivo} coleções identificadas.`,
+      })
+    } catch (err: unknown) {
+      const msg = backupService.extrairMensagemErro(
+        err,
+        err instanceof Error
+          ? err.message
+          : 'Não foi possível carregar o backup armazenado no sistema. Caso possua o JSON no computador, utilize "Restaurar do Computador".',
+      )
+      setErroValidacao(msg)
+      toast({
+        title: 'Não foi possível restaurar direto',
+        description: msg,
+        variant: 'destructive',
+      })
+      setResultadoValidacao(null)
+      setConteudoDumpCarregado(null)
+      setBackupIdParaRestaurar(null)
+    } finally {
+      setCarregandoBackupDiretoId(null)
+    }
+  }
+
   // Manipulador do input de arquivo para restauração local
   const selecionarArquivoRestauracao = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
@@ -785,6 +860,8 @@ export function Backups() {
       setValidandoArquivo(true)
       setErroValidacao(null)
       setNomeArquivoParaRestaurar(file.name)
+      setBackupIdParaRestaurar(null)
+      setOrigemRestauracaoAtiva('local_computador')
       setTextoConfirmacaoRestaurar('')
       setResultadoRestauracaoFinal(null)
 
@@ -1025,6 +1102,8 @@ export function Backups() {
           total_atualizados: totalAtualizados,
           total_erros: totalErros,
           duracao_ms: duracao,
+          origem_restauracao: origemRestauracaoAtiva,
+          backup_id: backupIdParaRestaurar || undefined,
         })
       } catch (finalizaErr: unknown) {
         const finalizaMsg =
@@ -2173,7 +2252,34 @@ export function Backups() {
                       )}
                     </div>
 
-                    <div className="flex items-center gap-2 self-start sm:self-center shrink-0">
+                    <div className="flex items-center gap-2 self-start sm:self-center shrink-0 flex-wrap sm:flex-nowrap">
+                      {item.status === 'sucesso' && (
+                        <Button
+                          size="sm"
+                          onClick={() => restaurarBackupDiretoDoSistema(item)}
+                          disabled={
+                            carregandoBackupDiretoId === item.id ||
+                            restaurando ||
+                            validandoArquivo ||
+                            isBaixando
+                          }
+                          className="h-8 text-xs gap-1 bg-emerald-600 hover:bg-emerald-700 text-white shadow-xs font-medium"
+                          title="Restaurar diretamente a partir deste backup já salvo no sistema (sem baixar arquivo)"
+                        >
+                          {carregandoBackupDiretoId === item.id ? (
+                            <>
+                              <RefreshCw className="h-3.5 w-3.5 animate-spin" />
+                              Carregando...
+                            </>
+                          ) : (
+                            <>
+                              <ShieldCheck className="h-3.5 w-3.5" />
+                              Restaurar este backup
+                            </>
+                          )}
+                        </Button>
+                      )}
+
                       <Button
                         variant="outline"
                         size="sm"
@@ -2612,11 +2718,30 @@ export function Backups() {
                 <Button variant="outline" onClick={() => setBackupDetalhe(null)}>
                   Fechar
                 </Button>
+                {backupDetalhe.status === 'sucesso' && (
+                  <Button
+                    onClick={() => {
+                      const item = backupDetalhe
+                      setBackupDetalhe(null)
+                      restaurarBackupDiretoDoSistema(item)
+                    }}
+                    disabled={
+                      carregandoBackupDiretoId === backupDetalhe.id ||
+                      restaurando ||
+                      validandoArquivo
+                    }
+                    className="gap-2 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold"
+                  >
+                    <ShieldCheck className="h-4 w-4" />
+                    Restaurar este backup
+                  </Button>
+                )}
                 <Button
                   onClick={() => {
                     baixarBackupJson(backupDetalhe)
                   }}
-                  className="gap-2 bg-primary text-primary-foreground"
+                  variant="outline"
+                  className="gap-2"
                 >
                   <ArrowDownToLine className="h-4 w-4" />
                   Baixar Arquivo JSON
@@ -2643,10 +2768,14 @@ export function Backups() {
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2 text-lg text-foreground">
               <ShieldCheck className="h-5 w-5 text-emerald-600" />
-              Restauração Local de Backup
+              {origemRestauracaoAtiva === 'direta_sistema'
+                ? 'Restauração Direta do Sistema'
+                : 'Restauração Local de Backup'}
             </DialogTitle>
             <DialogDescription>
-              Validação de integridade do arquivo e aplicação de dados em lote no banco.
+              {origemRestauracaoAtiva === 'direta_sistema'
+                ? 'Restauração executada diretamente a partir do backup armazenado no sistema, sem necessidade de upload.'
+                : 'Validação de integridade do arquivo e aplicação de dados em lote no banco.'}
             </DialogDescription>
           </DialogHeader>
 
@@ -2671,13 +2800,25 @@ export function Backups() {
               {/* Metadados do Arquivo */}
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 bg-muted/40 p-3 rounded-lg border">
                 <div>
-                  <span className="text-muted-foreground block text-[11px]">Arquivo:</span>
+                  <span className="text-muted-foreground block text-[11px]">
+                    {origemRestauracaoAtiva === 'direta_sistema'
+                      ? 'Backup Armazenado:'
+                      : 'Arquivo:'}
+                  </span>
                   <strong
                     className="text-foreground truncate block font-mono"
                     title={nomeArquivoParaRestaurar}
                   >
                     {nomeArquivoParaRestaurar}
                   </strong>
+                  {origemRestauracaoAtiva === 'direta_sistema' && (
+                    <Badge
+                      variant="outline"
+                      className="mt-1 text-[9px] border-emerald-500/40 text-emerald-600 bg-emerald-500/10"
+                    >
+                      Direto do Sistema
+                    </Badge>
+                  )}
                 </div>
                 <div>
                   <span className="text-muted-foreground block text-[11px]">Data do Backup:</span>

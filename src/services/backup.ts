@@ -711,6 +711,8 @@ export const backupService = {
     total_atualizados: number
     total_erros: number
     duracao_ms: number
+    origem_restauracao?: 'direta_sistema' | 'local_computador' | string
+    backup_id?: string
   }): Promise<FinalizarRestauracaoResponse> {
     try {
       const res = await pb.send<FinalizarRestauracaoResponse>(
@@ -724,6 +726,84 @@ export const backupService = {
     } catch (err: unknown) {
       const serverMsg = backupService.extrairMensagemErro(err, 'Erro ao finalizar restauração.')
       throw new Error(`[Finalização] ${serverMsg}`)
+    }
+  },
+
+  /**
+   * Obtém o conteúdo completo de um backup armazenado no sistema (via endpoint consolidado ou via coleção de dados particionados)
+   */
+  async obterDumpBackupArmazenado(backupId: string): Promise<Record<string, unknown[]>> {
+    // 1. Tenta baixar os dados estruturados pelo endpoint consolidado
+    try {
+      const payload = await backupService.baixarDadosBackup(backupId)
+      if (payload && payload.dados && typeof payload.dados === 'object') {
+        const colecoes = backupService.extrairColecoesDoDump(payload)
+        if (Object.keys(colecoes).length > 0) {
+          return colecoes
+        }
+      }
+    } catch (err) {
+      console.warn(
+        `[backupService.obterDumpBackupArmazenado] Endpoint download falhou para backup ${backupId}, tentando fallback direto via SDK:`,
+        err,
+      )
+    }
+
+    // 2. Fallback: buscar os chunks particionados diretamente de backups_dados
+    try {
+      const chunks = await pb.collection('backups_dados').getFullList<{
+        backup_id: string
+        colecao_nome: string
+        chunk_index: number
+        registros_json: unknown[]
+      }>({
+        filter: `backup_id = "${backupId}"`,
+        sort: 'colecao_nome,chunk_index',
+      })
+
+      if (!chunks || chunks.length === 0) {
+        throw new Error(
+          'Este backup não possui dados particionados persistidos no banco de dados. Caso possua uma cópia em JSON baixada, utilize "Restaurar do Computador".',
+        )
+      }
+
+      const colecoes: Record<string, unknown[]> = {}
+      for (const ch of chunks) {
+        const col = ch.colecao_nome
+        if (
+          !col ||
+          col === 'meta' ||
+          col === 'dados' ||
+          col.startsWith('_backup_') ||
+          col.startsWith('_pb_')
+        ) {
+          continue
+        }
+
+        const items = ch.registros_json || []
+        if (!colecoes[col]) {
+          colecoes[col] = []
+        }
+        if (Array.isArray(items)) {
+          for (const item of items) {
+            colecoes[col].push(item)
+          }
+        }
+      }
+
+      if (Object.keys(colecoes).length === 0) {
+        throw new Error(
+          'Nenhuma coleção com registros válidos foi encontrada neste backup. Caso possua o arquivo JSON no seu computador, utilize "Restaurar do Computador".',
+        )
+      }
+
+      return colecoes
+    } catch (err: unknown) {
+      const msg = backupService.extrairMensagemErro(
+        err,
+        'Não foi possível carregar os dados armazenados deste backup.',
+      )
+      throw new Error(msg)
     }
   },
 }
