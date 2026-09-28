@@ -511,33 +511,112 @@ export const backupService = {
 
   /**
    * Valida e resume a estrutura de um dump JSON de backup no backend
+   * Suporta envio leve (metadados + contagens + amostras pequenas) para evitar estouro de payload/memória
    */
   async validarBackupLocal(
     dump: unknown,
     nomeArquivoOrigem?: string,
   ): Promise<ValidarBackupResponse> {
-    const res = await pb.send<ValidarBackupResponse>('/backend/v1/backups/restaurar/validar', {
-      method: 'POST',
-      body: {
+    let bodyPayload: Record<string, unknown>
+
+    if (dump && typeof dump === 'object') {
+      const obj = dump as {
+        meta?: {
+          nome_arquivo?: string
+          created?: string
+          exportado_em?: string
+          sistema?: string
+          origem?: string
+          total_registros?: number
+          total_colecoes?: number
+        }
+        dados?: Record<string, unknown[]>
+      }
+
+      const dados = obj.dados || (obj as unknown as Record<string, unknown[]>)
+      const colecoesResumo: Record<string, number> = {}
+      const amostras: Record<string, string[]> = {}
+
+      for (const [k, v] of Object.entries(dados)) {
+        if (k === 'meta' || k === 'dados') continue
+        if (Array.isArray(v)) {
+          colecoesResumo[k] = v.length
+          const sample = v.slice(0, 30)
+          amostras[k] = sample
+            .map((item) =>
+              item && typeof item === 'object' && 'id' in item
+                ? String((item as { id: unknown }).id)
+                : '',
+            )
+            .filter(Boolean)
+        }
+      }
+
+      bodyPayload = {
+        nome_arquivo_origem: nomeArquivoOrigem || obj.meta?.nome_arquivo || 'backup_importado.json',
+        meta: {
+          nome_arquivo: nomeArquivoOrigem || obj.meta?.nome_arquivo,
+          criado_em: obj.meta?.created || obj.meta?.exportado_em,
+          sistema_origem: obj.meta?.sistema,
+          origem: obj.meta?.origem,
+        },
+        colecoes_resumo: colecoesResumo,
+        amostras,
+      }
+    } else {
+      bodyPayload = {
         dump,
         nome_arquivo_origem: nomeArquivoOrigem,
-      },
-    })
-    return res
+      }
+    }
+
+    try {
+      const res = await pb.send<ValidarBackupResponse>('/backend/v1/backups/restaurar/validar', {
+        method: 'POST',
+        body: bodyPayload,
+      })
+      return res
+    } catch (err: unknown) {
+      const errorObj = err as {
+        data?: { error?: string; message?: string }
+        message?: string
+        status?: number
+      }
+      const serverMsg =
+        errorObj.data?.error ||
+        errorObj.data?.message ||
+        errorObj.message ||
+        'Erro ao validar backup no servidor.'
+      throw new Error(`[Validação] ${serverMsg}`)
+    }
   },
 
   /**
    * Envia um lote (chunk) de registros de uma coleção específica para ser restaurado
    */
   async restaurarLote(colecao: string, registros: unknown[]): Promise<RestaurarLoteResponse> {
-    const res = await pb.send<RestaurarLoteResponse>('/backend/v1/backups/restaurar/lote', {
-      method: 'POST',
-      body: {
-        colecao,
-        registros,
-      },
-    })
-    return res
+    try {
+      const res = await pb.send<RestaurarLoteResponse>('/backend/v1/backups/restaurar/lote', {
+        method: 'POST',
+        body: {
+          colecao,
+          registros,
+        },
+      })
+      return res
+    } catch (err: unknown) {
+      const errorObj = err as {
+        data?: { error?: string; message?: string }
+        message?: string
+        status?: number
+      }
+      const serverMsg =
+        errorObj.data?.error ||
+        errorObj.data?.message ||
+        errorObj.message ||
+        `Erro ao processar lote da coleção ${colecao}.`
+      throw new Error(`[Lote ${colecao}] ${serverMsg}`)
+    }
   },
 
   /**
@@ -551,13 +630,27 @@ export const backupService = {
     total_erros: number
     duracao_ms: number
   }): Promise<FinalizarRestauracaoResponse> {
-    const res = await pb.send<FinalizarRestauracaoResponse>(
-      '/backend/v1/backups/restaurar/finalizar',
-      {
-        method: 'POST',
-        body: payload,
-      },
-    )
-    return res
+    try {
+      const res = await pb.send<FinalizarRestauracaoResponse>(
+        '/backend/v1/backups/restaurar/finalizar',
+        {
+          method: 'POST',
+          body: payload,
+        },
+      )
+      return res
+    } catch (err: unknown) {
+      const errorObj = err as {
+        data?: { error?: string; message?: string }
+        message?: string
+        status?: number
+      }
+      const serverMsg =
+        errorObj.data?.error ||
+        errorObj.data?.message ||
+        errorObj.message ||
+        'Erro ao finalizar restauração.'
+      throw new Error(`[Finalização] ${serverMsg}`)
+    }
   },
 }

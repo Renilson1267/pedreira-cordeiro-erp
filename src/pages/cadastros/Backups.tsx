@@ -117,6 +117,7 @@ export function Backups() {
 
   // Estados da Restauração Local de Backup
   const [validandoArquivo, setValidandoArquivo] = useState(false)
+  const [erroValidacao, setErroValidacao] = useState<string | null>(null)
   const [modalRestauracaoAberta, setModalRestauracaoAberta] = useState(false)
   const [resultadoValidacao, setResultadoValidacao] = useState<ValidarBackupResponse | null>(null)
   const [conteudoDumpCarregado, setConteudoDumpCarregado] = useState<Record<
@@ -133,12 +134,16 @@ export function Backups() {
     percentual: 0,
     registrosProcessados: 0,
     totalRegistros: 0,
+    loteAtual: 0,
+    totalLotes: 0,
+    errosDetalhados: [] as string[],
   })
   const [resultadoRestauracaoFinal, setResultadoRestauracaoFinal] = useState<{
     sucesso: boolean
     totalCriados: number
     totalAtualizados: number
     totalErros: number
+    errosAmostra?: string[]
     detalhesColecoes: Record<string, { criados: number; atualizados: number; erros: number }>
   } | null>(null)
 
@@ -778,13 +783,14 @@ export function Backups() {
 
     try {
       setValidandoArquivo(true)
+      setErroValidacao(null)
       setNomeArquivoParaRestaurar(file.name)
       setTextoConfirmacaoRestaurar('')
       setResultadoRestauracaoFinal(null)
 
       toast({
-        title: 'Lendo arquivo...',
-        description: `Carregando ${file.name} no navegador para validação.`,
+        title: 'Lendo arquivo local...',
+        description: `Carregando ${file.name} no navegador.`,
       })
 
       const texto = await file.text()
@@ -794,7 +800,7 @@ export function Backups() {
       } catch (parseErr) {
         throw new Error(
           'O arquivo selecionado não contém um JSON válido: ' +
-            (parseErr instanceof Error ? parseErr.message : 'Erro sintático'),
+            (parseErr instanceof Error ? parseErr.message : 'Erro sintático no arquivo.'),
         )
       }
 
@@ -808,8 +814,8 @@ export function Backups() {
 
       // Envia ao backend para validação estrutural segura (sem gravar)
       toast({
-        title: 'Validando estrutura...',
-        description: 'Analisando coleções, tipos e integridade no servidor.',
+        title: 'Validando no servidor...',
+        description: 'Analisando coleções, tipos e integridade.',
       })
 
       const validacao = await backupService.validarBackupLocal(parsed, file.name)
@@ -822,8 +828,9 @@ export function Backups() {
       })
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Falha ao processar o arquivo selecionado.'
+      setErroValidacao(msg)
       toast({
-        title: 'Erro na validação',
+        title: 'Falha na etapa de validação',
         description: msg,
         variant: 'destructive',
       })
@@ -876,11 +883,12 @@ export function Backups() {
     setRestaurando(true)
     const inicioMs = Date.now()
 
-    const CHUNK_SIZE = 150
+    const CHUNK_SIZE = 100
     let totalCriados = 0
     let totalAtualizados = 0
     let totalErros = 0
     let registrosProcessadosAcumulados = 0
+    const errosColetados: string[] = []
     const resumoPorColecao: Record<
       string,
       { criados: number; atualizados: number; erros: number }
@@ -912,6 +920,9 @@ export function Backups() {
                 : 0,
             registrosProcessados: registrosProcessadosAcumulados,
             totalRegistros: totalRegistrosGeral,
+            loteAtual: ch + 1,
+            totalLotes: totalChunks,
+            errosDetalhados: errosColetados.slice(-5),
           })
 
           try {
@@ -924,10 +935,15 @@ export function Backups() {
             totalAtualizados += respLote.atualizados || 0
             totalErros += respLote.erros || 0
           } catch (loteErr: unknown) {
+            const erroTxt =
+              loteErr instanceof Error
+                ? loteErr.message
+                : `Falha no lote ${ch + 1}/${totalChunks} da coleção ${colName}`
             console.error(
               `[Restauração] Erro no lote ${ch + 1}/${totalChunks} da coleção ${colName}:`,
               loteErr,
             )
+            errosColetados.push(erroTxt)
             resumoPorColecao[colName].erros += fatia.length
             totalErros += fatia.length
           }
@@ -943,6 +959,9 @@ export function Backups() {
         percentual: 100,
         registrosProcessados: totalRegistrosGeral,
         totalRegistros: totalRegistrosGeral,
+        loteAtual: 0,
+        totalLotes: 0,
+        errosDetalhados: errosColetados.slice(-5),
       })
 
       const duracao = Date.now() - inicioMs
@@ -957,8 +976,11 @@ export function Backups() {
           total_erros: totalErros,
           duracao_ms: duracao,
         })
-      } catch (finalizaErr) {
+      } catch (finalizaErr: unknown) {
+        const finalizaMsg =
+          finalizaErr instanceof Error ? finalizaErr.message : 'Falha ao registrar finalização'
         console.warn('[Restauração] Aviso ao auditar finalização:', finalizaErr)
+        errosColetados.push(finalizaMsg)
       }
 
       setResultadoRestauracaoFinal({
@@ -966,6 +988,7 @@ export function Backups() {
         totalCriados,
         totalAtualizados,
         totalErros,
+        errosAmostra: errosColetados,
         detalhesColecoes: resumoPorColecao,
       })
 
@@ -1198,6 +1221,11 @@ export function Backups() {
                 Ao selecionar o arquivo, o sistema confere todas as coleções, volume de registros e
                 checa conflitos antes de qualquer modificação no banco.
               </p>
+              {erroValidacao && (
+                <div className="mt-2 p-2 rounded bg-destructive/10 border border-destructive/20 text-[11px] text-destructive">
+                  <strong>Último erro de validação:</strong> {erroValidacao}
+                </div>
+              )}
             </div>
 
             <div className="p-4 rounded-lg bg-background border border-border/70 space-y-1.5">
@@ -2673,7 +2701,10 @@ export function Backups() {
                       <RefreshCw className="h-4 w-4 text-primary animate-spin" />
                       Restaurando coleção:{' '}
                       <code className="text-primary">{progressoRestauracao.colecaoAtual}</code> (
-                      {progressoRestauracao.indiceColecao} de {progressoRestauracao.totalColecoes})
+                      {progressoRestauracao.indiceColecao} de {progressoRestauracao.totalColecoes}
+                      {progressoRestauracao.totalLotes > 0 &&
+                        ` • Lote ${progressoRestauracao.loteAtual} de ${progressoRestauracao.totalLotes}`}
+                      )
                     </span>
                     <span>{progressoRestauracao.percentual}%</span>
                   </div>
@@ -2682,13 +2713,27 @@ export function Backups() {
 
                   <div className="text-[11px] text-muted-foreground flex justify-between">
                     <span>
-                      Processando em lotes fracionados para preservar a estabilidade da JSVM...
+                      Processando em fatias ordenadas para estabilidade da memória do servidor...
                     </span>
                     <span>
                       {progressoRestauracao.registrosProcessados.toLocaleString('pt-BR')} /{' '}
                       {progressoRestauracao.totalRegistros.toLocaleString('pt-BR')} registros
                     </span>
                   </div>
+
+                  {progressoRestauracao.errosDetalhados.length > 0 && (
+                    <div className="mt-2 p-2 rounded bg-destructive/10 border border-destructive/20 text-[11px] text-destructive space-y-1">
+                      <div className="font-semibold flex items-center gap-1">
+                        <AlertCircle className="h-3.5 w-3.5" />
+                        Erros recentes durante restauração:
+                      </div>
+                      {progressoRestauracao.errosDetalhados.map((eStr, idx) => (
+                        <div key={idx} className="truncate font-mono text-[10px]">
+                          • {eStr}
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
               )}
 
@@ -2738,6 +2783,21 @@ export function Backups() {
                       </div>
                     </div>
                   </div>
+
+                  {resultadoRestauracaoFinal.errosAmostra &&
+                    resultadoRestauracaoFinal.errosAmostra.length > 0 && (
+                      <div className="p-3 bg-destructive/10 border border-destructive/20 rounded-md text-[11px] text-destructive space-y-1">
+                        <div className="font-semibold flex items-center gap-1.5">
+                          <AlertTriangle className="h-4 w-4 shrink-0" />
+                          Detalhes dos erros ocorridos no processo:
+                        </div>
+                        <div className="max-h-24 overflow-y-auto space-y-1 font-mono text-[10px]">
+                          {resultadoRestauracaoFinal.errosAmostra.map((errItem, idx) => (
+                            <div key={idx}>• {errItem}</div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
                 </div>
               )}
 

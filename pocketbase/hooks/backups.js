@@ -4788,30 +4788,56 @@ routerAdd(
     ]
 
     var body = e.requestInfo().body || {}
-    var dump = body.dump || body
+    // Suporte a dois modos:
+    // 1) Modo Leve (recomendado): { colecoes_resumo: { clientes: 2354, ... }, meta: {...}, amostras: { clientes: [...] } }
+    // 2) Modo Legado: { dump: { meta, dados } } ou { dump: { ... } }
+    var colecoesContagens = {}
+    var amostrasRecebidas = body.amostras || {}
+    var meta = body.meta || {}
+    var nomeArquivoOrigem = body.nome_arquivo_origem || meta.nome_arquivo || 'backup_importado.json'
 
-    // Suporta tanto o payload padrão do ERP { meta: {...}, dados: { colecao: [...] } }
-    // quanto dump direto { colecao: [...] }
-    var meta = dump.meta || {}
-    var dados = dump.dados || dump
+    if (body.colecoes_resumo && typeof body.colecoes_resumo === 'object') {
+      colecoesContagens = body.colecoes_resumo
+    } else {
+      var dump = body.dump || body
+      var dumpMeta = dump.meta || {}
+      if (!meta.criado_em && dumpMeta.created) meta.criado_em = dumpMeta.created
+      if (!meta.criado_em && dumpMeta.exportado_em) meta.criado_em = dumpMeta.exportado_em
+      if (!meta.sistema_origem && dumpMeta.sistema) meta.sistema_origem = dumpMeta.sistema
+      if (dumpMeta.nome_arquivo && !body.nome_arquivo_origem)
+        nomeArquivoOrigem = dumpMeta.nome_arquivo
 
-    if (!dados || typeof dados !== 'object' || Array.isArray(dados)) {
-      return e.json(400, {
-        error:
-          'Formato de arquivo inválido. O arquivo JSON deve conter a chave "dados" ou um mapeamento de coleções.',
-      })
+      var dados = dump.dados || dump
+      if (!dados || typeof dados !== 'object' || Array.isArray(dados)) {
+        return e.json(400, {
+          error:
+            'Formato de arquivo inválido. O arquivo JSON deve conter a chave "dados" ou um mapeamento de coleções.',
+        })
+      }
+
+      var dumpKeys = Object.keys(dados)
+      for (var dk = 0; dk < dumpKeys.length; dk++) {
+        var kName = dumpKeys[dk]
+        if (kName === 'meta' || kName === 'dados') continue
+        var items = dados[kName]
+        if (Array.isArray(items)) {
+          colecoesContagens[kName] = items.length
+          if (items.length > 0 && !amostrasRecebidas[kName]) {
+            amostrasRecebidas[kName] = items.slice(0, Math.min(items.length, 30))
+          }
+        }
+      }
     }
 
     var colecoesEncontradas = {}
     var colecoesIgnoradas = []
     var totalRegistros = 0
 
-    // Analisar todas as chaves do objeto de dados
-    var chaves = Object.keys(dados)
+    // Analisar todas as coleções encontradas
+    var chaves = Object.keys(colecoesContagens)
     for (var i = 0; i < chaves.length; i++) {
       var colName = chaves[i]
 
-      // Ignora chaves de metadados se o dump veio plano
       if (colName === 'meta' || colName === 'dados') continue
 
       if (colecoesProtegidas.indexOf(colName) !== -1) {
@@ -4819,11 +4845,7 @@ routerAdd(
         continue
       }
 
-      var items = dados[colName]
-      if (!Array.isArray(items)) {
-        continue
-      }
-
+      var qtd = Number(colecoesContagens[colName]) || 0
       var colValidaNoBanco = false
       try {
         var colObj = $app.findCollectionByNameOrId(colName)
@@ -4832,18 +4854,18 @@ routerAdd(
         colValidaNoBanco = false
       }
 
-      var qtd = items.length
       totalRegistros += qtd
 
       // Amostragem para verificar quantos IDs já existem no banco (conflitos/sobrescrita)
       var existentesContagem = 0
-      if (colValidaNoBanco && qtd > 0) {
-        var amostra = items.slice(0, Math.min(qtd, 30))
-        for (var a = 0; a < amostra.length; a++) {
-          var itemA = amostra[a]
-          if (itemA && itemA.id) {
+      var amostraItems = amostrasRecebidas[colName]
+      if (colValidaNoBanco && Array.isArray(amostraItems) && amostraItems.length > 0) {
+        for (var a = 0; a < amostraItems.length; a++) {
+          var itemA = amostraItems[a]
+          var idTestar = typeof itemA === 'string' ? itemA : itemA && itemA.id ? itemA.id : ''
+          if (idTestar) {
             try {
-              var recExistente = $app.findFirstRecordByData(colName, 'id', itemA.id)
+              var recExistente = $app.findFirstRecordByData(colName, 'id', idTestar)
               if (recExistente) existentesContagem++
             } catch (_) {}
           }
@@ -4854,7 +4876,7 @@ routerAdd(
         total_registros: qtd,
         existe_no_banco: colValidaNoBanco,
         conflitos_amostra: existentesContagem,
-        amostra_tamanho: Math.min(qtd, 30),
+        amostra_tamanho: Array.isArray(amostraItems) ? amostraItems.length : 0,
       }
     }
 
@@ -4869,9 +4891,9 @@ routerAdd(
       success: true,
       valido: true,
       meta: {
-        nome_arquivo: meta.nome_arquivo || body.nome_arquivo_origem || 'backup_importado.json',
-        criado_em: meta.created || meta.exportado_em || null,
-        sistema_origem: meta.sistema || 'ERP NovaGest',
+        nome_arquivo: nomeArquivoOrigem,
+        criado_em: meta.criado_em || meta.created || meta.exportado_em || null,
+        sistema_origem: meta.sistema_origem || meta.sistema || 'ERP NovaGest',
         origem: meta.origem || 'local',
         total_colecoes_arquivo: totalColecoes,
         total_registros_arquivo: totalRegistros,
@@ -5008,6 +5030,43 @@ routerAdd(
             rec = $app.findFirstRecordByData(colecaoNome, 'id', recordId)
           } catch (_) {
             rec = null
+          }
+        }
+
+        // Resolução defensiva de conflito por chave única para coleções com índice UNIQUE
+        if (!rec) {
+          if (colecaoNome === 'empresas' && item.cnpj) {
+            try {
+              rec = $app.findFirstRecordByData('empresas', 'cnpj', item.cnpj)
+            } catch (_) {
+              rec = null
+            }
+          } else if (colecaoNome === 'produtos' && item.codigo && item.empresa_id) {
+            try {
+              var recsProd = $app.findRecordsByFilter(
+                'produtos',
+                "empresa_id = '" + item.empresa_id + "' && codigo = '" + item.codigo + "'",
+                '',
+                1,
+                0,
+              )
+              if (recsProd && recsProd.length > 0) rec = recsProd[0]
+            } catch (_) {
+              rec = null
+            }
+          } else if (colecaoNome === 'centros_custos' && item.codigo && item.empresa_id) {
+            try {
+              var recsCC = $app.findRecordsByFilter(
+                'centros_custos',
+                "empresa_id = '" + item.empresa_id + "' && codigo = '" + item.codigo + "'",
+                '',
+                1,
+                0,
+              )
+              if (recsCC && recsCC.length > 0) rec = recsCC[0]
+            } catch (_) {
+              rec = null
+            }
           }
         }
 
