@@ -411,8 +411,11 @@ export default function ContasReceber() {
 
       for (const r of rows) {
         const valTotal = Number(r.valor || 0)
-        const valRec = Number(r.valor_recebido || 0)
-        const saldo = Math.max(0, valTotal - valRec)
+        const valRec =
+          r.status === 'Recebida'
+            ? Number(r.valor_recebido && r.valor_recebido > 0 ? r.valor_recebido : valTotal)
+            : Number(r.valor_recebido || 0)
+        const saldo = r.status === 'Recebida' ? 0 : Math.max(0, valTotal - valRec)
 
         recebido += valRec
 

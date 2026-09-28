@@ -91,6 +91,9 @@ export default function HorasExtras() {
 
   const [funcionarios, setFuncionarios] = useState<Funcionario[]>([])
   const [planoContas, setPlanoContas] = useState<PlanoConta[]>([])
+  const [centrosCusto, setCentrosCusto] = useState<
+    Array<{ id: string; nome: string; descricao: string }>
+  >([])
   const [folhas, setFolhas] = useState<FolhaHorasExtras[]>([])
   const [loading, setLoading] = useState(false)
 
@@ -168,7 +171,7 @@ export default function HorasExtras() {
       if (isFirstLoad.current) {
         setLoading(true)
       }
-      const [fList, folhasList, pList] = await Promise.all([
+      const [fList, folhasList, pList, ccList] = await Promise.all([
         pb.collection('funcionarios').getFullList<Funcionario>({
           filter: `empresa_id = '${currentEmpresa.id}'`,
           sort: 'nome',
@@ -177,10 +180,16 @@ export default function HorasExtras() {
         pb.collection('plano_contas').getFullList<PlanoConta>({
           filter: `empresa_id = '${currentEmpresa.id}'`,
         }),
+        pb
+          .collection('centros_custos')
+          .getFullList<{ id: string; nome: string; descricao: string }>({
+            filter: `empresa_id = '${currentEmpresa.id}' && ativo = true`,
+          }),
       ])
       setFuncionarios(fList)
       setFolhas(folhasList)
       setPlanoContas(pList)
+      setCentrosCusto(ccList)
     } catch (err: any) {
       console.error('Erro ao carregar dados de horas extras:', err)
       toast({
@@ -576,10 +585,20 @@ export default function HorasExtras() {
           }
           detalhesMemoria.push(`Líquido: ${formatCurrency(valorLiquido)}`)
 
+          // Centro de custo padrão para folha de pagamento / horas extras
+          const ccFolha =
+            centrosCusto.find(
+              (cc) =>
+                cc.nome.toLowerCase().includes('folha') ||
+                cc.descricao.toLowerCase().includes('horas extras') ||
+                cc.descricao.toLowerCase().includes('hora extra'),
+            ) || null
+
           const payloadConta = {
             empresa_id: currentEmpresa.id,
             descricao: `Horas Extras (${totalHorasStr}) - Líquido a Pagar: ${fNome} [${folha.mes_referencia}]`,
             categoria_id: catFolha?.id || null,
+            centro_custo_id: ccFolha?.id || null,
             valor: valorLiquido,
             vencimento: dVenc.toISOString(),
             parcelas: 1,

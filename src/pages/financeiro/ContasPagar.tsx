@@ -393,8 +393,11 @@ export default function ContasPagar() {
 
       for (const r of rows) {
         const valTotal = Number(r.valor || 0)
-        const valPago = Number(r.valor_pago || 0)
-        const saldo = Math.max(0, valTotal - valPago)
+        const valPago =
+          r.status === 'Paga'
+            ? Number(r.valor_pago && r.valor_pago > 0 ? r.valor_pago : valTotal)
+            : Number(r.valor_pago || 0)
+        const saldo = r.status === 'Paga' ? 0 : Math.max(0, valTotal - valPago)
 
         pago += valPago
 
@@ -1170,7 +1173,7 @@ export default function ContasPagar() {
   // Saldo total em aberto, vencido e pago alimentados pela agregação leve do servidor
   const totalAberto = totaisCards.aberto
   const totalVencido = totaisCards.vencido
-  const totalPagoMes = totaisCards.pago
+  const totalPago = totaisCards.pago
 
   // Handlers de seleção por checkbox na página atual
   const handleToggleSelectAll = () => {
@@ -1573,7 +1576,7 @@ export default function ContasPagar() {
               Total Pago
             </span>
             <span className="text-xl font-bold text-emerald-700 tabular-nums">
-              {formatCurrency(totalPagoMes)}
+              {formatCurrency(totalPago)}
             </span>
           </div>
           <div className="w-10 h-10 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center font-bold">
