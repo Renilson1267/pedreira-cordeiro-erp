@@ -4757,17 +4757,26 @@ routerAdd(
       return e.json(401, { error: 'Não autorizado' })
     }
 
-    // Checar admin inline
+    // Checar admin ou superusuário inline
     var isAdmin = false
     try {
-      var adminMembros = $app.findRecordsByFilter(
-        'empresa_membros',
-        "usuario_id = '" + authRecord.id + "' && role = 'admin'",
-        '',
-        1,
-        0,
-      )
-      isAdmin = Boolean(adminMembros && adminMembros.length > 0)
+      if (typeof authRecord.isSuperuser === 'function' && authRecord.isSuperuser()) {
+        isAdmin = true
+      } else if (
+        authRecord.isSuperuser === true ||
+        (authRecord.getBool && authRecord.getBool('isSuperuser'))
+      ) {
+        isAdmin = true
+      } else {
+        var adminMembros = $app.findRecordsByFilter(
+          'empresa_membros',
+          "usuario_id = '" + authRecord.id + "' && role = 'admin'",
+          '',
+          1,
+          0,
+        )
+        isAdmin = Boolean(adminMembros && adminMembros.length > 0)
+      }
     } catch (_) {
       isAdmin = false
     }
@@ -4820,8 +4829,10 @@ routerAdd(
       var dumpKeys = Object.keys(dados)
       for (var dk = 0; dk < dumpKeys.length; dk++) {
         var kName = dumpKeys[dk]
-        if (kName === 'meta' || kName === 'dados') continue
+        // Ignorar chaves especiais ou transitórias como _backup_duplicatas_excluidas, meta, dados, etc.
+        if (kName === 'meta' || kName === 'dados' || kName.indexOf('_backup_') === 0) continue
         var items = dados[kName]
+        // Aceitar apenas chaves cujo valor é array real de registros
         if (Array.isArray(items)) {
           colecoesContagens[kName] = items.length
           if (items.length > 0 && !amostrasRecebidas[kName]) {
@@ -4838,43 +4849,67 @@ routerAdd(
     // Analisar todas as coleções encontradas
     var chaves = Object.keys(colecoesContagens)
     for (var i = 0; i < chaves.length; i++) {
-      var colName = chaves[i]
+      var rawColName = chaves[i]
 
-      if (colName === 'meta' || colName === 'dados') continue
+      if (rawColName === 'meta' || rawColName === 'dados' || rawColName.indexOf('_backup_') === 0)
+        continue
 
-      if (colecoesProtegidas.indexOf(colName) !== -1) {
-        colecoesIgnoradas.push(colName)
+      var qtd = Number(colecoesContagens[rawColName]) || 0
+
+      // Se a contagem não for número ou for nula/indefinida, ignorar
+      if (isNaN(qtd)) continue
+
+      if (colecoesProtegidas.indexOf(rawColName) !== -1) {
+        colecoesIgnoradas.push(rawColName)
         continue
       }
 
-      var qtd = Number(colecoesContagens[colName]) || 0
+      // Mapear users para a coleção auth interna do PocketBase se necessário
+      var targetColName = rawColName
       var colValidaNoBanco = false
       try {
-        var colObj = $app.findCollectionByNameOrId(colName)
+        var colObj = $app.findCollectionByNameOrId(targetColName)
         if (colObj) colValidaNoBanco = true
       } catch (_) {
-        colValidaNoBanco = false
+        if (targetColName === 'users') {
+          try {
+            var usersCol = $app.findCollectionByNameOrId('_pb_users_auth_')
+            if (usersCol) colValidaNoBanco = true
+          } catch (_) {
+            colValidaNoBanco = false
+          }
+        } else {
+          colValidaNoBanco = false
+        }
+      }
+
+      if (!colValidaNoBanco) {
+        return e.json(400, {
+          error: "Coleção '" + rawColName + "' não existe no schema do banco de dados.",
+          colecao: rawColName,
+        })
       }
 
       totalRegistros += qtd
 
       // Amostragem para verificar quantos IDs já existem no banco (conflitos/sobrescrita)
       var existentesContagem = 0
-      var amostraItems = amostrasRecebidas[colName]
+      var amostraItems = amostrasRecebidas[rawColName]
       if (colValidaNoBanco && Array.isArray(amostraItems) && amostraItems.length > 0) {
         for (var a = 0; a < amostraItems.length; a++) {
           var itemA = amostraItems[a]
           var idTestar = typeof itemA === 'string' ? itemA : itemA && itemA.id ? itemA.id : ''
           if (idTestar) {
             try {
-              var recExistente = $app.findFirstRecordByData(colName, 'id', idTestar)
+              var queryTarget = targetColName === 'users' ? '_pb_users_auth_' : targetColName
+              var recExistente = $app.findFirstRecordByData(queryTarget, 'id', idTestar)
               if (recExistente) existentesContagem++
             } catch (_) {}
           }
         }
       }
 
-      colecoesEncontradas[colName] = {
+      colecoesEncontradas[rawColName] = {
         total_registros: qtd,
         existe_no_banco: colValidaNoBanco,
         conflitos_amostra: existentesContagem,
@@ -4920,17 +4955,26 @@ routerAdd(
       return e.json(401, { error: 'Não autorizado' })
     }
 
-    // Checar admin inline
+    // Checar admin ou superusuário inline
     var isAdmin = false
     try {
-      var adminMembros = $app.findRecordsByFilter(
-        'empresa_membros',
-        "usuario_id = '" + authRecord.id + "' && role = 'admin'",
-        '',
-        1,
-        0,
-      )
-      isAdmin = Boolean(adminMembros && adminMembros.length > 0)
+      if (typeof authRecord.isSuperuser === 'function' && authRecord.isSuperuser()) {
+        isAdmin = true
+      } else if (
+        authRecord.isSuperuser === true ||
+        (authRecord.getBool && authRecord.getBool('isSuperuser'))
+      ) {
+        isAdmin = true
+      } else {
+        var adminMembros = $app.findRecordsByFilter(
+          'empresa_membros',
+          "usuario_id = '" + authRecord.id + "' && role = 'admin'",
+          '',
+          1,
+          0,
+        )
+        isAdmin = Boolean(adminMembros && adminMembros.length > 0)
+      }
     } catch (_) {
       isAdmin = false
     }
@@ -4988,10 +5032,20 @@ routerAdd(
     var col = null
     try {
       col = $app.findCollectionByNameOrId(colecaoNome)
-    } catch (_) {
-      return e.json(404, {
-        error: 'A coleção "' + colecaoNome + '" não existe neste banco de dados.',
-      })
+    } catch (eCol) {
+      if (colecaoNome === 'users') {
+        try {
+          col = $app.findCollectionByNameOrId('_pb_users_auth_')
+        } catch (_) {
+          col = null
+        }
+      }
+      if (!col) {
+        return e.json(404, {
+          error: "A coleção '" + colecaoNome + "' não existe no schema do banco de dados.",
+          colecao: colecaoNome,
+        })
+      }
     }
 
     // Campos válidos da coleção destino
@@ -5027,9 +5081,10 @@ routerAdd(
         var rec = null
         var isNovo = false
 
+        var targetColName = colecaoNome === 'users' ? '_pb_users_auth_' : colecaoNome
         if (recordId) {
           try {
-            rec = $app.findFirstRecordByData(colecaoNome, 'id', recordId)
+            rec = $app.findFirstRecordByData(targetColName, 'id', recordId)
           } catch (_) {
             rec = null
           }
@@ -5210,17 +5265,26 @@ routerAdd(
       return e.json(401, { error: 'Não autorizado' })
     }
 
-    // Checar admin inline
+    // Checar admin ou superusuário inline
     var isAdmin = false
     try {
-      var adminMembros = $app.findRecordsByFilter(
-        'empresa_membros',
-        "usuario_id = '" + authRecord.id + "' && role = 'admin'",
-        '',
-        1,
-        0,
-      )
-      isAdmin = Boolean(adminMembros && adminMembros.length > 0)
+      if (typeof authRecord.isSuperuser === 'function' && authRecord.isSuperuser()) {
+        isAdmin = true
+      } else if (
+        authRecord.isSuperuser === true ||
+        (authRecord.getBool && authRecord.getBool('isSuperuser'))
+      ) {
+        isAdmin = true
+      } else {
+        var adminMembros = $app.findRecordsByFilter(
+          'empresa_membros',
+          "usuario_id = '" + authRecord.id + "' && role = 'admin'",
+          '',
+          1,
+          0,
+        )
+        isAdmin = Boolean(adminMembros && adminMembros.length > 0)
+      }
     } catch (_) {
       isAdmin = false
     }

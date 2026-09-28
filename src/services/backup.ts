@@ -510,6 +510,44 @@ export const backupService = {
   },
 
   /**
+   * Extrai de forma recursiva a mensagem de erro real de uma resposta ou exceção HTTP/PocketBase
+   */
+  extrairMensagemErro(err: unknown, mensagemPadrao: string = 'Ocorreu um erro inesperado'): string {
+    if (!err) return mensagemPadrao
+    if (typeof err === 'string') return err
+
+    const obj = err as Record<string, unknown>
+    // Checagem em múltiplos níveis de aninhamento
+    const dataObj = (obj.data || (obj.response as Record<string, unknown>)?.data) as
+      | Record<string, unknown>
+      | undefined
+
+    if (dataObj && typeof dataObj === 'object') {
+      if (typeof dataObj.error === 'string' && dataObj.error.trim()) return dataObj.error
+      if (typeof dataObj.message === 'string' && dataObj.message.trim()) return dataObj.message
+
+      // Trata erros por campo { data: { fieldName: { message: "..." } } }
+      if (dataObj.data && typeof dataObj.data === 'object') {
+        const nestedData = dataObj.data as Record<string, unknown>
+        for (const [key, val] of Object.entries(nestedData)) {
+          if (val && typeof val === 'object' && 'message' in val) {
+            return `${key}: ${(val as { message: string }).message}`
+          }
+          if (typeof val === 'string') return `${key}: ${val}`
+        }
+      }
+    }
+
+    if (typeof obj.error === 'string' && obj.error.trim()) return obj.error
+    if (typeof obj.message === 'string' && obj.message.trim()) return obj.message
+    if (obj.status && typeof obj.status === 'number') {
+      return `Erro HTTP ${obj.status}: ${mensagemPadrao}`
+    }
+
+    return mensagemPadrao
+  },
+
+  /**
    * Valida e resume a estrutura de um dump JSON de backup no backend
    * Suporta envio leve (metadados + contagens + amostras pequenas) para evitar estouro de payload/memória
    */
@@ -530,17 +568,24 @@ export const backupService = {
           total_registros?: number
           total_colecoes?: number
         }
-        dados?: Record<string, unknown[]>
+        dados?: Record<string, unknown>
       }
 
-      const dados = obj.dados || (obj as unknown as Record<string, unknown[]>)
+      const dados = (obj.dados && typeof obj.dados === 'object' ? obj.dados : obj) as Record<
+        string,
+        unknown
+      >
       const colecoesResumo: Record<string, number> = {}
       const amostras: Record<string, string[]> = {}
+      let totalRegistrosCalculado = 0
 
       for (const [k, v] of Object.entries(dados)) {
-        if (k === 'meta' || k === 'dados') continue
+        // Ignorar chaves especiais e transitórias
+        if (k === 'meta' || k === 'dados' || k.startsWith('_backup_')) continue
+        // Aceitar apenas chaves cujo valor é array real de registros
         if (Array.isArray(v)) {
           colecoesResumo[k] = v.length
+          totalRegistrosCalculado += v.length
           const sample = v.slice(0, 30)
           amostras[k] = sample
             .map((item) =>
@@ -559,6 +604,8 @@ export const backupService = {
           criado_em: obj.meta?.created || obj.meta?.exportado_em,
           sistema_origem: obj.meta?.sistema,
           origem: obj.meta?.origem,
+          total_registros: totalRegistrosCalculado,
+          total_colecoes: Object.keys(colecoesResumo).length,
         },
         colecoes_resumo: colecoesResumo,
         amostras,
@@ -577,16 +624,10 @@ export const backupService = {
       })
       return res
     } catch (err: unknown) {
-      const errorObj = err as {
-        data?: { error?: string; message?: string }
-        message?: string
-        status?: number
-      }
-      const serverMsg =
-        errorObj.data?.error ||
-        errorObj.data?.message ||
-        errorObj.message ||
-        'Erro ao validar backup no servidor.'
+      const serverMsg = backupService.extrairMensagemErro(
+        err,
+        'Erro ao validar backup no servidor.',
+      )
       throw new Error(`[Validação] ${serverMsg}`)
     }
   },
@@ -605,16 +646,10 @@ export const backupService = {
       })
       return res
     } catch (err: unknown) {
-      const errorObj = err as {
-        data?: { error?: string; message?: string }
-        message?: string
-        status?: number
-      }
-      const serverMsg =
-        errorObj.data?.error ||
-        errorObj.data?.message ||
-        errorObj.message ||
-        `Erro ao processar lote da coleção ${colecao}.`
+      const serverMsg = backupService.extrairMensagemErro(
+        err,
+        `Erro ao processar lote da coleção ${colecao}.`,
+      )
       throw new Error(`[Lote ${colecao}] ${serverMsg}`)
     }
   },
@@ -640,16 +675,7 @@ export const backupService = {
       )
       return res
     } catch (err: unknown) {
-      const errorObj = err as {
-        data?: { error?: string; message?: string }
-        message?: string
-        status?: number
-      }
-      const serverMsg =
-        errorObj.data?.error ||
-        errorObj.data?.message ||
-        errorObj.message ||
-        'Erro ao finalizar restauração.'
+      const serverMsg = backupService.extrairMensagemErro(err, 'Erro ao finalizar restauração.')
       throw new Error(`[Finalização] ${serverMsg}`)
     }
   },

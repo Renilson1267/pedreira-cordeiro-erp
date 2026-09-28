@@ -827,7 +827,10 @@ export function Backups() {
         description: `${validacao.meta.total_registros_arquivo.toLocaleString('pt-BR')} registros e ${validacao.meta.total_colecoes_arquivo} coleções identificadas.`,
       })
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Falha ao processar o arquivo selecionado.'
+      const msg = backupService.extrairMensagemErro(
+        err,
+        err instanceof Error ? err.message : 'Falha ao processar o arquivo selecionado.',
+      )
       setErroValidacao(msg)
       toast({
         title: 'Falha na etapa de validação',
