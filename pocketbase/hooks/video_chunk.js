@@ -172,21 +172,30 @@ routerAdd(
       return e.json(500, { error: 'Erro ao criar diretório temporário: ' + errDir })
     }
 
-    // Salvar poster opcional se enviado no init
-    var posterFiles = e.findUploadedFiles('poster')
+    // Salvar poster opcional se enviado no init (apenas se for multipart com arquivo anexado)
     var hasPoster = false
-    if (posterFiles && posterFiles.length > 0) {
-      try {
+    try {
+      var posterFiles = e.findUploadedFiles('poster')
+      if (posterFiles && posterFiles.length > 0) {
         var pFile = posterFiles[0]
         var posterPath = sessionDir + '/poster_' + (pFile.name || 'poster.jpg')
         var pBuf = $os.readFile(pFile.path || '')
         if (pBuf && pBuf.length > 0) {
           $os.writeFile(posterPath, pBuf, 0644)
           hasPoster = true
+        } else if (pFile.reader) {
+          try {
+            var pr = pFile.reader.open()
+            var pbArr = new Array(pFile.size).fill(0)
+            pr.read(pbArr)
+            pr.close()
+            $os.writeFile(posterPath, pbArr, 0644)
+            hasPoster = true
+          } catch (_) {}
         }
-      } catch (errP) {
-        console.warn('Aviso: poster no chunk init:', errP)
       }
+    } catch (errP) {
+      console.warn('Aviso: poster no chunk init:', errP)
     }
 
     // Gravar metadados da sessão em meta.json

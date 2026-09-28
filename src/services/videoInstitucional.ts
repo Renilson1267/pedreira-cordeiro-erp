@@ -113,6 +113,7 @@ async function fetchAutenticadoComTimeout<T = any>(
   options: {
     method?: string
     body?: BodyInit | null
+    headers?: Record<string, string>
     timeoutMs?: number
   } = {},
 ): Promise<T> {
@@ -129,7 +130,9 @@ async function fetchAutenticadoComTimeout<T = any>(
   }, timeoutMs)
 
   try {
-    const headers: Record<string, string> = {}
+    const headers: Record<string, string> = {
+      ...(options.headers || {}),
+    }
     if (token) {
       headers['Authorization'] = token
     }
@@ -402,29 +405,53 @@ export const videoInstitucionalService = {
     })
 
     // 1. Iniciar sessão de chunks
-    const initForm = new FormData()
-    initForm.append('file_name', file.name)
-    initForm.append('file_size', String(totalBytes))
-    initForm.append('total_chunks', String(totalChunks))
-    initForm.append('titulo', params.titulo.trim())
-    if (params.descricao) {
-      initForm.append('descricao', params.descricao.trim())
-    }
-    if (substituindoId) {
-      initForm.append('substituindo_id', substituindoId)
-    }
-    initForm.append('ativo', String(params.ativo ?? true))
-    if (params.duracaoSegundos) {
-      initForm.append('duracao_segundos', String(Math.round(params.duracaoSegundos)))
-    }
-    if (params.enviadoPorNome) {
-      initForm.append('enviado_por_nome', params.enviadoPorNome)
-    }
-    if (params.enviadoPorId) {
-      initForm.append('enviado_por_id', params.enviadoPorId)
-    }
+    // Se NÃO houver capa/poster, enviar como JSON puro (evita erro "http: no such file" do PocketBase multipart parser)
+    // Se HOUVER capa/poster, enviar como FormData (multipart) contendo o arquivo real
+    let initBody: BodyInit
+    let initHeaders: Record<string, string> | undefined
+
     if (params.poster) {
+      const initForm = new FormData()
+      initForm.append('file_name', file.name)
+      initForm.append('file_size', String(totalBytes))
+      initForm.append('total_chunks', String(totalChunks))
+      initForm.append('titulo', params.titulo.trim())
+      if (params.descricao) {
+        initForm.append('descricao', params.descricao.trim())
+      }
+      if (substituindoId) {
+        initForm.append('substituindo_id', substituindoId)
+      }
+      initForm.append('ativo', String(params.ativo ?? true))
+      if (params.duracaoSegundos) {
+        initForm.append('duracao_segundos', String(Math.round(params.duracaoSegundos)))
+      }
+      if (params.enviadoPorNome) {
+        initForm.append('enviado_por_nome', params.enviadoPorNome)
+      }
+      if (params.enviadoPorId) {
+        initForm.append('enviado_por_id', params.enviadoPorId)
+      }
       initForm.append('poster', params.poster)
+      initBody = initForm
+      // Browser preenche automaticamente Content-Type multipart/form-data com o boundary
+    } else {
+      const initJson = {
+        file_name: file.name,
+        file_size: totalBytes,
+        total_chunks: totalChunks,
+        titulo: params.titulo.trim(),
+        descricao: params.descricao ? params.descricao.trim() : '',
+        substituindo_id: substituindoId || '',
+        ativo: params.ativo ?? true,
+        duracao_segundos: params.duracaoSegundos ? Math.round(params.duracaoSegundos) : 0,
+        enviado_por_nome: params.enviadoPorNome || '',
+        enviado_por_id: params.enviadoPorId || '',
+      }
+      initBody = JSON.stringify(initJson)
+      initHeaders = {
+        'Content-Type': 'application/json',
+      }
     }
 
     let sessionId = ''
@@ -435,7 +462,8 @@ export const videoInstitucionalService = {
         total_chunks: number
       }>('/backend/v1/video-institucional/chunk/init', {
         method: 'POST',
-        body: initForm,
+        body: initBody,
+        headers: initHeaders,
         timeoutMs: 60000,
       })
       sessionId = initRes.session_id

@@ -320,6 +320,205 @@ async function run() {
 
   console.log('✓ Teste 6 (Fatiamento sintético de 25 MB em 3 chunks): OK')
 
+  // 6. Teste de Fluxo Completo de Upload Fracionado: Sem Capa (JSON) e Com Capa (Multipart)
+  console.log('--- Teste 7: Teste do Fluxo Fracionado End-to-End contra o Backend ---')
+  const pbModule = await import('./src/lib/pocketbase/client.js')
+  const pbInstance = pbModule.default || pbModule.pb
+
+  // Autenticar com o usuário admin
+  try {
+    await pbInstance.collection('users').authWithPassword('gcmixsje@gmail.com', 'Skip@Pass')
+    console.log('✓ Autenticado com sucesso como admin!')
+
+    const token = pbInstance.authStore.token
+    if (!token) {
+      throw new Error('Token de autenticação não gerado!')
+    }
+
+    const baseUrl = pbInstance.baseUrl.replace(/\/$/, '')
+
+    // CASO A: Upload fracionado sem capa (envio como JSON)
+    console.log('Testando Caso A: Init de sessão fracionada sem capa (JSON)...')
+    const totalBytesVideoA = 1024 * 1024 // 1 MB
+    const totalChunksA = 2
+    const initJsonA = {
+      file_name: 'teste_sem_capa.mp4',
+      file_size: totalBytesVideoA,
+      total_chunks: totalChunksA,
+      titulo: 'Vídeo Teste Sem Capa Automático',
+      descricao: 'Teste automatizado de sessão sem capa via JSON',
+      ativo: false,
+      duracao_segundos: 10,
+    }
+
+    const resInitA = await fetch(`${baseUrl}/backend/v1/video-institucional/chunk/init`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: token,
+      },
+      body: JSON.stringify(initJsonA),
+    })
+
+    if (!resInitA.ok) {
+      const errText = await resInitA.text()
+      throw new Error(`Falha no init sem capa (JSON): HTTP ${resInitA.status} - ${errText}`)
+    }
+
+    const dataInitA = (await resInitA.json()) as { session_id: string; total_chunks: number }
+    if (!dataInitA.session_id) {
+      throw new Error('session_id não retornado no init sem capa!')
+    }
+    const sessionIdA = dataInitA.session_id
+    console.log(`✓ Sessão A criada com sucesso via JSON! Session ID: ${sessionIdA}`)
+
+    // Enviar bloco 0
+    const chunk0DataA = new Uint8Array(512 * 1024)
+    chunk0DataA.fill(65) // 'A'
+    const formChunk0A = new FormData()
+    formChunk0A.append('session_id', sessionIdA)
+    formChunk0A.append('chunk_index', '0')
+    formChunk0A.append('chunk', new Blob([chunk0DataA]), 'part_0.bin')
+
+    const resPart0A = await fetch(`${baseUrl}/backend/v1/video-institucional/chunk/part`, {
+      method: 'POST',
+      headers: { Authorization: token },
+      body: formChunk0A,
+    })
+    if (!resPart0A.ok) {
+      throw new Error(`Falha ao enviar bloco 0: HTTP ${resPart0A.status}`)
+    }
+
+    // Enviar bloco 1
+    const chunk1DataA = new Uint8Array(512 * 1024)
+    chunk1DataA.fill(66) // 'B'
+    const formChunk1A = new FormData()
+    formChunk1A.append('session_id', sessionIdA)
+    formChunk1A.append('chunk_index', '1')
+    formChunk1A.append('chunk', new Blob([chunk1DataA]), 'part_1.bin')
+
+    const resPart1A = await fetch(`${baseUrl}/backend/v1/video-institucional/chunk/part`, {
+      method: 'POST',
+      headers: { Authorization: token },
+      body: formChunk1A,
+    })
+    if (!resPart1A.ok) {
+      throw new Error(`Falha ao enviar bloco 1: HTTP ${resPart1A.status}`)
+    }
+    console.log('✓ Blocos 0 e 1 enviados com sucesso!')
+
+    // Finalizar sessão A (montar e salvar registro)
+    const formCompleteA = new FormData()
+    formCompleteA.append('session_id', sessionIdA)
+    const resCompleteA = await fetch(`${baseUrl}/backend/v1/video-institucional/chunk/complete`, {
+      method: 'POST',
+      headers: { Authorization: token },
+      body: formCompleteA,
+    })
+
+    if (!resCompleteA.ok) {
+      const errComplete = await resCompleteA.text()
+      throw new Error(`Falha ao finalizar sessão A: HTTP ${resCompleteA.status} - ${errComplete}`)
+    }
+    const recordA = (await resCompleteA.json()) as {
+      id: string
+      titulo: string
+      arquivo: string
+      tamanho_bytes: number
+    }
+    if (!recordA.id || !recordA.arquivo) {
+      throw new Error('Registro criado não possui id ou arquivo válido!')
+    }
+    console.log(
+      `✓ Vídeo A finalizado e montado no banco! ID: ${recordA.id}, Arquivo: ${recordA.arquivo}`,
+    )
+
+    // Excluir registro de teste A
+    await pbInstance.collection('config_video_institucional').delete(recordA.id)
+    console.log('✓ Registro A de teste excluído com sucesso!')
+
+    // CASO B: Upload fracionado com capa (multipart com arquivo de poster)
+    console.log('Testando Caso B: Init de sessão fracionada com capa (Multipart)...')
+    const formInitB = new FormData()
+    formInitB.append('file_name', 'teste_com_capa.mp4')
+    formInitB.append('file_size', String(1024 * 512))
+    formInitB.append('total_chunks', '1')
+    formInitB.append('titulo', 'Vídeo Teste Com Capa Automático')
+    formInitB.append('ativo', 'false')
+
+    // Gerar um fake poster JPG de 100 bytes
+    const fakePosterBytes = new Uint8Array(100)
+    fakePosterBytes.fill(99)
+    formInitB.append(
+      'poster',
+      new Blob([fakePosterBytes], { type: 'image/jpeg' }),
+      'poster_teste.jpg',
+    )
+
+    const resInitB = await fetch(`${baseUrl}/backend/v1/video-institucional/chunk/init`, {
+      method: 'POST',
+      headers: { Authorization: token },
+      body: formInitB,
+    })
+
+    if (!resInitB.ok) {
+      const errTextB = await resInitB.text()
+      throw new Error(`Falha no init com capa (Multipart): HTTP ${resInitB.status} - ${errTextB}`)
+    }
+
+    const dataInitB = (await resInitB.json()) as { session_id: string }
+    const sessionIdB = dataInitB.session_id
+    console.log(
+      `✓ Sessão B (com poster) criada com sucesso via Multipart! Session ID: ${sessionIdB}`,
+    )
+
+    // Enviar bloco único
+    const chunk0DataB = new Uint8Array(1024 * 512)
+    chunk0DataB.fill(70)
+    const formChunk0B = new FormData()
+    formChunk0B.append('session_id', sessionIdB)
+    formChunk0B.append('chunk_index', '0')
+    formChunk0B.append('chunk', new Blob([chunk0DataB]), 'part_0.bin')
+
+    const resPart0B = await fetch(`${baseUrl}/backend/v1/video-institucional/chunk/part`, {
+      method: 'POST',
+      headers: { Authorization: token },
+      body: formChunk0B,
+    })
+    if (!resPart0B.ok) {
+      throw new Error(`Falha ao enviar bloco da sessão B: HTTP ${resPart0B.status}`)
+    }
+
+    // Finalizar sessão B
+    const formCompleteB = new FormData()
+    formCompleteB.append('session_id', sessionIdB)
+    const resCompleteB = await fetch(`${baseUrl}/backend/v1/video-institucional/chunk/complete`, {
+      method: 'POST',
+      headers: { Authorization: token },
+      body: formCompleteB,
+    })
+    if (!resCompleteB.ok) {
+      const errCompleteB = await resCompleteB.text()
+      throw new Error(`Falha ao finalizar sessão B: HTTP ${resCompleteB.status} - ${errCompleteB}`)
+    }
+    const recordB = (await resCompleteB.json()) as { id: string; poster: string }
+    if (!recordB.id || !recordB.poster) {
+      throw new Error('Registro B criado não possui id ou poster válido!')
+    }
+    console.log(
+      `✓ Vídeo B finalizado com poster gravado! ID: ${recordB.id}, Poster: ${recordB.poster}`,
+    )
+
+    // Excluir registro de teste B
+    await pbInstance.collection('config_video_institucional').delete(recordB.id)
+    console.log('✓ Registro B de teste excluído com sucesso!')
+
+    console.log('✓ Teste 7 (Fluxo Completo de Upload Fracionado: JSON e Multipart): OK')
+  } catch (errAuth: any) {
+    console.warn('Aviso ao executar teste E2E com PocketBase:', errAuth)
+    throw errAuth
+  }
+
   console.log('--- Todos os testes de validação passaram com sucesso! ---')
 }
 
