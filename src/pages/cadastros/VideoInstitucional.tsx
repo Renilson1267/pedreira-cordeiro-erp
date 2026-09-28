@@ -85,6 +85,15 @@ export default function VideoInstitucional() {
   const [tornarAtivo, setTornarAtivo] = useState(true)
   const [salvando, setSalvando] = useState(false)
   const [progressoTexto, setProgressoTexto] = useState('')
+  const [progressoUpload, setProgressoUpload] = useState<{
+    carregadoBytes: number
+    totalBytes: number
+    porcentagem: number
+    etapa: 'preparando' | 'enviando' | 'processando' | 'concluido'
+    chunkAtual?: number
+    totalChunks?: number
+    tentativa?: number
+  } | null>(null)
 
   // Modal de confirmação de exclusão
   const [itemParaExcluir, setItemParaExcluir] = useState<VideoInstitucionalRecord | null>(null)
@@ -280,7 +289,13 @@ export default function VideoInstitucional() {
 
     try {
       setSalvando(true)
-      setProgressoTexto('Enviando arquivo MP4 para o servidor...')
+      setProgressoTexto('Iniciando envio...')
+      setProgressoUpload({
+        carregadoBytes: 0,
+        totalBytes: arquivoSelecionado.size,
+        porcentagem: 0,
+        etapa: 'preparando',
+      })
 
       const params = {
         titulo: titulo.trim(),
@@ -291,17 +306,45 @@ export default function VideoInstitucional() {
         duracaoSegundos: duracaoDetectada,
         enviadoPorNome: user?.name || 'Administrador',
         enviadoPorId: user?.id,
+        onProgress: (info: {
+          carregadoBytes: number
+          totalBytes: number
+          porcentagem: number
+          etapa: 'preparando' | 'enviando' | 'processando' | 'concluido'
+          chunkAtual?: number
+          totalChunks?: number
+          tentativa?: number
+        }) => {
+          setProgressoUpload(info)
+          if (info.etapa === 'preparando') {
+            setProgressoTexto('Preparando arquivo e iniciando conexão...')
+          } else if (info.etapa === 'enviando') {
+            const mbEnviados = (info.carregadoBytes / (1024 * 1024)).toFixed(1)
+            const mbTotal = (info.totalBytes / (1024 * 1024)).toFixed(1)
+            const blocoInfo =
+              info.chunkAtual && info.totalChunks
+                ? ` • Bloco ${info.chunkAtual}/${info.totalChunks}`
+                : ''
+            const tentativaInfo =
+              info.tentativa && info.tentativa > 1 ? ` (tentativa ${info.tentativa})` : ''
+            setProgressoTexto(
+              `Enviando: ${mbEnviados} MB de ${mbTotal} MB (${info.porcentagem}%)${blocoInfo}${tentativaInfo}`,
+            )
+          } else if (info.etapa === 'processando') {
+            setProgressoTexto('Todos os blocos enviados. Processando e publicando no servidor...')
+          } else if (info.etapa === 'concluido') {
+            setProgressoTexto('Vídeo institucional publicado com sucesso!')
+          }
+        },
       }
 
       if (substituindoId) {
-        setProgressoTexto('Substituindo vídeo institucional...')
         await videoInstitucionalService.substituir(substituindoId, params)
         toast({
           title: 'Vídeo institucional substituído!',
           description: 'O novo vídeo foi salvo com sucesso e já está disponível na Home pública.',
         })
       } else {
-        setProgressoTexto('Criando novo vídeo institucional...')
         await videoInstitucionalService.criar(params, tornarAtivo)
         toast({
           title: 'Vídeo institucional publicado!',
@@ -314,16 +357,41 @@ export default function VideoInstitucional() {
       await carregarVideos()
     } catch (err: any) {
       console.error('Erro ao enviar vídeo institucional:', err)
+      const rawMsg = err?.message || ''
+      let tituloErro = 'Falha no envio do vídeo'
+      let descErro = rawMsg || 'Ocorreu um erro durante o upload do vídeo.'
+
+      if (
+        rawMsg.includes('ultrapassa o limite') ||
+        rawMsg.includes('200 MB') ||
+        rawMsg.includes('413')
+      ) {
+        tituloErro = 'Arquivo excede o limite máximo'
+        descErro = `O vídeo selecionado excede 200 MB (${formatBytes(arquivoSelecionado?.size)}). Comprima ou reexporte o vídeo em resolução 1080p ou 720p.`
+      } else if (
+        rawMsg.includes('Failed to fetch') ||
+        rawMsg.includes('NetworkError') ||
+        rawMsg.includes('timeout') ||
+        rawMsg.includes('ERR_CONNECTION') ||
+        rawMsg.includes('conexão')
+      ) {
+        tituloErro = 'Erro de Conexão / Limite de Rede'
+        descErro =
+          'A conexão com o servidor foi interrompida ou o navegador bloqueou a requisição. O sistema usa envio fracionado automático; tente novamente com uma conexão estável.'
+      } else if (rawMsg.includes('401') || rawMsg.includes('Não autorizado')) {
+        tituloErro = 'Sessão Expirada'
+        descErro = 'Sua autenticação expirou. Recarregue a página ou faça login novamente.'
+      }
+
       toast({
-        title: 'Falha no envio do vídeo',
-        description:
-          err.message ||
-          'Ocorreu um erro durante o upload do vídeo. Verifique sua conexão e tente novamente.',
+        title: tituloErro,
+        description: descErro,
         variant: 'destructive',
       })
     } finally {
       setSalvando(false)
       setProgressoTexto('')
+      setProgressoUpload(null)
     }
   }
 
@@ -930,7 +998,45 @@ export default function VideoInstitucional() {
               </Label>
             </div>
 
-            {progressoTexto && (
+            {progressoUpload && (
+              <div className="p-3.5 bg-teal-50/80 border border-teal-200 rounded-xl space-y-2">
+                <div className="flex items-center justify-between text-xs text-teal-900 font-semibold">
+                  <span className="flex items-center gap-1.5">
+                    <RefreshCw className="w-3.5 h-3.5 animate-spin text-teal-700" />
+                    {progressoUpload.etapa === 'preparando' && 'Iniciando upload...'}
+                    {progressoUpload.etapa === 'enviando' && 'Enviando arquivo em partes...'}
+                    {progressoUpload.etapa === 'processando' && 'Processando no servidor...'}
+                    {progressoUpload.etapa === 'concluido' && 'Upload concluído!'}
+                  </span>
+                  <span className="text-teal-800 font-bold">{progressoUpload.porcentagem}%</span>
+                </div>
+
+                {/* Barra de Progresso visual */}
+                <div className="w-full bg-teal-200/60 rounded-full h-2.5 overflow-hidden">
+                  <div
+                    className="bg-teal-700 h-2.5 rounded-full transition-all duration-300"
+                    style={{ width: `${Math.min(100, Math.max(0, progressoUpload.porcentagem))}%` }}
+                  />
+                </div>
+
+                <div className="flex items-center justify-between text-[11px] text-teal-700">
+                  <span>
+                    {(progressoUpload.carregadoBytes / (1024 * 1024)).toFixed(1)} MB de{' '}
+                    {(progressoUpload.totalBytes / (1024 * 1024)).toFixed(1)} MB
+                  </span>
+                  {progressoUpload.chunkAtual && progressoUpload.totalChunks ? (
+                    <span>
+                      Bloco {progressoUpload.chunkAtual} de {progressoUpload.totalChunks}
+                      {progressoUpload.tentativa && progressoUpload.tentativa > 1
+                        ? ` (tentativa ${progressoUpload.tentativa})`
+                        : ''}
+                    </span>
+                  ) : null}
+                </div>
+              </div>
+            )}
+
+            {!progressoUpload && progressoTexto && (
               <div className="p-3 bg-blue-50 border border-blue-200 rounded-xl text-xs text-blue-800 flex items-center gap-2">
                 <RefreshCw className="w-4 h-4 animate-spin text-blue-600 shrink-0" />
                 <span>{progressoTexto}</span>
