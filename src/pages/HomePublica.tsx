@@ -566,7 +566,7 @@ export default function HomePublica() {
           </div>
         </section>
 
-        {/* SEÇÃO EXCLUSIVA DE DESTAQUE: LOKOTRACK EM OPERAÇÃO (BRITADOR EM PATOS-PB) */}
+        {/* SEÇÃO EXCLUSIVA DE DESTAQUE: LOCAÇÃO DO BRITADOR MÓVEL LOKOTRACK */}
         <section
           id="lokotrack-patos"
           className="py-16 bg-gradient-to-r from-[#0F172A] via-[#1E293B] to-[#0A2540] text-white border-y border-amber-500/30 relative overflow-hidden"
@@ -575,66 +575,68 @@ export default function HomePublica() {
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
             <div className="bg-slate-900/80 border border-amber-400/40 rounded-3xl p-6 sm:p-8 lg:p-10 shadow-2xl backdrop-blur-md">
               <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-center">
-                {/* Imagem em Destaque do Lokotrack */}
-                <div className="lg:col-span-7">
-                  <div
-                    className="relative rounded-2xl overflow-hidden border-2 border-amber-400/50 shadow-2xl group cursor-pointer"
-                    onClick={() =>
-                      setFotoAtiva(INSTITUCIONAL_CONFIG.fotosReais.lokotrackPatosOperacao)
-                    }
-                  >
-                    <img
-                      src={INSTITUCIONAL_CONFIG.fotosReais.lokotrackPatosOperacao}
-                      alt="Lokotrack em Operação - britador em Patos PB"
-                      className="w-full h-72 sm:h-96 object-cover group-hover:scale-105 transition-transform duration-700"
-                      loading="lazy"
-                    />
-                    <div className="absolute top-3 left-3 flex flex-wrap gap-2">
-                      <span className="bg-amber-500 text-slate-950 font-black text-xs px-3 py-1.5 rounded-lg shadow-md uppercase tracking-wider flex items-center gap-1.5">
-                        <MapPin className="w-3.5 h-3.5" />
-                        Patos — PB
-                      </span>
-                      <span className="bg-[#0A2540]/90 text-white font-bold text-xs px-3 py-1.5 rounded-lg border border-blue-400/30 backdrop-blur-xs">
-                        Britador Móvel em Operação
-                      </span>
+                {/* Painel Gráfico / Destaque de Serviço do Lokotrack */}
+                <div className="lg:col-span-6">
+                  <div className="relative rounded-2xl overflow-hidden border-2 border-amber-400/40 bg-gradient-to-br from-slate-900 via-blue-950 to-slate-950 p-8 shadow-2xl flex flex-col justify-between min-h-[300px] sm:min-h-[360px]">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <span className="bg-amber-500 text-slate-950 font-black text-xs px-3 py-1.5 rounded-lg shadow-md uppercase tracking-wider flex items-center gap-1.5">
+                          <MapPin className="w-3.5 h-3.5" />
+                          Patos — PB e Região
+                        </span>
+                        <span className="bg-[#0A2540]/90 text-white font-bold text-xs px-3 py-1.5 rounded-lg border border-blue-400/30">
+                          C M Construções
+                        </span>
+                      </div>
+                      <div className="w-12 h-12 rounded-2xl bg-amber-400/10 border border-amber-400/30 flex items-center justify-center text-amber-400">
+                        <Wrench className="w-6 h-6" />
+                      </div>
                     </div>
 
-                    <div className="absolute bottom-3 left-3 right-3 bg-gradient-to-t from-black/90 via-black/70 to-transparent p-4 rounded-xl border border-white/10 backdrop-blur-xs flex items-center justify-between">
-                      <div>
-                        <div className="text-sm font-extrabold text-amber-300">
-                          Lokotrack em Operação — Unidade de Patos-PB
-                        </div>
-                        <div className="text-xs text-slate-200">
-                          Britador móvel sobre esteiras em plena britagem de rocha granítica
-                        </div>
+                    <div className="my-6 space-y-3">
+                      <div className="text-2xl sm:text-3xl font-black text-white leading-tight">
+                        Britador Móvel de Mandíbula sobre Esteiras
                       </div>
-                      <span className="hidden sm:inline-block text-xs text-amber-300 font-bold bg-white/10 px-2.5 py-1 rounded-md">
-                        Clique para ampliar 🔍
-                      </span>
+                      <p className="text-xs sm:text-sm text-slate-300 leading-relaxed">
+                        Solução móvel de alta performance para britagem primária e secundária.
+                        Mobilidade total para operar diretamente na jazida da sua pedreira ou na
+                        frente de serviço da sua obra.
+                      </p>
+                    </div>
+
+                    <div className="grid grid-cols-3 gap-2 pt-4 border-t border-white/10 text-center">
+                      <div className="bg-white/5 rounded-xl p-2.5 border border-white/5">
+                        <div className="text-base sm:text-lg font-black text-amber-400">100%</div>
+                        <div className="text-[10px] text-slate-300">Móvel sobre esteiras</div>
+                      </div>
+                      <div className="bg-white/5 rounded-xl p-2.5 border border-white/5">
+                        <div className="text-base sm:text-lg font-black text-emerald-400">Zero</div>
+                        <div className="text-[10px] text-slate-300">Frete de rocha bruta</div>
+                      </div>
+                      <div className="bg-white/5 rounded-xl p-2.5 border border-white/5">
+                        <div className="text-base sm:text-lg font-black text-blue-400">Alta</div>
+                        <div className="text-[10px] text-slate-300">Produção horária</div>
+                      </div>
                     </div>
                   </div>
                 </div>
 
                 {/* Texto explicativo e cotação */}
-                <div className="lg:col-span-5 space-y-5">
+                <div className="lg:col-span-6 space-y-5">
                   <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-amber-400/20 border border-amber-400/40 text-amber-300 text-xs font-bold uppercase tracking-wider">
                     <Sparkles className="w-3.5 h-3.5 text-amber-400" />
-                    Equipamento em Operação
+                    Equipamento para Locação
                   </div>
 
                   <h3 className="text-2xl sm:text-3xl lg:text-4xl font-black text-white leading-tight">
-                    Lokotrack em Operação no Britador de{' '}
-                    <span className="text-amber-400">Patos — PB</span>
+                    Locação do Britador Móvel <span className="text-amber-400">Lokotrack</span>
                   </h3>
 
                   <p className="text-sm sm:text-base text-slate-300 leading-relaxed">
-                    Esta foto retrata o nosso{' '}
-                    <strong>
-                      britador móvel Lokotrack em plena atividade de britagem na Pedreira Cordeiro,
-                      em Patos (Paraíba)
-                    </strong>
-                    . Equipamento de ponta da C M Construções, com capacidade contínua para
-                    desmonte, britagem primária e secundária direto no canteiro.
+                    O <strong>britador móvel Lokotrack</strong> disponibilizado pela C M Construções
+                    oferece tecnologia avançada para esmagamento contínuo de rochas. Com capacidade
+                    para atuar na britagem primária e secundária no próprio canteiro, viabiliza o
+                    aproveitamento imediato de rocha in loco.
                   </p>
 
                   <div className="space-y-2 text-xs sm:text-sm text-slate-200 pt-1">
@@ -722,26 +724,24 @@ export default function HomePublica() {
               </div>
             </div>
 
-            {/* Grid com Fotos Reais do Britador Móvel Lokotrack — C M Construções */}
+            {/* Grid com Fotos Reais de Estoque e Produção de Brita — C M Construções */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6 max-w-5xl mx-auto">
-              {/* Foto Principal: Britador Móvel Lokotrack em Operação em Patos-PB */}
+              {/* Card 1: Pilhas de Brita Produzida */}
               <div className="group rounded-2xl overflow-hidden border-2 border-amber-400/60 bg-gradient-to-b from-slate-900/90 to-blue-950/80 shadow-2xl backdrop-blur-xs relative ring-2 ring-amber-400/20">
                 <div className="relative h-72 overflow-hidden">
                   <img
-                    src={INSTITUCIONAL_CONFIG.fotosReais.lokotrackPatosOperacao}
-                    alt="Britador móvel Lokotrack em operação na unidade de Patos PB"
+                    src={INSTITUCIONAL_CONFIG.fotosReais.cmPilhas1}
+                    alt="Pilhas de brita produzida — C M Construções"
                     className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500 cursor-pointer"
                     loading="lazy"
-                    onClick={() =>
-                      setFotoAtiva(INSTITUCIONAL_CONFIG.fotosReais.lokotrackPatosOperacao)
-                    }
+                    onClick={() => setFotoAtiva(INSTITUCIONAL_CONFIG.fotosReais.cmPilhas1)}
                   />
                   <div className="absolute top-3 left-3 flex items-center gap-2">
                     <span className="bg-amber-500 text-slate-950 text-[10px] font-black px-2.5 py-1 rounded-md shadow-md uppercase tracking-wider">
-                      Patos — PB
+                      Produção Real
                     </span>
                     <span className="bg-[#0A2540]/90 text-amber-300 text-[10px] font-bold px-2 py-1 rounded-md border border-amber-400/30">
-                      Britador Móvel Lokotrack
+                      Brita Produzida
                     </span>
                   </div>
                   <div className="absolute bottom-2 right-2">
@@ -752,26 +752,23 @@ export default function HomePublica() {
                 </div>
                 <div className="p-6 space-y-3">
                   <div className="flex items-center justify-between">
-                    <h4 className="text-lg font-black text-amber-300">Lokotrack em Operação</h4>
+                    <h4 className="text-lg font-black text-amber-300">Brita Produzida</h4>
                     <Badge className="bg-amber-400/20 text-amber-300 border border-amber-400/40 text-[10px]">
-                      Patos — PB
+                      C M Construções
                     </Badge>
                   </div>
                   <p className="text-xs text-slate-200 leading-relaxed font-medium">
-                    O <strong>britador móvel Lokotrack</strong> em plena operação na Pedreira
-                    Cordeiro em <strong>Patos — PB</strong>, esmagando rocha granítica diretamente
-                    no canteiro com alta produtividade contínua e eliminando custo de transporte de
-                    pedra bruta.
+                    Brita produzida com granulometria uniforme e alta qualidade. A locação do
+                    britador móvel permite produzir agregados diretamente na frente da obra ou na
+                    jazida, atendendo demandas de grande porte.
                   </p>
                   <div className="pt-2 border-t border-white/10 flex items-center justify-between text-[11px] text-blue-300">
                     <span className="flex items-center gap-1">
                       <MapPin className="w-3.5 h-3.5 text-amber-400" />
-                      Unidade Patos (PB)
+                      Produção in loco
                     </span>
                     <button
-                      onClick={() =>
-                        setFotoAtiva(INSTITUCIONAL_CONFIG.fotosReais.lokotrackPatosOperacao)
-                      }
+                      onClick={() => setFotoAtiva(INSTITUCIONAL_CONFIG.fotosReais.cmPilhas1)}
                       className="text-amber-300 hover:underline font-bold cursor-pointer"
                     >
                       Ampliar foto ↗
@@ -780,38 +777,43 @@ export default function HomePublica() {
                 </div>
               </div>
 
-              {/* Foto 2: Britador Metso Lokotrack sobre esteiras */}
+              {/* Card 2: Pátio de Estoque e Operação */}
               <div className="group rounded-2xl overflow-hidden border border-blue-400/20 bg-slate-900/60 shadow-xl backdrop-blur-xs">
                 <div className="relative h-72 overflow-hidden">
                   <img
-                    src={INSTITUCIONAL_CONFIG.fotosReais.lokotrack1}
-                    alt="Britador móvel Metso Lokotrack — C M Construções"
+                    src={INSTITUCIONAL_CONFIG.fotosReais.cmPatio}
+                    alt="Pátio de estoque e expedição de brita"
                     className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500 cursor-pointer"
                     loading="lazy"
-                    onClick={() => setFotoAtiva(INSTITUCIONAL_CONFIG.fotosReais.lokotrack1)}
+                    onClick={() => setFotoAtiva(INSTITUCIONAL_CONFIG.fotosReais.cmPatio)}
                   />
                   <div className="absolute top-3 left-3">
                     <span className="bg-[#0A2540]/90 text-amber-300 text-[10px] font-bold px-2.5 py-1 rounded-md border border-amber-400/30">
-                      Britador Metso Lokotrack
+                      Pátio de Estoque
+                    </span>
+                  </div>
+                  <div className="absolute bottom-2 right-2">
+                    <span className="bg-black/75 backdrop-blur-xs text-blue-200 text-[10px] px-2 py-0.5 rounded font-mono">
+                      Foto real da unidade
                     </span>
                   </div>
                 </div>
                 <div className="p-6 space-y-3">
                   <div className="flex items-center justify-between">
-                    <h4 className="text-lg font-bold text-white">Britador Móvel Lokotrack</h4>
+                    <h4 className="text-lg font-bold text-white">Pátio de Estoque</h4>
                     <Badge className="bg-blue-900/60 text-blue-200 border border-blue-400/30 text-[10px]">
-                      C M Construções
+                      Patos — PB
                     </Badge>
                   </div>
                   <p className="text-xs text-blue-200 leading-relaxed">
-                    Equipamento móvel de alta produção sobre esteiras para britagem no próprio local
-                    da jazida ou canteiro de obras, com mobilidade total e controle granulométrico
-                    rigoroso.
+                    Pátio de estoque organizado com britas e agregados prontos para carregamento e
+                    distribuição para obras de infraestrutura, pavimentação e centrais dosadoras da
+                    região.
                   </p>
                   <div className="pt-2 border-t border-white/10 flex items-center justify-between text-[11px] text-blue-300">
-                    <span className="text-slate-400">Sobre esteiras</span>
+                    <span className="text-slate-400">Estoque pronto</span>
                     <button
-                      onClick={() => setFotoAtiva(INSTITUCIONAL_CONFIG.fotosReais.lokotrack1)}
+                      onClick={() => setFotoAtiva(INSTITUCIONAL_CONFIG.fotosReais.cmPatio)}
                       className="text-amber-300 hover:underline font-bold cursor-pointer"
                     >
                       Ampliar foto ↗
@@ -821,20 +823,21 @@ export default function HomePublica() {
               </div>
             </div>
 
-            {/* Linha adicional com pilhas de brita e pátio */}
+            {/* Linha adicional com pilhas de brita e capacidade */}
             <div className="mt-8 grid grid-cols-1 sm:grid-cols-3 gap-6">
               <div className="group rounded-2xl overflow-hidden border border-blue-400/20 bg-slate-900/60">
                 <div className="relative h-48 overflow-hidden">
                   <img
                     src={INSTITUCIONAL_CONFIG.fotosReais.cmPilhas1}
-                    alt="Brita produzida pelo Lokotrack"
-                    className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                    alt="Brita produzida na pedreira"
+                    className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500 cursor-pointer"
                     loading="lazy"
+                    onClick={() => setFotoAtiva(INSTITUCIONAL_CONFIG.fotosReais.cmPilhas1)}
                   />
                 </div>
                 <div className="p-4">
                   <div className="text-xs font-bold text-white">Brita Produzida na Obra</div>
-                  <div className="text-[11px] text-blue-200">Produção in loco pelo Lokotrack</div>
+                  <div className="text-[11px] text-blue-200">Alta produtividade por hora</div>
                 </div>
               </div>
 
@@ -842,14 +845,15 @@ export default function HomePublica() {
                 <div className="relative h-48 overflow-hidden">
                   <img
                     src={INSTITUCIONAL_CONFIG.fotosReais.cmPilhas2}
-                    alt="Pilha de brita gerada pelo Lokotrack"
-                    className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                    alt="Pilha de brita uniforme"
+                    className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500 cursor-pointer"
                     loading="lazy"
+                    onClick={() => setFotoAtiva(INSTITUCIONAL_CONFIG.fotosReais.cmPilhas2)}
                   />
                 </div>
                 <div className="p-4">
                   <div className="text-xs font-bold text-white">Pilha de Brita Uniforme</div>
-                  <div className="text-[11px] text-blue-200">Alta produtividade por hora</div>
+                  <div className="text-[11px] text-blue-200">Controle rigoroso de qualidade</div>
                 </div>
               </div>
 
@@ -858,8 +862,9 @@ export default function HomePublica() {
                   <img
                     src={INSTITUCIONAL_CONFIG.fotosReais.cmPatio}
                     alt="Pátio de brita e pó de pedra"
-                    className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                    className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500 cursor-pointer"
                     loading="lazy"
+                    onClick={() => setFotoAtiva(INSTITUCIONAL_CONFIG.fotosReais.cmPatio)}
                   />
                 </div>
                 <div className="p-4">
@@ -1539,12 +1544,6 @@ export default function HomePublica() {
                   titulo: 'Pedreira Cordeiro e Região',
                   legenda: 'Inserção estratégica no sertão',
                   badge: 'Região Sertão',
-                },
-                {
-                  src: INSTITUCIONAL_CONFIG.fotosReais.lokotrack1,
-                  titulo: 'Britador Lokotrack — C M',
-                  legenda: 'Britador móvel sobre esteiras',
-                  badge: 'Lokotrack C M',
                 },
                 {
                   src: INSTITUCIONAL_CONFIG.fotosReais.britadorFixoCm3,

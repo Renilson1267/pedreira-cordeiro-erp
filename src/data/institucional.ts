@@ -105,16 +105,14 @@ export const INSTITUCIONAL_CONFIG = {
     pisoIndustrial: 'https://pedreiracordeiro.com.br/site-img/galeria-piso-1.jpg',
     pisoAcabamento: 'https://pedreiracordeiro.com.br/site-img/galeria-piso-2.jpg',
     preparacaoObra: 'https://pedreiracordeiro.com.br/site-img/galeria-obra-grad.jpg',
-    lokotrack1: 'https://pedreiracordeiro.com.br/site-img/cm-lokotrack-1.jpg',
-    // Lokotrack móvel real em operação na Pedreira Cordeiro em Patos-PB
-    lokotrackOperacaoPatos: 'https://pedreiracordeiro.com.br/site-img/cm-lokotrack-2.jpg',
-    // cm-lokotrack-3 é britador (instalação fixa), mantido apenas na galeria geral e produto cascalhinho
+    // NOTA: As fotos cm-lokotrack-1.jpg, cm-lokotrack-2.jpg e cm-lokotrack-3.jpg são do
+    // britador fixo da matriz em Patos-PB e estão desatualizadas, NÃO correspondendo ao
+    // britador móvel Lokotrack. Foram desvinculadas das seções do Lokotrack móvel.
+    // cm-lokotrack-3 é mantido apenas como imagem de contexto do produto cascalhinho:
     britadorFixoCm3: 'https://pedreiracordeiro.com.br/site-img/cm-lokotrack-3.jpg',
     cmPilhas1: 'https://pedreiracordeiro.com.br/site-img/cm-pilhas-1.jpg',
     cmPilhas2: 'https://pedreiracordeiro.com.br/site-img/cm-pilhas-2.jpg',
     cmPatio: 'https://pedreiracordeiro.com.br/site-img/cm-patio.jpg',
-    // Foto específica de Patos PB do Lokotrack em Operação
-    lokotrackPatosOperacao: 'https://pedreiracordeiro.com.br/site-img/cm-lokotrack-2.jpg',
   },
 } as const
 
