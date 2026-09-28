@@ -504,10 +504,14 @@ export const videoInstitucionalService = {
             tentativa: tentativa > 1 ? tentativa : undefined,
           })
 
-          await fetchAutenticadoComTimeout('/backend/v1/video-institucional/chunk/part', {
+          const partUrl = `/backend/v1/video-institucional/chunk/part?session_id=${encodeURIComponent(
+            sessionId,
+          )}&chunk_index=${chunkIndex}`
+
+          await fetchAutenticadoComTimeout(partUrl, {
             method: 'POST',
             body: chunkForm,
-            timeoutMs: 90000, // 90 segundos por bloco de 10-15 MB
+            timeoutMs: 120000, // 120 segundos por bloco de 10-15 MB para conexões residenciais
           })
 
           sucessoBloco = true

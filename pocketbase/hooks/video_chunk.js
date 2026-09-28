@@ -239,14 +239,23 @@ routerAdd(
       return e.json(401, { error: 'Não autorizado.' })
     }
 
-    console.log('[CHUNK_PART] Iniciando handler part...')
-    var body = e.requestInfo().body || {}
-    console.log('[CHUNK_PART] requestInfo().body lido com sucesso')
-    var sessionId = (body.session_id || '').trim()
-    var chunkIndex = Number(body.chunk_index)
+    // Ler session_id e chunk_index EXCLUSIVAMENTE da query string da URL.
+    // NUNCA chamar e.requestInfo().body aqui: em requisições multipart com binário pesado
+    // (ex: 12 MB) isso dispara o parser JSON da JSVM e quebra a requisição com SyntaxError.
+    var q = e && e.request && e.request.url && e.request.url.query ? e.request.url.query() : null
+    var sessionId = ''
+    var chunkIndexStr = ''
+    if (q) {
+      sessionId = (q.get('session_id') || '').trim()
+      chunkIndexStr = (q.get('chunk_index') || '').trim()
+    }
+
+    var chunkIndex = Number(chunkIndexStr)
 
     if (!sessionId || isNaN(chunkIndex) || chunkIndex < 0) {
-      return e.json(400, { error: 'session_id e chunk_index são obrigatórios.' })
+      return e.json(400, {
+        error: 'session_id e chunk_index são obrigatórios na query string da URL.',
+      })
     }
 
     var tmpBase = $os.tempDir() || '/tmp'
@@ -269,24 +278,59 @@ routerAdd(
     var chunkFile = files[0]
     var partFileName = sessionDir + '/part_' + chunkIndex
 
-    // Salvar o bloco no disco
-    try {
-      var chunkBytes = $os.readFile(chunkFile.path || '')
-      if (!chunkBytes || chunkBytes.length === 0) {
+    // Gravar o bloco direto no disco a partir de chunkFile.path sem alocar new Array(size) em JS.
+    // Tenta primeiro $os.rename (rápido e atômico quando na mesma partição).
+    // Se rename falhar (ex: cross-device link ou path não renomeável), faz cópia via fluxo ou readFile/writeFile.
+    var savedOk = false
+    var lastError = ''
+
+    if (chunkFile.path) {
+      try {
+        $os.rename(chunkFile.path, partFileName)
+        savedOk = true
+      } catch (errRename) {
+        lastError = 'rename failed: ' + errRename
+        // Fallback para cópia se rename falhar
         try {
-          var r = chunkFile.reader.open()
-          var b = new Array(chunkFile.size).fill(0)
-          r.read(b)
-          r.close()
-          $os.writeFile(partFileName, b, 0644)
-        } catch (errRdr) {
-          return e.json(500, { error: 'Falha ao ler dados do bloco: ' + errRdr })
+          var chunkBytes = $os.readFile(chunkFile.path)
+          if (chunkBytes && chunkBytes.length > 0) {
+            $os.writeFile(partFileName, chunkBytes, 0644)
+            savedOk = true
+          }
+        } catch (errRead) {
+          lastError += ' | readFile failed: ' + errRead
         }
-      } else {
-        $os.writeFile(partFileName, chunkBytes, 0644)
       }
-    } catch (errSave) {
-      return e.json(500, { error: 'Erro ao gravar bloco temporário: ' + errSave })
+    }
+
+    // Se ainda não salvou (ou se chunkFile.path não estava disponível), fallback via reader sem alocar array JS gigante
+    if (!savedOk && chunkFile.reader) {
+      try {
+        var r = chunkFile.reader.open()
+        var outPart = $os.openFile(partFileName, 0x2 | 0x40 | 0x200, 0644) // O_RDWR|O_CREATE|O_TRUNC
+        var bufferSize = 64 * 1024 // 64 KB por buffer de cópia em fluxo
+        var buf = new Array(bufferSize).fill(0)
+        var totalRead = 0
+        while (totalRead < chunkFile.size) {
+          var bytesToRead = Math.min(bufferSize, chunkFile.size - totalRead)
+          var sliceBuf = bytesToRead === bufferSize ? buf : new Array(bytesToRead).fill(0)
+          var n = r.read(sliceBuf)
+          if (!n || n <= 0) break
+          outPart.write(n === sliceBuf.length ? sliceBuf : sliceBuf.slice(0, n))
+          totalRead += n
+        }
+        outPart.close()
+        r.close()
+        savedOk = true
+      } catch (errRdr) {
+        lastError += ' | reader failed: ' + errRdr
+      }
+    }
+
+    if (!savedOk) {
+      return e.json(500, {
+        error: 'Falha ao persistir bloco temporário: ' + (lastError || 'origem inacessível'),
+      })
     }
 
     if (!meta.chunksRecebidos) meta.chunksRecebidos = []

@@ -372,7 +372,7 @@ async function run() {
     const sessionIdA = dataInitA.session_id
     console.log(`✓ Sessão A criada com sucesso via JSON! Session ID: ${sessionIdA}`)
 
-    // Enviar bloco 0
+    // Enviar bloco 0 (com session_id e chunk_index na query string)
     const chunk0DataA = new Uint8Array(512 * 1024)
     chunk0DataA.fill(65) // 'A'
     const formChunk0A = new FormData()
@@ -380,16 +380,22 @@ async function run() {
     formChunk0A.append('chunk_index', '0')
     formChunk0A.append('chunk', new Blob([chunk0DataA]), 'part_0.bin')
 
-    const resPart0A = await fetch(`${baseUrl}/backend/v1/video-institucional/chunk/part`, {
-      method: 'POST',
-      headers: { Authorization: token },
-      body: formChunk0A,
-    })
+    const resPart0A = await fetch(
+      `${baseUrl}/backend/v1/video-institucional/chunk/part?session_id=${encodeURIComponent(
+        sessionIdA,
+      )}&chunk_index=0`,
+      {
+        method: 'POST',
+        headers: { Authorization: token },
+        body: formChunk0A,
+      },
+    )
     if (!resPart0A.ok) {
-      throw new Error(`Falha ao enviar bloco 0: HTTP ${resPart0A.status}`)
+      const err0Text = await resPart0A.text()
+      throw new Error(`Falha ao enviar bloco 0: HTTP ${resPart0A.status} - ${err0Text}`)
     }
 
-    // Enviar bloco 1
+    // Enviar bloco 1 (com session_id e chunk_index na query string)
     const chunk1DataA = new Uint8Array(512 * 1024)
     chunk1DataA.fill(66) // 'B'
     const formChunk1A = new FormData()
@@ -397,13 +403,19 @@ async function run() {
     formChunk1A.append('chunk_index', '1')
     formChunk1A.append('chunk', new Blob([chunk1DataA]), 'part_1.bin')
 
-    const resPart1A = await fetch(`${baseUrl}/backend/v1/video-institucional/chunk/part`, {
-      method: 'POST',
-      headers: { Authorization: token },
-      body: formChunk1A,
-    })
+    const resPart1A = await fetch(
+      `${baseUrl}/backend/v1/video-institucional/chunk/part?session_id=${encodeURIComponent(
+        sessionIdA,
+      )}&chunk_index=1`,
+      {
+        method: 'POST',
+        headers: { Authorization: token },
+        body: formChunk1A,
+      },
+    )
     if (!resPart1A.ok) {
-      throw new Error(`Falha ao enviar bloco 1: HTTP ${resPart1A.status}`)
+      const err1Text = await resPart1A.text()
+      throw new Error(`Falha ao enviar bloco 1: HTTP ${resPart1A.status} - ${err1Text}`)
     }
     console.log('✓ Blocos 0 e 1 enviados com sucesso!')
 
@@ -472,7 +484,7 @@ async function run() {
       `✓ Sessão B (com poster) criada com sucesso via Multipart! Session ID: ${sessionIdB}`,
     )
 
-    // Enviar bloco único
+    // Enviar bloco único (com query string)
     const chunk0DataB = new Uint8Array(1024 * 512)
     chunk0DataB.fill(70)
     const formChunk0B = new FormData()
@@ -480,13 +492,19 @@ async function run() {
     formChunk0B.append('chunk_index', '0')
     formChunk0B.append('chunk', new Blob([chunk0DataB]), 'part_0.bin')
 
-    const resPart0B = await fetch(`${baseUrl}/backend/v1/video-institucional/chunk/part`, {
-      method: 'POST',
-      headers: { Authorization: token },
-      body: formChunk0B,
-    })
+    const resPart0B = await fetch(
+      `${baseUrl}/backend/v1/video-institucional/chunk/part?session_id=${encodeURIComponent(
+        sessionIdB,
+      )}&chunk_index=0`,
+      {
+        method: 'POST',
+        headers: { Authorization: token },
+        body: formChunk0B,
+      },
+    )
     if (!resPart0B.ok) {
-      throw new Error(`Falha ao enviar bloco da sessão B: HTTP ${resPart0B.status}`)
+      const errBText = await resPart0B.text()
+      throw new Error(`Falha ao enviar bloco da sessão B: HTTP ${resPart0B.status} - ${errBText}`)
     }
 
     // Finalizar sessão B
@@ -514,6 +532,113 @@ async function run() {
     console.log('✓ Registro B de teste excluído com sucesso!')
 
     console.log('✓ Teste 7 (Fluxo Completo de Upload Fracionado: JSON e Multipart): OK')
+
+    // CASO C: Teste ponta a ponta com arquivo sintético de ~25 MB fatiado em 3 blocos (12 MB + 12 MB + 1 MB)
+    console.log('Testando Caso C: Upload Fracionado de arquivo sintético de 25 MB em 3 partes...')
+    const tamanho25MB = 25 * 1024 * 1024
+    const totalChunks25MB = Math.ceil(tamanho25MB / CHUNK_SIZE_BYTES)
+    const initJsonC = {
+      file_name: 'video_sintetico_25mb.mp4',
+      file_size: tamanho25MB,
+      total_chunks: totalChunks25MB,
+      titulo: 'Vídeo Sintético 25MB Validação E2E',
+      descricao: 'Teste E2E de integridade com blocos de 12 MB e persistência via $os.rename',
+      ativo: false,
+      duracao_segundos: 60,
+    }
+
+    const resInitC = await fetch(`${baseUrl}/backend/v1/video-institucional/chunk/init`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: token,
+      },
+      body: JSON.stringify(initJsonC),
+    })
+
+    if (!resInitC.ok) {
+      const errC = await resInitC.text()
+      throw new Error(`Falha no init do arquivo de 25 MB: HTTP ${resInitC.status} - ${errC}`)
+    }
+
+    const dataInitC = (await resInitC.json()) as { session_id: string }
+    const sessionIdC = dataInitC.session_id
+    console.log(`✓ Sessão C (25 MB) iniciada com sucesso! Session ID: ${sessionIdC}`)
+
+    // Enviar os 3 blocos
+    // Criamos buffers determinísticos:
+    // Bloco 0 (12 MB): preenchido com byte 100
+    // Bloco 1 (12 MB): preenchido com byte 101
+    // Bloco 2 (1 MB): preenchido com byte 102
+    for (let cIdx = 0; cIdx < totalChunks25MB; cIdx++) {
+      const start = cIdx * CHUNK_SIZE_BYTES
+      const end = Math.min(start + CHUNK_SIZE_BYTES, tamanho25MB)
+      const fatiaBytes = end - start
+      const chunkBuf = new Uint8Array(fatiaBytes)
+      chunkBuf.fill(100 + cIdx)
+
+      const formPartC = new FormData()
+      formPartC.append('session_id', sessionIdC)
+      formPartC.append('chunk_index', String(cIdx))
+      formPartC.append('chunk', new Blob([chunkBuf]), `part_${cIdx}.bin`)
+
+      const partUrlC = `${baseUrl}/backend/v1/video-institucional/chunk/part?session_id=${encodeURIComponent(
+        sessionIdC,
+      )}&chunk_index=${cIdx}`
+
+      const tInicioBloco = Date.now()
+      const resPartC = await fetch(partUrlC, {
+        method: 'POST',
+        headers: { Authorization: token },
+        body: formPartC,
+      })
+
+      const tFimBloco = Date.now()
+      if (!resPartC.ok) {
+        const errPartC = await resPartC.text()
+        throw new Error(
+          `Falha ao enviar bloco ${cIdx} de 25 MB: HTTP ${resPartC.status} - ${errPartC}`,
+        )
+      }
+      console.log(
+        `✓ Bloco ${cIdx + 1}/${totalChunks25MB} (${(fatiaBytes / (1024 * 1024)).toFixed(1)} MB) enviado em ${((tFimBloco - tInicioBloco) / 1000).toFixed(2)}s!`,
+      )
+    }
+
+    // Finalizar sessão C
+    const formCompleteC = new FormData()
+    formCompleteC.append('session_id', sessionIdC)
+    const resCompleteC = await fetch(`${baseUrl}/backend/v1/video-institucional/chunk/complete`, {
+      method: 'POST',
+      headers: { Authorization: token },
+      body: formCompleteC,
+    })
+
+    if (!resCompleteC.ok) {
+      const errCompleteC = await resCompleteC.text()
+      throw new Error(`Falha ao finalizar sessão C: HTTP ${resCompleteC.status} - ${errCompleteC}`)
+    }
+
+    const recordC = (await resCompleteC.json()) as {
+      id: string
+      tamanho_bytes: number
+      arquivo: string
+    }
+    if (!recordC.id || !recordC.arquivo || recordC.tamanho_bytes !== tamanho25MB) {
+      throw new Error(
+        `Registro de 25 MB montado com inconsistência: tamanho retornado ${recordC.tamanho_bytes} !== esperado ${tamanho25MB}`,
+      )
+    }
+
+    console.log(
+      `✓ Vídeo C (25 MB) finalizado e verificado! ID: ${recordC.id}, Tamanho: ${recordC.tamanho_bytes} bytes`,
+    )
+
+    // Excluir registro e arquivos de teste C
+    await pbInstance.collection('config_video_institucional').delete(recordC.id)
+    console.log('✓ Registro C (25 MB) e arquivo limpos com sucesso!')
+
+    console.log('✓ Teste 8 (Upload Fracionado E2E de 25 MB com verificação e limpeza): OK')
   } catch (errAuth: any) {
     console.warn('Aviso ao executar teste E2E com PocketBase:', errAuth)
     throw errAuth
