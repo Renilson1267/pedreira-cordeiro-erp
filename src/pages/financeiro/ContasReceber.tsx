@@ -329,7 +329,7 @@ export default function ContasReceber() {
 
     try {
       setLoading(true)
-      carregarAuxiliares()
+      await carregarAuxiliares()
       const serverFilter = buildPocketBaseFilter()
 
       const res = await pb
@@ -1933,6 +1933,16 @@ export default function ContasReceber() {
   const centrosCustoOptions = useMemo(() => {
     return [
       { id: 'none', label: 'Nenhum / Não alocado' },
+      ...centrosCusto.map((cc) => ({
+        id: cc.id,
+        label: `${cc.codigo} - ${cc.nome}`,
+      })),
+    ]
+  }, [centrosCusto])
+
+  const centrosCustoFiltroOptions = useMemo(() => {
+    return [
+      { id: 'todos', label: 'Todos os Centros de Custo' },
       ...centrosCusto.map((cc) => ({
         id: cc.id,
         label: `${cc.codigo} - ${cc.nome}`,

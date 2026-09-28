@@ -137,9 +137,21 @@ export const CAMPOS_CONFIG_HORAS_EXTRAS: Record<string, CampoConfig> = {
     format: (v) => (v === 'clt_vigente' ? 'CLT Atual (50%/100%)' : '50% Geral'),
   },
   salario_base: { label: 'Salário Base', format: (v) => formatCurrency(Number(v) || 0) },
-  horas_50: { label: 'Horas 50%', format: (v) => `${Number(v || 0).toFixed(1)}h` },
-  horas_100: { label: 'Horas 100%', format: (v) => `${Number(v || 0).toFixed(1)}h` },
-  total_horas: { label: 'Total de Horas', format: (v) => `${Number(v || 0).toFixed(1)}h` },
+  horas_50: {
+    label: 'Horas 50%',
+    format: (v) =>
+      `${Number(v || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}h`,
+  },
+  horas_100: {
+    label: 'Horas 100%',
+    format: (v) =>
+      `${Number(v || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}h`,
+  },
+  total_horas: {
+    label: 'Total de Horas',
+    format: (v) =>
+      `${Number(v || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}h`,
+  },
   total_valor: { label: 'Total Bruto HE', format: (v) => formatCurrency(Number(v) || 0) },
   gratificacao: { label: 'Gratificação (+)', format: (v) => formatCurrency(Number(v) || 0) },
   adiantamento: { label: 'Adiantamento (−)', format: (v) => formatCurrency(Number(v) || 0) },

@@ -8,7 +8,7 @@ import {
 } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { Printer, Building, FileSpreadsheet } from 'lucide-react'
-import { formatCurrency } from '@/lib/formatters'
+import { formatCurrency, formatHours } from '@/lib/formatters'
 import type { FolhaHorasExtras, Empresa } from '@/types/erp'
 
 interface FolhaHorasExtrasImpressaoModalProps {
@@ -219,7 +219,7 @@ export const FolhaHorasExtrasImpressaoModal: React.FC<FolhaHorasExtrasImpressaoM
                             </div>
                           </td>
                           <td className="py-1.5 px-2 text-center font-mono border-r border-gray-200 tabular-nums">
-                            <div>{(folha.horas_50 || 0).toFixed(1)}h</div>
+                            <div>{formatHours(folha.horas_50 || 0)}</div>
                             <div className="text-[9px] text-gray-500">
                               {formatCurrency(folha.valor_horas_50 || 0)}
                             </div>
@@ -227,7 +227,7 @@ export const FolhaHorasExtrasImpressaoModal: React.FC<FolhaHorasExtrasImpressaoM
                           <td className="py-1.5 px-2 text-center font-mono border-r border-gray-200 tabular-nums">
                             {folha.horas_100 && folha.horas_100 > 0 ? (
                               <>
-                                <div>{folha.horas_100.toFixed(1)}h</div>
+                                <div>{formatHours(folha.horas_100)}</div>
                                 <div className="text-[9px] text-gray-500">
                                   {formatCurrency(folha.valor_horas_100 || 0)}
                                 </div>
@@ -237,7 +237,7 @@ export const FolhaHorasExtrasImpressaoModal: React.FC<FolhaHorasExtrasImpressaoM
                             )}
                           </td>
                           <td className="py-1.5 px-1.5 text-center font-mono font-bold text-gray-900 border-r border-gray-200 tabular-nums">
-                            {(folha.total_horas || 0).toFixed(1)}h
+                            {formatHours(folha.total_horas || 0)}
                           </td>
                           <td className="py-1.5 px-2 text-right font-mono font-semibold text-gray-800 border-r border-gray-200 tabular-nums">
                             {formatCurrency(folha.total_valor || 0)}
@@ -278,19 +278,19 @@ export const FolhaHorasExtrasImpressaoModal: React.FC<FolhaHorasExtrasImpressaoM
                       TOTAIS GERAIS DO PERÍODO:
                     </td>
                     <td className="py-2.5 px-2 text-center font-mono border-r border-gray-300 tabular-nums">
-                      <div>{totalHoras50.toFixed(1)}h</div>
+                      <div>{formatHours(totalHoras50)}</div>
                       <div className="text-[9px] text-gray-600 font-normal">
                         {formatCurrency(totalValor50)}
                       </div>
                     </td>
                     <td className="py-2.5 px-2 text-center font-mono border-r border-gray-300 tabular-nums">
-                      <div>{totalHoras100.toFixed(1)}h</div>
+                      <div>{formatHours(totalHoras100)}</div>
                       <div className="text-[9px] text-gray-600 font-normal">
                         {formatCurrency(totalValor100)}
                       </div>
                     </td>
                     <td className="py-2.5 px-1.5 text-center font-mono font-extrabold border-r border-gray-300 tabular-nums">
-                      {totalHorasGeral.toFixed(1)}h
+                      {formatHours(totalHorasGeral)}
                     </td>
                     <td className="py-2.5 px-2 text-right font-mono font-extrabold text-gray-950 border-r border-gray-300 tabular-nums">
                       {formatCurrency(totalBrutoGeral)}

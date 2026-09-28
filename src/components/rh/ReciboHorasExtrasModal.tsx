@@ -8,7 +8,7 @@ import {
 } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { Printer, Download, X, Calendar, User, Building, FileCheck } from 'lucide-react'
-import { formatCurrency, formatDate } from '@/lib/formatters'
+import { formatCurrency, formatDate, formatHours } from '@/lib/formatters'
 import type { FolhaHorasExtras, Empresa, Funcionario } from '@/types/erp'
 
 interface ReciboHorasExtrasProps {
@@ -209,7 +209,7 @@ export const ReciboHorasExtrasModal: React.FC<ReciboHorasExtrasProps> = ({
                       {formatCurrency(item.valor_hora_normal * 1.5)}
                     </td>
                     <td className="py-2 px-3 text-right font-mono font-bold">
-                      {item.horas_50?.toFixed(1) || '0.0'}h
+                      {formatHours(item.horas_50 || 0)}
                     </td>
                     <td className="py-2 px-3 text-right font-mono font-bold text-gray-900">
                       {formatCurrency(item.valor_horas_50 || 0)}
@@ -236,7 +236,7 @@ export const ReciboHorasExtrasModal: React.FC<ReciboHorasExtrasProps> = ({
                         {formatCurrency(item.valor_hora_normal * 2.0)}
                       </td>
                       <td className="py-2 px-3 text-right font-mono font-bold">
-                        {item.horas_100?.toFixed(1) || '0.0'}h
+                        {formatHours(item.horas_100 || 0)}
                       </td>
                       <td className="py-2 px-3 text-right font-mono font-bold text-gray-900">
                         {formatCurrency(item.valor_horas_100 || 0)}
@@ -250,7 +250,7 @@ export const ReciboHorasExtrasModal: React.FC<ReciboHorasExtrasProps> = ({
                       Total Bruto das Horas Extras:
                     </td>
                     <td className="py-2 px-3 text-right font-mono text-xs text-gray-900">
-                      {item.total_horas?.toFixed(1)}h
+                      {formatHours(item.total_horas || 0)}
                     </td>
                     <td className="py-2 px-3 text-right font-mono text-sm text-gray-900 tabular-nums">
                       {formatCurrency(item.total_valor)}
@@ -290,7 +290,7 @@ export const ReciboHorasExtrasModal: React.FC<ReciboHorasExtrasProps> = ({
                       Valor Líquido a Receber / Pagar:
                     </td>
                     <td className="py-2.5 px-3 text-right font-mono text-xs text-teal-900">
-                      {item.total_horas?.toFixed(1)}h
+                      {formatHours(item.total_horas || 0)}
                     </td>
                     <td className="py-2.5 px-3 text-right font-mono text-base font-extrabold text-teal-950 tabular-nums">
                       {formatCurrency(

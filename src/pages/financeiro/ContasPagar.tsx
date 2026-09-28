@@ -315,6 +315,7 @@ export default function ContasPagar() {
 
     try {
       setLoading(true)
+      loadAuxiliares()
       const serverFilter = buildPocketBaseFilter()
 
       const res = await pb.collection('contas_pagar').getList<ContaPagar>(pageToLoad, pageSize, {
@@ -1257,7 +1258,11 @@ export default function ContasPagar() {
     }
     if (centroCustoFilter !== 'todos') {
       const cc = centrosCusto.find((c) => c.id === centroCustoFilter)
-      if (cc) partes.push(`C. Custo: ${cc.codigo} - ${cc.nome}`)
+      if (cc) {
+        partes.push(`Centro de Custo: ${cc.codigo} - ${cc.nome}`)
+      } else {
+        partes.push(`Centro de Custo: Filtrado (${centroCustoFilter})`)
+      }
     }
     if (debouncedSearchQuery.trim()) {
       partes.push(`Busca: "${debouncedSearchQuery.trim()}"`)
@@ -1441,6 +1446,16 @@ export default function ContasPagar() {
     ]
   }, [centrosCusto])
 
+  const centrosCustoFiltroOptions = useMemo(() => {
+    return [
+      { id: 'todos', label: 'Todos os Centros de Custo' },
+      ...centrosCusto.map((cc) => ({
+        id: cc.id,
+        label: `${cc.codigo} - ${cc.nome}`,
+      })),
+    ]
+  }, [centrosCusto])
+
   const categoriasOptions = useMemo(() => {
     return categorias.map((cat) => ({
       id: cat.id,
@@ -1588,20 +1603,18 @@ export default function ContasPagar() {
           </div>
 
           <div className="flex items-center gap-2 w-full md:w-auto">
-            {/* Centro de Custo Filter */}
-            <Select value={centroCustoFilter} onValueChange={setCentroCustoFilter}>
-              <SelectTrigger className="w-[180px] bg-[#FAF9F7] border-[#ECEAE4] text-xs h-9 rounded-xl">
-                <SelectValue placeholder="Centro de Custo" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="todos">Todos Centros</SelectItem>
-                {centrosCusto.map((cc) => (
-                  <SelectItem key={cc.id} value={cc.id}>
-                    {cc.codigo} - {cc.nome}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            {/* Centro de Custo Filter pesquisável */}
+            <div className="w-full sm:w-[220px]">
+              <ComboboxPesquisavel
+                value={centroCustoFilter}
+                onChange={(val) => setCentroCustoFilter(val || 'todos')}
+                options={centrosCustoFiltroOptions}
+                placeholder="Centro de Custo"
+                searchPlaceholder="Pesquisar centro de custo..."
+                emptyMessage="Nenhum centro encontrado"
+                className="bg-[#FAF9F7] border-[#ECEAE4] text-xs h-9 rounded-xl"
+              />
+            </div>
 
             {/* Search Input */}
             <div className="relative w-full md:w-64">

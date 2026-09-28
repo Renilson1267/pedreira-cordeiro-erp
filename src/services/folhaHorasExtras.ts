@@ -96,7 +96,7 @@ export const folhaHorasExtrasService = {
     let totalValor = 0
 
     if (modo === 'padrao_50') {
-      const h50 = Math.max(0, horasTotais50)
+      const h50 = Number(Math.max(0, horasTotais50).toFixed(2))
       const val50 = Number((h50 * valorHoraExtra50).toFixed(2))
       horas50 = h50
       valorHoras50 = val50
@@ -105,8 +105,8 @@ export const folhaHorasExtrasService = {
       totalHoras = h50
       totalValor = val50
     } else {
-      const h50 = Math.max(0, horasUteis50)
-      const h100 = Math.max(0, horasDomingos100)
+      const h50 = Number(Math.max(0, horasUteis50).toFixed(2))
+      const h100 = Number(Math.max(0, horasDomingos100).toFixed(2))
       const val50 = Number((h50 * valorHoraExtra50).toFixed(2))
       const val100 = Number((h100 * valorHoraExtra100).toFixed(2))
       horas50 = h50

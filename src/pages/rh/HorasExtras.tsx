@@ -4,7 +4,7 @@ import { useAuth } from '@/contexts/AuthContext'
 import { useCompany } from '@/contexts/CompanyContext'
 import pb from '@/lib/pocketbase/client'
 import { useRealtime } from '@/hooks/use-realtime'
-import { formatCurrency, formatDate } from '@/lib/formatters'
+import { formatCurrency, formatDate, formatHours } from '@/lib/formatters'
 import type { Funcionario, FolhaHorasExtras, ModoCalculoHorasExtras, PlanoConta } from '@/types/erp'
 import { folhaHorasExtrasService } from '@/services/folhaHorasExtras'
 import {
@@ -326,10 +326,10 @@ export default function HorasExtras() {
       description: isEdicao
         ? `Deseja atualizar o lançamento de horas extras de ${fNome} referente a ${mesReferencia}? O novo valor líquido será de ${formatCurrency(
             memoriaCalculo.valorLiquido,
-          )} (${memoriaCalculo.totalHoras.toFixed(1)}h). As alterações serão salvas na trilha de auditoria.`
+          )} (${formatHours(memoriaCalculo.totalHoras)}). As alterações serão salvas na trilha de auditoria.`
         : `Deseja salvar o cálculo de horas extras de ${fNome} referente a ${mesReferencia} no valor líquido de ${formatCurrency(
             memoriaCalculo.valorLiquido,
-          )} (${memoriaCalculo.totalHoras.toFixed(1)}h)?`,
+          )} (${formatHours(memoriaCalculo.totalHoras)})?`,
       confirmLabel: isEdicao ? 'Salvar Alterações' : 'Salvar Cálculo',
       confirmVariant: 'default',
       action: async () => {
@@ -381,7 +381,7 @@ export default function HorasExtras() {
                 acao: 'editar',
                 usuarioId: user?.id,
                 usuarioNome: user?.name || user?.email || 'Usuário',
-                descricao: `Horas extras de ${fNome} (${mesReferencia}) alteradas: ${memoriaCalculo.totalHoras.toFixed(1)}h • Líquido: ${formatCurrency(memoriaCalculo.valorLiquido)}. ${diffs.length > 0 ? `${diffs.length} campo(s) modificado(s).` : 'Sem alteração nos campos principais.'}`,
+                descricao: `Horas extras de ${fNome} (${mesReferencia}) alteradas: ${formatHours(memoriaCalculo.totalHoras)} • Líquido: ${formatCurrency(memoriaCalculo.valorLiquido)}. ${diffs.length > 0 ? `${diffs.length} campo(s) modificado(s).` : 'Sem alteração nos campos principais.'}`,
                 detalhes: {
                   alteracoes: diffs,
                   valor: memoriaCalculo.valorLiquido,
@@ -398,7 +398,7 @@ export default function HorasExtras() {
 
             toast({
               title: 'Horas extras atualizadas com sucesso!',
-              description: `Total de ${memoriaCalculo.totalHoras}h • Líquido: ${formatCurrency(
+              description: `Total de ${formatHours(memoriaCalculo.totalHoras)} • Líquido: ${formatCurrency(
                 memoriaCalculo.valorLiquido,
               )}.`,
             })
@@ -438,7 +438,7 @@ export default function HorasExtras() {
               acao: 'criar',
               usuarioId: user?.id,
               usuarioNome: user?.name || user?.email || 'Usuário',
-              descricao: `Lançamento de horas extras criado para ${fNome} (${mesReferencia}): ${memoriaCalculo.totalHoras.toFixed(1)}h • Líquido: ${formatCurrency(memoriaCalculo.valorLiquido)}.`,
+              descricao: `Lançamento de horas extras criado para ${fNome} (${mesReferencia}): ${formatHours(memoriaCalculo.totalHoras)} • Líquido: ${formatCurrency(memoriaCalculo.valorLiquido)}.`,
               detalhes: {
                 valor: memoriaCalculo.valorLiquido,
                 extra: {
@@ -453,7 +453,7 @@ export default function HorasExtras() {
 
             toast({
               title: 'Cálculo de horas extras salvo com sucesso!',
-              description: `Total de ${memoriaCalculo.totalHoras}h apuradas • Líquido a pagar: ${formatCurrency(
+              description: `Total de ${formatHours(memoriaCalculo.totalHoras)} apuradas • Líquido a pagar: ${formatCurrency(
                 memoriaCalculo.valorLiquido,
               )}.`,
             })
@@ -491,7 +491,7 @@ export default function HorasExtras() {
 
     setConfirmDialogData({
       title: 'Confirmar remoção de horas extras',
-      description: `Deseja realmente remover o lançamento de horas extras de ${fNome} referente a ${folha.mes_referencia} (${folha.total_horas}h • ${formatCurrency(valorLiq)})? Esta ação não pode ser desfeita.`,
+      description: `Deseja realmente remover o lançamento de horas extras de ${fNome} referente a ${folha.mes_referencia} (${formatHours(folha.total_horas || 0)} • ${formatCurrency(valorLiq)})? Esta ação não pode ser desfeita.`,
       confirmLabel: 'Excluir Lançamento',
       confirmVariant: 'destructive',
       action: async () => {
@@ -564,8 +564,9 @@ export default function HorasExtras() {
           dVenc.setDate(5)
           dVenc.setMonth(dVenc.getMonth() + 1)
 
+          const totalHorasStr = formatHours(folha.total_horas || 0)
           const detalhesMemoria: string[] = [
-            `Bruto HE: ${formatCurrency(folha.total_valor)} (${folha.total_horas}h)`,
+            `Bruto HE: ${formatCurrency(folha.total_valor)} (${totalHorasStr})`,
           ]
           if (folha.gratificacao && folha.gratificacao > 0) {
             detalhesMemoria.push(`Gratificação (+): ${formatCurrency(folha.gratificacao)}`)
@@ -577,7 +578,7 @@ export default function HorasExtras() {
 
           const payloadConta = {
             empresa_id: currentEmpresa.id,
-            descricao: `Horas Extras (${folha.total_horas}h) - Líquido a Pagar: ${fNome} [${folha.mes_referencia}]`,
+            descricao: `Horas Extras (${totalHorasStr}) - Líquido a Pagar: ${fNome} [${folha.mes_referencia}]`,
             categoria_id: catFolha?.id || null,
             valor: valorLiquido,
             vencimento: dVenc.toISOString(),
@@ -772,7 +773,7 @@ export default function HorasExtras() {
         render: (f) =>
           (f.horas_50 || 0) > 0 ? (
             <div>
-              <div>{(f.horas_50 || 0).toFixed(1)}h</div>
+              <div>{formatHours(f.horas_50 || 0)}</div>
               <div className="text-[10px] text-gray-500">
                 {formatCurrency(f.valor_horas_50 || 0)}
               </div>
@@ -789,7 +790,7 @@ export default function HorasExtras() {
         render: (f) =>
           (f.horas_100 || 0) > 0 ? (
             <div>
-              <div>{(f.horas_100 || 0).toFixed(1)}h</div>
+              <div>{formatHours(f.horas_100 || 0)}</div>
               <div className="text-[10px] text-gray-500">
                 {formatCurrency(f.valor_horas_100 || 0)}
               </div>
@@ -803,7 +804,7 @@ export default function HorasExtras() {
         header: 'Total H.',
         align: 'center',
         className: 'font-mono font-bold whitespace-nowrap',
-        render: (f) => `${(f.total_horas || 0).toFixed(1)}h`,
+        render: (f) => formatHours(f.total_horas || 0),
       },
       {
         key: 'bruto',
@@ -879,19 +880,19 @@ export default function HorasExtras() {
       },
       {
         label: '',
-        value: `${somaHoras50.toFixed(1)}h`,
+        value: formatHours(somaHoras50),
         colSpan: 1,
         align: 'center',
       },
       {
         label: '',
-        value: `${somaHoras100.toFixed(1)}h`,
+        value: formatHours(somaHoras100),
         colSpan: 1,
         align: 'center',
       },
       {
         label: '',
-        value: `${(somaHoras50 + somaHoras100).toFixed(1)}h`,
+        value: formatHours(somaHoras50 + somaHoras100),
         colSpan: 1,
         align: 'center',
         className: 'font-extrabold',
@@ -1006,7 +1007,7 @@ export default function HorasExtras() {
           </div>
           <div className="text-2xl font-bold text-gray-900 mt-2 font-mono">{totalLancamentos}</div>
           <p className="text-[11px] text-teal-700 mt-0.5">
-            {totalHorasGeral.toFixed(1)}h extras somadas
+            {formatHours(totalHorasGeral)} extras somadas
           </p>
         </Card>
 
@@ -1270,12 +1271,12 @@ export default function HorasExtras() {
 
                       <td className="py-3.5 px-4 text-center">
                         <div className="font-mono font-bold text-gray-900">
-                          {folha.total_horas?.toFixed(1)}h
+                          {formatHours(folha.total_horas || 0)}
                         </div>
                         <div className="text-[10px] text-gray-400 font-mono">
-                          50%: {folha.horas_50 || 0}h
+                          50%: {formatHours(folha.horas_50 || 0)}
                           {folha.modo_calculo === 'clt_vigente' && (
-                            <span> | 100%: {folha.horas_100 || 0}h</span>
+                            <span> | 100%: {formatHours(folha.horas_100 || 0)}</span>
                           )}
                         </div>
                       </td>
@@ -1511,18 +1512,18 @@ export default function HorasExtras() {
                 </Label>
                 <Input
                   type="number"
-                  step="0.1"
+                  step="0.01"
                   required
-                  min="0.1"
+                  min="0.01"
                   value={horas50Todas}
                   onChange={(e) =>
                     setHoras50Todas(e.target.value === '' ? '' : parseFloat(e.target.value) || 0)
                   }
-                  placeholder="Ex: 15.5"
+                  placeholder="Ex: 7.35"
                   className="mt-1 bg-white font-mono font-bold text-base text-blue-900"
                 />
                 <span className="text-[10px] text-blue-700 mt-1 block">
-                  Informe o número decimal de horas (ex: 15.5 equivale a 15h e 30min).
+                  Informe o número decimal com até dois dígitos (ex: 7.35 ou 15.50).
                 </span>
               </div>
             ) : (
@@ -1533,7 +1534,7 @@ export default function HorasExtras() {
                   </Label>
                   <Input
                     type="number"
-                    step="0.1"
+                    step="0.01"
                     min="0"
                     value={horasCltUteis50}
                     onChange={(e) =>
@@ -1541,10 +1542,12 @@ export default function HorasExtras() {
                         e.target.value === '' ? '' : parseFloat(e.target.value) || 0,
                       )
                     }
-                    placeholder="Ex: 12"
+                    placeholder="Ex: 12.00"
                     className="mt-1 bg-white font-mono font-bold text-purple-900"
                   />
-                  <span className="text-[10px] text-purple-700 mt-0.5 block">Segunda a sábado</span>
+                  <span className="text-[10px] text-purple-700 mt-0.5 block">
+                    Segunda a sábado (step 0.01)
+                  </span>
                 </div>
 
                 <div>
@@ -1553,7 +1556,7 @@ export default function HorasExtras() {
                   </Label>
                   <Input
                     type="number"
-                    step="0.1"
+                    step="0.01"
                     min="0"
                     value={horasCltDomingos100}
                     onChange={(e) =>
@@ -1561,11 +1564,11 @@ export default function HorasExtras() {
                         e.target.value === '' ? '' : parseFloat(e.target.value) || 0,
                       )
                     }
-                    placeholder="Ex: 6"
+                    placeholder="Ex: 6.00"
                     className="mt-1 bg-white font-mono font-bold text-purple-900"
                   />
                   <span className="text-[10px] text-purple-700 mt-0.5 block">
-                    Domingos & Feriados
+                    Domingos & Feriados (step 0.01)
                   </span>
                 </div>
               </div>
@@ -1661,7 +1664,8 @@ export default function HorasExtras() {
                 <div className="flex items-center justify-between text-xs">
                   <span className="text-gray-600">Total de Horas Extras:</span>
                   <span className="font-mono font-bold text-gray-900">
-                    {memoriaCalculo.totalHoras.toFixed(1)} horas
+                    {formatHours(memoriaCalculo.totalHoras, false)} horas (
+                    {formatHours(memoriaCalculo.totalHoras)})
                   </span>
                 </div>
 
