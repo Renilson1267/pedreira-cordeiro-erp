@@ -692,7 +692,7 @@ routerAdd('GET', '/backend/v1/backups/processar-solicitados-drive', (e) => {
         console.warn(logPrefix + ' [CACHE TOKEN] Aviso ao salvar em cache_tokens_drive:', eSaveDed)
       }
 
-      // Prioridade B: salvar também em config_google_drive.detalhes para redundância
+      // Prioridade B: espelho leve em config_google_drive.detalhes sem inflar o JSON
       try {
         var cfgSaveRec = $app.findFirstRecordByData('config_google_drive', 'chave', 'padrao')
         if (cfgSaveRec) {
@@ -713,20 +713,15 @@ routerAdd('GET', '/backend/v1/backups/processar-solicitados-drive', (e) => {
           ) {
             curDetalhes = {}
           }
-          curDetalhes.cached_token = data.access_token
           curDetalhes.cached_expiry_ms = expiryMsCalculado
           curDetalhes.cached_created_at = new Date().toISOString()
+          // Limpar qualquer token residual ou payload gigante no campo detalhes
+          delete curDetalhes.cached_token
           cfgSaveRec.set('detalhes', curDetalhes)
           $app.save(cfgSaveRec)
-          console.log(
-            logPrefix + ' [CACHE TOKEN] Token espelhado em config_google_drive com sucesso.',
-          )
         }
       } catch (eSaveCache) {
-        console.warn(
-          logPrefix + ' [CACHE TOKEN] Aviso ao salvar token em config_google_drive:',
-          eSaveCache,
-        )
+        console.warn(logPrefix + ' [CACHE TOKEN] Aviso ao tocar config_google_drive:', eSaveCache)
       }
 
       return {
@@ -909,6 +904,26 @@ routerAdd('GET', '/backend/v1/backups/processar-solicitados-drive', (e) => {
 
       var totalBytes = backupRecord.getInt('drive_total_bytes') || 0
       var sessionUrl = backupRecord.getString('drive_session_url') || ''
+
+      // Se estamos usando OAuth, descartar qualquer sessão resumível residual
+      // criada anteriormente com Conta de Serviço (que falharia com 403 quota)
+      if (temOAuth && sessionUrl) {
+        var errExistente = backupRecord.getString('drive_erro') || ''
+        if (
+          errExistente.indexOf('Service Account') !== -1 ||
+          errExistente.indexOf('Fallback: gravando no Drive da Conta de Serviço') !== -1 ||
+          backupRecord.getInt('drive_offset') === 0
+        ) {
+          console.log(
+            logPrefix +
+              ' [OAUTH RESET SESSAO] Descartando drive_session_url residual de Conta de Serviço para criar sessão limpa com OAuth.',
+          )
+          sessionUrl = ''
+          backupRecord.set('drive_session_url', '')
+          backupRecord.set('drive_offset', 0)
+          $app.save(backupRecord)
+        }
+      }
 
       if (!totalBytes || totalBytes === 0) {
         var calcBytes = headerPrefix.length + footerSuffix.length
@@ -1333,12 +1348,29 @@ routerAdd('GET', '/backend/v1/backups/processar-solicitados-drive', (e) => {
         // Se retornar 401 Unauthorized (token expirado ou revogado no meio do processo), limpa o cache
         if (putRes.statusCode === 401) {
           try {
-            var c401 = $app.findFirstRecordByData('cache_tokens_drive', 'chave', 'google_drive_sa')
-            if (c401) {
-              c401.set('access_token', '')
-              c401.set('expiry_ms', 0)
-              c401.set('detalhes', {})
-              $app.save(c401)
+            var c401SA = $app.findFirstRecordByData(
+              'cache_tokens_drive',
+              'chave',
+              'google_drive_sa',
+            )
+            if (c401SA) {
+              c401SA.set('access_token', '')
+              c401SA.set('expiry_ms', 0)
+              c401SA.set('detalhes', {})
+              $app.save(c401SA)
+            }
+          } catch (_) {}
+          try {
+            var c401OAuth = $app.findFirstRecordByData(
+              'cache_tokens_drive',
+              'chave',
+              'google_drive_oauth',
+            )
+            if (c401OAuth) {
+              c401OAuth.set('access_token', '')
+              c401OAuth.set('expiry_ms', 0)
+              c401OAuth.set('detalhes', {})
+              $app.save(c401OAuth)
             }
           } catch (_) {}
           try {
@@ -1354,13 +1386,19 @@ routerAdd('GET', '/backend/v1/backups/processar-solicitados-drive', (e) => {
               } catch (_) {
                 det401 = {}
               }
+              if (typeof det401 !== 'object' || det401 === null || Array.isArray(det401)) {
+                det401 = {}
+              }
               delete det401.cached_token
               delete det401.cached_expiry_ms
               cfg401.set('detalhes', det401)
               $app.save(cfg401)
             }
           } catch (_) {}
-          console.warn(logPrefix + ' [CACHE TOKEN] Google retornou 401; cache do token invalidado.')
+          console.warn(
+            logPrefix +
+              ' [CACHE TOKEN] Google retornou 401; cache dos tokens (SA e OAuth) invalidado.',
+          )
         }
 
         if (putRes.statusCode === 308) {
@@ -2187,7 +2225,7 @@ cronAdd('backup_processador_fila_solicitados', '*/1 * * * *', () => {
         console.warn(logPrefix + ' [CACHE TOKEN] Aviso ao salvar em cache_tokens_drive:', eSaveDed)
       }
 
-      // Prioridade B: salvar também em config_google_drive.detalhes para redundância
+      // Prioridade B: espelho leve em config_google_drive.detalhes sem inflar o JSON
       try {
         var cfgSaveRec = $app.findFirstRecordByData('config_google_drive', 'chave', 'padrao')
         if (cfgSaveRec) {
@@ -2208,20 +2246,15 @@ cronAdd('backup_processador_fila_solicitados', '*/1 * * * *', () => {
           ) {
             curDetalhes = {}
           }
-          curDetalhes.cached_token = data.access_token
           curDetalhes.cached_expiry_ms = expiryMsCalculado
           curDetalhes.cached_created_at = new Date().toISOString()
+          // Limpar qualquer token residual ou payload gigante no campo detalhes
+          delete curDetalhes.cached_token
           cfgSaveRec.set('detalhes', curDetalhes)
           $app.save(cfgSaveRec)
-          console.log(
-            logPrefix + ' [CACHE TOKEN] Token espelhado em config_google_drive com sucesso.',
-          )
         }
       } catch (eSaveCache) {
-        console.warn(
-          logPrefix + ' [CACHE TOKEN] Aviso ao salvar token em config_google_drive:',
-          eSaveCache,
-        )
+        console.warn(logPrefix + ' [CACHE TOKEN] Aviso ao tocar config_google_drive:', eSaveCache)
       }
 
       return {
@@ -2831,16 +2864,29 @@ cronAdd('backup_processador_fila_solicitados', '*/1 * * * *', () => {
         // Se retornar 401 Unauthorized (token expirado ou revogado no meio do processo), limpa o cache
         if (putRes.statusCode === 401) {
           try {
-            var c401Cron = $app.findFirstRecordByData(
+            var c401CronSA = $app.findFirstRecordByData(
               'cache_tokens_drive',
               'chave',
               'google_drive_sa',
             )
-            if (c401Cron) {
-              c401Cron.set('access_token', '')
-              c401Cron.set('expiry_ms', 0)
-              c401Cron.set('detalhes', {})
-              $app.save(c401Cron)
+            if (c401CronSA) {
+              c401CronSA.set('access_token', '')
+              c401CronSA.set('expiry_ms', 0)
+              c401CronSA.set('detalhes', {})
+              $app.save(c401CronSA)
+            }
+          } catch (_) {}
+          try {
+            var c401CronOAuth = $app.findFirstRecordByData(
+              'cache_tokens_drive',
+              'chave',
+              'google_drive_oauth',
+            )
+            if (c401CronOAuth) {
+              c401CronOAuth.set('access_token', '')
+              c401CronOAuth.set('expiry_ms', 0)
+              c401CronOAuth.set('detalhes', {})
+              $app.save(c401CronOAuth)
             }
           } catch (_) {}
           try {
@@ -2856,13 +2902,23 @@ cronAdd('backup_processador_fila_solicitados', '*/1 * * * *', () => {
               } catch (_) {
                 det401Cron = {}
               }
+              if (
+                typeof det401Cron !== 'object' ||
+                det401Cron === null ||
+                Array.isArray(det401Cron)
+              ) {
+                det401Cron = {}
+              }
               delete det401Cron.cached_token
               delete det401Cron.cached_expiry_ms
               cfg401Cron.set('detalhes', det401Cron)
               $app.save(cfg401Cron)
             }
           } catch (_) {}
-          console.warn(logPrefix + ' [CACHE TOKEN] Google retornou 401; cache do token invalidado.')
+          console.warn(
+            logPrefix +
+              ' [CACHE TOKEN] Google retornou 401; cache dos tokens (SA e OAuth) invalidado.',
+          )
         }
 
         if (putRes.statusCode === 308) {
@@ -4448,6 +4504,22 @@ routerAdd('GET', '/backend/v1/google-drive/oauth-callback', (e) => {
     configRec.set('oauth_status', 'conectado')
     configRec.set('auth_type', 'oauth')
     configRec.set('ultimo_status', 'conectado')
+    try {
+      var rawD = configRec.get('detalhes')
+      var parsedD = {}
+      try {
+        parsedD =
+          typeof rawD === 'string' ? JSON.parse(rawD) : JSON.parse(JSON.stringify(rawD || {}))
+      } catch (_) {
+        parsedD = {}
+      }
+      if (typeof parsedD !== 'object' || parsedD === null || Array.isArray(parsedD)) {
+        parsedD = {}
+      }
+      delete parsedD.cached_token
+      delete parsedD.cached_expiry_ms
+      configRec.set('detalhes', parsedD)
+    } catch (_) {}
     $app.save(configRec)
 
     // Atualiza cache persistente imediatamente
