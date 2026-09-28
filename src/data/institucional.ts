@@ -14,13 +14,22 @@ export const INSTITUCIONAL_CONFIG = {
   site: 'pedreiracordeiro.com.br',
   siteUrl: 'https://pedreiracordeiro.com.br',
 
-  // Canal WhatsApp Comercial (DDI + DDD + Número puro para links wa.me)
-  // Formato: 55 + DDD + Número (ex: Sertânia / Região PE DDD 87)
-  whatsappNumero: '5587999990000',
-  whatsappNumeroFormatado: '(87) 99999-0000',
+  // Atendimento Comercial e Telefone / WhatsApp
+  // O número comercial fornecido é "0800 083 1200" (gratuito nacional).
+  // Números 0800 no Brasil são telefones fixos gratuitos nacionais sem DDD geográfico.
+  // Para ligações diretas via navegador / smartphone, o protocolo tel: usa o formato E.164: +5508000831200.
+  // Para wa.me, o formato internacional correspondente com DDI 55 é 5508000831200 (ou 558000831200);
+  // mantemos wa.me apontando para o número brasileiro oficial e disponibilizamos também o link tel: para discagem direta.
+  telefoneNumero: '08000831200',
+  telefoneFormatado: '0800 083 1200',
+  telefoneTelLink: 'tel:+5508000831200',
+
+  // Canal WhatsApp Comercial
+  whatsappNumero: '558000831200',
+  whatsappNumeroFormatado: '0800 083 1200',
 
   // E-mail Comercial
-  emailComercial: 'comercial@pedreiracordeiro.com.br',
+  emailComercial: 'pedreiracordeiro@gmail.com',
 
   // Localização e Atendimento
   localizacao: 'Sertânia — PE / Região do Pajeú e Moxotó',

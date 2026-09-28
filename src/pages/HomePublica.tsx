@@ -783,19 +783,30 @@ export default function HomePublica() {
                 <div className="w-10 h-10 rounded-xl bg-teal-50 border border-teal-200 flex items-center justify-center text-teal-700">
                   <Phone className="w-5 h-5" />
                 </div>
-                <h4 className="font-bold text-gray-900">Atendimento WhatsApp</h4>
+                <h4 className="font-bold text-gray-900">Atendimento Comercial</h4>
                 <p className="text-xs text-gray-600">
                   Fale com um consultor comercial para cotações rápidas e agendamento de entregas.
                 </p>
-                <a
-                  href={`https://wa.me/${INSTITUCIONAL_CONFIG.whatsappNumero}`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="inline-flex items-center gap-1.5 text-sm font-bold text-teal-700 hover:underline pt-1"
-                >
-                  {INSTITUCIONAL_CONFIG.whatsappNumeroFormatado}
-                  <ExternalLink className="w-3.5 h-3.5" />
-                </a>
+                <div className="flex flex-wrap items-center gap-3 pt-1">
+                  <a
+                    href={INSTITUCIONAL_CONFIG.telefoneTelLink}
+                    className="inline-flex items-center gap-1.5 text-sm font-bold text-teal-700 hover:underline"
+                    title="Ligar para Atendimento Comercial"
+                  >
+                    {INSTITUCIONAL_CONFIG.telefoneFormatado}
+                  </a>
+                  <span className="text-xs text-gray-300">•</span>
+                  <a
+                    href={`https://wa.me/${INSTITUCIONAL_CONFIG.whatsappNumero}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1 text-xs font-semibold text-emerald-700 hover:underline"
+                    title="Chamar no WhatsApp"
+                  >
+                    <span>WhatsApp</span>
+                    <ExternalLink className="w-3 h-3" />
+                  </a>
+                </div>
               </div>
 
               <div className="bg-white p-6 rounded-2xl border border-[#ECEAE4] space-y-3">
