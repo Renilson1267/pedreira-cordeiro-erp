@@ -106,8 +106,10 @@ export const INSTITUCIONAL_CONFIG = {
     pisoAcabamento: 'https://pedreiracordeiro.com.br/site-img/galeria-piso-2.jpg',
     preparacaoObra: 'https://pedreiracordeiro.com.br/site-img/galeria-obra-grad.jpg',
     lokotrack1: 'https://pedreiracordeiro.com.br/site-img/cm-lokotrack-1.jpg',
-    lokotrack2: 'https://pedreiracordeiro.com.br/site-img/cm-lokotrack-2.jpg',
-    lokotrack3: 'https://pedreiracordeiro.com.br/site-img/cm-lokotrack-3.jpg',
+    // Lokotrack móvel real em operação na Pedreira Cordeiro em Patos-PB
+    lokotrackOperacaoPatos: 'https://pedreiracordeiro.com.br/site-img/cm-lokotrack-2.jpg',
+    // cm-lokotrack-3 é britador (instalação fixa), mantido apenas na galeria geral e produto cascalhinho
+    britadorFixoCm3: 'https://pedreiracordeiro.com.br/site-img/cm-lokotrack-3.jpg',
     cmPilhas1: 'https://pedreiracordeiro.com.br/site-img/cm-pilhas-1.jpg',
     cmPilhas2: 'https://pedreiracordeiro.com.br/site-img/cm-pilhas-2.jpg',
     cmPatio: 'https://pedreiracordeiro.com.br/site-img/cm-patio.jpg',
