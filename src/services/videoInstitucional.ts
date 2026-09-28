@@ -41,12 +41,12 @@ export interface UploadVideoInstitucionalParams {
 
 // Limites e constantes
 export const MAX_VIDEO_SIZE_BYTES = 200 * 1024 * 1024 // 200 MB
-// Limite para tentar rota direta primeiro (ex: vídeos < 15 MB tentam envio direto)
-export const DIRECT_UPLOAD_THRESHOLD_BYTES = 15 * 1024 * 1024 // 15 MB
-// Tamanho de cada bloco/chunk (10 MB por bloco)
-export const CHUNK_SIZE_BYTES = 10 * 1024 * 1024 // 10 MB
-// Número de tentativas por bloco em caso de oscilação de rede
-export const MAX_CHUNK_RETRIES = 3
+// Limite para tentar rota direta primeiro (ex: vídeos <= 20 MB tentam envio direto)
+export const DIRECT_UPLOAD_THRESHOLD_BYTES = 20 * 1024 * 1024 // 20 MB
+// Tamanho de cada bloco/chunk (12 MB por bloco, dentro da faixa de 10–15 MB)
+export const CHUNK_SIZE_BYTES = 12 * 1024 * 1024 // 12 MB
+// Número máximo de retries por bloco (2 tentativas de repetição adicionais)
+export const MAX_CHUNK_RETRIES = 2
 
 // Formatos aceitos
 export const FORMATOS_VIDEO_ACEITOS = ['.mp4', '.webm', '.quicktime', '.mov', '.ogg']
@@ -61,24 +61,120 @@ function obterMensagemErroAmigavel(err: any): string {
   const msg = err.message || (typeof err === 'string' ? err : '')
 
   if (
+    msg.includes('AbortError') ||
+    msg.includes('abortado') ||
+    msg.includes('timeout') ||
+    msg.includes('Tempo limite excedido')
+  ) {
+    return 'Tempo limite de envio excedido (timeout). A requisição demorou muito para responder no navegador.'
+  }
+
+  if (
     msg.includes('Failed to fetch') ||
     msg.includes('NetworkError') ||
-    msg.includes('aborted') ||
-    msg.includes('timeout') ||
-    msg.includes('ERR_CONNECTION')
+    msg.includes('ERR_CONNECTION') ||
+    msg.includes('ECONNRESET') ||
+    msg.includes('conexão')
   ) {
-    return 'Falha na conexão com o servidor ou limite de requisição excedido pelo navegador. O envio fracionado tentará contornar essa oscilação.'
+    return 'Falha de conexão com o servidor ou requisição interrompida pelo navegador.'
   }
 
-  if (msg.includes('413') || msg.includes('too large') || msg.includes('excede o limite')) {
-    return 'O arquivo ultrapassa o limite suportado (máximo 200 MB). Por favor, reduza ou comprima o arquivo antes de enviar.'
+  if (
+    msg.includes('413') ||
+    msg.includes('too large') ||
+    msg.includes('excede o limite') ||
+    msg.includes('Payload Too Large') ||
+    msg.includes('maior que 200 MB')
+  ) {
+    return 'O arquivo ultrapassa o limite máximo permitido de 200 MB. Comprima ou reexporte o vídeo antes de enviar.'
   }
 
-  if (msg.includes('401') || msg.includes('Não autorizado')) {
-    return 'Sua sessão expirou ou você não tem permissão para esta operação. Faça login novamente.'
+  if (msg.includes('401') || msg.includes('Não autorizado') || msg.includes('requireAuth')) {
+    return 'Sua sessão de usuário expirou ou você não está autenticado. Faça login novamente para prosseguir.'
+  }
+
+  if (msg.includes('403') || msg.includes('proibido')) {
+    return 'Acesso negado: apenas administradores autorizados podem gerenciar o vídeo institucional.'
+  }
+
+  if (msg.includes('500') || msg.includes('Internal Server Error')) {
+    return 'Erro interno do servidor ao processar o arquivo de vídeo. Tente novamente mais tarde.'
   }
 
   return msg || 'Ocorreu um erro ao salvar o vídeo institucional no servidor.'
+}
+
+/**
+ * Utilitário de requisição HTTP autenticada via fetch com suporte a timeout.
+ * Usa o token atual do PocketBase (pb.authStore.token) no header Authorization.
+ */
+async function fetchAutenticadoComTimeout<T = any>(
+  path: string,
+  options: {
+    method?: string
+    body?: BodyInit | null
+    timeoutMs?: number
+  } = {},
+): Promise<T> {
+  const baseUrl = pb.baseUrl.replace(/\/$/, '')
+  const url = `${baseUrl}${path.startsWith('/') ? path : `/${path}`}`
+  const token = pb.authStore.token
+  const timeoutMs = options.timeoutMs ?? 120000 // 2 minutos padrão por requisição
+
+  const controller = new AbortController()
+  const timeoutId = setTimeout(() => {
+    controller.abort(
+      new Error(`Tempo limite de ${Math.round(timeoutMs / 1000)}s excedido na requisição.`),
+    )
+  }, timeoutMs)
+
+  try {
+    const headers: Record<string, string> = {}
+    if (token) {
+      headers['Authorization'] = token
+    }
+
+    const response = await fetch(url, {
+      method: options.method || 'GET',
+      body: options.body,
+      headers: headers,
+      signal: controller.signal,
+    })
+
+    clearTimeout(timeoutId)
+
+    const contentType = response.headers.get('content-type') || ''
+    let data: any = null
+    if (contentType.includes('application/json')) {
+      data = await response.json().catch(() => null)
+    } else {
+      const text = await response.text().catch(() => '')
+      try {
+        data = JSON.parse(text)
+      } catch {
+        data = { error: text }
+      }
+    }
+
+    if (!response.ok) {
+      const errorMsg =
+        data?.error ||
+        data?.message ||
+        `Erro ${response.status} (${response.statusText || 'Falha no servidor'})`
+      const err = new Error(errorMsg)
+      ;(err as any).status = response.status
+      ;(err as any).data = data
+      throw err
+    }
+
+    return data as T
+  } catch (error: any) {
+    clearTimeout(timeoutId)
+    if (error?.name === 'AbortError' || error?.message?.includes('Tempo limite')) {
+      throw new Error('Tempo limite da requisição excedido (timeout). A conexão pode estar lenta.')
+    }
+    throw error
+  }
 }
 
 export const videoInstitucionalService = {
@@ -231,26 +327,16 @@ export const videoInstitucionalService = {
       etapa: 'enviando',
     })
 
-    // Tentar via endpoint /backend/v1/video-institucional/upload
+    // Tentar via endpoint /backend/v1/video-institucional/upload usando fetchAutenticadoComTimeout
     try {
-      const res = await pb.send<{
-        success: boolean
-        id: string
-        titulo: string
-        descricao?: string
-        arquivo: string
-        poster?: string
-        ativo: boolean
-        tamanho_bytes?: number
-        duracao_segundos?: number
-        enviado_por_nome?: string
-        enviado_por_id?: string
-        created: string
-        updated: string
-      }>('/backend/v1/video-institucional/upload', {
-        method: 'POST',
-        body: formData,
-      })
+      const res = await fetchAutenticadoComTimeout<VideoInstitucionalRecord>(
+        '/backend/v1/video-institucional/upload',
+        {
+          method: 'POST',
+          body: formData,
+          timeoutMs: 180000, // 3 minutos para upload direto
+        },
+      )
 
       params.onProgress?.({
         carregadoBytes: params.arquivo.size,
@@ -259,23 +345,38 @@ export const videoInstitucionalService = {
         etapa: 'concluido',
       })
 
-      return res as unknown as VideoInstitucionalRecord
+      return res
     } catch (hookErr: any) {
-      // Se a rota custom falhar por 404 ou 500, tentar via SDK padrão
+      console.warn('Falha na rota direta do hook /backend/v1/video-institucional/upload:', hookErr)
+      // Se a rota custom falhar, tentar via SDK padrão como fallback
       if (substituindoId) {
         if (params.ativo ?? true) {
           await this.desativarTodos(substituindoId)
         }
-        return await pb
+        const updated = await pb
           .collection('config_video_institucional')
           .update<VideoInstitucionalRecord>(substituindoId, formData)
+        params.onProgress?.({
+          carregadoBytes: params.arquivo.size,
+          totalBytes: params.arquivo.size,
+          porcentagem: 100,
+          etapa: 'concluido',
+        })
+        return updated
       } else {
         if ((params.ativo ?? true) && desativarOutros) {
           await this.desativarTodos()
         }
-        return await pb
+        const created = await pb
           .collection('config_video_institucional')
           .create<VideoInstitucionalRecord>(formData)
+        params.onProgress?.({
+          carregadoBytes: params.arquivo.size,
+          totalBytes: params.arquivo.size,
+          porcentagem: 100,
+          etapa: 'concluido',
+        })
+        return created
       }
     }
   },
@@ -328,13 +429,15 @@ export const videoInstitucionalService = {
 
     let sessionId = ''
     try {
-      const initRes = await pb.send<{ success: boolean; session_id: string; total_chunks: number }>(
-        '/backend/v1/video-institucional/chunk/init',
-        {
-          method: 'POST',
-          body: initForm,
-        },
-      )
+      const initRes = await fetchAutenticadoComTimeout<{
+        success: boolean
+        session_id: string
+        total_chunks: number
+      }>('/backend/v1/video-institucional/chunk/init', {
+        method: 'POST',
+        body: initForm,
+        timeoutMs: 60000,
+      })
       sessionId = initRes.session_id
     } catch (initErr: any) {
       throw new Error(
@@ -343,6 +446,8 @@ export const videoInstitucionalService = {
     }
 
     let bytesEnviadosTotal = 0
+    // Total de tentativas: 1 inicial + MAX_CHUNK_RETRIES retentativas
+    const totalTentativasPermitidas = 1 + MAX_CHUNK_RETRIES
 
     // 2. Enviar blocos sequencialmente
     for (let chunkIndex = 0; chunkIndex < totalChunks; chunkIndex++) {
@@ -354,7 +459,7 @@ export const videoInstitucionalService = {
       let sucessoBloco = false
       let ultimoErro: any = null
 
-      for (let tentativa = 1; tentativa <= MAX_CHUNK_RETRIES; tentativa++) {
+      for (let tentativa = 1; tentativa <= totalTentativasPermitidas; tentativa++) {
         try {
           const chunkForm = new FormData()
           chunkForm.append('session_id', sessionId)
@@ -371,9 +476,10 @@ export const videoInstitucionalService = {
             tentativa: tentativa > 1 ? tentativa : undefined,
           })
 
-          await pb.send('/backend/v1/video-institucional/chunk/part', {
+          await fetchAutenticadoComTimeout('/backend/v1/video-institucional/chunk/part', {
             method: 'POST',
             body: chunkForm,
+            timeoutMs: 90000, // 90 segundos por bloco de 10-15 MB
           })
 
           sucessoBloco = true
@@ -392,10 +498,10 @@ export const videoInstitucionalService = {
         } catch (errPart: any) {
           ultimoErro = errPart
           console.warn(
-            `Erro no bloco ${chunkIndex + 1}/${totalChunks} (tentativa ${tentativa}/${MAX_CHUNK_RETRIES}):`,
+            `Erro no bloco ${chunkIndex + 1}/${totalChunks} (tentativa ${tentativa}/${totalTentativasPermitidas}):`,
             errPart,
           )
-          if (tentativa < MAX_CHUNK_RETRIES) {
+          if (tentativa < totalTentativasPermitidas) {
             await sleep(1000 * tentativa)
           }
         }
@@ -404,16 +510,19 @@ export const videoInstitucionalService = {
       if (!sucessoBloco) {
         // Aborta a sessão no servidor para liberar espaço temporário
         try {
-          await pb.send('/backend/v1/video-institucional/chunk/abort', {
+          const abortForm = new FormData()
+          abortForm.append('session_id', sessionId)
+          await fetchAutenticadoComTimeout('/backend/v1/video-institucional/chunk/abort', {
             method: 'POST',
-            body: { session_id: sessionId },
+            body: abortForm,
+            timeoutMs: 15000,
           })
         } catch {
           /* intentionally ignored */
         }
 
         throw new Error(
-          `Falha ao enviar bloco ${chunkIndex + 1} de ${totalChunks} após ${MAX_CHUNK_RETRIES} tentativas: ${obterMensagemErroAmigavel(ultimoErro)}`,
+          `Falha ao enviar bloco ${chunkIndex + 1} de ${totalChunks} após ${totalTentativasPermitidas} tentativas: ${obterMensagemErroAmigavel(ultimoErro)}`,
         )
       }
     }
@@ -429,11 +538,15 @@ export const videoInstitucionalService = {
     })
 
     try {
-      const completeRes = await pb.send<VideoInstitucionalRecord>(
+      const completeForm = new FormData()
+      completeForm.append('session_id', sessionId)
+
+      const completeRes = await fetchAutenticadoComTimeout<VideoInstitucionalRecord>(
         '/backend/v1/video-institucional/chunk/complete',
         {
           method: 'POST',
-          body: { session_id: sessionId },
+          body: completeForm,
+          timeoutMs: 120000, // 2 minutos para montagem e persistência no banco
         },
       )
 

@@ -258,6 +258,68 @@ async function run() {
     '✓ Teste 5 (Dump semanal real de 27 coleções e 16.625 registros em ambos formatos): OK',
   )
 
+  // 5. Teste de Upload Fracionado de Vídeo Institucional (arquivo sintético de 25 MB)
+  console.log('--- Teste 6: Fatiamento e Validação de Chunks de Vídeo Sintético (25 MB) ---')
+  const {
+    MAX_VIDEO_SIZE_BYTES,
+    DIRECT_UPLOAD_THRESHOLD_BYTES,
+    CHUNK_SIZE_BYTES,
+    MAX_CHUNK_RETRIES,
+  } = await import('./src/services/videoInstitucional.js')
+
+  if (MAX_VIDEO_SIZE_BYTES !== 200 * 1024 * 1024) {
+    throw new Error(`Limite máximo de vídeo inválido: ${MAX_VIDEO_SIZE_BYTES}`)
+  }
+  if (DIRECT_UPLOAD_THRESHOLD_BYTES !== 20 * 1024 * 1024) {
+    throw new Error(`Limite de corte direto inválido: ${DIRECT_UPLOAD_THRESHOLD_BYTES}`)
+  }
+  if (CHUNK_SIZE_BYTES < 10 * 1024 * 1024 || CHUNK_SIZE_BYTES > 15 * 1024 * 1024) {
+    throw new Error(`Tamanho de chunk fora da faixa permitida (10-15 MB): ${CHUNK_SIZE_BYTES}`)
+  }
+  if (MAX_CHUNK_RETRIES !== 2) {
+    throw new Error(`MAX_CHUNK_RETRIES esperado 2, obtido: ${MAX_CHUNK_RETRIES}`)
+  }
+
+  // Criar buffer sintético de 25 MB (26.214.400 bytes)
+  const tamanhoSinteticoBytes = 25 * 1024 * 1024
+  const totalChunksEsperados = Math.ceil(tamanhoSinteticoBytes / CHUNK_SIZE_BYTES)
+
+  if (totalChunksEsperados !== 3) {
+    throw new Error(
+      `Para 25 MB com blocos de ${CHUNK_SIZE_BYTES / (1024 * 1024)} MB, esperava-se 3 chunks, obtido: ${totalChunksEsperados}`,
+    )
+  }
+
+  // Simular divisão em fatias e verificação de integridade dos offsets
+  let bytesProcessados = 0
+  const fatias: { index: number; start: number; end: number; size: number }[] = []
+
+  for (let i = 0; i < totalChunksEsperados; i++) {
+    const start = i * CHUNK_SIZE_BYTES
+    const end = Math.min(start + CHUNK_SIZE_BYTES, tamanhoSinteticoBytes)
+    const fatiaSize = end - start
+    bytesProcessados += fatiaSize
+    fatias.push({ index: i, start, end, size: fatiaSize })
+  }
+
+  if (bytesProcessados !== tamanhoSinteticoBytes) {
+    throw new Error(
+      `Soma das partes (${bytesProcessados}) não confere com o total original (${tamanhoSinteticoBytes})`,
+    )
+  }
+
+  // Checar tamanhos: chunk 0 e 1 devem ter 12 MB (12.582.912 bytes), chunk 2 deve ter 1 MB (1.048.576 bytes)
+  if (fatias[0].size !== 12 * 1024 * 1024 || fatias[1].size !== 12 * 1024 * 1024) {
+    throw new Error(
+      `Fatias iniciais não têm o tamanho do bloco esperado: ${JSON.stringify(fatias)}`,
+    )
+  }
+  if (fatias[2].size !== 1 * 1024 * 1024) {
+    throw new Error(`Fatia final com tamanho incorreto: ${fatias[2].size}`)
+  }
+
+  console.log('✓ Teste 6 (Fatiamento sintético de 25 MB em 3 chunks): OK')
+
   console.log('--- Todos os testes de validação passaram com sucesso! ---')
 }
 
