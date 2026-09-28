@@ -46,6 +46,7 @@ import {
   CreditCard,
   Database,
   HeartPulse,
+  Video,
 } from 'lucide-react'
 
 export default function Layout() {
@@ -113,6 +114,7 @@ export default function Layout() {
         { label: 'Formas de Recebimento', path: '/cadastros/formas-recebimento', icon: CreditCard },
         ...(isAdmin
           ? [
+              { label: 'Vídeo Institucional', path: '/cadastros/video-institucional', icon: Video },
               { label: 'Operadores (Usuários)', path: '/cadastros/operadores', icon: Shield },
               { label: 'Backups do Sistema', path: '/cadastros/backups', icon: Database },
             ]

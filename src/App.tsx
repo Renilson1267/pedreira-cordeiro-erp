@@ -34,6 +34,7 @@ const CentrosCusto = lazy(() => import('@/pages/cadastros/CentrosCusto'))
 const FormasRecebimento = lazy(() => import('@/pages/cadastros/FormasRecebimento'))
 const Operadores = lazy(() => import('@/pages/cadastros/Operadores'))
 const Backups = lazy(() => import('@/pages/cadastros/Backups'))
+const VideoInstitucional = lazy(() => import('@/pages/cadastros/VideoInstitucional'))
 
 const Relatorios = lazy(() => import('@/pages/relatorios/Relatorios'))
 const Perfil = lazy(() => import('@/pages/perfil/Perfil'))
@@ -107,6 +108,7 @@ export default function App() {
                   <Route path="/cadastros/formas-recebimento" element={<FormasRecebimento />} />
                   <Route path="/cadastros/operadores" element={<Operadores />} />
                   <Route path="/cadastros/backups" element={<Backups />} />
+                  <Route path="/cadastros/video-institucional" element={<VideoInstitucional />} />
 
                   {/* Relatórios */}
                   <Route path="/relatorios" element={<Relatorios />} />

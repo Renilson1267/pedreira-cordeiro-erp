@@ -451,6 +451,28 @@ export const ROUTE_HELP_MAP: Record<string, HelpTopic> = {
       'Por segurança, o administrador logado não pode desativar seu próprio usuário nem rebaixar seu papel.',
     ],
   },
+  '/cadastros/video-institucional': {
+    title: 'Vídeo Institucional do Sistema',
+    subtitle: 'Upload de MP4 oficial e publicação na Home pública',
+    description:
+      'Gestão do vídeo institucional da Pedreira Cordeiro e GC Mix. Permite fazer o upload de arquivo .mp4 pelo próprio sistema para exibição na página inicial pública, sem depender de sites externos nem causar bloqueios de reprodução.',
+    sections: [
+      {
+        heading: 'Recursos de gerenciamento',
+        items: [
+          'Upload direto de arquivo MP4 ou WebM (até 200 MB) com metadados e duração.',
+          'Player de preview embutido para testar o vídeo antes ou depois de publicar.',
+          'Substituição com 1 clique: envia uma nova versão e limpa o arquivo antigo do storage automaticamente.',
+          'Ativar ou desativar o vídeo da Home pública com total segurança (a seção na Home se oculta caso não haja vídeo ativo).',
+          'Upload opcional de imagem de capa (poster) personalizada para exibição antes do play.',
+        ],
+      },
+    ],
+    tips: [
+      'Gere o vídeo em formato MP4 com codec H.264 para compatibilidade com todos os navegadores móveis e computadores.',
+      'Se o vídeo for desativado ou nenhum arquivo for enviado, a Home oculta a seção de vídeo para evitar players vazios.',
+    ],
+  },
   '/cadastros/backups': {
     title: 'Backups do Sistema & Restauração',
     subtitle: 'Segurança dos dados, cópia JSON e restauração local',

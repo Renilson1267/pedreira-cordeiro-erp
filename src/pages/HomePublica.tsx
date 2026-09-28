@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
 import {
   INSTITUCIONAL_CONFIG,
@@ -7,6 +7,7 @@ import {
   UNIDADES_GC,
   SERVICOS_GC,
 } from '@/data/institucional'
+import { videoInstitucionalService, VideoInstitucionalRecord } from '@/services/videoInstitucional'
 import { LogoGcMix, LogoGcMixVector, ASSET_LOGO_BANNER } from '@/components/institucional/LogoGcMix'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -62,8 +63,35 @@ export default function HomePublica() {
   // Modalidade de foto expandida na galeria
   const [fotoAtiva, setFotoAtiva] = useState<string | null>(null)
 
+  // Vídeo institucional ativo gerenciado via ERP (PocketBase)
+  const [videoAtivo, setVideoAtivo] = useState<VideoInstitucionalRecord | null>(null)
+  const [carregandoVideo, setCarregandoVideo] = useState(true)
+
   // Estado de reprodução/erro do vídeo institucional
   const [videoErro, setVideoErro] = useState(false)
+
+  // Buscar vídeo institucional ativo no PocketBase ao carregar
+  useEffect(() => {
+    let ativo = true
+    async function carregarVideoInstitucional() {
+      try {
+        const video = await videoInstitucionalService.obterAtivo()
+        if (ativo) {
+          setVideoAtivo(video)
+        }
+      } catch (err) {
+        console.warn('Erro ao carregar vídeo institucional ativo na Home:', err)
+      } finally {
+        if (ativo) {
+          setCarregandoVideo(false)
+        }
+      }
+    }
+    carregarVideoInstitucional()
+    return () => {
+      ativo = false
+    }
+  }, [])
 
   // Feedback e erros
   const [erros, setErros] = useState<{ nome?: string; telefone?: string }>({})
@@ -1328,110 +1356,123 @@ export default function HomePublica() {
           </div>
         </section>
 
-        {/* SEÇÃO VÍDEO INSTITUCIONAL (Oficial) */}
-        <section id="video" className="py-20 bg-[#0A2540] text-white relative overflow-hidden">
-          <div className="absolute -top-32 -left-32 w-96 h-96 rounded-full bg-[#1D4ED8]/20 blur-3xl pointer-events-none" />
-          <div className="absolute -bottom-32 -right-32 w-96 h-96 rounded-full bg-amber-500/10 blur-3xl pointer-events-none" />
+        {/* SEÇÃO VÍDEO INSTITUCIONAL (Oficial — exibida apenas quando há vídeo ativo cadastrado pelo ERP) */}
+        {!carregandoVideo && videoAtivo && (
+          <section id="video" className="py-20 bg-[#0A2540] text-white relative overflow-hidden">
+            <div className="absolute -top-32 -left-32 w-96 h-96 rounded-full bg-[#1D4ED8]/20 blur-3xl pointer-events-none" />
+            <div className="absolute -bottom-32 -right-32 w-96 h-96 rounded-full bg-amber-500/10 blur-3xl pointer-events-none" />
 
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
-            <div className="text-center max-w-3xl mx-auto mb-12">
-              <Badge
-                variant="outline"
-                className="border-blue-400 text-blue-300 bg-blue-950/60 px-3 py-1 mb-3 text-xs uppercase tracking-wider font-bold"
-              >
-                Nossa História
-              </Badge>
-              <h2 className="text-3xl sm:text-4xl font-black text-white tracking-tight">
-                A História da Empresa
-              </h2>
-              <p className="mt-3 text-base sm:text-lg text-blue-100 leading-relaxed">
-                Do primeiro caminhão à frota de hoje — a caminhada do{' '}
-                <strong>Grupo GC do Amaral</strong>.
-              </p>
-            </div>
+            <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
+              <div className="text-center max-w-3xl mx-auto mb-12">
+                <Badge
+                  variant="outline"
+                  className="border-blue-400 text-blue-300 bg-blue-950/60 px-3 py-1 mb-3 text-xs uppercase tracking-wider font-bold"
+                >
+                  Nossa História
+                </Badge>
+                <h2 className="text-3xl sm:text-4xl font-black text-white tracking-tight">
+                  {videoAtivo.titulo || 'A História da Empresa'}
+                </h2>
+                <p className="mt-3 text-base sm:text-lg text-blue-100 leading-relaxed">
+                  {videoAtivo.descricao || (
+                    <>
+                      Do primeiro caminhão à frota de hoje — a caminhada do{' '}
+                      <strong>Grupo GC do Amaral</strong>.
+                    </>
+                  )}
+                </p>
+              </div>
 
-            {/* Cartão Elegante do Vídeo Institucional */}
-            <div className="max-w-4xl mx-auto">
-              <div className="relative rounded-3xl overflow-hidden border border-blue-400/30 bg-slate-950 shadow-2xl">
-                {!videoErro ? (
-                  <div className="aspect-video w-full bg-black relative flex items-center justify-center group">
-                    <video
-                      controls
-                      playsInline
-                      preload="metadata"
-                      poster={INSTITUCIONAL_CONFIG.fotosReais.heroAerea}
-                      className="w-full h-full object-cover"
-                      onError={() => setVideoErro(true)}
-                    >
-                      <source src={INSTITUCIONAL_CONFIG.videoInstitucionalUrl} type="video/mp4" />
-                      Seu navegador não suporta a reprodução deste vídeo.
-                    </video>
-                  </div>
-                ) : (
-                  /* Fallback elegante com foto de capa real caso o hotlink/CORS seja bloqueado pelo servidor de origem */
-                  <div className="relative aspect-video w-full overflow-hidden group">
-                    <img
-                      src={INSTITUCIONAL_CONFIG.fotosReais.heroAerea}
-                      alt="Capa do Vídeo Institucional — Pedreira Cordeiro"
-                      className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105 filter brightness-75"
-                    />
-                    <div className="absolute inset-0 bg-gradient-to-t from-[#0A1A3B] via-slate-950/60 to-transparent flex flex-col items-center justify-center p-6 text-center">
-                      <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-full bg-amber-400 text-slate-950 flex items-center justify-center shadow-2xl shadow-amber-400/40 mb-4 group-hover:scale-110 transition-transform">
-                        <Play className="w-8 h-8 fill-slate-950 ml-1" />
-                      </div>
-                      <span className="bg-amber-400/20 border border-amber-400/40 text-amber-300 text-xs font-bold px-3 py-1 rounded-full uppercase tracking-wider mb-2">
-                        Vídeo Institucional Oficial
-                      </span>
-                      <h3 className="text-xl sm:text-2xl font-black text-white max-w-lg mb-2">
-                        Assista ao vídeo da Pedreira Cordeiro e GC Mix
-                      </h3>
-                      <p className="text-xs sm:text-sm text-blue-100 max-w-md mb-6 leading-relaxed">
-                        Conheça nossa infraestrutura completa, frota de betoneiras e o processo
-                        produtivo de agregados.
-                      </p>
-                      <a
-                        href={INSTITUCIONAL_CONFIG.videoInstitucionalUrl}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="inline-flex items-center gap-2 px-6 py-3.5 rounded-xl bg-amber-400 hover:bg-amber-300 text-slate-950 font-black text-sm shadow-xl shadow-amber-500/25 transition-transform hover:scale-105"
+              {/* Cartão Elegante do Vídeo Institucional */}
+              <div className="max-w-4xl mx-auto">
+                <div className="relative rounded-3xl overflow-hidden border border-blue-400/30 bg-slate-950 shadow-2xl">
+                  {!videoErro ? (
+                    <div className="aspect-video w-full bg-black relative flex items-center justify-center group">
+                      <video
+                        controls
+                        playsInline
+                        preload="metadata"
+                        poster={
+                          videoAtivo.poster
+                            ? videoInstitucionalService.obterUrlArquivo(
+                                videoAtivo,
+                                videoAtivo.poster,
+                              )
+                            : INSTITUCIONAL_CONFIG.fotosReais.heroAerea
+                        }
+                        className="w-full h-full object-cover"
+                        onError={() => setVideoErro(true)}
                       >
-                        <Play className="w-4 h-4 fill-slate-950" />
-                        <span>Assistir no site oficial</span>
-                        <ExternalLink className="w-4 h-4 ml-1" />
-                      </a>
+                        <source
+                          src={videoInstitucionalService.obterUrlArquivo(
+                            videoAtivo,
+                            videoAtivo.arquivo,
+                          )}
+                          type="video/mp4"
+                        />
+                        Seu navegador não suporta a reprodução deste vídeo.
+                      </video>
                     </div>
-                  </div>
-                )}
+                  ) : (
+                    <div className="relative aspect-video w-full overflow-hidden group">
+                      <img
+                        src={
+                          videoAtivo.poster
+                            ? videoInstitucionalService.obterUrlArquivo(
+                                videoAtivo,
+                                videoAtivo.poster,
+                              )
+                            : INSTITUCIONAL_CONFIG.fotosReais.heroAerea
+                        }
+                        alt="Capa do Vídeo Institucional — Pedreira Cordeiro"
+                        className="w-full h-full object-cover filter brightness-75"
+                      />
+                      <div className="absolute inset-0 bg-gradient-to-t from-[#0A1A3B] via-slate-950/60 to-transparent flex flex-col items-center justify-center p-6 text-center">
+                        <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-full bg-amber-400 text-slate-950 flex items-center justify-center shadow-2xl shadow-amber-400/40 mb-4">
+                          <Play className="w-8 h-8 fill-slate-950 ml-1" />
+                        </div>
+                        <h3 className="text-xl sm:text-2xl font-black text-white max-w-lg mb-2">
+                          {videoAtivo.titulo}
+                        </h3>
+                        <p className="text-xs sm:text-sm text-blue-100 max-w-md mb-4 leading-relaxed">
+                          Vídeo institucional oficial da Pedreira Cordeiro e GC Mix.
+                        </p>
+                      </div>
+                    </div>
+                  )}
 
-                <div className="p-5 sm:p-6 bg-[#0A1A3B] border-t border-blue-900 flex flex-col sm:flex-row items-center justify-between gap-4">
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-xl bg-[#1D4ED8]/30 border border-[#1D4ED8]/50 flex items-center justify-center text-amber-300 shrink-0">
-                      <Play className="w-5 h-5 fill-amber-300/20" />
+                  <div className="p-5 sm:p-6 bg-[#0A1A3B] border-t border-blue-900 flex flex-col sm:flex-row items-center justify-between gap-4">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-xl bg-[#1D4ED8]/30 border border-[#1D4ED8]/50 flex items-center justify-center text-amber-300 shrink-0">
+                        <Play className="w-5 h-5 fill-amber-300/20" />
+                      </div>
+                      <div>
+                        <h4 className="text-sm font-bold text-white">{videoAtivo.titulo}</h4>
+                        <p className="text-xs text-blue-200">
+                          {videoAtivo.descricao ||
+                            'Vídeo institucional oficial gravado nas instalações do grupo'}
+                        </p>
+                      </div>
                     </div>
-                    <div>
-                      <h4 className="text-sm font-bold text-white">
-                        Do primeiro caminhão à frota de hoje
-                      </h4>
-                      <p className="text-xs text-blue-200">
-                        Vídeo institucional oficial gravado nas instalações do grupo
-                      </p>
-                    </div>
-                  </div>
 
-                  <a
-                    href={INSTITUCIONAL_CONFIG.videoInstitucionalUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-[#1E3A8A] hover:bg-[#1D4ED8] text-white text-xs font-bold border border-blue-400/30 transition-colors"
-                  >
-                    <span>Assistir no site oficial</span>
-                    <ExternalLink className="w-3.5 h-3.5" />
-                  </a>
+                    <a
+                      href={videoInstitucionalService.obterUrlArquivo(
+                        videoAtivo,
+                        videoAtivo.arquivo,
+                      )}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-[#1E3A8A] hover:bg-[#1D4ED8] text-white text-xs font-bold border border-blue-400/30 transition-colors"
+                    >
+                      <span>Abrir em tela cheia</span>
+                      <ExternalLink className="w-3.5 h-3.5" />
+                    </a>
+                  </div>
                 </div>
               </div>
             </div>
-          </div>
-        </section>
+          </section>
+        )}
 
         {/* SEÇÃO GALERIA DE FOTOS REAIS (Enriquecida com fotos reais do site antigo) */}
         <section id="galeria" className="py-20 bg-white border-b border-blue-100">
