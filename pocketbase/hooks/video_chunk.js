@@ -239,7 +239,9 @@ routerAdd(
       return e.json(401, { error: 'Não autorizado.' })
     }
 
+    console.log('[CHUNK_PART] Iniciando handler part...')
     var body = e.requestInfo().body || {}
+    console.log('[CHUNK_PART] requestInfo().body lido com sucesso')
     var sessionId = (body.session_id || '').trim()
     var chunkIndex = Number(body.chunk_index)
 
