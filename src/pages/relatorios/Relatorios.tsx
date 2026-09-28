@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react'
 import { useCompany } from '@/contexts/CompanyContext'
+import { useAuth } from '@/contexts/AuthContext'
 import pb from '@/lib/pocketbase/client'
 import { formatCurrency, formatDate } from '@/lib/formatters'
 import { calcularDatasPeriodoRapido, estaDentroDoPeriodo } from '@/lib/periodo'
@@ -69,11 +70,14 @@ import {
   Legend,
   CartesianGrid,
 } from 'recharts'
+import FechamentoMensalCentroCustoModal from '@/components/financeiro/FechamentoMensalCentroCustoModal'
 
 export default function Relatorios() {
+  const { user } = useAuth()
   const { currentEmpresa } = useCompany()
 
   const [activeReport, setActiveReport] = useState<string | null>(null)
+  const [modalFechamentoCentroCustoOpen, setModalFechamentoCentroCustoOpen] = useState(false)
 
   // Filtro de período padrão Contas a Pagar/Receber
   const [opcaoPeriodo, setOpcaoPeriodo] = useState<string>('este_mes')
@@ -199,6 +203,15 @@ export default function Relatorios() {
 
   // Report cards definition
   const reportCards = [
+    {
+      id: 'fechamento_centro_custo',
+      title: 'Fechamento Mensal por Centro de Custo',
+      description:
+        'Demonstrativo objetivo de Contas a Pagar por centro de custo para prestação de contas à diretoria (A4 Paisagem, % part., top fornecedores e variação).',
+      icon: Layers,
+      color: 'bg-teal-100 text-teal-900 border-teal-300',
+      destaque: true,
+    },
     {
       id: 'fluxo_caixa',
       title: 'Fluxo de Caixa',
@@ -746,14 +759,31 @@ export default function Relatorios() {
           return (
             <Card
               key={rc.id}
-              onClick={() => setActiveReport(rc.id)}
-              className="rounded-2xl border-[#ECEAE4] bg-white shadow-xs hover:shadow-md transition-all cursor-pointer p-6 flex flex-col justify-between group"
+              onClick={() => {
+                if (rc.id === 'fechamento_centro_custo') {
+                  setModalFechamentoCentroCustoOpen(true)
+                } else {
+                  setActiveReport(rc.id)
+                }
+              }}
+              className={`rounded-2xl bg-white shadow-xs hover:shadow-md transition-all cursor-pointer p-6 flex flex-col justify-between group ${
+                rc.destaque
+                  ? 'border-2 border-teal-600/60 ring-1 ring-teal-500/20'
+                  : 'border-[#ECEAE4]'
+              }`}
             >
               <div>
-                <div
-                  className={`w-12 h-12 rounded-2xl flex items-center justify-center mb-4 ${rc.color}`}
-                >
-                  <Icon className="w-6 h-6" />
+                <div className="flex items-center justify-between mb-4">
+                  <div
+                    className={`w-12 h-12 rounded-2xl flex items-center justify-center ${rc.color}`}
+                  >
+                    <Icon className="w-6 h-6" />
+                  </div>
+                  {rc.destaque && (
+                    <Badge className="bg-teal-700 text-white hover:bg-teal-800 text-[10px] font-semibold uppercase">
+                      Novo • Gerência
+                    </Badge>
+                  )}
                 </div>
                 <h3 className="font-bold text-gray-900 text-base group-hover:text-teal-700 transition-colors">
                   {rc.title}
@@ -762,7 +792,7 @@ export default function Relatorios() {
               </div>
 
               <div className="mt-6 pt-4 border-t border-[#ECEAE4] flex items-center justify-between text-xs font-semibold text-teal-700">
-                <span>Gerar Relatório</span>
+                <span>{rc.destaque ? 'Visualizar / Imprimir Fechamento' : 'Gerar Relatório'}</span>
                 <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
               </div>
             </Card>
@@ -1718,6 +1748,14 @@ export default function Relatorios() {
         itens={itensParaImpressaoSetor}
         open={modalImpressaoSetorOpen}
         onOpenChange={setModalImpressaoSetorOpen}
+      />
+
+      {/* Modal Fechamento Mensal por Centro de Custo para Diretoria */}
+      <FechamentoMensalCentroCustoModal
+        open={modalFechamentoCentroCustoOpen}
+        onOpenChange={setModalFechamentoCentroCustoOpen}
+        currentEmpresa={currentEmpresa}
+        usuarioNome={user?.name || user?.email || 'Administrador'}
       />
     </div>
   )

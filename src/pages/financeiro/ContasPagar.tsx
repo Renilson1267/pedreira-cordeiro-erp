@@ -61,6 +61,7 @@ import {
   Printer,
   Tag,
   CheckSquare,
+  Layers,
 } from 'lucide-react'
 import {
   AlertDialog,
@@ -102,6 +103,9 @@ const HistoricoGeralModal = React.lazy(() =>
 )
 const RelatorioListagemImpressaoModal = React.lazy(
   () => import('@/components/financeiro/RelatorioListagemImpressaoModal'),
+)
+const FechamentoMensalCentroCustoModal = React.lazy(
+  () => import('@/components/financeiro/FechamentoMensalCentroCustoModal'),
 )
 
 export default function ContasPagar() {
@@ -217,6 +221,8 @@ export default function ContasPagar() {
   const [selectedIds, setSelectedIds] = useState<string[]>([])
   // Modal de Impressão do Relatório
   const [relatorioImpressaoOpen, setRelatorioImpressaoOpen] = useState(false)
+  // Modal de Fechamento Mensal por Centro de Custo
+  const [fechamentoCentroCustoOpen, setFechamentoCentroCustoOpen] = useState(false)
 
   useRealtime('contas_pagar', () => loadData())
 
@@ -1738,12 +1744,24 @@ export default function ContasPagar() {
               type="button"
               variant="outline"
               size="sm"
+              onClick={() => setFechamentoCentroCustoOpen(true)}
+              className="h-8 px-2.5 text-xs font-semibold rounded-lg shadow-xs border-teal-400 text-teal-900 bg-teal-50/80 hover:bg-teal-100 hover:text-teal-950 transition-colors"
+              title="Abrir relatório de fechamento mensal por centro de custo para diretoria / gerência"
+            >
+              <Layers className="w-3.5 h-3.5 mr-1.5 text-teal-700" />
+              Fechamento por C. Custo
+            </Button>
+
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
               disabled={loadingImpressao}
               onClick={handleAbrirRelatorioImpressao}
               className={`h-8 px-2.5 text-xs font-semibold rounded-lg shadow-xs transition-colors ${
                 selectedIds.length > 0
                   ? 'bg-teal-700 text-white hover:bg-teal-800 border-teal-700'
-                  : 'border-teal-300 text-teal-800 bg-teal-50/60 hover:bg-teal-100/80 hover:text-teal-950'
+                  : 'border-gray-300 text-gray-700 bg-white hover:bg-gray-100'
               }`}
               title={
                 selectedIds.length > 0
@@ -2974,6 +2992,27 @@ export default function ContasPagar() {
             onOpenChange={setHistoricoModalOpen}
             empresaId={currentEmpresa?.id || ''}
             colecaoPadrao="contas_pagar"
+          />
+        </React.Suspense>
+      )}
+
+      {/* Relatório de Fechamento Mensal por Centro de Custo (Gerência) */}
+      {fechamentoCentroCustoOpen && (
+        <React.Suspense
+          fallback={
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+              <div className="bg-white rounded-xl p-4 shadow-xl flex items-center gap-2 text-xs text-gray-600">
+                <div className="w-4 h-4 border-2 border-teal-700 border-t-transparent rounded-full animate-spin" />
+                Carregando fechamento por centro de custo...
+              </div>
+            </div>
+          }
+        >
+          <FechamentoMensalCentroCustoModal
+            open={fechamentoCentroCustoOpen}
+            onOpenChange={setFechamentoCentroCustoOpen}
+            currentEmpresa={currentEmpresa}
+            usuarioNome={user?.name || user?.email || 'Administrador'}
           />
         </React.Suspense>
       )}
