@@ -736,9 +736,25 @@ export default function ContasReceber() {
             ? new Date(`${dataEmissao}T12:00:00Z`).toISOString()
             : null
 
+          const isStatusRecebida = status === 'Recebida'
+          const hojeIso = new Date().toISOString()
+
           if (editingId) {
             const registroAntes = contas.find((c) => c.id === editingId)
-            const novoObj = {
+
+            // Se status for Recebida, garantir coerência de valor_recebido e data_recebimento
+            let valorRecebidoAtualizado = registroAntes?.valor_recebido
+            let dataRecebimentoAtualizada = registroAntes?.data_recebimento
+            if (isStatusRecebida) {
+              const recValido =
+                registroAntes?.valor_recebido && registroAntes.valor_recebido > 0
+                  ? Number(registroAntes.valor_recebido)
+                  : valorFinalLiquido
+              valorRecebidoAtualizado = recValido > 0 ? recValido : valorFinalLiquido
+              dataRecebimentoAtualizada = registroAntes?.data_recebimento || hojeIso
+            }
+
+            const novoObj: Partial<ContaReceber> = {
               descricao: descFinal,
               cliente_id: clienteId === 'none' || !clienteId ? null : clienteId,
               cliente_depositante: clienteDepositante.trim() || '',
@@ -760,6 +776,12 @@ export default function ContasReceber() {
               endereco: endereco.trim(),
               nota: nota.trim(),
               observacoes: observacoes.trim(),
+              ...(isStatusRecebida
+                ? {
+                    valor_recebido: valorRecebidoAtualizado,
+                    data_recebimento: dataRecebimentoAtualizada,
+                  }
+                : {}),
             }
 
             await pb.collection('contas_receber').update(editingId, novoObj)
@@ -852,7 +874,17 @@ export default function ContasReceber() {
                 endereco: endereco.trim(),
                 nota: nota.trim(),
                 observacoes: observacoes.trim(),
-                data_recebimento: status === 'Recebimento Antecipado' ? dataVencIso : undefined,
+                data_recebimento:
+                  status === 'Recebimento Antecipado'
+                    ? dataVencIso
+                    : isStatusRecebida
+                      ? hojeIso
+                      : undefined,
+                ...(isStatusRecebida
+                  ? {
+                      valor_recebido: parcelValue,
+                    }
+                  : {}),
               })
 
               // Se for cheque pré-datado na primeira ou única parcela, salvar cheques associados
@@ -1589,6 +1621,7 @@ export default function ContasReceber() {
             ? `${settlingConta.descricao}${clienteNomeTitulo ? ` [${clienteNomeTitulo}]` : ''}`
             : clienteNomeTitulo || 'Recebimento'
 
+          const centroCustoIdMov = settlingConta.centro_custo_id || null
           const mov = await pb.collection('movimentos_financeiros').create({
             empresa_id: currentEmpresa!.id,
             tipo: 'Entrada',
@@ -1596,7 +1629,7 @@ export default function ContasReceber() {
             valor: valorBaixa,
             data: recDateISO,
             categoria_id: settlingConta.categoria_id || null,
-            centro_custo_id: settlingConta.centro_custo_id || null,
+            centro_custo_id: centroCustoIdMov,
             origem: 'ContaReceber',
             referencia_id: settlingConta.id,
             conciliado: false,

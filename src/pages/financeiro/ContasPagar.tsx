@@ -648,21 +648,44 @@ export default function ContasPagar() {
             currentEmpresa!.id,
           )
 
+          const isStatusPaga = status === 'Paga'
+          const valorTituloTotal = Number(valor)
+          const hojeIso = new Date().toISOString()
+
           if (editingId) {
             // Update single record
             const registroAntes = contas.find((c) => c.id === editingId)
-            const novoObj = {
+
+            // Se status for Paga, garantir coerência de valor_pago e data_pagamento
+            let valorPagoAtualizado = registroAntes?.valor_pago
+            let dataPagamentoAtualizada = registroAntes?.data_pagamento
+            if (isStatusPaga) {
+              const pagoValido =
+                registroAntes?.valor_pago && registroAntes.valor_pago > 0
+                  ? Number(registroAntes.valor_pago)
+                  : valorTituloTotal
+              valorPagoAtualizado = pagoValido > 0 ? pagoValido : valorTituloTotal
+              dataPagamentoAtualizada = registroAntes?.data_pagamento || hojeIso
+            }
+
+            const novoObj: Partial<ContaPagar> = {
               descricao: descricao.trim(),
               fornecedor_id: finalFornecedorId,
               categoria_id: categoriaId === 'none' || !categoriaId ? null : categoriaId,
               centro_custo_id: centroCustoId === 'none' || !centroCustoId ? null : centroCustoId,
-              valor: Number(valor),
+              valor: valorTituloTotal,
               vencimento: new Date(vencimento).toISOString(),
               data_emissao: dataEmissaoIso,
               parcelas: Number(parcelas),
               status: status,
               forma_pagamento: formaPagamentoForm || null,
               observacoes: observacoes.trim(),
+              ...(isStatusPaga
+                ? {
+                    valor_pago: valorPagoAtualizado,
+                    data_pagamento: dataPagamentoAtualizada,
+                  }
+                : {}),
             }
 
             const updatedRecord = await pb
@@ -737,6 +760,12 @@ export default function ContasPagar() {
                 status: status,
                 forma_pagamento: formaPagamentoForm || null,
                 observacoes: observacoes.trim(),
+                ...(isStatusPaga
+                  ? {
+                      valor_pago: valorParcelaNum,
+                      data_pagamento: hojeIso,
+                    }
+                  : {}),
               })
 
               // Se for cheque pré-datado na primeira parcela ou única, salvar cheques associados
@@ -1059,7 +1088,8 @@ export default function ContasPagar() {
             observacoes: (settlingConta.observacoes || '') + obsBaixa,
           })
 
-          // 2. Create financial movement with the exact partial payment amount
+          // 2. Create financial movement with the exact partial payment amount and cost center
+          const centroCustoIdMov = settlingConta.centro_custo_id || null
           const mov = await pb.collection('movimentos_financeiros').create({
             empresa_id: currentEmpresa!.id,
             tipo: 'Saida',
@@ -1067,7 +1097,7 @@ export default function ContasPagar() {
             valor: valorBaixa,
             data: payDateISO,
             categoria_id: settlingConta.categoria_id || null,
-            centro_custo_id: settlingConta.centro_custo_id || null,
+            centro_custo_id: centroCustoIdMov,
             origem: 'ContaPagar',
             referencia_id: settlingConta.id,
             conciliado: false,
