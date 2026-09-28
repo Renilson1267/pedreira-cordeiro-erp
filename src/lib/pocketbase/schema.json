@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-09-28T02:15:45.748Z",
+  "generatedAt": "2026-09-28T02:29:21.085Z",
   "collections": [
     {
       "name": "users",
@@ -3376,7 +3376,8 @@
             "admissional",
             "demissional",
             "retorno_trabalho",
-            "mudanca_funcao"
+            "mudanca_funcao",
+            "mudanca_risco"
           ]
         },
         {
@@ -3435,6 +3436,25 @@
           "required": false,
           "system": false,
           "autodateTriggers": ["onCreate", "onUpdate"]
+        },
+        {
+          "name": "data_validade",
+          "type": "date",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "status_geral",
+          "type": "select",
+          "required": false,
+          "system": false,
+          "selectValues": ["pendente", "apto", "apto_com_restricao", "inapto", "em_andamento"]
+        },
+        {
+          "name": "exames_complementares",
+          "type": "json",
+          "required": false,
+          "system": false
         }
       ],
       "indexes": [
@@ -3443,7 +3463,8 @@
         "CREATE INDEX idx_exames_tipo ON exames_periodicos (tipo_exame)",
         "CREATE INDEX idx_exames_resultado ON exames_periodicos (resultado)",
         "CREATE INDEX idx_exames_data_exame ON exames_periodicos (data_exame)",
-        "CREATE INDEX idx_exames_proximo ON exames_periodicos (data_proximo_exame)"
+        "CREATE INDEX idx_exames_proximo ON exames_periodicos (data_proximo_exame)",
+        "CREATE INDEX `idx_exames_validade` ON `exames_periodicos` (data_validade)"
       ]
     }
   ]

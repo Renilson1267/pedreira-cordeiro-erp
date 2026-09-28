@@ -589,10 +589,37 @@ export type TipoExameOcupacional =
   | 'demissional'
   | 'retorno_trabalho'
   | 'mudanca_funcao'
+  | 'mudanca_risco'
 
 export type ResultadoExameOcupacional = 'apto' | 'apto_com_restricao' | 'inapto'
 
+export type StatusGeralExame =
+  | 'pendente'
+  | 'apto'
+  | 'apto_com_restricao'
+  | 'inapto'
+  | 'em_andamento'
+
 export type StatusCalculadoExame = 'em_dia' | 'vence_em_breve' | 'vencido'
+
+export type TipoExameComplementar =
+  | 'aso'
+  | 'acuidade_visual'
+  | 'audiometria'
+  | 'avaliacao_clinica'
+  | 'toxicologico'
+  | 'rx'
+  | 'ecg'
+
+export interface ItemExameComplementar {
+  realizado: boolean
+  data_realizacao?: string
+  data_validade?: string
+  resultado?: 'apto' | 'inapto' | 'normal' | 'alterado' | 'pendente' | string
+  observacao?: string
+}
+
+export type MapaExamesComplementares = Partial<Record<TipoExameComplementar, ItemExameComplementar>>
 
 export interface ExamePeriodico {
   id: string
@@ -601,10 +628,13 @@ export interface ExamePeriodico {
   tipo_exame: TipoExameOcupacional
   data_exame: string
   resultado: ResultadoExameOcupacional
+  status_geral?: StatusGeralExame
   clinica_medico?: string
   crm?: string
   periodicidade_meses?: number
   data_proximo_exame?: string
+  data_validade?: string
+  exames_complementares?: MapaExamesComplementares
   observacoes?: string
   created: string
   updated: string

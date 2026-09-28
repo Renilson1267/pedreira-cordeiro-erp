@@ -457,18 +457,20 @@ export default function Dashboard() {
       }> = []
 
       allExames.forEach((ex) => {
-        const st = calcularStatusExame(ex.data_proximo_exame, ex.tipo_exame)
+        const st = calcularStatusExame(ex.data_proximo_exame, ex.tipo_exame, ex.data_validade)
         if (st === 'vencido' || st === 'vence_em_breve') {
           if (st === 'vencido') countVencidos++
           else countVencem30++
+
+          const vencimentoDisplay = ex.data_validade || ex.data_proximo_exame || ''
 
           examesCriticos.push({
             id: ex.id,
             funcionarioNome: ex.expand?.funcionario_id?.nome || 'Colaborador',
             cargo: ex.expand?.funcionario_id?.cargo || '',
             tipoExame: TIPOS_EXAME_LABELS[ex.tipo_exame] || ex.tipo_exame,
-            dataProximo: ex.data_proximo_exame ? ex.data_proximo_exame.slice(0, 10) : '',
-            diasRestantes: calcularDiasRestantes(ex.data_proximo_exame),
+            dataProximo: vencimentoDisplay ? vencimentoDisplay.slice(0, 10) : '',
+            diasRestantes: calcularDiasRestantes(ex.data_proximo_exame, ex.data_validade),
             status: st,
           })
         }
