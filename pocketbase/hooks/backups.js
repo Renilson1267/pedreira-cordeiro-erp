@@ -4841,12 +4841,18 @@ routerAdd(
           kF === 'colecoes' ||
           kF === 'resumo_colecoes' ||
           kF === 'detalhes_execucao' ||
+          kF === 'cnt' ||
+          kF === 'chars_data' ||
           kF.indexOf('_backup_') === 0 ||
           kF.indexOf('_pb_') === 0
         )
           continue
 
         var vF = fonteObj[kF]
+        // Rejeitar nulos, undefined ou objetos de erro { erro: "..." }
+        if (vF === null || vF === undefined) continue
+        if (typeof vF === 'object' && !Array.isArray(vF) && vF.erro) continue
+
         if (Array.isArray(vF)) {
           colecoesContagens[kF] = vF.length
           if (vF.length > 0 && !amostrasRecebidas[kF]) {
@@ -4872,11 +4878,14 @@ routerAdd(
         if (
           rk === 'meta' ||
           rk === 'dados' ||
+          rk === 'cnt' ||
+          rk === 'chars_data' ||
           rk.indexOf('_backup_') === 0 ||
           rk.indexOf('_pb_') === 0
         )
           continue
         var numVal = rawResumo[rk]
+        if (numVal && typeof numVal === 'object' && numVal.erro) continue
         if (typeof numVal === 'number' && !isNaN(numVal) && numVal >= 0) {
           colecoesContagens[rk] = numVal
         } else if (typeof numVal === 'string' && !isNaN(parseInt(numVal, 10))) {

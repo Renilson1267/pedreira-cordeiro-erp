@@ -548,11 +548,9 @@ export const backupService = {
   },
 
   /**
-   * Valida e resume a estrutura de um dump JSON de backup no backend
-   * Suporta envio leve (metadados + contagens + amostras pequenas) para evitar estouro de payload/memória
-   */
-  /**
    * Extrai um dicionário limpo de coleções e seus arrays de registros de qualquer estrutura de dump de backup
+   * (coleções na raiz, sob dados/collections/colecoes, filtrando metadados, _backup_*, _pb_*, contagens 'cnt',
+   * resumos numéricos e objetos de erro).
    */
   extrairColecoesDoDump(dump: unknown): Record<string, unknown[]> {
     const resultado: Record<string, unknown[]> = {}
@@ -573,6 +571,8 @@ export const backupService = {
             k === 'colecoes' ||
             k === 'resumo_colecoes' ||
             k === 'detalhes_execucao' ||
+            k === 'cnt' ||
+            k === 'chars_data' ||
             k.startsWith('_backup_') ||
             k.startsWith('_pb_')
           ) {

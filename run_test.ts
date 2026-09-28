@@ -132,6 +132,132 @@ async function run() {
   }
   console.log('✓ Teste 4 (Ordem de dependência relacional): OK')
 
+  // 4. Teste com a estrutura e dados reais do backup semanal auto (jpc5w1b0o13nvim, 16.625 registros, 27 coleções)
+  console.log('--- Teste 5: Validação do formato exato de dump semanal com 27 coleções ---')
+  const resumoSemanal2026 = {
+    abastecimentos: 0,
+    bancos_contas: 1,
+    centros_custos: 6,
+    cheques_predatados: 0,
+    clientes: 2354,
+    conciliacoes: 0,
+    contadores_sequenciais: 1,
+    contas_pagar: 4418,
+    contas_receber: 2920,
+    creditos_clientes: 0,
+    despesas_frota: 0,
+    empresa_convites: 0,
+    empresa_membros: 6,
+    empresas: 2,
+    entregas: 1530,
+    exames_periodicos: 0,
+    folha_horas_extras: 0,
+    formas_recebimento: 2,
+    fornecedores: 198,
+    funcionarios: 63,
+    historico_alteracoes: 5,
+    manutencoes: 0,
+    movimentos_financeiros: 3792,
+    plano_contas: 34,
+    produtos: 15,
+    users: 5,
+    veiculos: 43,
+  }
+
+  // Simular dump completo nos dois formatos aceitos:
+  // Formato A: Coleções sob "dados", com metadados do dump real e chaves auxiliares
+  const dumpRealFormatoA: Record<string, unknown> = {
+    meta: {
+      id: 'jpc5w1b0o13nvim',
+      nome_arquivo: 'backup_semanal_auto_2026-09-27_00-30-00.json',
+      origem: 'semanal_automatico',
+      total_colecoes: 27,
+      total_registros: 16625,
+      resumo_colecoes: resumoSemanal2026,
+    },
+    dados: {
+      _backup_duplicatas_excluidas: null,
+      _backup_erros: { status: 'ok' },
+      cnt: 16625,
+      chars_data: 216210,
+    },
+  }
+
+  // Formato B: Coleções diretamente na raiz
+  const dumpRealFormatoB: Record<string, unknown> = {
+    meta: { id: 'jpc5w1b0o13nvim' },
+    cnt: 16625,
+    _backup_info: 'teste',
+  }
+
+  // Preencher arrays simulando cada coleção de acordo com as contagens reais
+  const dadosA = dumpRealFormatoA.dados as Record<string, unknown[]>
+  let totalSimulado = 0
+  for (const [col, count] of Object.entries(resumoSemanal2026)) {
+    // Array com itens representativos
+    const arr = new Array(count).fill(null).map((_, i) => ({
+      id: `${col}_${i}`,
+      collectionName: col,
+    }))
+    dadosA[col] = arr
+    dumpRealFormatoB[col] = arr
+    totalSimulado += count
+  }
+
+  if (totalSimulado !== 16625) {
+    throw new Error(`Total esperado 16625, mas deu ${totalSimulado}`)
+  }
+
+  // Testar extração pelo método de serviço
+  const colecoesExtraidasA = backupService.extrairColecoesDoDump(dumpRealFormatoA)
+  const colecoesExtraidasB = backupService.extrairColecoesDoDump(dumpRealFormatoB)
+
+  const nomesColsA = Object.keys(colecoesExtraidasA)
+  const nomesColsB = Object.keys(colecoesExtraidasB)
+
+  if (nomesColsA.length !== 27) {
+    throw new Error(
+      `Esperado 27 coleções no Formato A, obtido: ${nomesColsA.length} (${nomesColsA.join(', ')})`,
+    )
+  }
+  if (nomesColsB.length !== 27) {
+    throw new Error(
+      `Esperado 27 coleções no Formato B, obtido: ${nomesColsB.length} (${nomesColsB.join(', ')})`,
+    )
+  }
+
+  // Verificar contagem total de registros somando colecoesExtraidasA
+  let totalRegistrosA = 0
+  for (const [col, arr] of Object.entries(colecoesExtraidasA)) {
+    totalRegistrosA += arr.length
+    if (arr.length !== resumoSemanal2026[col as keyof typeof resumoSemanal2026]) {
+      throw new Error(
+        `Contagem da coleção ${col} divergente: ${arr.length} !== ${resumoSemanal2026[col as keyof typeof resumoSemanal2026]}`,
+      )
+    }
+  }
+  if (totalRegistrosA !== 16625) {
+    throw new Error(`Total de registros no Formato A divergente: ${totalRegistrosA} !== 16625`)
+  }
+
+  // Garantir que nenhuma chave proibida escapou
+  for (const k of [
+    '_backup_duplicatas_excluidas',
+    '_backup_erros',
+    'cnt',
+    'chars_data',
+    'meta',
+    'dados',
+  ]) {
+    if (colecoesExtraidasA[k] !== undefined) {
+      throw new Error(`Chave ${k} não deveria constar nas coleções extraídas!`)
+    }
+  }
+
+  console.log(
+    '✓ Teste 5 (Dump semanal real de 27 coleções e 16.625 registros em ambos formatos): OK',
+  )
+
   console.log('--- Todos os testes de validação passaram com sucesso! ---')
 }
 
