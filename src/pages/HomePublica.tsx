@@ -32,6 +32,12 @@ import {
   LogIn,
   Send,
   MessageCircle,
+  Target,
+  Eye,
+  TrendingUp,
+  Play,
+  Image as ImageIcon,
+  Check,
 } from 'lucide-react'
 
 export default function HomePublica() {
@@ -179,15 +185,21 @@ export default function HomePublica() {
           </div>
 
           {/* Links desktop */}
-          <nav className="hidden md:flex items-center gap-8 text-sm font-medium text-gray-600">
+          <nav className="hidden md:flex items-center gap-6 lg:gap-8 text-sm font-medium text-gray-600">
             <a href="#produtos" className="hover:text-teal-700 transition-colors">
               Produtos
+            </a>
+            <a href="#missao-visao" className="hover:text-teal-700 transition-colors">
+              Missão & Valores
             </a>
             <a href="#sobre" className="hover:text-teal-700 transition-colors">
               A Pedreira
             </a>
-            <a href="#diferenciais" className="hover:text-teal-700 transition-colors">
-              Diferenciais
+            <a href="#video" className="hover:text-teal-700 transition-colors">
+              Vídeo
+            </a>
+            <a href="#galeria" className="hover:text-teal-700 transition-colors">
+              Fotos Reais
             </a>
             <a href="#contato" className="hover:text-teal-700 transition-colors">
               Contato
@@ -283,27 +295,36 @@ export default function HomePublica() {
                 </div>
               </div>
 
-              {/* Card visual / Ilustração Hero */}
+              {/* Card visual / Ilustração Hero com foto aérea REAL */}
               <div className="lg:col-span-5">
                 <div className="relative rounded-3xl overflow-hidden border border-[#ECEAE4] bg-white shadow-2xl p-4 sm:p-6 space-y-5">
-                  <div className="relative h-60 sm:h-72 rounded-2xl overflow-hidden">
+                  <div className="relative h-64 sm:h-80 rounded-2xl overflow-hidden group">
                     <img
-                      src="https://img.usecurling.com/p/800/500?q=rock%20quarry%20mining%20excavator&color=slate"
-                      alt="Operação da Pedreira Cordeiro"
-                      className="w-full h-full object-cover transform hover:scale-105 transition-transform duration-700"
+                      src={INSTITUCIONAL_CONFIG.fotosReais.heroAerea}
+                      alt="Vista aérea da Pedreira Cordeiro — Foto real"
+                      className="w-full h-full object-cover transform group-hover:scale-105 transition-transform duration-700"
+                      loading="eager"
                     />
-                    <div className="absolute inset-0 bg-gradient-to-t from-gray-950/80 via-transparent to-transparent flex items-end p-5">
+                    <div className="absolute top-3 right-3">
+                      <span className="bg-slate-900/85 backdrop-blur-xs text-white text-[10px] font-semibold px-2.5 py-1 rounded-full border border-white/20 shadow-xs flex items-center gap-1">
+                        <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                        Foto Real da Pedreira
+                      </span>
+                    </div>
+                    <div className="absolute inset-0 bg-gradient-to-t from-gray-950/85 via-gray-950/20 to-transparent flex items-end p-5">
                       <div>
-                        <span className="text-[11px] font-bold uppercase tracking-wider text-teal-300 bg-teal-950/70 px-2 py-0.5 rounded">
-                          Unidade de Extração e Britagem
+                        <span className="text-[11px] font-bold uppercase tracking-wider text-teal-300 bg-teal-950/80 px-2 py-0.5 rounded">
+                          Vista Aérea Oficial • Jazida e Pátio
                         </span>
-                        <h3 className="text-lg font-bold text-white mt-1">
-                          Alto padrão em agregados minerais
+                        <h3 className="text-lg font-bold text-white mt-1 leading-snug">
+                          Pedreira Cordeiro & Central de Britagem
                         </h3>
+                        <p className="text-xs text-slate-300 mt-0.5">
+                          Produção em larga escala com britagem contínua e abastecimento regional
+                        </p>
                       </div>
                     </div>
                   </div>
-
                   <div className="space-y-3">
                     <div className="flex items-center justify-between text-xs text-gray-500 pb-2 border-b border-gray-100">
                       <span>Modalidade de fornecimento</span>
@@ -459,8 +480,103 @@ export default function HomePublica() {
           </div>
         </section>
 
-        {/* SEÇÃO SOBRE & DIFERENCIAIS */}
-        <section id="sobre" className="py-20 bg-[#FAF9F7] border-y border-[#ECEAE4]">
+        {/* SEÇÃO MISSÃO, VISÃO E OBJETIVOS (Conteúdo oficial extraído de pedreiracordeiro.com.br) */}
+        <section id="missao-visao" className="py-20 bg-white border-b border-[#ECEAE4]">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div className="text-center max-w-3xl mx-auto mb-16">
+              <Badge
+                variant="outline"
+                className="border-teal-600 text-teal-700 bg-teal-50 px-3 py-1 mb-3 text-xs uppercase tracking-wider font-semibold"
+              >
+                Propósito & Diretrizes Estratégicas
+              </Badge>
+              <h2 className="text-3xl sm:text-4xl font-extrabold text-gray-900 tracking-tight">
+                Missão, Visão e Objetivos
+              </h2>
+              <p className="mt-3 text-base sm:text-lg text-gray-600 leading-relaxed">
+                Os pilares que orientam o <strong>{INSTITUCIONAL_CONFIG.nomeFantasia}</strong> no
+                fornecimento de concreto usinado e agregados minerais para o sertão de Pernambuco,
+                Paraíba e Rio Grande do Norte.
+              </p>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+              {/* Card Missão */}
+              <Card className="bg-[#FAF9F7] border-[#ECEAE4] hover:border-teal-300 rounded-2xl overflow-hidden transition-all duration-300 hover:shadow-xl flex flex-col justify-between">
+                <CardContent className="p-8 space-y-4">
+                  <div className="w-13 h-13 rounded-2xl bg-teal-100/80 border border-teal-200 text-teal-800 flex items-center justify-center shadow-xs">
+                    <Target className="w-7 h-7" />
+                  </div>
+                  <div>
+                    <span className="text-[11px] font-bold uppercase tracking-wider text-teal-700">
+                      Nosso Propósito
+                    </span>
+                    <h3 className="text-2xl font-bold text-gray-900 mt-1">Missão</h3>
+                  </div>
+                  <p className="text-gray-700 text-sm sm:text-base leading-relaxed font-normal">
+                    &ldquo;{INSTITUCIONAL_CONFIG.missao}&rdquo;
+                  </p>
+                </CardContent>
+                <div className="px-8 py-3 bg-teal-50/50 border-t border-teal-100/60 text-xs font-semibold text-teal-800 flex items-center gap-2">
+                  <Check className="w-4 h-4 text-teal-600" />
+                  Qualidade, prazo e preço justo
+                </div>
+              </Card>
+
+              {/* Card Visão */}
+              <Card className="bg-[#FAF9F7] border-[#ECEAE4] hover:border-teal-300 rounded-2xl overflow-hidden transition-all duration-300 hover:shadow-xl flex flex-col justify-between">
+                <CardContent className="p-8 space-y-4">
+                  <div className="w-13 h-13 rounded-2xl bg-amber-100/80 border border-amber-200 text-amber-800 flex items-center justify-center shadow-xs">
+                    <Eye className="w-7 h-7" />
+                  </div>
+                  <div>
+                    <span className="text-[11px] font-bold uppercase tracking-wider text-amber-700">
+                      Onde queremos chegar
+                    </span>
+                    <h3 className="text-2xl font-bold text-gray-900 mt-1">Visão</h3>
+                  </div>
+                  <p className="text-gray-700 text-sm sm:text-base leading-relaxed font-normal">
+                    &ldquo;{INSTITUCIONAL_CONFIG.visao}&rdquo;
+                  </p>
+                </CardContent>
+                <div className="px-8 py-3 bg-amber-50/50 border-t border-amber-100/60 text-xs font-semibold text-amber-800 flex items-center gap-2">
+                  <Check className="w-4 h-4 text-amber-600" />
+                  Referência regional no sertão (PB, PE e RN)
+                </div>
+              </Card>
+
+              {/* Card Objetivos */}
+              <Card className="bg-[#FAF9F7] border-[#ECEAE4] hover:border-teal-300 rounded-2xl overflow-hidden transition-all duration-300 hover:shadow-xl flex flex-col justify-between">
+                <CardContent className="p-8 space-y-4">
+                  <div className="w-13 h-13 rounded-2xl bg-slate-200/80 border border-slate-300 text-slate-800 flex items-center justify-center shadow-xs">
+                    <TrendingUp className="w-7 h-7" />
+                  </div>
+                  <div>
+                    <span className="text-[11px] font-bold uppercase tracking-wider text-slate-600">
+                      Nossas Metas Práticas
+                    </span>
+                    <h3 className="text-2xl font-bold text-gray-900 mt-1">Objetivos</h3>
+                  </div>
+                  <ul className="space-y-2.5 text-xs sm:text-sm text-gray-700 pt-1">
+                    {INSTITUCIONAL_CONFIG.objetivos.map((obj, i) => (
+                      <li key={i} className="flex items-start gap-2">
+                        <CheckCircle2 className="w-4 h-4 text-teal-600 shrink-0 mt-0.5" />
+                        <span>{obj}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </CardContent>
+                <div className="px-8 py-3 bg-slate-100/60 border-t border-slate-200 text-xs font-semibold text-slate-700 flex items-center gap-2">
+                  <Check className="w-4 h-4 text-teal-600" />
+                  Pontualidade, rigor de dosagem e emprego local
+                </div>
+              </Card>
+            </div>
+          </div>
+        </section>
+
+        {/* SEÇÃO SOBRE & DIFERENCIAIS (com foto aérea real da pedreira e dados) */}
+        <section id="sobre" className="py-20 bg-[#FAF9F7] border-b border-[#ECEAE4]">
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-12 items-center">
               <div className="lg:col-span-6 space-y-6">
@@ -483,8 +599,8 @@ export default function HomePublica() {
 
                 <p className="text-sm sm:text-base text-gray-600 leading-relaxed">
                   Localizada estrategicamente no Sertão do Pajeú e Moxotó, a pedreira atende
-                  municípios de Pernambuco e Paraíba com agilidade logística, faturamento
-                  transparente e pontualidade de entrega na obra.
+                  municípios de Pernambuco, Paraíba e Rio Grande do Norte com agilidade logística,
+                  faturamento transparente e pontualidade de entrega na obra.
                 </p>
 
                 <div className="p-4 bg-white rounded-2xl border border-[#ECEAE4] space-y-2">
@@ -511,21 +627,29 @@ export default function HomePublica() {
                 </div>
               </div>
 
-              {/* Imagem institucional */}
+              {/* Imagem institucional REAL: Britador visto do alto */}
               <div className="lg:col-span-6">
-                <div className="relative rounded-3xl overflow-hidden border border-[#ECEAE4] shadow-xl">
-                  <img
-                    src="https://img.usecurling.com/p/800/600?q=dump%20truck%20quarry%20gravel&color=slate"
-                    alt="Frota e Logística Pedreira Cordeiro"
-                    className="w-full h-80 sm:h-96 object-cover"
-                  />
-                  <div className="p-6 bg-white border-t border-[#ECEAE4] flex items-center justify-between">
+                <div className="relative rounded-3xl overflow-hidden border border-[#ECEAE4] shadow-xl bg-white">
+                  <div className="relative h-80 sm:h-96 overflow-hidden group">
+                    <img
+                      src={INSTITUCIONAL_CONFIG.fotosReais.pedreiraBritador}
+                      alt="Operação e Britador da Pedreira Cordeiro — Foto real"
+                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700"
+                    />
+                    <div className="absolute top-3 right-3">
+                      <span className="bg-slate-900/85 backdrop-blur-xs text-white text-[10px] font-semibold px-2.5 py-1 rounded-full border border-white/20 shadow-xs flex items-center gap-1">
+                        <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                        Foto Real
+                      </span>
+                    </div>
+                  </div>
+                  <div className="p-6 bg-white border-t border-[#ECEAE4] flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
                     <div>
                       <div className="text-sm font-bold text-gray-900">
-                        Logística Integrada e Pesagem Certificada
+                        Usina de Britagem & Pátio de Agregados
                       </div>
                       <div className="text-xs text-gray-500">
-                        Romaneios oficiais emitidos diretamente pelo ERP
+                        Foto aérea real da central em operação contínua
                       </div>
                     </div>
                     <Badge className="bg-teal-100 text-teal-800 border-teal-200">Garantia GC</Badge>
@@ -534,7 +658,7 @@ export default function HomePublica() {
               </div>
             </div>
 
-            {/* Diferenciais em 4 cards */}
+            {/* Diferenciais em 4 cards com imagens reais da frota / usina */}
             <div id="diferenciais" className="mt-20">
               <div className="text-center max-w-2xl mx-auto mb-12">
                 <h3 className="text-2xl sm:text-3xl font-extrabold text-gray-900">
@@ -591,6 +715,261 @@ export default function HomePublica() {
                   </p>
                 </div>
               </div>
+            </div>
+          </div>
+        </section>
+
+        {/* SEÇÃO VÍDEO INSTITUCIONAL (Vídeo oficial da empresa: A história da empresa) */}
+        <section id="video" className="py-20 bg-slate-900 text-white relative overflow-hidden">
+          <div className="absolute -top-32 -left-32 w-96 h-96 rounded-full bg-teal-500/10 blur-3xl pointer-events-none" />
+          <div className="absolute -bottom-32 -right-32 w-96 h-96 rounded-full bg-amber-500/10 blur-3xl pointer-events-none" />
+
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
+            <div className="text-center max-w-3xl mx-auto mb-12">
+              <Badge
+                variant="outline"
+                className="border-teal-400 text-teal-300 bg-teal-950/60 px-3 py-1 mb-3 text-xs uppercase tracking-wider font-semibold"
+              >
+                Vídeo Institucional
+              </Badge>
+              <h2 className="text-3xl sm:text-4xl font-extrabold text-white tracking-tight">
+                A História da Nossa Empresa
+              </h2>
+              <p className="mt-3 text-base sm:text-lg text-slate-300 leading-relaxed">
+                Do primeiro caminhão à frota de hoje — conheça a caminhada, a estrutura e o
+                compromisso do <strong>{INSTITUCIONAL_CONFIG.nomeFantasia}</strong> no vídeo oficial
+                exibido no site da empresa.
+              </p>
+            </div>
+
+            {/* Player de Vídeo Responsivo (aspect-video) com fallback e download direto */}
+            <div className="max-w-4xl mx-auto">
+              <div className="relative rounded-3xl overflow-hidden border border-slate-700 bg-slate-950 shadow-2xl">
+                <div className="aspect-video w-full bg-black relative flex items-center justify-center">
+                  <video
+                    controls
+                    preload="metadata"
+                    poster={INSTITUCIONAL_CONFIG.fotosReais.heroAerea}
+                    className="w-full h-full object-cover"
+                  >
+                    <source src={INSTITUCIONAL_CONFIG.videoInstitucionalUrl} type="video/mp4" />
+                    Seu navegador não suporta a reprodução deste vídeo.
+                  </video>
+                </div>
+
+                <div className="p-5 sm:p-6 bg-slate-950/95 border-t border-slate-800 flex flex-col sm:flex-row items-center justify-between gap-4">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-xl bg-teal-600/20 border border-teal-500/30 flex items-center justify-center text-teal-400 shrink-0">
+                      <Play className="w-5 h-5 fill-teal-400/20" />
+                    </div>
+                    <div>
+                      <h4 className="text-sm font-bold text-white">
+                        Do primeiro caminhão à frota de hoje
+                      </h4>
+                      <p className="text-xs text-slate-400">
+                        Vídeo institucional oficial gravado nas instalações da pedreira e frota GC
+                      </p>
+                    </div>
+                  </div>
+
+                  <a
+                    href={INSTITUCIONAL_CONFIG.videoInstitucionalUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-teal-300 text-xs font-semibold border border-slate-700 transition-colors"
+                  >
+                    <span>Abrir vídeo em nova aba</span>
+                    <ExternalLink className="w-3.5 h-3.5" />
+                  </a>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        {/* SEÇÃO GALERIA DE FOTOS REAIS (Extraídas de pedreiracordeiro.com.br) */}
+        <section id="galeria" className="py-20 bg-white border-b border-[#ECEAE4]">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div className="text-center max-w-3xl mx-auto mb-14">
+              <Badge
+                variant="outline"
+                className="border-teal-600 text-teal-700 bg-teal-50 px-3 py-1 mb-3 text-xs uppercase tracking-wider font-semibold"
+              >
+                Galeria Real da Empresa
+              </Badge>
+              <h2 className="text-3xl sm:text-4xl font-extrabold text-gray-900 tracking-tight">
+                Nossa Estrutura em Ação
+              </h2>
+              <p className="mt-3 text-base sm:text-lg text-gray-600 leading-relaxed">
+                Fotos reais das operações, jazida, frotas de betoneiras GC Mix, silos e o britador
+                móvel Lokotrack, fotografados em nossas unidades e obras parceiras.
+              </p>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+              {/* Foto 1 */}
+              <div className="group rounded-2xl overflow-hidden border border-[#ECEAE4] bg-[#FAF9F7] shadow-xs hover:shadow-xl transition-all duration-300">
+                <div className="relative h-60 overflow-hidden">
+                  <img
+                    src={INSTITUCIONAL_CONFIG.fotosReais.heroAerea}
+                    alt="Vista aérea da Pedreira Cordeiro"
+                    className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                    loading="lazy"
+                  />
+                  <div className="absolute top-3 left-3">
+                    <span className="bg-slate-900/80 backdrop-blur-xs text-white text-[10px] font-semibold px-2 py-0.5 rounded">
+                      Drone / Aérea
+                    </span>
+                  </div>
+                </div>
+                <div className="p-4 bg-white">
+                  <h4 className="text-sm font-bold text-gray-900">
+                    Vista Aérea — Pedreira Cordeiro
+                  </h4>
+                  <p className="text-xs text-gray-500 mt-1">
+                    Jazida própria e ampla área de estocagem de agregados
+                  </p>
+                </div>
+              </div>
+
+              {/* Foto 2 */}
+              <div className="group rounded-2xl overflow-hidden border border-[#ECEAE4] bg-[#FAF9F7] shadow-xs hover:shadow-xl transition-all duration-300">
+                <div className="relative h-60 overflow-hidden">
+                  <img
+                    src={INSTITUCIONAL_CONFIG.fotosReais.frotaGcMix}
+                    alt="Frota de Caminhões Betoneira GC Mix"
+                    className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                    loading="lazy"
+                  />
+                  <div className="absolute top-3 left-3">
+                    <span className="bg-teal-700/85 backdrop-blur-xs text-white text-[10px] font-semibold px-2 py-0.5 rounded">
+                      Frota Própria
+                    </span>
+                  </div>
+                </div>
+                <div className="p-4 bg-white">
+                  <h4 className="text-sm font-bold text-gray-900">Frota de Caminhões GC Mix</h4>
+                  <p className="text-xs text-gray-500 mt-1">
+                    Caminhões betoneira modernos para entrega pontual na obra
+                  </p>
+                </div>
+              </div>
+
+              {/* Foto 3 */}
+              <div className="group rounded-2xl overflow-hidden border border-[#ECEAE4] bg-[#FAF9F7] shadow-xs hover:shadow-xl transition-all duration-300">
+                <div className="relative h-60 overflow-hidden">
+                  <img
+                    src={INSTITUCIONAL_CONFIG.fotosReais.lokotrack1}
+                    alt="Britador Móvel Lokotrack — C M Construções"
+                    className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                    loading="lazy"
+                  />
+                  <div className="absolute top-3 left-3">
+                    <span className="bg-amber-600/85 backdrop-blur-xs text-white text-[10px] font-semibold px-2 py-0.5 rounded">
+                      Britador Lokotrack
+                    </span>
+                  </div>
+                </div>
+                <div className="p-4 bg-white">
+                  <h4 className="text-sm font-bold text-gray-900">Britador Móvel Lokotrack</h4>
+                  <p className="text-xs text-gray-500 mt-1">
+                    Esmagamento direto de rocha na obra com alta produção
+                  </p>
+                </div>
+              </div>
+
+              {/* Foto 4 */}
+              <div className="group rounded-2xl overflow-hidden border border-[#ECEAE4] bg-[#FAF9F7] shadow-xs hover:shadow-xl transition-all duration-300">
+                <div className="relative h-60 overflow-hidden">
+                  <img
+                    src={INSTITUCIONAL_CONFIG.fotosReais.pedreiraBritador}
+                    alt="Usina de Britagem da Pedreira Cordeiro"
+                    className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                    loading="lazy"
+                  />
+                  <div className="absolute top-3 left-3">
+                    <span className="bg-slate-900/80 backdrop-blur-xs text-white text-[10px] font-semibold px-2 py-0.5 rounded">
+                      Usina de Britagem
+                    </span>
+                  </div>
+                </div>
+                <div className="p-4 bg-white">
+                  <h4 className="text-sm font-bold text-gray-900">
+                    Britador e Peneiras Vistos do Alto
+                  </h4>
+                  <p className="text-xs text-gray-500 mt-1">
+                    Separação granulométrica precisa das britas 1, 2 e pó de pedra
+                  </p>
+                </div>
+              </div>
+
+              {/* Foto 5 */}
+              <div className="group rounded-2xl overflow-hidden border border-[#ECEAE4] bg-[#FAF9F7] shadow-xs hover:shadow-xl transition-all duration-300">
+                <div className="relative h-60 overflow-hidden">
+                  <img
+                    src={INSTITUCIONAL_CONFIG.fotosReais.siloMonteiro}
+                    alt="Silo GC Mix em Monteiro - PB"
+                    className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                    loading="lazy"
+                  />
+                  <div className="absolute top-3 left-3">
+                    <span className="bg-teal-700/85 backdrop-blur-xs text-white text-[10px] font-semibold px-2 py-0.5 rounded">
+                      Unidade Monteiro-PB
+                    </span>
+                  </div>
+                </div>
+                <div className="p-4 bg-white">
+                  <h4 className="text-sm font-bold text-gray-900">Silo GC Mix & 0800 083 1200</h4>
+                  <p className="text-xs text-gray-500 mt-1">
+                    Central dosadora com identificação oficial da GC Mix
+                  </p>
+                </div>
+              </div>
+
+              {/* Foto 6 */}
+              <div className="group rounded-2xl overflow-hidden border border-[#ECEAE4] bg-[#FAF9F7] shadow-xs hover:shadow-xl transition-all duration-300">
+                <div className="relative h-60 overflow-hidden">
+                  <img
+                    src={INSTITUCIONAL_CONFIG.fotosReais.concretagemPatos}
+                    alt="Concretagem em Patos - PB"
+                    className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                    loading="lazy"
+                  />
+                  <div className="absolute top-3 left-3">
+                    <span className="bg-slate-900/80 backdrop-blur-xs text-white text-[10px] font-semibold px-2 py-0.5 rounded">
+                      Aplicação em Obra
+                    </span>
+                  </div>
+                </div>
+                <div className="p-4 bg-white">
+                  <h4 className="text-sm font-bold text-gray-900">
+                    Concretagem Estrutural em Obra
+                  </h4>
+                  <p className="text-xs text-gray-500 mt-1">
+                    Despejo pontual direto na laje e fundações com controle de traço
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {/* Aviso sobre fonte real */}
+            <div className="mt-10 p-4 rounded-2xl bg-[#FAF9F7] border border-[#ECEAE4] flex flex-col sm:flex-row items-center justify-between text-xs text-gray-600 gap-3">
+              <div className="flex items-center gap-2">
+                <ImageIcon className="w-4 h-4 text-teal-600 shrink-0" />
+                <span>
+                  Fotos oficiais integradas a partir do site corporativo da empresa:{' '}
+                  <strong>pedreiracordeiro.com.br</strong>
+                </span>
+              </div>
+              <a
+                href={INSTITUCIONAL_CONFIG.siteUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1 font-semibold text-teal-700 hover:underline shrink-0"
+              >
+                <span>Acessar pedreiracordeiro.com.br</span>
+                <ExternalLink className="w-3.5 h-3.5" />
+              </a>
             </div>
           </div>
         </section>

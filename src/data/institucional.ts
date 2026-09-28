@@ -34,6 +34,47 @@ export const INSTITUCIONAL_CONFIG = {
   // Localização e Atendimento
   localizacao: 'Sertânia — PE / Região do Pajeú e Moxotó',
   horarioAtendimento: 'Segunda a Sexta: 07h às 17h | Sábado: 07h às 12h',
+
+  // Missão, Visão e Objetivos extraídos diretamente do site oficial (pedreiracordeiro.com.br)
+  missao:
+    'Fornecer concreto usinado e agregados com qualidade, prazo e preço justo, contribuindo para o crescimento das obras e do desenvolvimento das cidades onde atuamos.',
+  visao:
+    'Ser referência em concreto usinado e agregados no sertão da Paraíba, Pernambuco e Rio Grande do Norte, reconhecida pela confiabilidade e pela qualidade dos produtos.',
+  objetivos: [
+    'Entregar sempre no prazo combinado;',
+    'Manter o controle de qualidade em cada dosagem;',
+    'Atender bem o cliente em todas as unidades;',
+    'Crescer com responsabilidade, gerando emprego na região.',
+  ],
+
+  // Vídeo institucional oficial do site
+  videoInstitucionalUrl: 'https://pedreiracordeiro.com.br/video.mp4',
+
+  // Fotos reais extraídas do site oficial da empresa (pedreiracordeiro.com.br)
+  fotosReais: {
+    heroAerea: 'https://pedreiracordeiro.com.br/site-img/galeria-drone-1.jpg',
+    pedreiraAerea2: 'https://pedreiracordeiro.com.br/site-img/galeria-drone-2.jpg',
+    pedreiraBritador: 'https://pedreiracordeiro.com.br/site-img/galeria-drone-3.jpg',
+    pedreiraRegiao: 'https://pedreiracordeiro.com.br/site-img/galeria-drone-4.jpg',
+    betoneira1: 'https://pedreiracordeiro.com.br/site-img/galeria-betoneira-1.jpg',
+    betoneira2: 'https://pedreiracordeiro.com.br/site-img/galeria-betoneira-2.jpg',
+    frotaGcMix: 'https://pedreiracordeiro.com.br/site-img/galeria-betoneira-3.jpg',
+    betoneiraRota: 'https://pedreiracordeiro.com.br/site-img/galeria-betoneira-4.jpg',
+    betoneira5: 'https://pedreiracordeiro.com.br/site-img/galeria-betoneira-5.jpg',
+    betoneira7: 'https://pedreiracordeiro.com.br/site-img/galeria-betoneira-7.jpg',
+    silo2: 'https://pedreiracordeiro.com.br/site-img/galeria-silo-2.jpg',
+    siloMonteiro: 'https://pedreiracordeiro.com.br/site-img/hero-silo.jpg',
+    concretagemPatos: 'https://pedreiracordeiro.com.br/site-img/galeria-concretagem.jpg',
+    pisoIndustrial: 'https://pedreiracordeiro.com.br/site-img/galeria-piso-1.jpg',
+    pisoAcabamento: 'https://pedreiracordeiro.com.br/site-img/galeria-piso-2.jpg',
+    preparacaoObra: 'https://pedreiracordeiro.com.br/site-img/galeria-obra-grad.jpg',
+    lokotrack1: 'https://pedreiracordeiro.com.br/site-img/cm-lokotrack-1.jpg',
+    lokotrack2: 'https://pedreiracordeiro.com.br/site-img/cm-lokotrack-2.jpg',
+    lokotrack3: 'https://pedreiracordeiro.com.br/site-img/cm-lokotrack-3.jpg',
+    cmPilhas1: 'https://pedreiracordeiro.com.br/site-img/cm-pilhas-1.jpg',
+    cmPilhas2: 'https://pedreiracordeiro.com.br/site-img/cm-pilhas-2.jpg',
+    cmPatio: 'https://pedreiracordeiro.com.br/site-img/cm-patio.jpg',
+  },
 } as const
 
 // Lista oficial dos 5 produtos sob consulta da pedreira
