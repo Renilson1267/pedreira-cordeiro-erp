@@ -7,6 +7,7 @@ import {
   UNIDADES_GC,
   SERVICOS_GC,
 } from '@/data/institucional'
+import { LogoGcMix, LogoGcMixVector, ASSET_LOGO_BANNER } from '@/components/institucional/LogoGcMix'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -188,31 +189,20 @@ export default function HomePublica() {
       {/* Header de Navegação */}
       <header className="sticky top-0 z-40 bg-white/95 backdrop-blur-md border-b border-blue-100 shadow-xs">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-20 flex items-center justify-between">
-          {/* Logo & Marca em Azul Munique */}
-          <a href="#" className="flex items-center gap-3 group">
-            <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-[#1E3A8A] via-[#1D4ED8] to-[#0A2540] flex items-center justify-center text-white shadow-md shadow-blue-900/20 group-hover:scale-105 transition-transform">
-              <svg
-                className="w-6 h-6 text-white"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2.5"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              >
-                <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" />
-              </svg>
+          {/* Logo & Marca GC MIX em Azul Munique */}
+          <a href="#" className="flex items-center gap-2.5 sm:gap-3 group">
+            <div className="h-12 w-auto max-w-[130px] sm:max-w-[160px] md:max-w-[190px] flex items-center group-hover:scale-105 transition-transform">
+              <img
+                src={ASSET_LOGO_BANNER}
+                alt="GC MIX Concreto Usinado & Pedreira Cordeiro"
+                className="h-11 sm:h-12 w-auto object-contain rounded-lg shadow-xs"
+              />
             </div>
-            <div>
-              <div className="flex items-baseline gap-1.5">
-                <span className="text-xl font-black tracking-tight text-[#0A2540]">
-                  GC do Amaral
-                </span>
-                <span className="text-xs font-bold px-1.5 py-0.5 rounded bg-[#1D4ED8] text-white">
-                  GC MIX
-                </span>
-              </div>
-              <span className="text-[11px] text-[#1D4ED8] font-bold uppercase tracking-wider block">
+            <div className="hidden xl:block pl-1 border-l border-slate-200">
+              <span className="text-xs font-black tracking-tight text-[#0A2540] block">
+                GC do Amaral
+              </span>
+              <span className="text-[10px] text-[#1D4ED8] font-bold uppercase tracking-wider block">
                 Pedreira Cordeiro • C M Lokotrack
               </span>
             </div>
@@ -271,14 +261,27 @@ export default function HomePublica() {
       </header>
 
       <main>
-        {/* HERO SECTION EM AZUL MUNIQUE DOMINANTE */}
-        <section className="relative overflow-hidden pt-12 pb-20 lg:pt-20 lg:pb-28 bg-gradient-to-br from-[#0A2540] via-[#113264] to-[#1E3A8A] text-white border-b border-[#1E3A8A]">
+        {/* HERO SECTION EM AZUL MUNIQUE DOMINANTE COM LOGO GC MIX EM DESTAQUE NO TOPO */}
+        <section className="relative overflow-hidden pt-8 pb-16 lg:pt-14 lg:pb-24 bg-gradient-to-br from-[#0A2540] via-[#113264] to-[#1E3A8A] text-white border-b border-[#1E3A8A]">
           {/* Efeitos de iluminação azul profunda */}
           <div className="absolute top-0 right-0 -mr-24 -mt-24 w-[36rem] h-[36rem] rounded-full bg-[#2563EB]/25 blur-3xl pointer-events-none" />
           <div className="absolute bottom-0 left-0 -ml-24 -mb-24 w-[32rem] h-[32rem] rounded-full bg-[#38BDF8]/20 blur-3xl pointer-events-none" />
           <div className="absolute inset-0 bg-[radial-gradient(#60A5FA_1px,transparent_1px)] [background-size:24px_24px] opacity-10 pointer-events-none" />
 
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
+            {/* 1. LOGO GC MIX EM DESTAQUE NA PARTE SUPERIOR DO SITE */}
+            <div className="mb-8 lg:mb-10 flex flex-col items-center lg:items-start">
+              <div className="p-2 sm:p-2.5 rounded-2xl bg-white/10 backdrop-blur-md border border-white/20 shadow-2xl hover:border-white/40 transition-all max-w-full">
+                <LogoGcMix variant="banner" className="max-w-md sm:max-w-lg md:max-w-xl w-full" />
+              </div>
+              <div className="mt-2 flex items-center gap-2 text-xs text-blue-200">
+                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                <span className="font-semibold tracking-wide">
+                  Identidade Oficial • Concreto Usinado & Pedreira Cordeiro
+                </span>
+              </div>
+            </div>
+
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-12 items-center">
               {/* Coluna Texto */}
               <div className="lg:col-span-7 space-y-6 text-center lg:text-left">
@@ -287,7 +290,7 @@ export default function HomePublica() {
                   Atendendo Paraíba • Pernambuco • Rio Grande do Norte
                 </div>
 
-                <h1 className="text-4xl sm:text-5xl lg:text-6xl font-black text-white tracking-tight leading-[1.12]">
+                <h1 className="text-3xl sm:text-4xl lg:text-5xl font-black text-white tracking-tight leading-[1.15]">
                   Concreto usinado e agregados de qualidade para a sua obra no{' '}
                   <span className="text-transparent bg-clip-text bg-gradient-to-r from-[#60A5FA] via-[#93C5FD] to-amber-300 italic font-serif">
                     sertão
@@ -560,6 +563,118 @@ export default function HomePublica() {
           </div>
         </section>
 
+        {/* SEÇÃO EXCLUSIVA DE DESTAQUE: LOKOTRACK EM OPERAÇÃO (BRITADOR EM PATOS-PB) */}
+        <section
+          id="lokotrack-patos"
+          className="py-16 bg-gradient-to-r from-[#0F172A] via-[#1E293B] to-[#0A2540] text-white border-y border-amber-500/30 relative overflow-hidden"
+        >
+          <div className="absolute top-0 right-1/4 w-96 h-96 rounded-full bg-amber-500/10 blur-3xl pointer-events-none" />
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
+            <div className="bg-slate-900/80 border border-amber-400/40 rounded-3xl p-6 sm:p-8 lg:p-10 shadow-2xl backdrop-blur-md">
+              <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-center">
+                {/* Imagem em Destaque do Lokotrack */}
+                <div className="lg:col-span-7">
+                  <div
+                    className="relative rounded-2xl overflow-hidden border-2 border-amber-400/50 shadow-2xl group cursor-pointer"
+                    onClick={() =>
+                      setFotoAtiva(INSTITUCIONAL_CONFIG.fotosReais.lokotrackPatosOperacao)
+                    }
+                  >
+                    <img
+                      src={INSTITUCIONAL_CONFIG.fotosReais.lokotrackPatosOperacao}
+                      alt="Lokotrack em Operação - britador em Patos PB"
+                      className="w-full h-72 sm:h-96 object-cover group-hover:scale-105 transition-transform duration-700"
+                      loading="lazy"
+                    />
+                    <div className="absolute top-3 left-3 flex flex-wrap gap-2">
+                      <span className="bg-amber-500 text-slate-950 font-black text-xs px-3 py-1.5 rounded-lg shadow-md uppercase tracking-wider flex items-center gap-1.5">
+                        <MapPin className="w-3.5 h-3.5" />
+                        Patos — PB
+                      </span>
+                      <span className="bg-[#0A2540]/90 text-white font-bold text-xs px-3 py-1.5 rounded-lg border border-blue-400/30 backdrop-blur-xs">
+                        Britador Móvel em Operação
+                      </span>
+                    </div>
+
+                    <div className="absolute bottom-3 left-3 right-3 bg-gradient-to-t from-black/90 via-black/70 to-transparent p-4 rounded-xl border border-white/10 backdrop-blur-xs flex items-center justify-between">
+                      <div>
+                        <div className="text-sm font-extrabold text-amber-300">
+                          Lokotrack em Operação — Unidade de Patos-PB
+                        </div>
+                        <div className="text-xs text-slate-200">
+                          Britador móvel sobre esteiras em plena britagem de rocha granítica
+                        </div>
+                      </div>
+                      <span className="hidden sm:inline-block text-xs text-amber-300 font-bold bg-white/10 px-2.5 py-1 rounded-md">
+                        Clique para ampliar 🔍
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Texto explicativo e cotação */}
+                <div className="lg:col-span-5 space-y-5">
+                  <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-amber-400/20 border border-amber-400/40 text-amber-300 text-xs font-bold uppercase tracking-wider">
+                    <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+                    Equipamento em Operação
+                  </div>
+
+                  <h3 className="text-2xl sm:text-3xl lg:text-4xl font-black text-white leading-tight">
+                    Lokotrack em Operação no Britador de{' '}
+                    <span className="text-amber-400">Patos — PB</span>
+                  </h3>
+
+                  <p className="text-sm sm:text-base text-slate-300 leading-relaxed">
+                    Esta foto retrata o nosso{' '}
+                    <strong>
+                      britador móvel Lokotrack em plena atividade de britagem na Pedreira Cordeiro,
+                      em Patos (Paraíba)
+                    </strong>
+                    . Equipamento de ponta da C M Construções, com capacidade contínua para
+                    desmonte, britagem primária e secundária direto no canteiro.
+                  </p>
+
+                  <div className="space-y-2 text-xs sm:text-sm text-slate-200 pt-1">
+                    <div className="flex items-center gap-2">
+                      <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                      <span>Produção de britas e agregados com máxima granulometria</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                      <span>Locação para obras de infraestrutura, estradas e pedreiras</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                      <span>Elimina custo de transporte de rocha bruta pesada</span>
+                    </div>
+                  </div>
+
+                  <div className="pt-3 flex flex-col sm:flex-row gap-3">
+                    <a
+                      href={INSTITUCIONAL_CONFIG.whatsappUrlLokotrack}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center justify-center gap-2 bg-gradient-to-r from-amber-400 to-amber-500 hover:from-amber-300 hover:to-amber-400 text-slate-950 font-black text-xs px-5 py-3.5 rounded-xl shadow-lg shadow-amber-500/25 transition-all"
+                    >
+                      <MessageCircle className="w-4 h-4" />
+                      Alugar Britador Lokotrack
+                    </a>
+
+                    <button
+                      onClick={() =>
+                        rolarParaSecao('orcamento', 'Britador Móvel Lokotrack — C M Construções')
+                      }
+                      className="inline-flex items-center justify-center gap-2 bg-white/10 hover:bg-white/20 text-white font-bold text-xs px-5 py-3.5 rounded-xl border border-white/20 transition-colors cursor-pointer"
+                    >
+                      Solicitar cotação
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
         {/* SEÇÃO DEDICADA: C M CONSTRUÇÕES — BRITADOR MÓVEL LOKOTRACK */}
         <section
           id="cm-lokotrack"
@@ -632,27 +747,55 @@ export default function HomePublica() {
                 </div>
               </div>
 
-              {/* Foto 2: Lokotrack em operação */}
-              <div className="group rounded-2xl overflow-hidden border border-blue-400/20 bg-slate-900/60 shadow-xl backdrop-blur-xs">
+              {/* Foto 2: Lokotrack em operação no britador em Patos PB */}
+              <div className="group rounded-2xl overflow-hidden border-2 border-amber-400/60 bg-gradient-to-b from-slate-900/90 to-blue-950/80 shadow-2xl backdrop-blur-xs relative ring-2 ring-amber-400/20">
                 <div className="relative h-64 overflow-hidden">
                   <img
                     src={INSTITUCIONAL_CONFIG.fotosReais.lokotrack2}
-                    alt="Lokotrack em operação britando pedra"
-                    className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                    alt="Lokotrack em Operação — britador em Patos PB"
+                    className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500 cursor-pointer"
                     loading="lazy"
+                    onClick={() => setFotoAtiva(INSTITUCIONAL_CONFIG.fotosReais.lokotrack2)}
                   />
-                  <div className="absolute top-3 left-3">
-                    <span className="bg-[#1D4ED8]/90 text-white text-[10px] font-bold px-2.5 py-1 rounded-md border border-blue-300/30">
-                      Em Operação
+                  <div className="absolute top-3 left-3 flex items-center gap-2">
+                    <span className="bg-amber-500 text-slate-950 text-[10px] font-black px-2.5 py-1 rounded-md shadow-md uppercase tracking-wider">
+                      Patos — PB
+                    </span>
+                    <span className="bg-[#0A2540]/90 text-white text-[10px] font-bold px-2 py-1 rounded-md border border-white/20">
+                      Britador em Operação
+                    </span>
+                  </div>
+                  <div className="absolute bottom-2 right-2">
+                    <span className="bg-black/75 backdrop-blur-xs text-blue-200 text-[10px] px-2 py-0.5 rounded font-mono">
+                      Foto real da unidade
                     </span>
                   </div>
                 </div>
-                <div className="p-5">
-                  <h4 className="text-base font-bold text-white">Lokotrack em Operação</h4>
-                  <p className="text-xs text-blue-200 mt-1 leading-relaxed">
-                    Esmagamento de pedra direto na obra, reduzindo custos de transporte de rocha
-                    bruta e acelerando o cronograma.
+                <div className="p-5 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <h4 className="text-base font-black text-amber-300">Lokotrack em Operação</h4>
+                    <Badge className="bg-amber-400/20 text-amber-300 border border-amber-400/40 text-[10px]">
+                      Patos — PB
+                    </Badge>
+                  </div>
+                  <p className="text-xs text-slate-200 leading-relaxed font-medium">
+                    <strong>Lokotrack em Operação</strong> — essa foto é do britador móvel em plena
+                    operação na unidade de <strong>Patos — PB</strong> (Pedreira Cordeiro / C M
+                    Construções), esmagando rocha granítica para produção contínua de britas
+                    estruturais.
                   </p>
+                  <div className="pt-2 border-t border-white/10 flex items-center justify-between text-[11px] text-blue-300">
+                    <span className="flex items-center gap-1">
+                      <MapPin className="w-3.5 h-3.5 text-amber-400" />
+                      Unidade Patos (PB)
+                    </span>
+                    <button
+                      onClick={() => setFotoAtiva(INSTITUCIONAL_CONFIG.fotosReais.lokotrack2)}
+                      className="text-amber-300 hover:underline font-bold"
+                    >
+                      Ampliar foto ↗
+                    </button>
+                  </div>
                 </div>
               </div>
 
@@ -872,20 +1015,34 @@ export default function HomePublica() {
                   className="group bg-white hover:border-[#2563EB] border-slate-200 rounded-2xl overflow-hidden transition-all duration-300 hover:shadow-xl flex flex-col justify-between"
                 >
                   <div>
-                    {/* Imagem do produto */}
-                    <div className="relative h-48 overflow-hidden bg-slate-100">
+                    {/* Imagem do produto com fallback resiliente */}
+                    <div className="relative h-52 overflow-hidden bg-slate-900 group/img">
                       <img
                         src={item.imagem}
                         alt={item.nome}
                         className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                        loading="lazy"
+                        onError={(e) => {
+                          const target = e.currentTarget
+                          if (item.imagemSecundaria && target.src !== item.imagemSecundaria) {
+                            target.src = item.imagemSecundaria
+                          } else {
+                            // Imagem fallback padrão de agregados da pedreira
+                            target.src = 'https://pedreiracordeiro.com.br/site-img/cm-patio.jpg'
+                          }
+                        }}
                       />
-                      <div className="absolute top-3 left-3">
-                        <span className="bg-[#0A2540]/85 backdrop-blur-xs text-white text-[10px] font-mono font-bold px-2.5 py-1 rounded-md">
+                      <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-black/20 pointer-events-none" />
+                      <div className="absolute top-3 left-3 flex items-center gap-2">
+                        <span className="bg-[#0A2540]/90 backdrop-blur-xs text-white text-[10px] font-mono font-bold px-2.5 py-1 rounded-md border border-white/20">
                           {item.codigoRef}
+                        </span>
+                        <span className="bg-emerald-600/90 text-white text-[10px] font-bold px-2 py-0.5 rounded shadow-xs">
+                          Foto da Usina
                         </span>
                       </div>
                       <div className="absolute bottom-3 right-3">
-                        <span className="bg-[#1D4ED8]/95 backdrop-blur-xs text-white text-[11px] font-semibold px-2 py-0.5 rounded">
+                        <span className="bg-[#1D4ED8]/95 backdrop-blur-xs text-white text-[11px] font-semibold px-2.5 py-1 rounded-md shadow-md">
                           Densidade {item.densidadeMedia}
                         </span>
                       </div>
@@ -1709,21 +1866,15 @@ export default function HomePublica() {
       <footer className="bg-[#0A1A3B] text-slate-300 border-t border-[#1E3A8A] pt-16 pb-12">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 space-y-12">
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-12 gap-8 items-start">
-            {/* Coluna 1: Marca & Descrição */}
+            {/* Coluna 1: Marca & Descrição com Logo GC MIX */}
             <div className="lg:col-span-5 space-y-4">
               <div className="flex items-center gap-3">
-                <div className="w-11 h-11 rounded-xl bg-gradient-to-br from-[#1E3A8A] to-[#1D4ED8] flex items-center justify-center text-white shadow-md">
-                  <svg
-                    className="w-6 h-6 text-white"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2.5"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  >
-                    <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" />
-                  </svg>
+                <div className="h-12 w-auto max-w-[140px] sm:max-w-[170px] overflow-hidden rounded-xl border border-white/20 bg-white/5 p-1 flex items-center">
+                  <img
+                    src={ASSET_LOGO_BANNER}
+                    alt="GC MIX Concreto Usinado"
+                    className="h-full w-auto object-contain"
+                  />
                 </div>
                 <div>
                   <span className="text-lg font-black text-white block">
@@ -1734,7 +1885,6 @@ export default function HomePublica() {
                   </span>
                 </div>
               </div>
-
               <p className="text-xs text-slate-300 max-w-sm leading-relaxed">
                 Concreto usinado dosado em central, extração e britagem de rocha granítica, e
                 locação de britador móvel Lokotrack para Paraíba, Pernambuco e Rio Grande do Norte.

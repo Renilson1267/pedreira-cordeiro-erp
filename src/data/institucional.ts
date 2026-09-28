@@ -111,6 +111,8 @@ export const INSTITUCIONAL_CONFIG = {
     cmPilhas1: 'https://pedreiracordeiro.com.br/site-img/cm-pilhas-1.jpg',
     cmPilhas2: 'https://pedreiracordeiro.com.br/site-img/cm-pilhas-2.jpg',
     cmPatio: 'https://pedreiracordeiro.com.br/site-img/cm-patio.jpg',
+    // Foto específica de Patos PB do Lokotrack em Operação
+    lokotrackPatosOperacao: 'https://pedreiracordeiro.com.br/site-img/cm-lokotrack-2.jpg',
   },
 } as const
 
@@ -205,30 +207,33 @@ export interface ProdutoPedreiraItem {
   aplicacao: string
   descricao: string
   imagem: string
+  imagemSecundaria?: string
   densidadeMedia: string
 }
 
 export const PRODUTOS_PEDREIRA: ProdutoPedreiraItem[] = [
   {
     id: 'brita-12',
-    nome: 'Brita 1 2',
+    nome: 'Brita 12',
     codigoRef: 'PRD-BRITA12',
     granulometria: '9,5 mm a 19 mm (Brita 1 / 1/2")',
     aplicacao: 'Concreto usinado GC Mix, lajes, vigas, pilares e fundações estruturais',
     descricao:
       'Agregado graúdo de excelente adesão e granulometria uniforme, essencial para concreto de alta resistência estrutural e pisos industriais.',
-    imagem: 'https://img.usecurling.com/p/600/400?q=crushed%20stone%20gravel&color=slate',
+    imagem: 'https://pedreiracordeiro.com.br/site-img/cm-pilhas-2.jpg',
+    imagemSecundaria: 'https://img.usecurling.com/p/600/400?q=crushed%20stone%20gravel&color=slate',
     densidadeMedia: '~1,45 t/m³',
   },
   {
     id: 'brita-19',
-    nome: 'Brita 1 9',
+    nome: 'Brita 19',
     codigoRef: 'PRD-BRITA19',
     granulometria: '19 mm a 25 mm (Brita 2 / 19mm)',
     aplicacao: 'Concreto pesado, drenagens profundas, lastros e pavimentação',
     descricao:
       'Ideal para obras de infraestrutura pesada, bases de pavimentação asfáltica, drenagens profundas e concretos estruturais de grande porte.',
-    imagem: 'https://img.usecurling.com/p/600/400?q=coarse%20gravel%20stones&color=stone',
+    imagem: 'https://pedreiracordeiro.com.br/site-img/cm-pilhas-1.jpg',
+    imagemSecundaria: 'https://img.usecurling.com/p/600/400?q=coarse%20gravel%20stones&color=stone',
     densidadeMedia: '~1,47 t/m³',
   },
   {
@@ -239,7 +244,8 @@ export const PRODUTOS_PEDREIRA: ProdutoPedreiraItem[] = [
     aplicacao: 'Muros de arrimo, contenções, gabiões, calçamentos e fundações de pedra',
     descricao:
       'Pedra de grande porte selecionada com alta tenacidade, ideal para contenção de encostas, muros de gravidade, enrocamentos e drenagens rústicas.',
-    imagem: 'https://img.usecurling.com/p/600/400?q=quarry%20rocks%20boulders&color=gray',
+    imagem: 'https://pedreiracordeiro.com.br/site-img/galeria-drone-3.jpg',
+    imagemSecundaria: 'https://img.usecurling.com/p/600/400?q=quarry%20rocks%20boulders&color=gray',
     densidadeMedia: '~1,50 t/m³',
   },
   {
@@ -250,7 +256,8 @@ export const PRODUTOS_PEDREIRA: ProdutoPedreiraItem[] = [
     aplicacao: 'Argamassas, assentamento de paralelepípedos e intertravados, misturas asfálticas',
     descricao:
       'Substitui com alta eficiência a areia em várias etapas construtivas, proporcionando excelente compactação, acabamento homogêneo e economia.',
-    imagem: 'https://img.usecurling.com/p/600/400?q=stone%20dust%20quarry&color=zinc',
+    imagem: 'https://pedreiracordeiro.com.br/site-img/cm-patio.jpg',
+    imagemSecundaria: 'https://img.usecurling.com/p/600/400?q=stone%20dust%20quarry&color=zinc',
     densidadeMedia: '~1,56 t/m³',
   },
   {
@@ -261,7 +268,9 @@ export const PRODUTOS_PEDREIRA: ProdutoPedreiraItem[] = [
     aplicacao: 'Blocos de concreto, pré-moldados, paisagismo, tubos e vigotas',
     descricao:
       'Pedrisco fino e limpo de alta rigidez, amplamente requisitado em fábricas de artefatos de cimento, lajotas e projetos de drenagem superficial.',
-    imagem: 'https://img.usecurling.com/p/600/400?q=fine%20gravel%20aggregate&color=neutral',
+    imagem: 'https://pedreiracordeiro.com.br/site-img/cm-lokotrack-3.jpg',
+    imagemSecundaria:
+      'https://img.usecurling.com/p/600/400?q=fine%20gravel%20aggregate&color=neutral',
     densidadeMedia: '~1,50 t/m³',
   },
 ]
