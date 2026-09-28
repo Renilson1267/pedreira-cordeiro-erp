@@ -1611,7 +1611,7 @@ export default function ContasPagar() {
                 options={centrosCustoFiltroOptions}
                 placeholder="Centro de Custo"
                 searchPlaceholder="Pesquisar centro de custo..."
-                emptyMessage="Nenhum centro encontrado"
+                emptyText="Nenhum centro encontrado"
                 className="bg-[#FAF9F7] border-[#ECEAE4] text-xs h-9 rounded-xl"
               />
             </div>

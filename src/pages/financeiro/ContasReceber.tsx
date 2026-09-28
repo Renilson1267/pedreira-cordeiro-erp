@@ -2170,19 +2170,18 @@ export default function ContasReceber() {
           </div>
 
           <div className="flex items-center gap-2 w-full md:w-auto">
-            <Select value={centroCustoFilter} onValueChange={setCentroCustoFilter}>
-              <SelectTrigger className="w-[180px] bg-[#FAF9F7] border-[#ECEAE4] text-xs h-9 rounded-xl">
-                <SelectValue placeholder="Centro de Custo" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="todos">Todos Centros</SelectItem>
-                {centrosCusto.map((cc) => (
-                  <SelectItem key={cc.id} value={cc.id}>
-                    {cc.codigo} - {cc.nome}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            {/* Centro de Custo Filter pesquisável */}
+            <div className="w-full sm:w-[220px]">
+              <ComboboxPesquisavel
+                value={centroCustoFilter}
+                onChange={(val) => setCentroCustoFilter(val || 'todos')}
+                options={centrosCustoFiltroOptions}
+                placeholder="Centro de Custo"
+                searchPlaceholder="Pesquisar centro de custo..."
+                emptyText="Nenhum centro encontrado"
+                className="bg-[#FAF9F7] border-[#ECEAE4] text-xs h-9 rounded-xl"
+              />
+            </div>
 
             <div className="relative w-full md:w-64">
               <Search className="w-4 h-4 absolute left-3 top-2.5 text-gray-400" />
