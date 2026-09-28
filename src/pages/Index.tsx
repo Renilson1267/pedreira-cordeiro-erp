@@ -27,7 +27,15 @@ import {
   Fuel,
   Construction,
   ShieldAlert,
+  HeartPulse,
 } from 'lucide-react'
+import {
+  examesPeriodicosService,
+  calcularStatusExame,
+  calcularDiasRestantes,
+  TIPOS_EXAME_LABELS,
+} from '@/services/examesPeriodicos'
+import type { ExamePeriodico } from '@/types/erp'
 import {
   ResponsiveContainer,
   BarChart,
@@ -83,6 +91,23 @@ export default function Dashboard() {
   })
   const [alertasRevisao, setAlertasRevisao] = useState<any[]>([])
 
+  // Exames ocupacionais (RH) state
+  const [examesAVencer, setExamesAVencer] = useState<
+    Array<{
+      id: string
+      funcionarioNome: string
+      cargo: string
+      tipoExame: string
+      dataProximo: string
+      diasRestantes: number | null
+      status: 'vencido' | 'vence_em_breve'
+    }>
+  >([])
+  const [totalExamesAlerta, setTotalExamesAlerta] = useState({
+    vencidos: 0,
+    vencem30Dias: 0,
+  })
+
   // Realtime subscriptions
   useRealtime('movimentos_financeiros', () => loadDashboardData())
   useRealtime('contas_pagar', () => loadDashboardData())
@@ -90,6 +115,7 @@ export default function Dashboard() {
   useRealtime('veiculos', () => loadDashboardData())
   useRealtime('abastecimentos', () => loadDashboardData())
   useRealtime('manutencoes', () => loadDashboardData())
+  useRealtime('exames_periodicos', () => loadDashboardData())
 
   const loadDashboardData = useCallback(async () => {
     if (!currentEmpresa) return
@@ -102,23 +128,36 @@ export default function Dashboard() {
 
       // Disparar todas as consultas independentes em paralelo com Promise.all
       // evitando waterfall de requisições sequenciais ao PocketBase
-      const [contasBancarias, allMovimentos, allCp, allCr, veicList, abastList, allManutencoes] =
-        await Promise.all([
-          pb.collection('bancos_contas').getFullList({ filter: empFilter }),
-          pb.collection('movimentos_financeiros').getFullList({
-            filter: empFilter,
-            sort: '-data',
-          }),
-          pb.collection('contas_pagar').getFullList({ filter: empFilter }),
-          pb.collection('contas_receber').getFullList({ filter: empFilter }),
-          pb.collection('veiculos').getFullList({ filter: empFilter }),
-          pb.collection('abastecimentos').getFullList({ filter: empFilter }),
-          pb.collection('manutencoes').getFullList({
-            filter: empFilter,
-            expand: 'veiculo_id',
-            sort: '-created',
-          }),
-        ])
+      const [
+        contasBancarias,
+        allMovimentos,
+        allCp,
+        allCr,
+        veicList,
+        abastList,
+        allManutencoes,
+        allExames,
+      ] = await Promise.all([
+        pb.collection('bancos_contas').getFullList({ filter: empFilter }),
+        pb.collection('movimentos_financeiros').getFullList({
+          filter: empFilter,
+          sort: '-data',
+        }),
+        pb.collection('contas_pagar').getFullList({ filter: empFilter }),
+        pb.collection('contas_receber').getFullList({ filter: empFilter }),
+        pb.collection('veiculos').getFullList({ filter: empFilter }),
+        pb.collection('abastecimentos').getFullList({ filter: empFilter }),
+        pb.collection('manutencoes').getFullList({
+          filter: empFilter,
+          expand: 'veiculo_id',
+          sort: '-created',
+        }),
+        pb.collection('exames_periodicos').getFullList<ExamePeriodico>({
+          filter: empFilter,
+          expand: 'funcionario_id',
+          sort: 'data_proximo_exame',
+        }),
+      ])
 
       // 1. Bancos / Caixas (Saldo inicial cadastrado)
       setTotalContasBancarias(contasBancarias.length)
@@ -403,6 +442,49 @@ export default function Dashboard() {
         }
       })
       setAlertasRevisao(alertas.slice(0, 3))
+
+      // 9. Exames Ocupacionais / Periódicos a vencer em 30 dias ou vencidos
+      let countVencidos = 0
+      let countVencem30 = 0
+      const examesCriticos: Array<{
+        id: string
+        funcionarioNome: string
+        cargo: string
+        tipoExame: string
+        dataProximo: string
+        diasRestantes: number | null
+        status: 'vencido' | 'vence_em_breve'
+      }> = []
+
+      allExames.forEach((ex) => {
+        const st = calcularStatusExame(ex.data_proximo_exame, ex.tipo_exame)
+        if (st === 'vencido' || st === 'vence_em_breve') {
+          if (st === 'vencido') countVencidos++
+          else countVencem30++
+
+          examesCriticos.push({
+            id: ex.id,
+            funcionarioNome: ex.expand?.funcionario_id?.nome || 'Colaborador',
+            cargo: ex.expand?.funcionario_id?.cargo || '',
+            tipoExame: TIPOS_EXAME_LABELS[ex.tipo_exame] || ex.tipo_exame,
+            dataProximo: ex.data_proximo_exame ? ex.data_proximo_exame.slice(0, 10) : '',
+            diasRestantes: calcularDiasRestantes(ex.data_proximo_exame),
+            status: st,
+          })
+        }
+      })
+
+      examesCriticos.sort((a, b) => {
+        const da = a.dataProximo || '9999-12-31'
+        const db = b.dataProximo || '9999-12-31'
+        return da.localeCompare(db)
+      })
+
+      setTotalExamesAlerta({
+        vencidos: countVencidos,
+        vencem30Dias: countVencem30,
+      })
+      setExamesAVencer(examesCriticos.slice(0, 4))
     } catch (err) {
       console.error('Error loading dashboard:', err)
     } finally {
@@ -853,6 +935,96 @@ export default function Dashboard() {
           </CardContent>
         </Card>
       </div>
+
+      {/* Card de Alerta RH: Exames a Vencer (30 dias) / Vencidos */}
+      {(totalExamesAlerta.vencidos > 0 || totalExamesAlerta.vencem30Dias > 0) && (
+        <Card className="rounded-2xl border-teal-200 bg-gradient-to-r from-teal-50/70 via-white to-amber-50/40 p-5 shadow-xs">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-3">
+            <div className="flex items-center space-x-3">
+              <div className="w-10 h-10 rounded-xl bg-teal-700 text-white flex items-center justify-center shadow-xs shrink-0">
+                <HeartPulse className="w-5 h-5" />
+              </div>
+              <div>
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-bold text-teal-950 uppercase tracking-wider">
+                    Exames Ocupacionais a Vencer (30 dias) &amp; Vencidos
+                  </span>
+                  <Badge className="bg-teal-100 text-teal-900 border-teal-300 text-[10px]">
+                    RH / Saúde NR-7
+                  </Badge>
+                </div>
+                <p className="text-xs text-gray-600 mt-0.5">
+                  {totalExamesAlerta.vencidos > 0 ? (
+                    <strong className="text-red-700">
+                      {totalExamesAlerta.vencidos} vencido(s){' '}
+                    </strong>
+                  ) : null}
+                  {totalExamesAlerta.vencidos > 0 && totalExamesAlerta.vencem30Dias > 0 && ' • '}
+                  {totalExamesAlerta.vencem30Dias > 0 ? (
+                    <span className="text-amber-800">
+                      {totalExamesAlerta.vencem30Dias} a vencer nos próximos 30 dias
+                    </span>
+                  ) : null}
+                </p>
+              </div>
+            </div>
+
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => navigate('/rh/exames-periodicos')}
+              className="border-teal-300 text-teal-900 bg-white hover:bg-teal-100/70 text-xs rounded-xl shadow-xs shrink-0"
+            >
+              Gerenciar Exames
+              <ArrowRight className="w-3.5 h-3.5 ml-1.5" />
+            </Button>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5 mt-2">
+            {examesAVencer.map((ex) => {
+              const isVencido = ex.status === 'vencido'
+              return (
+                <div
+                  key={ex.id}
+                  onClick={() => navigate('/rh/exames-periodicos')}
+                  className={`p-3 rounded-xl border bg-white flex items-center justify-between cursor-pointer hover:shadow-xs transition-all ${
+                    isVencido
+                      ? 'border-red-300 hover:border-red-400'
+                      : 'border-amber-300 hover:border-amber-400'
+                  }`}
+                >
+                  <div className="min-w-0 pr-2">
+                    <div className="font-semibold text-gray-900 text-xs truncate">
+                      {ex.funcionarioNome}
+                    </div>
+                    <div className="text-[10px] text-gray-500 truncate">
+                      {ex.cargo || 'Colaborador'} • {ex.tipoExame}
+                    </div>
+                    <div className="text-[11px] font-mono mt-0.5">
+                      Vence:{' '}
+                      <strong className={isVencido ? 'text-red-700' : 'text-amber-800'}>
+                        {ex.dataProximo ? formatDate(ex.dataProximo) : '—'}
+                      </strong>
+                    </div>
+                  </div>
+
+                  <span
+                    className={`shrink-0 px-2 py-0.5 rounded text-[10px] font-bold ${
+                      isVencido ? 'bg-red-100 text-red-800' : 'bg-amber-100 text-amber-900'
+                    }`}
+                  >
+                    {isVencido
+                      ? 'Vencido'
+                      : ex.diasRestantes !== null
+                        ? `${ex.diasRestantes}d`
+                        : 'A vencer'}
+                  </span>
+                </div>
+              )
+            })}
+          </div>
+        </Card>
+      )}
 
       {/* Aging Alerts Row */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">

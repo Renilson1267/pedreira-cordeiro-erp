@@ -41,6 +41,7 @@ import {
   Receipt,
   UserCheck,
   Clock,
+  HeartPulse,
   Printer,
   X,
 } from 'lucide-react'
@@ -613,6 +614,15 @@ export default function Funcionarios() {
           <div className="flex items-center gap-2">
             <Button
               variant="outline"
+              onClick={() => navigate('/rh/exames-periodicos')}
+              className="border-teal-300 text-teal-900 bg-teal-50/50 hover:bg-teal-100/70 rounded-xl shadow-xs text-xs"
+              title="Exames Ocupacionais e Periódicos"
+            >
+              <HeartPulse className="w-4 h-4 mr-1.5 text-teal-700" />
+              Exames Periódicos
+            </Button>
+            <Button
+              variant="outline"
               onClick={() => navigate('/rh/horas-extras')}
               className="border-amber-300 text-amber-900 bg-amber-50/50 hover:bg-amber-100/70 rounded-xl shadow-xs text-xs"
               title="Folha e Cálculo de Horas Extras"
@@ -945,6 +955,18 @@ export default function Funcionarios() {
                             >
                               <Clock className="w-3 h-3 mr-1 text-amber-700" />
                               Horas Extras
+                            </Button>
+                          )}
+                          {canEdit && (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => navigate(`/rh/exames-periodicos?funcionario=${f.id}`)}
+                              className="h-7 px-2 text-[11px] text-teal-900 border-teal-200 hover:bg-teal-50"
+                              title="Ver e Gerenciar Exames deste Colaborador"
+                            >
+                              <HeartPulse className="w-3 h-3 mr-1 text-teal-700" />
+                              Exames
                             </Button>
                           )}
                           {canEdit && (

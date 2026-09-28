@@ -583,6 +583,37 @@ export interface DespesaFrota {
   }
 }
 
+export type TipoExameOcupacional =
+  | 'periodico'
+  | 'admissional'
+  | 'demissional'
+  | 'retorno_trabalho'
+  | 'mudanca_funcao'
+
+export type ResultadoExameOcupacional = 'apto' | 'apto_com_restricao' | 'inapto'
+
+export type StatusCalculadoExame = 'em_dia' | 'vence_em_breve' | 'vencido'
+
+export interface ExamePeriodico {
+  id: string
+  empresa_id: string
+  funcionario_id: string
+  tipo_exame: TipoExameOcupacional
+  data_exame: string
+  resultado: ResultadoExameOcupacional
+  clinica_medico?: string
+  crm?: string
+  periodicidade_meses?: number
+  data_proximo_exame?: string
+  observacoes?: string
+  created: string
+  updated: string
+  expand?: {
+    empresa_id?: Empresa
+    funcionario_id?: Funcionario
+  }
+}
+
 export interface Entrega {
   id: string
   empresa_id: string

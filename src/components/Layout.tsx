@@ -44,6 +44,7 @@ import {
   BookOpen,
   CreditCard,
   Database,
+  HeartPulse,
 } from 'lucide-react'
 
 export default function Layout() {
@@ -97,6 +98,7 @@ export default function Layout() {
       items: [
         { label: 'Funcionários & Equipe', path: '/rh/funcionarios', icon: Users },
         { label: 'Folha de Horas Extras', path: '/rh/horas-extras', icon: Clock },
+        { label: 'Exames Periódicos', path: '/rh/exames-periodicos', icon: HeartPulse },
       ],
     },
     {

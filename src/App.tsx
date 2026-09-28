@@ -44,6 +44,7 @@ const Manutencoes = lazy(() => import('@/pages/frotas/Manutencoes'))
 const Entregas = lazy(() => import('@/pages/frotas/Entregas'))
 const Funcionarios = lazy(() => import('@/pages/rh/Funcionarios'))
 const HorasExtras = lazy(() => import('@/pages/rh/HorasExtras'))
+const ExamesPeriodicos = lazy(() => import('@/pages/rh/ExamesPeriodicos'))
 const ManualPage = lazy(() => import('@/pages/Manual'))
 
 export default function App() {
@@ -89,6 +90,7 @@ export default function App() {
                   {/* Recursos Humanos (RH) */}
                   <Route path="/rh/funcionarios" element={<Funcionarios />} />
                   <Route path="/rh/horas-extras" element={<HorasExtras />} />
+                  <Route path="/rh/exames-periodicos" element={<ExamesPeriodicos />} />
 
                   {/* Cadastros */}
                   <Route path="/cadastros/clientes" element={<Clientes />} />
