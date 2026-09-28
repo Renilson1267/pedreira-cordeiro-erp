@@ -85,7 +85,7 @@ export default function AcceptInvite() {
                 Você agora é membro de {companyName || 'sua nova empresa'}!
               </p>
               <Button
-                onClick={() => navigate('/')}
+                onClick={() => navigate('/dashboard')}
                 className="w-full bg-teal-700 hover:bg-teal-800 text-white rounded-xl"
               >
                 Acessar o Painel Principal

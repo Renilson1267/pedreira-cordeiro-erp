@@ -8,8 +8,10 @@ import { Toaster } from '@/components/ui/toaster'
 import { PageLoadingFallback } from '@/components/PageLoadingFallback'
 import { ErrorBoundary } from '@/components/ErrorBoundary'
 
+// Site Público Institucional (Landing page com produtos e orçamento)
+const HomePublica = lazy(() => import('@/pages/HomePublica'))
+
 // Telas principais com carregamento sob demanda (Code-Splitting por rota)
-// Mantemos a rota inicial "/" rápida carregando sob demanda apenas o que o usuário visita.
 const Login = lazy(() => import('@/pages/auth/Login'))
 const ForgotPassword = lazy(() => import('@/pages/auth/ForgotPassword'))
 const ResetPassword = lazy(() => import('@/pages/auth/ResetPassword'))
@@ -55,6 +57,9 @@ export default function App() {
           <ErrorBoundary screenName="Aplicação Geral">
             <Suspense fallback={<PageLoadingFallback />}>
               <Routes>
+                {/* Site Público Institucional da Pedreira Cordeiro */}
+                <Route path="/" element={<HomePublica />} />
+
                 {/* Public Auth Routes */}
                 <Route path="/login" element={<Login />} />
                 <Route path="/forgot-password" element={<ForgotPassword />} />
@@ -70,7 +75,8 @@ export default function App() {
                     </ProtectedRoute>
                   }
                 >
-                  <Route path="/" element={<Index />} />
+                  {/* Painel ERP / Dashboard */}
+                  <Route path="/dashboard" element={<Index />} />
                   <Route path="/manual" element={<ManualPage />} />
 
                   {/* Financeiro */}

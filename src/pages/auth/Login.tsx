@@ -22,8 +22,10 @@ export default function Login() {
   const stateFrom = (location.state as any)?.from?.pathname
   const queryRedirect = new URLSearchParams(location.search).get('redirect')
   const targetPath =
-    (stateFrom && stateFrom !== '/login' ? stateFrom : null) ||
-    (queryRedirect && queryRedirect !== '/login' ? queryRedirect : '/')
+    (stateFrom && stateFrom !== '/login' && stateFrom !== '/' ? stateFrom : null) ||
+    (queryRedirect && queryRedirect !== '/login' && queryRedirect !== '/'
+      ? queryRedirect
+      : '/dashboard')
 
   // Se já estiver autenticado e não estiver carregando, redireciona para o destino
   useEffect(() => {
@@ -157,10 +159,18 @@ export default function Login() {
               {loading ? 'Entrando no sistema...' : 'Entrar no ERP'}
             </Button>
 
-            <div className="pt-4 text-center">
-              <span className="text-[11px] text-gray-400 bg-gray-50 border border-gray-100 px-3 py-1 rounded-full">
+            <div className="pt-4 text-center space-y-2">
+              <span className="text-[11px] text-gray-400 bg-gray-50 border border-gray-100 px-3 py-1 rounded-full block">
                 🔒 Acesso restrito a colaboradores autorizados
               </span>
+              <div>
+                <Link
+                  to="/"
+                  className="text-xs text-teal-700 hover:text-teal-800 hover:underline inline-flex items-center gap-1 font-medium"
+                >
+                  ← Voltar para o site institucional da Pedreira
+                </Link>
+              </div>
             </div>
           </form>
         </CardContent>

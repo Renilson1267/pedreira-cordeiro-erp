@@ -70,7 +70,7 @@ export default function Layout() {
     {
       group: 'Visão Geral',
       items: [
-        { label: 'Dashboard', path: '/', icon: LayoutDashboard },
+        { label: 'Dashboard', path: '/dashboard', icon: LayoutDashboard },
         { label: 'Manual do Sistema', path: '/manual', icon: BookOpen },
       ],
     },
@@ -146,7 +146,7 @@ export default function Layout() {
           <div className="flex items-center space-x-2.5">
             <div
               className="w-9 h-9 rounded-xl bg-teal-700 flex items-center justify-center text-white shadow-sm shadow-teal-700/20 cursor-pointer shrink-0"
-              onClick={() => navigate('/')}
+              onClick={() => navigate('/dashboard')}
               title="Ir para o Dashboard"
             >
               <svg
@@ -164,25 +164,22 @@ export default function Layout() {
             <div className="flex flex-col min-w-0">
               <span
                 className="font-bold text-lg text-gray-900 tracking-tight cursor-pointer leading-tight"
-                onClick={() => navigate('/')}
+                onClick={() => navigate('/dashboard')}
               >
                 Pedreira Cordeiro
               </span>
               <span
                 className="text-[10px] text-teal-700 font-semibold uppercase tracking-wider block -mt-0.5 cursor-pointer leading-tight"
-                onClick={() => navigate('/')}
+                onClick={() => navigate('/dashboard')}
               >
                 Grupo Pedreira Cordeiro
               </span>
               <a
-                href="https://pedreiracordeiro.com.br"
-                target="_blank"
-                rel="noopener noreferrer"
-                onClick={(e) => e.stopPropagation()}
+                href="/"
                 className="text-[11px] text-teal-600/80 hover:text-teal-700 hover:underline leading-tight transition-colors block mt-0.5 truncate"
-                title="Acessar pedreiracordeiro.com.br em nova aba"
+                title="Ver site público institucional"
               >
-                pedreiracordeiro.com.br
+                Ver site público →
               </a>
             </div>
           </div>
@@ -255,8 +252,8 @@ export default function Layout() {
                 {group.items.map((item) => {
                   const Icon = item.icon
                   const isActive =
-                    item.path === '/'
-                      ? location.pathname === '/'
+                    item.path === '/dashboard'
+                      ? location.pathname === '/dashboard'
                       : location.pathname.startsWith(item.path)
 
                   return (
