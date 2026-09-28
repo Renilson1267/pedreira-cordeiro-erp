@@ -862,11 +862,43 @@ export function Backups() {
       return
     }
 
-    const colecoes = Object.keys(conteudoDumpCarregado).filter(
+    // Ordem estrita de dependências relacionais para evitar violações de chave estrangeira
+    const ORDEM_DEPENDENCIA_COLECOES = [
+      'empresas',
+      'users',
+      'empresa_membros',
+      'clientes',
+      'fornecedores',
+      'produtos',
+      'plano_contas',
+      'centros_custos',
+      'bancos_contas',
+      'veiculos',
+      'funcionarios',
+      'formas_recebimento',
+      'exames_periodicos',
+      'contas_pagar',
+      'contas_receber',
+      'vendas',
+      'entregas',
+      'abastecimentos',
+      'manutencoes',
+      'despesas_frota',
+      'creditos_clientes',
+      'folha_horas_extras',
+      'movimentos_financeiros',
+      'conciliacoes',
+      'cheques_predatados',
+      'empresa_convites',
+      'contadores_sequenciais',
+      'historico_alteracoes',
+    ]
+
+    const todasColecoesArquivo = Object.keys(conteudoDumpCarregado).filter(
       (c) => c !== 'meta' && c !== 'dados' && Array.isArray(conteudoDumpCarregado[c]),
     )
 
-    if (colecoes.length === 0) {
+    if (todasColecoesArquivo.length === 0) {
       toast({
         title: 'Sem dados',
         description: 'Nenhuma coleção válida com registros foi encontrada no arquivo.',
@@ -874,6 +906,15 @@ export function Backups() {
       })
       return
     }
+
+    // Ordenar coleções conforme hierarquia relacional
+    const colecoes = [...todasColecoesArquivo].sort((a, b) => {
+      const idxA = ORDEM_DEPENDENCIA_COLECOES.indexOf(a)
+      const idxB = ORDEM_DEPENDENCIA_COLECOES.indexOf(b)
+      const posA = idxA === -1 ? 999 : idxA
+      const posB = idxB === -1 ? 999 : idxB
+      return posA - posB
+    })
 
     const totalRegistrosGeral = colecoes.reduce(
       (acc, col) => acc + (conteudoDumpCarregado[col]?.length || 0),
@@ -883,7 +924,8 @@ export function Backups() {
     setRestaurando(true)
     const inicioMs = Date.now()
 
-    const CHUNK_SIZE = 100
+    // Lotes de 250 registros conforme especificação de restauração em lotes
+    const CHUNK_SIZE = 250
     let totalCriados = 0
     let totalAtualizados = 0
     let totalErros = 0
@@ -934,6 +976,12 @@ export function Backups() {
             totalCriados += respLote.criados || 0
             totalAtualizados += respLote.atualizados || 0
             totalErros += respLote.erros || 0
+
+            if (respLote.detalhes_erros && respLote.detalhes_erros.length > 0) {
+              for (const de of respLote.detalhes_erros) {
+                errosColetados.push(`[${colName} id=${de.id || 'sem_id'}]: ${de.erro}`)
+              }
+            }
           } catch (loteErr: unknown) {
             const erroTxt =
               loteErr instanceof Error
@@ -2661,7 +2709,7 @@ export function Backups() {
                     {resultadoValidacao.meta.total_colecoes_arquivo})
                   </span>
                   <Badge variant="outline" className="text-[10px]">
-                    Lotes de até 150 registros
+                    Lotes de até 250 registros
                   </Badge>
                 </div>
 

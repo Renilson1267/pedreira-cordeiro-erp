@@ -3078,26 +3078,27 @@ cronAdd('backup_semanal_pedreira_cordeiro', '30 0 * * 0', () => {
     'fornecedores',
     'produtos',
     'plano_contas',
+    'centros_custos',
+    'bancos_contas',
+    'veiculos',
+    'funcionarios',
+    'formas_recebimento',
+    'exames_periodicos',
     'contas_pagar',
     'contas_receber',
-    'bancos_contas',
-    'movimentos_financeiros',
-    'conciliacoes',
-    'empresa_convites',
-    'veiculos',
+    'vendas',
+    'entregas',
     'abastecimentos',
     'manutencoes',
-    'centros_custos',
-    'creditos_clientes',
-    'funcionarios',
-    'folha_horas_extras',
-    'entregas',
-    'vendas',
     'despesas_frota',
-    'historico_alteracoes',
-    'formas_recebimento',
+    'creditos_clientes',
+    'folha_horas_extras',
+    'movimentos_financeiros',
+    'conciliacoes',
     'cheques_predatados',
+    'empresa_convites',
     'contadores_sequenciais',
+    'historico_alteracoes',
   ]
 
   var timestampStr = new Date().toISOString().replace(/[:.]/g, '-').replace('T', '_').slice(0, 19)
@@ -3339,26 +3340,27 @@ routerAdd(
       'fornecedores',
       'produtos',
       'plano_contas',
+      'centros_custos',
+      'bancos_contas',
+      'veiculos',
+      'funcionarios',
+      'formas_recebimento',
+      'exames_periodicos',
       'contas_pagar',
       'contas_receber',
-      'bancos_contas',
-      'movimentos_financeiros',
-      'conciliacoes',
-      'empresa_convites',
-      'veiculos',
+      'vendas',
+      'entregas',
       'abastecimentos',
       'manutencoes',
-      'centros_custos',
-      'creditos_clientes',
-      'funcionarios',
-      'folha_horas_extras',
-      'entregas',
-      'vendas',
       'despesas_frota',
-      'historico_alteracoes',
-      'formas_recebimento',
+      'creditos_clientes',
+      'folha_horas_extras',
+      'movimentos_financeiros',
+      'conciliacoes',
       'cheques_predatados',
+      'empresa_convites',
       'contadores_sequenciais',
+      'historico_alteracoes',
     ]
 
     var backupsCol = $app.findCollectionByNameOrId('backups_sistema')
@@ -5033,11 +5035,59 @@ routerAdd(
           }
         }
 
-        // Resolução defensiva de conflito por chave única para coleções com índice UNIQUE
+        // Resolução defensiva de conflito por chave única para coleções com índices UNIQUE
         if (!rec) {
           if (colecaoNome === 'empresas' && item.cnpj) {
             try {
               rec = $app.findFirstRecordByData('empresas', 'cnpj', item.cnpj)
+            } catch (_) {
+              rec = null
+            }
+          } else if (colecaoNome === 'empresa_membros' && item.empresa_id && item.usuario_id) {
+            try {
+              var recsMembro = $app.findRecordsByFilter(
+                'empresa_membros',
+                "empresa_id = '" + item.empresa_id + "' && usuario_id = '" + item.usuario_id + "'",
+                '',
+                1,
+                0,
+              )
+              if (recsMembro && recsMembro.length > 0) rec = recsMembro[0]
+            } catch (_) {
+              rec = null
+            }
+          } else if (colecaoNome === 'users' && item.email) {
+            try {
+              rec = $app.findFirstRecordByData('users', 'email', item.email)
+            } catch (_) {
+              rec = null
+            }
+          } else if (
+            colecaoNome === 'contadores_sequenciais' &&
+            item.empresa_id &&
+            item.tipo &&
+            item.ano !== undefined
+          ) {
+            try {
+              var recsCont = $app.findRecordsByFilter(
+                'contadores_sequenciais',
+                "empresa_id = '" +
+                  item.empresa_id +
+                  "' && tipo = '" +
+                  item.tipo +
+                  "' && ano = " +
+                  item.ano,
+                '',
+                1,
+                0,
+              )
+              if (recsCont && recsCont.length > 0) rec = recsCont[0]
+            } catch (_) {
+              rec = null
+            }
+          } else if (colecaoNome === 'empresa_convites' && item.token) {
+            try {
+              rec = $app.findFirstRecordByData('empresa_convites', 'token', item.token)
             } catch (_) {
               rec = null
             }
