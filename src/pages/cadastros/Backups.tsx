@@ -808,9 +808,8 @@ export function Backups() {
         throw new Error('Conteúdo do arquivo não é um objeto JSON válido.')
       }
 
-      const dumpObj = parsed as { meta?: unknown; dados?: Record<string, unknown[]> }
-      const dadosExtraidos = dumpObj.dados || (dumpObj as unknown as Record<string, unknown[]>)
-      setConteudoDumpCarregado(dadosExtraidos)
+      const colecoesNormalizadas = backupService.extrairColecoesDoDump(parsed)
+      setConteudoDumpCarregado(colecoesNormalizadas)
 
       // Envia ao backend para validação estrutural segura (sem gravar)
       toast({

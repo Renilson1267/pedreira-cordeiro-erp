@@ -3634,14 +3634,38 @@ routerAdd(
         }
       }
 
+      // Limpeza de chaves auxiliares e sanitização para que o JSON baixado seja 100% compatível com a restauração
+      var colecoesLimpas = {}
+      var nomesCols = Object.keys(colecoes)
+      var totalRegsLimpos = 0
+
+      for (var nc = 0; nc < nomesCols.length; nc++) {
+        var nColecao = nomesCols[nc]
+        // Ignorar chaves de controle interno, prefixadas por _backup_ ou dados transitórios
+        if (
+          nColecao === 'meta' ||
+          nColecao === 'dados' ||
+          nColecao.indexOf('_backup_') === 0 ||
+          nColecao.indexOf('_pb_') === 0
+        ) {
+          continue
+        }
+
+        var listaRecs = colecoes[nColecao]
+        if (Array.isArray(listaRecs)) {
+          colecoesLimpas[nColecao] = listaRecs
+          totalRegsLimpos += listaRecs.length
+        }
+      }
+
       var payloadCompleto = {
         meta: {
           id: backupRec.id,
           nome_arquivo: backupRec.getString('nome_arquivo'),
           tipo: backupRec.getString('tipo'),
           origem: backupRec.getString('origem') || 'manual',
-          total_colecoes: backupRec.getInt('total_colecoes'),
-          total_registros: backupRec.getInt('total_registros'),
+          total_colecoes: Object.keys(colecoesLimpas).length,
+          total_registros: totalRegsLimpos,
           resumo_colecoes: backupRec.get('resumo_colecoes'),
           detalhes_execucao: backupRec.get('detalhes_execucao'),
           drive_status: backupRec.getString('drive_status') || 'pendente',
@@ -3651,7 +3675,7 @@ routerAdd(
           exportado_em: new Date().toISOString(),
           sistema: 'Pedreira Cordeiro ERP (NovaGest)',
         },
-        dados: colecoes,
+        dados: colecoesLimpas,
       }
 
       return e.json(200, payloadCompleto)
@@ -4799,17 +4823,70 @@ routerAdd(
     ]
 
     var body = e.requestInfo().body || {}
-    // Suporte a dois modos:
-    // 1) Modo Leve (recomendado): { colecoes_resumo: { clientes: 2354, ... }, meta: {...}, amostras: { clientes: [...] } }
-    // 2) Modo Legado: { dump: { meta, dados } } ou { dump: { ... } }
     var colecoesContagens = {}
     var amostrasRecebidas = body.amostras || {}
     var meta = body.meta || {}
     var nomeArquivoOrigem = body.nome_arquivo_origem || meta.nome_arquivo || 'backup_importado.json'
 
+    function extrairColecoesDeObjeto(fonteObj) {
+      if (!fonteObj || typeof fonteObj !== 'object' || Array.isArray(fonteObj)) return 0
+      var chavesFonte = Object.keys(fonteObj)
+      var achados = 0
+      for (var sf = 0; sf < chavesFonte.length; sf++) {
+        var kF = chavesFonte[sf]
+        if (
+          kF === 'meta' ||
+          kF === 'dados' ||
+          kF === 'collections' ||
+          kF === 'colecoes' ||
+          kF === 'resumo_colecoes' ||
+          kF === 'detalhes_execucao' ||
+          kF.indexOf('_backup_') === 0 ||
+          kF.indexOf('_pb_') === 0
+        )
+          continue
+
+        var vF = fonteObj[kF]
+        if (Array.isArray(vF)) {
+          colecoesContagens[kF] = vF.length
+          if (vF.length > 0 && !amostrasRecebidas[kF]) {
+            amostrasRecebidas[kF] = vF.slice(0, Math.min(vF.length, 30))
+          }
+          achados++
+        } else if (typeof vF === 'number' && !isNaN(vF) && vF >= 0) {
+          if (colecoesContagens[kF] === undefined) {
+            colecoesContagens[kF] = vF
+            achados++
+          }
+        }
+      }
+      return achados
+    }
+
+    // 1) Modo Leve (payload com colecoes_resumo)
     if (body.colecoes_resumo && typeof body.colecoes_resumo === 'object') {
-      colecoesContagens = body.colecoes_resumo
-    } else {
+      var rawResumo = body.colecoes_resumo
+      var keysR = Object.keys(rawResumo)
+      for (var kr = 0; kr < keysR.length; kr++) {
+        var rk = keysR[kr]
+        if (
+          rk === 'meta' ||
+          rk === 'dados' ||
+          rk.indexOf('_backup_') === 0 ||
+          rk.indexOf('_pb_') === 0
+        )
+          continue
+        var numVal = rawResumo[rk]
+        if (typeof numVal === 'number' && !isNaN(numVal) && numVal >= 0) {
+          colecoesContagens[rk] = numVal
+        } else if (typeof numVal === 'string' && !isNaN(parseInt(numVal, 10))) {
+          colecoesContagens[rk] = parseInt(numVal, 10)
+        }
+      }
+    }
+
+    // 2) Se ainda não identificou coleções, inspecionar body.dump ou o próprio body em profundidade
+    if (Object.keys(colecoesContagens).length === 0) {
       var dump = body.dump || body
       var dumpMeta = dump.meta || {}
       if (!meta.criado_em && dumpMeta.created) meta.criado_em = dumpMeta.created
@@ -4818,25 +4895,41 @@ routerAdd(
       if (dumpMeta.nome_arquivo && !body.nome_arquivo_origem)
         nomeArquivoOrigem = dumpMeta.nome_arquivo
 
-      var dados = dump.dados || dump
-      if (!dados || typeof dados !== 'object' || Array.isArray(dados)) {
-        return e.json(400, {
-          error:
-            'Formato de arquivo inválido. O arquivo JSON deve conter a chave "dados" ou um mapeamento de coleções.',
-        })
+      // 2.a) Se existir chave dados
+      if (dump.dados && typeof dump.dados === 'object') {
+        extrairColecoesDeObjeto(dump.dados)
       }
 
-      var dumpKeys = Object.keys(dados)
-      for (var dk = 0; dk < dumpKeys.length; dk++) {
-        var kName = dumpKeys[dk]
-        // Ignorar chaves especiais ou transitórias como _backup_duplicatas_excluidas, meta, dados, etc.
-        if (kName === 'meta' || kName === 'dados' || kName.indexOf('_backup_') === 0) continue
-        var items = dados[kName]
-        // Aceitar apenas chaves cujo valor é array real de registros
-        if (Array.isArray(items)) {
-          colecoesContagens[kName] = items.length
-          if (items.length > 0 && !amostrasRecebidas[kName]) {
-            amostrasRecebidas[kName] = items.slice(0, Math.min(items.length, 30))
+      // 2.b) Se existir chave collections ou colecoes
+      if (dump.collections && typeof dump.collections === 'object') {
+        extrairColecoesDeObjeto(dump.collections)
+      }
+      if (dump.colecoes && typeof dump.colecoes === 'object') {
+        extrairColecoesDeObjeto(dump.colecoes)
+      }
+
+      // 2.c) Se ainda vazio, extrair da própria raiz de dump
+      if (Object.keys(colecoesContagens).length === 0) {
+        extrairColecoesDeObjeto(dump)
+      }
+
+      // 2.d) Suporte resiliente a dumps antigos ou resumos salvos que têm apenas contagens em resumo_colecoes
+      if (Object.keys(colecoesContagens).length === 0 && dump.resumo_colecoes) {
+        var dumpResumo = dump.resumo_colecoes
+        if (typeof dumpResumo === 'string') {
+          try {
+            dumpResumo = JSON.parse(dumpResumo)
+          } catch (_) {}
+        }
+        if (dumpResumo && typeof dumpResumo === 'object') {
+          var kRes = Object.keys(dumpResumo)
+          for (var ri = 0; ri < kRes.length; ri++) {
+            var krName = kRes[ri]
+            if (krName.indexOf('_backup_') === 0) continue
+            var valR = dumpResumo[krName]
+            if (typeof valR === 'number') {
+              colecoesContagens[krName] = valR
+            }
           }
         }
       }
@@ -4854,10 +4947,8 @@ routerAdd(
       if (rawColName === 'meta' || rawColName === 'dados' || rawColName.indexOf('_backup_') === 0)
         continue
 
-      var qtd = Number(colecoesContagens[rawColName]) || 0
-
-      // Se a contagem não for número ou for nula/indefinida, ignorar
-      if (isNaN(qtd)) continue
+      var qtd = Number(colecoesContagens[rawColName])
+      if (isNaN(qtd) || qtd < 0) qtd = 0
 
       if (colecoesProtegidas.indexOf(rawColName) !== -1) {
         colecoesIgnoradas.push(rawColName)

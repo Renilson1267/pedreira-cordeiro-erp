@@ -551,6 +551,48 @@ export const backupService = {
    * Valida e resume a estrutura de um dump JSON de backup no backend
    * Suporta envio leve (metadados + contagens + amostras pequenas) para evitar estouro de payload/memória
    */
+  /**
+   * Extrai um dicionário limpo de coleções e seus arrays de registros de qualquer estrutura de dump de backup
+   */
+  extrairColecoesDoDump(dump: unknown): Record<string, unknown[]> {
+    const resultado: Record<string, unknown[]> = {}
+    if (!dump || typeof dump !== 'object' || Array.isArray(dump)) {
+      return resultado
+    }
+
+    const obj = dump as Record<string, unknown>
+    const subChavesCandidatas: unknown[] = [obj.dados, obj.collections, obj.colecoes, obj]
+
+    for (const candidata of subChavesCandidatas) {
+      if (candidata && typeof candidata === 'object' && !Array.isArray(candidata)) {
+        for (const [k, v] of Object.entries(candidata as Record<string, unknown>)) {
+          if (
+            k === 'meta' ||
+            k === 'dados' ||
+            k === 'collections' ||
+            k === 'colecoes' ||
+            k === 'resumo_colecoes' ||
+            k === 'detalhes_execucao' ||
+            k.startsWith('_backup_') ||
+            k.startsWith('_pb_')
+          ) {
+            continue
+          }
+
+          if (Array.isArray(v) && !resultado[k]) {
+            resultado[k] = v
+          }
+        }
+      }
+    }
+
+    return resultado
+  },
+
+  /**
+   * Valida e resume a estrutura de um dump JSON de backup no backend
+   * Suporta envio leve (metadados + contagens + amostras pequenas) para evitar estouro de payload/memória
+   */
   async validarBackupLocal(
     dump: unknown,
     nomeArquivoOrigem?: string,
@@ -569,31 +611,36 @@ export const backupService = {
           total_colecoes?: number
         }
         dados?: Record<string, unknown>
+        resumo_colecoes?: Record<string, unknown>
       }
 
-      const dados = (obj.dados && typeof obj.dados === 'object' ? obj.dados : obj) as Record<
-        string,
-        unknown
-      >
+      const colecoesExtraidas = backupService.extrairColecoesDoDump(dump)
       const colecoesResumo: Record<string, number> = {}
       const amostras: Record<string, string[]> = {}
       let totalRegistrosCalculado = 0
 
-      for (const [k, v] of Object.entries(dados)) {
-        // Ignorar chaves especiais e transitórias
-        if (k === 'meta' || k === 'dados' || k.startsWith('_backup_')) continue
-        // Aceitar apenas chaves cujo valor é array real de registros
-        if (Array.isArray(v)) {
-          colecoesResumo[k] = v.length
-          totalRegistrosCalculado += v.length
-          const sample = v.slice(0, 30)
-          amostras[k] = sample
-            .map((item) =>
-              item && typeof item === 'object' && 'id' in item
-                ? String((item as { id: unknown }).id)
-                : '',
-            )
-            .filter(Boolean)
+      for (const [k, v] of Object.entries(colecoesExtraidas)) {
+        colecoesResumo[k] = v.length
+        totalRegistrosCalculado += v.length
+        const sample = v.slice(0, 30)
+        amostras[k] = sample
+          .map((item) =>
+            item && typeof item === 'object' && 'id' in item
+              ? String((item as { id: unknown }).id)
+              : '',
+          )
+          .filter(Boolean)
+      }
+
+      // Se não encontrou arrays (ex: dump sem dados brutos ou só metadados), inspecionar resumo_colecoes como fallback
+      if (Object.keys(colecoesResumo).length === 0 && obj.resumo_colecoes) {
+        for (const [k, v] of Object.entries(obj.resumo_colecoes)) {
+          if (k.startsWith('_backup_') || k.startsWith('_pb_') || k === 'meta' || k === 'dados')
+            continue
+          if (typeof v === 'number' && !isNaN(v) && v >= 0) {
+            colecoesResumo[k] = v
+            totalRegistrosCalculado += v
+          }
         }
       }
 
