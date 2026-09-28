@@ -137,6 +137,51 @@ export interface BackupDownloadPayload {
   dados: Record<string, unknown[]>
 }
 
+export interface ValidacaoRestauracaoColecaoInfo {
+  total_registros: number
+  existe_no_banco: boolean
+  conflitos_amostra: number
+  amostra_tamanho: number
+}
+
+export interface ValidarBackupResponse {
+  success: boolean
+  valido: boolean
+  meta: {
+    nome_arquivo: string
+    criado_em: string | null
+    sistema_origem: string
+    origem: string
+    total_colecoes_arquivo: number
+    total_registros_arquivo: number
+  }
+  colecoes: Record<string, ValidacaoRestauracaoColecaoInfo>
+  colecoes_ignoradas: string[]
+  aviso_seguranca: string
+}
+
+export interface RestaurarLoteResponse {
+  success: boolean
+  colecao: string
+  processados: number
+  criados: number
+  atualizados: number
+  erros: number
+  detalhes_erros: Array<{ id?: string; indice: number; erro: string }>
+}
+
+export interface FinalizarRestauracaoResponse {
+  success: boolean
+  message: string
+  resumo: {
+    nome_arquivo: string
+    total_criados: number
+    total_atualizados: number
+    total_erros: number
+    duracao_ms: number
+  }
+}
+
 export const backupService = {
   /**
    * Lista todos os backups já executados com fallback automático via SDK se o endpoint customizado falhar
@@ -462,5 +507,57 @@ export const backupService = {
     link.click()
     document.body.removeChild(link)
     URL.revokeObjectURL(url)
+  },
+
+  /**
+   * Valida e resume a estrutura de um dump JSON de backup no backend
+   */
+  async validarBackupLocal(
+    dump: unknown,
+    nomeArquivoOrigem?: string,
+  ): Promise<ValidarBackupResponse> {
+    const res = await pb.send<ValidarBackupResponse>('/backend/v1/backups/restaurar/validar', {
+      method: 'POST',
+      body: {
+        dump,
+        nome_arquivo_origem: nomeArquivoOrigem,
+      },
+    })
+    return res
+  },
+
+  /**
+   * Envia um lote (chunk) de registros de uma coleção específica para ser restaurado
+   */
+  async restaurarLote(colecao: string, registros: unknown[]): Promise<RestaurarLoteResponse> {
+    const res = await pb.send<RestaurarLoteResponse>('/backend/v1/backups/restaurar/lote', {
+      method: 'POST',
+      body: {
+        colecao,
+        registros,
+      },
+    })
+    return res
+  },
+
+  /**
+   * Conclui a restauração e grava auditoria completa no histórico de alterações
+   */
+  async finalizarRestauracao(payload: {
+    nome_arquivo: string
+    resumo_colecoes: Record<string, { criados: number; atualizados: number; erros: number }>
+    total_criados: number
+    total_atualizados: number
+    total_erros: number
+    duracao_ms: number
+  }): Promise<FinalizarRestauracaoResponse> {
+    const res = await pb.send<FinalizarRestauracaoResponse>(
+      '/backend/v1/backups/restaurar/finalizar',
+      {
+        method: 'POST',
+        body: payload,
+      },
+    )
+    return res
   },
 }

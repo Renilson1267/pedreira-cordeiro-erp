@@ -4739,4 +4739,448 @@ onRecordUpdate((e) => {
       "] Backup marcado como 'solicitado'. Fila incremental processará no próximo minuto.",
   )
 }, 'backups_sistema')
+
+// =============================================================
+// 13. RESTAURAÇÃO LOCAL DE BACKUP (VALIDAÇÃO E EXECUÇÃO EM LOTES)
+// =============================================================
+
+// 13.1. ENDPOINT: VALIDAR E RESUMIR ARQUIVO DE BACKUP LOCAL
+// POST /backend/v1/backups/restaurar/validar
+routerAdd(
+  'POST',
+  '/backend/v1/backups/restaurar/validar',
+  (e) => {
+    var authRecord = e.auth
+    if (!authRecord) {
+      return e.json(401, { error: 'Não autorizado' })
+    }
+
+    // Checar admin inline
+    var isAdmin = false
+    try {
+      var adminMembros = $app.findRecordsByFilter(
+        'empresa_membros',
+        "usuario_id = '" + authRecord.id + "' && role = 'admin'",
+        '',
+        1,
+        0,
+      )
+      isAdmin = Boolean(adminMembros && adminMembros.length > 0)
+    } catch (_) {
+      isAdmin = false
+    }
+
+    if (!isAdmin) {
+      return e.json(403, {
+        error: 'Apenas administradores têm permissão para validar e restaurar backups do sistema.',
+      })
+    }
+
+    var colecoesProtegidas = [
+      'backups_sistema',
+      'backups_dados',
+      'config_google_drive',
+      'cache_tokens_drive',
+      '_superusers',
+      '_pb_users_auth_',
+      '_collections',
+      '_params',
+    ]
+
+    var body = e.requestInfo().body || {}
+    var dump = body.dump || body
+
+    // Suporta tanto o payload padrão do ERP { meta: {...}, dados: { colecao: [...] } }
+    // quanto dump direto { colecao: [...] }
+    var meta = dump.meta || {}
+    var dados = dump.dados || dump
+
+    if (!dados || typeof dados !== 'object' || Array.isArray(dados)) {
+      return e.json(400, {
+        error:
+          'Formato de arquivo inválido. O arquivo JSON deve conter a chave "dados" ou um mapeamento de coleções.',
+      })
+    }
+
+    var colecoesEncontradas = {}
+    var colecoesIgnoradas = []
+    var totalRegistros = 0
+
+    // Analisar todas as chaves do objeto de dados
+    var chaves = Object.keys(dados)
+    for (var i = 0; i < chaves.length; i++) {
+      var colName = chaves[i]
+
+      // Ignora chaves de metadados se o dump veio plano
+      if (colName === 'meta' || colName === 'dados') continue
+
+      if (colecoesProtegidas.indexOf(colName) !== -1) {
+        colecoesIgnoradas.push(colName)
+        continue
+      }
+
+      var items = dados[colName]
+      if (!Array.isArray(items)) {
+        continue
+      }
+
+      var colValidaNoBanco = false
+      try {
+        var colObj = $app.findCollectionByNameOrId(colName)
+        if (colObj) colValidaNoBanco = true
+      } catch (_) {
+        colValidaNoBanco = false
+      }
+
+      var qtd = items.length
+      totalRegistros += qtd
+
+      // Amostragem para verificar quantos IDs já existem no banco (conflitos/sobrescrita)
+      var existentesContagem = 0
+      if (colValidaNoBanco && qtd > 0) {
+        var amostra = items.slice(0, Math.min(qtd, 30))
+        for (var a = 0; a < amostra.length; a++) {
+          var itemA = amostra[a]
+          if (itemA && itemA.id) {
+            try {
+              var recExistente = $app.findFirstRecordByData(colName, 'id', itemA.id)
+              if (recExistente) existentesContagem++
+            } catch (_) {}
+          }
+        }
+      }
+
+      colecoesEncontradas[colName] = {
+        total_registros: qtd,
+        existe_no_banco: colValidaNoBanco,
+        conflitos_amostra: existentesContagem,
+        amostra_tamanho: Math.min(qtd, 30),
+      }
+    }
+
+    var totalColecoes = Object.keys(colecoesEncontradas).length
+    if (totalColecoes === 0) {
+      return e.json(400, {
+        error: 'Nenhuma coleção de dados reconhecida foi encontrada no arquivo JSON enviado.',
+      })
+    }
+
+    return e.json(200, {
+      success: true,
+      valido: true,
+      meta: {
+        nome_arquivo: meta.nome_arquivo || body.nome_arquivo_origem || 'backup_importado.json',
+        criado_em: meta.created || meta.exportado_em || null,
+        sistema_origem: meta.sistema || 'ERP NovaGest',
+        origem: meta.origem || 'local',
+        total_colecoes_arquivo: totalColecoes,
+        total_registros_arquivo: totalRegistros,
+      },
+      colecoes: colecoesEncontradas,
+      colecoes_ignoradas: colecoesIgnoradas,
+      aviso_seguranca:
+        'A restauração atualizará os registros existentes com os mesmos IDs e criará os que não existirem. Campos de auditoria e relacionamentos são preservados.',
+    })
+  },
+  $apis.requireAuth(),
+)
+
+// 13.2. ENDPOINT: EXECUTAR RESTAURAÇÃO DE UM LOTE (CHUNK) DE UMA COLEÇÃO
+// POST /backend/v1/backups/restaurar/lote
+routerAdd(
+  'POST',
+  '/backend/v1/backups/restaurar/lote',
+  (e) => {
+    var authRecord = e.auth
+    if (!authRecord) {
+      return e.json(401, { error: 'Não autorizado' })
+    }
+
+    // Checar admin inline
+    var isAdmin = false
+    try {
+      var adminMembros = $app.findRecordsByFilter(
+        'empresa_membros',
+        "usuario_id = '" + authRecord.id + "' && role = 'admin'",
+        '',
+        1,
+        0,
+      )
+      isAdmin = Boolean(adminMembros && adminMembros.length > 0)
+    } catch (_) {
+      isAdmin = false
+    }
+
+    if (!isAdmin) {
+      return e.json(403, {
+        error: 'Apenas administradores têm permissão para restaurar backups do sistema.',
+      })
+    }
+
+    var colecoesProtegidas = [
+      'backups_sistema',
+      'backups_dados',
+      'config_google_drive',
+      'cache_tokens_drive',
+      '_superusers',
+      '_pb_users_auth_',
+      '_collections',
+      '_params',
+    ]
+
+    var body = e.requestInfo().body || {}
+    var colecaoNome = (body.colecao || '').trim()
+    var registros = body.registros || []
+
+    if (!colecaoNome) {
+      return e.json(400, { error: 'Nome da coleção não informado' })
+    }
+
+    if (colecoesProtegidas.indexOf(colecaoNome) !== -1) {
+      return e.json(400, {
+        error: 'A coleção "' + colecaoNome + '" é protegida e não pode ser restaurada via dump.',
+      })
+    }
+
+    if (!Array.isArray(registros) || registros.length === 0) {
+      return e.json(200, {
+        success: true,
+        colecao: colecaoNome,
+        processados: 0,
+        criados: 0,
+        atualizados: 0,
+        erros: 0,
+        detalhes_erros: [],
+      })
+    }
+
+    // Limite de segurança por lote: max 250 registros por requisição para não estourar JSVM
+    if (registros.length > 250) {
+      return e.json(400, {
+        error: 'Lote muito grande. Envie no máximo 250 registros por requisição.',
+      })
+    }
+
+    var col = null
+    try {
+      col = $app.findCollectionByNameOrId(colecaoNome)
+    } catch (_) {
+      return e.json(404, {
+        error: 'A coleção "' + colecaoNome + '" não existe neste banco de dados.',
+      })
+    }
+
+    // Campos válidos da coleção destino
+    var camposValidos = {}
+    if (col && col.fields) {
+      var allFields = col.fields.all()
+      for (var f = 0; f < allFields.length; f++) {
+        var fld = allFields[f]
+        camposValidos[fld.name] = {
+          name: fld.name,
+          type: fld.type,
+          required: Boolean(fld.required),
+        }
+      }
+    }
+
+    var criados = 0
+    var atualizados = 0
+    var erros = 0
+    var detalhesErros = []
+
+    for (var rIdx = 0; rIdx < registros.length; rIdx++) {
+      var item = registros[rIdx]
+      if (!item || typeof item !== 'object') {
+        erros++
+        detalhesErros.push({ indice: rIdx, erro: 'Registro nulo ou formato inválido' })
+        continue
+      }
+
+      var recordId = item.id || ''
+
+      try {
+        var rec = null
+        var isNovo = false
+
+        if (recordId) {
+          try {
+            rec = $app.findFirstRecordByData(colecaoNome, 'id', recordId)
+          } catch (_) {
+            rec = null
+          }
+        }
+
+        if (!rec) {
+          isNovo = true
+          rec = new Record(col)
+          if (recordId) {
+            rec.setId(recordId)
+          }
+        }
+
+        // Preencher os campos presentes no item que existem na coleção
+        var itemKeys = Object.keys(item)
+        for (var k = 0; k < itemKeys.length; k++) {
+          var kName = itemKeys[k]
+
+          // Preservar id se já setado
+          if (kName === 'id') continue
+
+          // Preservar created e updated quando presentes no dump
+          if (kName === 'created' || kName === 'updated') {
+            try {
+              if (item[kName]) {
+                rec.set(kName, item[kName])
+              }
+            } catch (_) {}
+            continue
+          }
+
+          // Ignorar campos de sistema internos do PocketBase que não são colunas reais
+          if (kName === 'collectionId' || kName === 'collectionName' || kName === 'expand') {
+            continue
+          }
+
+          // Se o campo existe na coleção, aplicar o valor
+          if (camposValidos[kName]) {
+            var val = item[kName]
+            rec.set(kName, val)
+          }
+        }
+
+        $app.save(rec)
+
+        if (isNovo) {
+          criados++
+        } else {
+          atualizados++
+        }
+      } catch (errRec) {
+        erros++
+        var errMsg = String(errRec?.message || errRec)
+        if (detalhesErros.length < 15) {
+          detalhesErros.push({
+            id: recordId || 'sem_id',
+            indice: rIdx,
+            erro: errMsg,
+          })
+        }
+        console.warn(
+          '[RESTAURAR_LOTE] Erro ao gravar registro na coleção ' +
+            colecaoNome +
+            ' (id=' +
+            recordId +
+            '): ' +
+            errMsg,
+        )
+      }
+    }
+
+    return e.json(200, {
+      success: erros === 0,
+      colecao: colecaoNome,
+      processados: registros.length,
+      criados: criados,
+      atualizados: atualizados,
+      erros: erros,
+      detalhes_erros: detalhesErros,
+    })
+  },
+  $apis.requireAuth(),
+)
+
+// 13.3. ENDPOINT: FINALIZAR E REGISTRAR AUDITORIA DA RESTAURAÇÃO
+// POST /backend/v1/backups/restaurar/finalizar
+routerAdd(
+  'POST',
+  '/backend/v1/backups/restaurar/finalizar',
+  (e) => {
+    var authRecord = e.auth
+    if (!authRecord) {
+      return e.json(401, { error: 'Não autorizado' })
+    }
+
+    // Checar admin inline
+    var isAdmin = false
+    try {
+      var adminMembros = $app.findRecordsByFilter(
+        'empresa_membros',
+        "usuario_id = '" + authRecord.id + "' && role = 'admin'",
+        '',
+        1,
+        0,
+      )
+      isAdmin = Boolean(adminMembros && adminMembros.length > 0)
+    } catch (_) {
+      isAdmin = false
+    }
+
+    if (!isAdmin) {
+      return e.json(403, {
+        error: 'Apenas administradores podem finalizar restaurações.',
+      })
+    }
+
+    var body = e.requestInfo().body || {}
+    var nomeArquivo = body.nome_arquivo || 'backup_restaurado.json'
+    var resumoColecoes = body.resumo_colecoes || {}
+    var totalCriados = Number(body.total_criados) || 0
+    var totalAtualizados = Number(body.total_atualizados) || 0
+    var totalErros = Number(body.total_erros) || 0
+    var duracaoMs = Number(body.duracao_ms) || 0
+
+    var usuarioNome =
+      authRecord.getString('name') || authRecord.getString('email') || 'Administrador'
+
+    // Registrar no historico_alteracoes
+    try {
+      var histCol = $app.findCollectionByNameOrId('historico_alteracoes')
+      var recHist = new Record(histCol)
+      recHist.set('empresa_id', '6nt8u83eiyzf6xr')
+      recHist.set('colecao_origem', 'outros')
+      recHist.set('registro_id', 'restauracao_' + Date.now())
+      recHist.set('acao', 'editar')
+      recHist.set('usuario_id', authRecord.id)
+      recHist.set('usuario_nome', usuarioNome)
+      recHist.set(
+        'descricao',
+        'Restauração local de backup executada a partir do arquivo "' +
+          nomeArquivo +
+          '". Criados: ' +
+          totalCriados +
+          ', Atualizados: ' +
+          totalAtualizados +
+          ', Erros: ' +
+          totalErros +
+          '.',
+      )
+      recHist.set('detalhes', {
+        nome_arquivo: nomeArquivo,
+        total_criados: totalCriados,
+        total_atualizados: totalAtualizados,
+        total_erros: totalErros,
+        duracao_ms: duracaoMs,
+        resumo_colecoes: resumoColecoes,
+        executado_em: new Date().toISOString(),
+      })
+      $app.save(recHist)
+    } catch (eHist) {
+      console.warn('[RESTAURAR_FINALIZAR] Aviso ao gravar historico:', eHist)
+    }
+
+    return e.json(200, {
+      success: true,
+      message: 'Restauração concluída e auditada com sucesso.',
+      resumo: {
+        nome_arquivo: nomeArquivo,
+        total_criados: totalCriados,
+        total_atualizados: totalAtualizados,
+        total_erros: totalErros,
+        duracao_ms: duracaoMs,
+      },
+    })
+  },
+  $apis.requireAuth(),
+)
 /* FIM HOOKS BACKUP */

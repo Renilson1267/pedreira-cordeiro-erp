@@ -26,7 +26,11 @@ import {
   FileCheck2,
   X,
   Lightbulb,
+  Upload,
+  FileUp,
+  AlertCircle,
 } from 'lucide-react'
+import { Progress } from '@/components/ui/progress'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -41,6 +45,7 @@ import {
   BackupItem,
   BackupAgendamentoInfo,
   GoogleDriveStatusInfo,
+  ValidarBackupResponse,
 } from '@/services/backup'
 import {
   Dialog,
@@ -109,6 +114,33 @@ export function Backups() {
   const [desconectandoOAuth, setDesconectandoOAuth] = useState(false)
   const [redirectUriExibida, setRedirectUriExibida] = useState('')
   const [uriCopiada, setUriCopiada] = useState(false)
+
+  // Estados da Restauração Local de Backup
+  const [validandoArquivo, setValidandoArquivo] = useState(false)
+  const [modalRestauracaoAberta, setModalRestauracaoAberta] = useState(false)
+  const [resultadoValidacao, setResultadoValidacao] = useState<ValidarBackupResponse | null>(null)
+  const [conteudoDumpCarregado, setConteudoDumpCarregado] = useState<Record<
+    string,
+    unknown[]
+  > | null>(null)
+  const [nomeArquivoParaRestaurar, setNomeArquivoParaRestaurar] = useState('')
+  const [textoConfirmacaoRestaurar, setTextoConfirmacaoRestaurar] = useState('')
+  const [restaurando, setRestaurando] = useState(false)
+  const [progressoRestauracao, setProgressoRestauracao] = useState({
+    colecaoAtual: '',
+    indiceColecao: 0,
+    totalColecoes: 0,
+    percentual: 0,
+    registrosProcessados: 0,
+    totalRegistros: 0,
+  })
+  const [resultadoRestauracaoFinal, setResultadoRestauracaoFinal] = useState<{
+    sucesso: boolean
+    totalCriados: number
+    totalAtualizados: number
+    totalErros: number
+    detalhesColecoes: Record<string, { criados: number; atualizados: number; erros: number }>
+  } | null>(null)
 
   const carregarDados = useCallback(async () => {
     try {
@@ -729,6 +761,234 @@ export function Backups() {
     }
   }
 
+  // Manipulador do input de arquivo para restauração local
+  const selecionarArquivoRestauracao = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+
+    if (!file.name.toLowerCase().endsWith('.json')) {
+      toast({
+        title: 'Arquivo inválido',
+        description: 'Por favor, selecione um arquivo no formato JSON (.json).',
+        variant: 'destructive',
+      })
+      e.target.value = ''
+      return
+    }
+
+    try {
+      setValidandoArquivo(true)
+      setNomeArquivoParaRestaurar(file.name)
+      setTextoConfirmacaoRestaurar('')
+      setResultadoRestauracaoFinal(null)
+
+      toast({
+        title: 'Lendo arquivo...',
+        description: `Carregando ${file.name} no navegador para validação.`,
+      })
+
+      const texto = await file.text()
+      let parsed: unknown = null
+      try {
+        parsed = JSON.parse(texto)
+      } catch (parseErr) {
+        throw new Error(
+          'O arquivo selecionado não contém um JSON válido: ' +
+            (parseErr instanceof Error ? parseErr.message : 'Erro sintático'),
+        )
+      }
+
+      if (!parsed || typeof parsed !== 'object') {
+        throw new Error('Conteúdo do arquivo não é um objeto JSON válido.')
+      }
+
+      const dumpObj = parsed as { meta?: unknown; dados?: Record<string, unknown[]> }
+      const dadosExtraidos = dumpObj.dados || (dumpObj as unknown as Record<string, unknown[]>)
+      setConteudoDumpCarregado(dadosExtraidos)
+
+      // Envia ao backend para validação estrutural segura (sem gravar)
+      toast({
+        title: 'Validando estrutura...',
+        description: 'Analisando coleções, tipos e integridade no servidor.',
+      })
+
+      const validacao = await backupService.validarBackupLocal(parsed, file.name)
+      setResultadoValidacao(validacao)
+      setModalRestauracaoAberta(true)
+
+      toast({
+        title: 'Backup analisado!',
+        description: `${validacao.meta.total_registros_arquivo.toLocaleString('pt-BR')} registros e ${validacao.meta.total_colecoes_arquivo} coleções identificadas.`,
+      })
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Falha ao processar o arquivo selecionado.'
+      toast({
+        title: 'Erro na validação',
+        description: msg,
+        variant: 'destructive',
+      })
+      setResultadoValidacao(null)
+      setConteudoDumpCarregado(null)
+    } finally {
+      setValidandoArquivo(false)
+      e.target.value = ''
+    }
+  }
+
+  // Executa a restauração em lotes por coleção
+  const executarRestauracaoLocal = async () => {
+    if (!resultadoValidacao || !conteudoDumpCarregado) {
+      toast({
+        title: 'Dados ausentes',
+        description: 'Selecione e valide um arquivo de backup antes de restaurar.',
+        variant: 'destructive',
+      })
+      return
+    }
+
+    if (textoConfirmacaoRestaurar.trim() !== 'RESTAURAR') {
+      toast({
+        title: 'Confirmação obrigatória',
+        description: 'Digite exatamente "RESTAURAR" no campo de confirmação de segurança.',
+        variant: 'destructive',
+      })
+      return
+    }
+
+    const colecoes = Object.keys(conteudoDumpCarregado).filter(
+      (c) => c !== 'meta' && c !== 'dados' && Array.isArray(conteudoDumpCarregado[c]),
+    )
+
+    if (colecoes.length === 0) {
+      toast({
+        title: 'Sem dados',
+        description: 'Nenhuma coleção válida com registros foi encontrada no arquivo.',
+        variant: 'destructive',
+      })
+      return
+    }
+
+    const totalRegistrosGeral = colecoes.reduce(
+      (acc, col) => acc + (conteudoDumpCarregado[col]?.length || 0),
+      0,
+    )
+
+    setRestaurando(true)
+    const inicioMs = Date.now()
+
+    const CHUNK_SIZE = 150
+    let totalCriados = 0
+    let totalAtualizados = 0
+    let totalErros = 0
+    let registrosProcessadosAcumulados = 0
+    const resumoPorColecao: Record<
+      string,
+      { criados: number; atualizados: number; erros: number }
+    > = {}
+
+    try {
+      for (let i = 0; i < colecoes.length; i++) {
+        const colName = colecoes[i]
+        const listaRegistros = conteudoDumpCarregado[colName] || []
+        resumoPorColecao[colName] = { criados: 0, atualizados: 0, erros: 0 }
+
+        if (listaRegistros.length === 0) continue
+
+        const totalChunks = Math.ceil(listaRegistros.length / CHUNK_SIZE)
+
+        for (let ch = 0; ch < totalChunks; ch++) {
+          const fatia = listaRegistros.slice(ch * CHUNK_SIZE, (ch + 1) * CHUNK_SIZE)
+
+          setProgressoRestauracao({
+            colecaoAtual: colName,
+            indiceColecao: i + 1,
+            totalColecoes: colecoes.length,
+            percentual:
+              totalRegistrosGeral > 0
+                ? Math.min(
+                    100,
+                    Math.round((registrosProcessadosAcumulados / totalRegistrosGeral) * 100),
+                  )
+                : 0,
+            registrosProcessados: registrosProcessadosAcumulados,
+            totalRegistros: totalRegistrosGeral,
+          })
+
+          try {
+            const respLote = await backupService.restaurarLote(colName, fatia)
+            resumoPorColecao[colName].criados += respLote.criados || 0
+            resumoPorColecao[colName].atualizados += respLote.atualizados || 0
+            resumoPorColecao[colName].erros += respLote.erros || 0
+
+            totalCriados += respLote.criados || 0
+            totalAtualizados += respLote.atualizados || 0
+            totalErros += respLote.erros || 0
+          } catch (loteErr: unknown) {
+            console.error(
+              `[Restauração] Erro no lote ${ch + 1}/${totalChunks} da coleção ${colName}:`,
+              loteErr,
+            )
+            resumoPorColecao[colName].erros += fatia.length
+            totalErros += fatia.length
+          }
+
+          registrosProcessadosAcumulados += fatia.length
+        }
+      }
+
+      setProgressoRestauracao({
+        colecaoAtual: 'Concluído',
+        indiceColecao: colecoes.length,
+        totalColecoes: colecoes.length,
+        percentual: 100,
+        registrosProcessados: totalRegistrosGeral,
+        totalRegistros: totalRegistrosGeral,
+      })
+
+      const duracao = Date.now() - inicioMs
+
+      // Finaliza e audita no backend
+      try {
+        await backupService.finalizarRestauracao({
+          nome_arquivo: nomeArquivoParaRestaurar,
+          resumo_colecoes: resumoPorColecao,
+          total_criados: totalCriados,
+          total_atualizados: totalAtualizados,
+          total_erros: totalErros,
+          duracao_ms: duracao,
+        })
+      } catch (finalizaErr) {
+        console.warn('[Restauração] Aviso ao auditar finalização:', finalizaErr)
+      }
+
+      setResultadoRestauracaoFinal({
+        sucesso: totalErros === 0,
+        totalCriados,
+        totalAtualizados,
+        totalErros,
+        detalhesColecoes: resumoPorColecao,
+      })
+
+      toast({
+        title: totalErros === 0 ? 'Restauração concluída!' : 'Restauração com avisos',
+        description: `${totalCriados} registros criados, ${totalAtualizados} atualizados, ${totalErros} erros.`,
+        variant: totalErros === 0 ? 'default' : 'destructive',
+      })
+
+      await carregarDados()
+    } catch (globalErr: unknown) {
+      const msg =
+        globalErr instanceof Error ? globalErr.message : 'Falha na execução da restauração.'
+      toast({
+        title: 'Erro na restauração',
+        description: msg,
+        variant: 'destructive',
+      })
+    } finally {
+      setRestaurando(false)
+    }
+  }
+
   const backupsFiltrados = useMemo(() => {
     if (!Array.isArray(backups)) return []
     const termo = (filtroTexto || '').trim().toLowerCase()
@@ -806,6 +1066,40 @@ export function Backups() {
             Atualizar
           </Button>
 
+          {/* Input oculto para upload de backup JSON */}
+          <input
+            id="input-arquivo-backup-local"
+            type="file"
+            accept=".json,application/json"
+            className="hidden"
+            onChange={selecionarArquivoRestauracao}
+            disabled={validandoArquivo || restaurando}
+          />
+
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => {
+              const el = document.getElementById('input-arquivo-backup-local')
+              if (el) el.click()
+            }}
+            disabled={validandoArquivo || restaurando}
+            className="gap-2 border-primary/40 text-primary hover:bg-primary/10 shadow-xs"
+            title="Carregar arquivo .json do seu computador para restaurar dados"
+          >
+            {validandoArquivo ? (
+              <>
+                <RefreshCw className="h-4 w-4 animate-spin" />
+                Lendo Arquivo...
+              </>
+            ) : (
+              <>
+                <FileUp className="h-4 w-4" />
+                Restaurar do Computador
+              </>
+            )}
+          </Button>
+
           <Button
             onClick={executarBackupManual}
             disabled={executando}
@@ -826,6 +1120,99 @@ export function Backups() {
           </Button>
         </div>
       </div>
+
+      {/* Card em Destaque: Backup e Restauração 100% Local (Estratégia Definitiva) */}
+      <Card className="border-2 border-emerald-500/30 shadow-sm overflow-hidden bg-gradient-to-br from-card via-card to-emerald-500/5">
+        <div className="bg-emerald-500/10 border-b border-emerald-500/20 px-6 py-4 flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <div className="h-10 w-10 rounded-lg bg-emerald-600 text-white flex items-center justify-center shrink-0 shadow-sm">
+              <HardDrive className="h-6 w-6" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2 flex-wrap">
+                <h2 className="text-base font-semibold text-foreground">
+                  Backup e Restauração Local (Computador)
+                </h2>
+                <Badge className="bg-emerald-600 text-white text-xs gap-1 font-semibold">
+                  <CheckCircle2 className="h-3.5 w-3.5" />
+                  Estratégia Definitiva
+                </Badge>
+                <Badge
+                  variant="outline"
+                  className="text-emerald-700 dark:text-emerald-400 border-emerald-500/40 text-[10px] uppercase font-bold tracking-wider"
+                >
+                  100% Seguro no Notebook
+                </Badge>
+              </div>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                Baixe o JSON consolidado no seu notebook e restaure diretamente quando precisar, sem
+                bloqueios de nuvem ou limitações de cota.
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2 flex-wrap">
+            <Button
+              size="sm"
+              onClick={() => {
+                const el = document.getElementById('input-arquivo-backup-local')
+                if (el) el.click()
+              }}
+              disabled={validandoArquivo || restaurando}
+              className="gap-2 bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm"
+            >
+              {validandoArquivo ? (
+                <>
+                  <RefreshCw className="h-4 w-4 animate-spin" />
+                  Validando...
+                </>
+              ) : (
+                <>
+                  <Upload className="h-4 w-4" />
+                  Restaurar Backup Local (.json)
+                </>
+              )}
+            </Button>
+          </div>
+        </div>
+
+        <CardContent className="p-6">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="p-4 rounded-lg bg-background border border-border/70 space-y-1.5">
+              <div className="text-xs font-semibold text-foreground flex items-center gap-1.5">
+                <Download className="h-4 w-4 text-primary" />
+                1. Baixar JSON no seu Notebook
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Gere um backup manual ou use o agendado semanal e clique em{' '}
+                <strong>Baixar JSON</strong> na tabela abaixo para guardar cópia física off-line.
+              </p>
+            </div>
+
+            <div className="p-4 rounded-lg bg-background border border-border/70 space-y-1.5">
+              <div className="text-xs font-semibold text-foreground flex items-center gap-1.5">
+                <FileCheck2 className="h-4 w-4 text-emerald-600" />
+                2. Validação Automática de Integridade
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Ao selecionar o arquivo, o sistema confere todas as coleções, volume de registros e
+                checa conflitos antes de qualquer modificação no banco.
+              </p>
+            </div>
+
+            <div className="p-4 rounded-lg bg-background border border-border/70 space-y-1.5">
+              <div className="text-xs font-semibold text-foreground flex items-center gap-1.5">
+                <ShieldCheck className="h-4 w-4 text-amber-600" />
+                3. Restauração em Lotes Segura
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Processamento em fatias ordenadas com confirmação explícita por digitação (
+                <code>RESTAURAR</code>) e acompanhamento em tempo real.
+              </p>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
 
       {/* Card 1: Conectar sua Conta Google Pessoal via OAuth (Recomendado) */}
       <Card className="border-2 border-primary/20 shadow-sm overflow-hidden bg-gradient-to-br from-card via-card to-primary/5">
@@ -2159,6 +2546,267 @@ export function Backups() {
               </DialogFooter>
             </>
           )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Modal de Validação e Restauração Local de Backup */}
+      <Dialog
+        open={modalRestauracaoAberta}
+        onOpenChange={(open) => {
+          if (restaurando) return // Impede fechar durante restauração
+          setModalRestauracaoAberta(open)
+          if (!open) {
+            setTextoConfirmacaoRestaurar('')
+            setResultadoRestauracaoFinal(null)
+          }
+        }}
+      >
+        <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-lg text-foreground">
+              <ShieldCheck className="h-5 w-5 text-emerald-600" />
+              Restauração Local de Backup
+            </DialogTitle>
+            <DialogDescription>
+              Validação de integridade do arquivo e aplicação de dados em lote no banco.
+            </DialogDescription>
+          </DialogHeader>
+
+          {resultadoValidacao && (
+            <div className="space-y-5 py-2 text-xs">
+              {/* Alerta de perigo / aviso de segurança */}
+              <div className="p-4 rounded-lg bg-amber-500/10 border border-amber-500/30 flex items-start gap-3 text-amber-800 dark:text-amber-300">
+                <AlertTriangle className="h-5 w-5 shrink-0 text-amber-600 mt-0.5" />
+                <div className="space-y-1">
+                  <div className="font-semibold text-sm text-foreground">
+                    Aviso Crítico de Sobrescrita
+                  </div>
+                  <p className="text-xs text-muted-foreground leading-relaxed">
+                    A restauração aplicará os registros contidos no arquivo JSON. Registros
+                    existentes com o mesmo ID serão{' '}
+                    <strong className="text-foreground">atualizados/sobrescritos</strong> e
+                    registros inexistentes serão criados.
+                  </p>
+                </div>
+              </div>
+
+              {/* Metadados do Arquivo */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 bg-muted/40 p-3 rounded-lg border">
+                <div>
+                  <span className="text-muted-foreground block text-[11px]">Arquivo:</span>
+                  <strong
+                    className="text-foreground truncate block font-mono"
+                    title={nomeArquivoParaRestaurar}
+                  >
+                    {nomeArquivoParaRestaurar}
+                  </strong>
+                </div>
+                <div>
+                  <span className="text-muted-foreground block text-[11px]">Data do Backup:</span>
+                  <strong className="text-foreground">
+                    {resultadoValidacao.meta.criado_em
+                      ? formatDateTime(resultadoValidacao.meta.criado_em)
+                      : 'Não especificada'}
+                  </strong>
+                </div>
+                <div>
+                  <span className="text-muted-foreground block text-[11px]">Coleções:</span>
+                  <strong className="text-foreground font-semibold">
+                    {resultadoValidacao.meta.total_colecoes_arquivo}
+                  </strong>
+                </div>
+                <div>
+                  <span className="text-muted-foreground block text-[11px]">
+                    Total de Registros:
+                  </span>
+                  <strong className="text-emerald-600 font-bold text-sm">
+                    {resultadoValidacao.meta.total_registros_arquivo.toLocaleString('pt-BR')}
+                  </strong>
+                </div>
+              </div>
+
+              {/* Lista de Coleções com Contagem e Status */}
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="font-semibold text-foreground">
+                    Coleções Identificadas no Arquivo (
+                    {resultadoValidacao.meta.total_colecoes_arquivo})
+                  </span>
+                  <Badge variant="outline" className="text-[10px]">
+                    Lotes de até 150 registros
+                  </Badge>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2 max-h-48 overflow-y-auto p-2 bg-background border rounded-md">
+                  {Object.entries(resultadoValidacao.colecoes).map(([col, info]) => (
+                    <div
+                      key={col}
+                      className="p-2 rounded bg-muted/40 border border-border/60 flex flex-col justify-between"
+                    >
+                      <div className="flex items-center justify-between font-mono text-[11px]">
+                        <span className="font-semibold truncate max-w-[120px]" title={col}>
+                          {col}
+                        </span>
+                        <Badge
+                          variant={info.existe_no_banco ? 'secondary' : 'destructive'}
+                          className="text-[9px] h-4 px-1"
+                        >
+                          {info.existe_no_banco ? 'Banco OK' : 'Não Existe'}
+                        </Badge>
+                      </div>
+                      <div className="mt-1 flex items-center justify-between text-[11px] text-muted-foreground">
+                        <span>Registros:</span>
+                        <span className="font-bold text-foreground">
+                          {info.total_registros.toLocaleString('pt-BR')}
+                        </span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Área de Progresso durante a Restauração */}
+              {restaurando && (
+                <div className="p-4 rounded-lg bg-primary/5 border border-primary/20 space-y-3">
+                  <div className="flex items-center justify-between text-xs font-semibold text-foreground">
+                    <span className="flex items-center gap-2">
+                      <RefreshCw className="h-4 w-4 text-primary animate-spin" />
+                      Restaurando coleção:{' '}
+                      <code className="text-primary">{progressoRestauracao.colecaoAtual}</code> (
+                      {progressoRestauracao.indiceColecao} de {progressoRestauracao.totalColecoes})
+                    </span>
+                    <span>{progressoRestauracao.percentual}%</span>
+                  </div>
+
+                  <Progress value={progressoRestauracao.percentual} className="h-2.5" />
+
+                  <div className="text-[11px] text-muted-foreground flex justify-between">
+                    <span>
+                      Processando em lotes fracionados para preservar a estabilidade da JSVM...
+                    </span>
+                    <span>
+                      {progressoRestauracao.registrosProcessados.toLocaleString('pt-BR')} /{' '}
+                      {progressoRestauracao.totalRegistros.toLocaleString('pt-BR')} registros
+                    </span>
+                  </div>
+                </div>
+              )}
+
+              {/* Resultado Final após Conclusão */}
+              {resultadoRestauracaoFinal && (
+                <div
+                  className={`p-4 rounded-lg border space-y-3 ${
+                    resultadoRestauracaoFinal.sucesso
+                      ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-800 dark:text-emerald-300'
+                      : 'bg-amber-500/10 border-amber-500/30 text-amber-800 dark:text-amber-300'
+                  }`}
+                >
+                  <div className="flex items-center gap-2 font-semibold text-sm">
+                    {resultadoRestauracaoFinal.sucesso ? (
+                      <CheckCircle2 className="h-5 w-5 text-emerald-600 shrink-0" />
+                    ) : (
+                      <AlertCircle className="h-5 w-5 text-amber-600 shrink-0" />
+                    )}
+                    {resultadoRestauracaoFinal.sucesso
+                      ? 'Restauração Finalizada com Êxito Total!'
+                      : 'Restauração Concluída com Alguns Erros'}
+                  </div>
+
+                  <div className="grid grid-cols-3 gap-2 text-center text-xs">
+                    <div className="bg-background/80 p-2 rounded border">
+                      <div className="text-[10px] text-muted-foreground">Criados</div>
+                      <div className="font-bold text-emerald-600 text-sm">
+                        {resultadoRestauracaoFinal.totalCriados.toLocaleString('pt-BR')}
+                      </div>
+                    </div>
+                    <div className="bg-background/80 p-2 rounded border">
+                      <div className="text-[10px] text-muted-foreground">Atualizados</div>
+                      <div className="font-bold text-blue-600 text-sm">
+                        {resultadoRestauracaoFinal.totalAtualizados.toLocaleString('pt-BR')}
+                      </div>
+                    </div>
+                    <div className="bg-background/80 p-2 rounded border">
+                      <div className="text-[10px] text-muted-foreground">Erros</div>
+                      <div
+                        className={`font-bold text-sm ${
+                          resultadoRestauracaoFinal.totalErros > 0
+                            ? 'text-destructive'
+                            : 'text-foreground'
+                        }`}
+                      >
+                        {resultadoRestauracaoFinal.totalErros.toLocaleString('pt-BR')}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Confirmação Segura por Digitação */}
+              {!resultadoRestauracaoFinal && (
+                <div className="p-4 rounded-lg bg-muted/40 border space-y-2">
+                  <Label
+                    htmlFor="input-confirmar-restauracao"
+                    className="text-xs font-semibold text-foreground"
+                  >
+                    Confirmação de Segurança Requerida:
+                  </Label>
+                  <p className="text-[11px] text-muted-foreground">
+                    Para confirmar que deseja aplicar estes dados ao banco de produção, digite
+                    exatamente <strong className="text-destructive font-mono">RESTAURAR</strong> no
+                    campo abaixo:
+                  </p>
+                  <div className="flex items-center gap-2">
+                    <Input
+                      id="input-confirmar-restauracao"
+                      placeholder="Digite RESTAURAR para liberar o botão"
+                      value={textoConfirmacaoRestaurar}
+                      onChange={(e) => setTextoConfirmacaoRestaurar(e.target.value)}
+                      disabled={restaurando}
+                      className="font-mono text-xs uppercase"
+                    />
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button
+              variant="outline"
+              onClick={() => {
+                setModalRestauracaoAberta(false)
+                setTextoConfirmacaoRestaurar('')
+                setResultadoRestauracaoFinal(null)
+              }}
+              disabled={restaurando}
+            >
+              {resultadoRestauracaoFinal ? 'Fechar' : 'Cancelar'}
+            </Button>
+
+            {!resultadoRestauracaoFinal && (
+              <Button
+                onClick={executarRestauracaoLocal}
+                disabled={
+                  restaurando ||
+                  textoConfirmacaoRestaurar.trim() !== 'RESTAURAR' ||
+                  !resultadoValidacao
+                }
+                className="gap-2 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold"
+              >
+                {restaurando ? (
+                  <>
+                    <RefreshCw className="h-4 w-4 animate-spin" />
+                    Restaurando Banco...
+                  </>
+                ) : (
+                  <>
+                    <ShieldCheck className="h-4 w-4" />
+                    Confirmar e Restaurar Banco
+                  </>
+                )}
+              </Button>
+            )}
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>
