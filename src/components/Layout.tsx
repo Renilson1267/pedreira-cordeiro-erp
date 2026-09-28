@@ -5,6 +5,7 @@ import { useAuth } from '@/contexts/AuthContext'
 import { useCompany } from '@/contexts/CompanyContext'
 import { CompanySwitcherModal } from '@/components/CompanySwitcherModal'
 import { GlobalSearchModal } from '@/components/GlobalSearchModal'
+import { HelpFloatingButton } from '@/components/HelpFloatingButton'
 import { getInitials } from '@/lib/formatters'
 import {
   DropdownMenu,
@@ -443,6 +444,9 @@ export default function Layout() {
       {/* Modals */}
       <CompanySwitcherModal open={switcherOpen} onOpenChange={setSwitcherOpen} />
       <GlobalSearchModal open={searchOpen} onOpenChange={setSearchOpen} />
+
+      {/* Botão de Ajuda Flutuante Contextual */}
+      <HelpFloatingButton />
     </div>
   )
 }
