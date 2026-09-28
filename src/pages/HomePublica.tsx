@@ -1,6 +1,12 @@
 import React, { useState } from 'react'
 import { Link } from 'react-router-dom'
-import { INSTITUCIONAL_CONFIG, PRODUTOS_PEDREIRA, ProdutoPedreiraItem } from '@/data/institucional'
+import {
+  INSTITUCIONAL_CONFIG,
+  PRODUTOS_PEDREIRA,
+  ProdutoPedreiraItem,
+  UNIDADES_GC,
+  SERVICOS_GC,
+} from '@/data/institucional'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -30,7 +36,6 @@ import {
   Building2,
   Sparkles,
   LogIn,
-  Send,
   MessageCircle,
   Target,
   Eye,
@@ -38,6 +43,10 @@ import {
   Play,
   Image as ImageIcon,
   Check,
+  Wrench,
+  Flame,
+  Boxes,
+  Compass,
 } from 'lucide-react'
 
 export default function HomePublica() {
@@ -45,20 +54,23 @@ export default function HomePublica() {
   const [nome, setNome] = useState('')
   const [telefone, setTelefone] = useState('')
   const [email, setEmail] = useState('')
-  const [produto, setProduto] = useState('Brita 1 2')
+  const [produto, setProduto] = useState('Concreto Usinado GC Mix')
   const [quantidade, setQuantidade] = useState('')
   const [mensagem, setMensagem] = useState('')
+
+  // Modalidade de foto expandida na galeria
+  const [fotoAtiva, setFotoAtiva] = useState<string | null>(null)
 
   // Feedback e erros
   const [erros, setErros] = useState<{ nome?: string; telefone?: string }>({})
   const [statusConfirmacao, setStatusConfirmacao] = useState<string | null>(null)
 
   // Rolagem suave até o formulário
-  const rolarParaOrcamento = (produtoPreSelecionado?: string) => {
+  const rolarParaSecao = (id: string, produtoPreSelecionado?: string) => {
     if (produtoPreSelecionado) {
       setProduto(produtoPreSelecionado)
     }
-    const el = document.getElementById('orcamento')
+    const el = document.getElementById(id)
     if (el) {
       el.scrollIntoView({ behavior: 'smooth' })
     }
@@ -80,16 +92,16 @@ export default function HomePublica() {
   // Montagem do texto do orçamento
   const montarTextoOrcamento = (): string => {
     const linhas = [
-      `*SOLICITAÇÃO DE ORÇAMENTO — PEDREIRA CORDEIRO*`,
+      `*SOLICITAÇÃO DE ORÇAMENTO — ${INSTITUCIONAL_CONFIG.nomeFantasia.toUpperCase()}*`,
       `----------------------------------------`,
       `*Nome/Empresa:* ${nome.trim()}`,
       `*Telefone/WhatsApp:* ${telefone.trim()}`,
       email.trim() ? `*E-mail:* ${email.trim()}` : null,
-      `*Produto de interesse:* ${produto}`,
-      quantidade.trim() ? `*Quantidade estimada:* ${quantidade.trim()}` : null,
+      `*Produto/Serviço:* ${produto}`,
+      quantidade.trim() ? `*Quantidade/Local da Obra:* ${quantidade.trim()}` : null,
       mensagem.trim() ? `*Mensagem/Detalhes:* ${mensagem.trim()}` : null,
       `----------------------------------------`,
-      `Enviado via pedreiracordeiro.com.br`,
+      `Enviado via ${INSTITUCIONAL_CONFIG.site}`,
     ].filter(Boolean)
 
     return linhas.join('\n')
@@ -127,43 +139,60 @@ export default function HomePublica() {
   }
 
   return (
-    <div className="min-h-screen bg-[#FAF9F7] text-gray-800 font-sans selection:bg-teal-100 selection:text-teal-900">
+    <div className="min-h-screen bg-[#F8FAFC] text-slate-800 font-sans selection:bg-[#1E40AF] selection:text-white">
       {/* Barra superior de utilidades / institucional */}
-      <div className="bg-slate-900 text-slate-300 text-xs py-2 px-4 border-b border-slate-800">
+      <div className="bg-[#0A1A3B] text-slate-300 text-xs py-2 px-4 border-b border-[#1A2E56]">
         <div className="max-w-7xl mx-auto flex flex-col sm:flex-row justify-between items-center gap-2">
           <div className="flex items-center gap-4 flex-wrap justify-center sm:justify-start">
             <span className="flex items-center gap-1.5 font-medium text-slate-200">
-              <MapPin className="w-3.5 h-3.5 text-teal-400" />
+              <MapPin className="w-3.5 h-3.5 text-[#38BDF8]" />
               {INSTITUCIONAL_CONFIG.localizacao}
             </span>
             <span className="hidden md:inline text-slate-600">•</span>
             <span className="hidden md:flex items-center gap-1.5">
-              <Clock className="w-3.5 h-3.5 text-teal-400" />
+              <Clock className="w-3.5 h-3.5 text-[#38BDF8]" />
               {INSTITUCIONAL_CONFIG.horarioAtendimento}
             </span>
+            <span className="hidden lg:inline text-slate-600">•</span>
+            <a
+              href={INSTITUCIONAL_CONFIG.telefoneTelLink}
+              className="hidden lg:flex items-center gap-1.5 text-amber-300 font-semibold hover:text-amber-200"
+            >
+              <Phone className="w-3.5 h-3.5" />
+              Central 0800: {INSTITUCIONAL_CONFIG.telefoneFormatado}
+            </a>
           </div>
 
           <div className="flex items-center gap-4">
-            <span className="text-[11px] text-slate-400">CNPJ: {INSTITUCIONAL_CONFIG.cnpj}</span>
+            <a
+              href={INSTITUCIONAL_CONFIG.whatsappUrlConcreto}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="hidden sm:inline-flex items-center gap-1 font-semibold text-emerald-400 hover:text-emerald-300 transition-colors"
+            >
+              <MessageCircle className="w-3.5 h-3.5" />
+              WhatsApp: {INSTITUCIONAL_CONFIG.whatsappNumeroFormatado}
+            </a>
+            <span className="hidden sm:inline text-slate-700">|</span>
             <Link
               to="/login"
-              className="inline-flex items-center gap-1 font-semibold text-teal-400 hover:text-teal-300 transition-colors"
+              className="inline-flex items-center gap-1.5 font-semibold text-[#60A5FA] hover:text-white transition-colors bg-[#1E3A8A]/50 hover:bg-[#1E3A8A] px-2.5 py-1 rounded-md border border-[#2563EB]/40"
             >
               <LogIn className="w-3 h-3" />
-              Entrar no Sistema
+              Sou colaborador
             </Link>
           </div>
         </div>
       </div>
 
       {/* Header de Navegação */}
-      <header className="sticky top-0 z-40 bg-white/95 backdrop-blur-md border-b border-[#ECEAE4] shadow-xs">
+      <header className="sticky top-0 z-40 bg-white/95 backdrop-blur-md border-b border-blue-100 shadow-xs">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-20 flex items-center justify-between">
-          {/* Logo & Marca */}
-          <div className="flex items-center gap-3">
-            <div className="w-11 h-11 rounded-xl bg-teal-700 flex items-center justify-center text-white shadow-md shadow-teal-700/20">
+          {/* Logo & Marca em Azul Munique */}
+          <a href="#" className="flex items-center gap-3 group">
+            <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-[#1E3A8A] via-[#1D4ED8] to-[#0A2540] flex items-center justify-center text-white shadow-md shadow-blue-900/20 group-hover:scale-105 transition-transform">
               <svg
-                className="w-6 h-6"
+                className="w-6 h-6 text-white"
                 viewBox="0 0 24 24"
                 fill="none"
                 stroke="currentColor"
@@ -175,33 +204,48 @@ export default function HomePublica() {
               </svg>
             </div>
             <div>
-              <span className="text-xl font-bold tracking-tight text-gray-900 block leading-tight">
-                Pedreira Cordeiro
-              </span>
-              <span className="text-[11px] text-teal-700 font-bold uppercase tracking-wider block">
-                {INSTITUCIONAL_CONFIG.nomeFantasia}
+              <div className="flex items-baseline gap-1.5">
+                <span className="text-xl font-black tracking-tight text-[#0A2540]">
+                  GC do Amaral
+                </span>
+                <span className="text-xs font-bold px-1.5 py-0.5 rounded bg-[#1D4ED8] text-white">
+                  GC MIX
+                </span>
+              </div>
+              <span className="text-[11px] text-[#1D4ED8] font-bold uppercase tracking-wider block">
+                Pedreira Cordeiro • C M Lokotrack
               </span>
             </div>
-          </div>
+          </a>
 
           {/* Links desktop */}
-          <nav className="hidden md:flex items-center gap-6 lg:gap-8 text-sm font-medium text-gray-600">
-            <a href="#produtos" className="hover:text-teal-700 transition-colors">
-              Produtos
+          <nav className="hidden lg:flex items-center gap-6 xl:gap-7 text-sm font-semibold text-slate-700">
+            <a href="#servicos" className="hover:text-[#1D4ED8] transition-colors">
+              O que fazemos
             </a>
-            <a href="#missao-visao" className="hover:text-teal-700 transition-colors">
-              Missão & Valores
+            <a
+              href="#cm-lokotrack"
+              className="text-[#1D4ED8] hover:text-[#1E3A8A] transition-colors flex items-center gap-1 font-bold"
+            >
+              <Sparkles className="w-3.5 h-3.5 text-amber-500" />
+              Britador Lokotrack
             </a>
-            <a href="#sobre" className="hover:text-teal-700 transition-colors">
-              A Pedreira
+            <a href="#pedreira" className="hover:text-[#1D4ED8] transition-colors">
+              Pedreira Cordeiro
             </a>
-            <a href="#video" className="hover:text-teal-700 transition-colors">
-              Vídeo
+            <a href="#produtos" className="hover:text-[#1D4ED8] transition-colors">
+              Agregados
             </a>
-            <a href="#galeria" className="hover:text-teal-700 transition-colors">
-              Fotos Reais
+            <a href="#unidades" className="hover:text-[#1D4ED8] transition-colors">
+              Unidades
             </a>
-            <a href="#contato" className="hover:text-teal-700 transition-colors">
+            <a href="#sobre" className="hover:text-[#1D4ED8] transition-colors">
+              Quem somos
+            </a>
+            <a href="#galeria" className="hover:text-[#1D4ED8] transition-colors">
+              Fotos
+            </a>
+            <a href="#contato" className="hover:text-[#1D4ED8] transition-colors">
               Contato
             </a>
           </nav>
@@ -210,15 +254,15 @@ export default function HomePublica() {
           <div className="flex items-center gap-3">
             <Link
               to="/login"
-              className="hidden sm:inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-2 rounded-xl text-gray-700 hover:text-teal-700 hover:bg-gray-100 transition-colors border border-transparent hover:border-[#ECEAE4]"
+              className="hidden sm:inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-2 rounded-xl text-slate-700 hover:text-[#1D4ED8] hover:bg-blue-50 transition-colors border border-transparent hover:border-blue-200"
             >
-              <LogIn className="w-4 h-4 text-gray-500" />
-              Entrar no ERP
+              <LogIn className="w-4 h-4 text-[#1D4ED8]" />
+              Área Restrita
             </Link>
 
             <Button
-              onClick={() => rolarParaOrcamento()}
-              className="bg-teal-700 hover:bg-teal-800 text-white shadow-md shadow-teal-700/20 rounded-xl px-4 py-2 font-semibold text-sm"
+              onClick={() => rolarParaSecao('orcamento')}
+              className="bg-gradient-to-r from-[#1E3A8A] via-[#1D4ED8] to-[#2563EB] hover:from-[#172554] hover:to-[#1E40AF] text-white shadow-md shadow-blue-800/25 rounded-xl px-5 py-2.5 font-bold text-sm transition-all hover:scale-[1.02]"
             >
               Pedir Orçamento
             </Button>
@@ -227,77 +271,85 @@ export default function HomePublica() {
       </header>
 
       <main>
-        {/* HERO SECTION */}
-        <section className="relative overflow-hidden pt-12 pb-20 lg:pt-20 lg:pb-28 bg-gradient-to-b from-white via-[#FAF9F7] to-[#F4F1EA] border-b border-[#ECEAE4]">
-          {/* Formas decorativas no fundo */}
-          <div className="absolute top-0 right-0 -mr-20 -mt-20 w-96 h-96 rounded-full bg-teal-100/50 blur-3xl pointer-events-none" />
-          <div className="absolute bottom-0 left-0 -ml-20 -mb-20 w-80 h-80 rounded-full bg-amber-100/40 blur-3xl pointer-events-none" />
+        {/* HERO SECTION EM AZUL MUNIQUE DOMINANTE */}
+        <section className="relative overflow-hidden pt-12 pb-20 lg:pt-20 lg:pb-28 bg-gradient-to-br from-[#0A2540] via-[#113264] to-[#1E3A8A] text-white border-b border-[#1E3A8A]">
+          {/* Efeitos de iluminação azul profunda */}
+          <div className="absolute top-0 right-0 -mr-24 -mt-24 w-[36rem] h-[36rem] rounded-full bg-[#2563EB]/25 blur-3xl pointer-events-none" />
+          <div className="absolute bottom-0 left-0 -ml-24 -mb-24 w-[32rem] h-[32rem] rounded-full bg-[#38BDF8]/20 blur-3xl pointer-events-none" />
+          <div className="absolute inset-0 bg-[radial-gradient(#60A5FA_1px,transparent_1px)] [background-size:24px_24px] opacity-10 pointer-events-none" />
 
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-12 items-center">
+              {/* Coluna Texto */}
               <div className="lg:col-span-7 space-y-6 text-center lg:text-left">
-                <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-teal-50 border border-teal-200 text-teal-800 text-xs font-semibold">
-                  <Sparkles className="w-3.5 h-3.5 text-teal-600" />
-                  Mineração de Agregados para Construção Civil e Infraestrutura
+                <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-[#1E40AF]/60 border border-[#60A5FA]/30 text-[#93C5FD] text-xs font-bold uppercase tracking-wider backdrop-blur-md">
+                  <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                  Atendendo Paraíba • Pernambuco • Rio Grande do Norte
                 </div>
 
-                <h1 className="text-4xl sm:text-5xl lg:text-6xl font-extrabold text-gray-900 tracking-tight leading-[1.15]">
-                  Pedra de qualidade para sua obra.{' '}
-                  <span className="text-teal-700 block mt-1">
-                    Direto da fonte, com pontualidade.
+                <h1 className="text-4xl sm:text-5xl lg:text-6xl font-black text-white tracking-tight leading-[1.12]">
+                  Concreto usinado e agregados de qualidade para a sua obra no{' '}
+                  <span className="text-transparent bg-clip-text bg-gradient-to-r from-[#60A5FA] via-[#93C5FD] to-amber-300 italic font-serif">
+                    sertão
                   </span>
                 </h1>
 
-                <p className="text-lg sm:text-xl text-gray-600 max-w-2xl mx-auto lg:mx-0 leading-relaxed font-normal">
-                  Fornecimento contínuo de <strong>Brita 1 2</strong>, <strong>Brita 1 9</strong>,{' '}
-                  <strong>Pedra Rachão</strong>, <strong>Pó de Pedra</strong> e{' '}
-                  <strong>Cascalhinho</strong> para construtoras, usinas de concreto, prefeituras e
-                  obras particulares em toda a região.
+                <p className="text-lg sm:text-xl text-blue-100 max-w-2xl mx-auto lg:mx-0 leading-relaxed font-normal">
+                  <strong>5 unidades</strong> e <strong>1 pedreira própria</strong> atendendo
+                  Paraíba, Pernambuco e Rio Grande do Norte com agilidade, dosagem controlada e
+                  entrega no prazo.
                 </p>
 
+                {/* CTAs do Hero */}
                 <div className="pt-2 flex flex-col sm:flex-row items-center justify-center lg:justify-start gap-4">
-                  <Button
-                    size="lg"
-                    onClick={() => rolarParaOrcamento()}
-                    className="w-full sm:w-auto bg-teal-700 hover:bg-teal-800 text-white font-semibold text-base px-7 py-6 rounded-xl shadow-lg shadow-teal-700/25 transition-all hover:-translate-y-0.5"
+                  <a
+                    href={INSTITUCIONAL_CONFIG.telefoneTelLink}
+                    className="w-full sm:w-auto inline-flex items-center justify-center gap-2 bg-amber-400 hover:bg-amber-300 text-slate-950 font-black text-base px-6 py-4 rounded-xl shadow-lg shadow-amber-500/30 transition-all hover:-translate-y-0.5"
                   >
-                    Pedir Orçamento Agora
-                    <ArrowRight className="w-5 h-5 ml-2" />
-                  </Button>
+                    <Phone className="w-5 h-5" />
+                    Ligar: {INSTITUCIONAL_CONFIG.telefoneFormatado}
+                  </a>
 
-                  <Link
-                    to="/login"
-                    className="w-full sm:w-auto inline-flex items-center justify-center px-6 py-3.5 rounded-xl border border-gray-300 hover:border-teal-600 bg-white text-gray-700 hover:text-teal-700 text-sm font-semibold shadow-xs transition-colors"
+                  <a
+                    href={INSTITUCIONAL_CONFIG.whatsappUrlConcreto}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="w-full sm:w-auto inline-flex items-center justify-center gap-2 bg-[#2563EB] hover:bg-[#1D4ED8] text-white font-bold text-base px-6 py-4 rounded-xl shadow-lg shadow-blue-600/30 transition-all hover:-translate-y-0.5 border border-blue-400/40"
                   >
-                    <LogIn className="w-4 h-4 mr-2 text-teal-600" />
-                    Sou colaborador (Entrar no Sistema)
-                  </Link>
+                    <MessageCircle className="w-5 h-5 text-emerald-300" />
+                    Chamar no WhatsApp
+                  </a>
+
+                  <a
+                    href="#galeria"
+                    className="w-full sm:w-auto inline-flex items-center justify-center gap-1.5 text-sm font-semibold text-blue-200 hover:text-white px-4 py-3 rounded-xl border border-blue-400/20 hover:border-blue-300/40 hover:bg-white/5 transition-colors"
+                  >
+                    Ver nossas fotos
+                    <ArrowRight className="w-4 h-4 text-blue-300" />
+                  </a>
                 </div>
 
-                {/* Métricas / Badges rápidos */}
-                <div className="pt-6 border-t border-gray-200/80 grid grid-cols-3 gap-4 max-w-lg mx-auto lg:mx-0 text-center lg:text-left">
-                  <div>
-                    <div className="text-2xl font-bold text-gray-900 font-mono">5</div>
-                    <div className="text-xs text-gray-500 font-medium">Produtos Padronizados</div>
-                  </div>
-                  <div>
-                    <div className="text-2xl font-bold text-gray-900 font-mono">100%</div>
-                    <div className="text-xs text-gray-500 font-medium">
-                      Frota & Logística Própria
+                {/* Stats do Hero do site antigo */}
+                <div className="pt-8 border-t border-blue-400/20 grid grid-cols-2 sm:grid-cols-4 gap-4 max-w-xl mx-auto lg:mx-0 text-center lg:text-left">
+                  {INSTITUCIONAL_CONFIG.statsHero.map((stat, i) => (
+                    <div
+                      key={i}
+                      className="bg-white/5 p-3 rounded-xl border border-white/10 backdrop-blur-xs"
+                    >
+                      <div className="text-3xl font-black text-white font-mono tracking-tight text-amber-300">
+                        {stat.valor}
+                      </div>
+                      <div className="text-xs text-blue-200 font-medium leading-tight mt-0.5">
+                        {stat.label}
+                      </div>
                     </div>
-                  </div>
-                  <div>
-                    <div className="text-2xl font-bold text-teal-700 font-mono">Sertânia-PE</div>
-                    <div className="text-xs text-gray-500 font-medium">
-                      Base de Produção Regional
-                    </div>
-                  </div>
+                  ))}
                 </div>
               </div>
 
-              {/* Card visual / Ilustração Hero com foto aérea REAL */}
+              {/* Card visual Hero com foto da pedreira / usina */}
               <div className="lg:col-span-5">
-                <div className="relative rounded-3xl overflow-hidden border border-[#ECEAE4] bg-white shadow-2xl p-4 sm:p-6 space-y-5">
+                <div className="relative rounded-3xl overflow-hidden border border-blue-300/20 bg-white/10 backdrop-blur-md shadow-2xl p-4 sm:p-5 space-y-4">
                   <div className="relative h-64 sm:h-80 rounded-2xl overflow-hidden group">
                     <img
                       src={INSTITUCIONAL_CONFIG.fotosReais.heroAerea}
@@ -306,70 +358,510 @@ export default function HomePublica() {
                       loading="eager"
                     />
                     <div className="absolute top-3 right-3">
-                      <span className="bg-slate-900/85 backdrop-blur-xs text-white text-[10px] font-semibold px-2.5 py-1 rounded-full border border-white/20 shadow-xs flex items-center gap-1">
+                      <span className="bg-[#0A2540]/85 backdrop-blur-xs text-white text-[10px] font-semibold px-2.5 py-1 rounded-full border border-blue-400/30 shadow-xs flex items-center gap-1.5">
                         <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-                        Foto Real da Pedreira
+                        Foto Real da Jazida
                       </span>
                     </div>
-                    <div className="absolute inset-0 bg-gradient-to-t from-gray-950/85 via-gray-950/20 to-transparent flex items-end p-5">
+                    <div className="absolute inset-0 bg-gradient-to-t from-[#0A2540]/90 via-[#0A2540]/30 to-transparent flex items-end p-5">
                       <div>
-                        <span className="text-[11px] font-bold uppercase tracking-wider text-teal-300 bg-teal-950/80 px-2 py-0.5 rounded">
-                          Vista Aérea Oficial • Jazida e Pátio
+                        <span className="text-[11px] font-black uppercase tracking-wider text-amber-300 bg-[#0A2540]/80 px-2 py-0.5 rounded border border-amber-400/30">
+                          Patos — PB • Matriz
                         </span>
-                        <h3 className="text-lg font-bold text-white mt-1 leading-snug">
-                          Pedreira Cordeiro & Central de Britagem
+                        <h3 className="text-lg font-extrabold text-white mt-1 leading-snug">
+                          Pedreira Cordeiro & Usina GC Mix
                         </h3>
-                        <p className="text-xs text-slate-300 mt-0.5">
-                          Produção em larga escala com britagem contínua e abastecimento regional
+                        <p className="text-xs text-blue-200 mt-0.5">
+                          Agregados e concreto usinado com controle de qualidade e pontualidade
                         </p>
                       </div>
                     </div>
                   </div>
-                  <div className="space-y-3">
-                    <div className="flex items-center justify-between text-xs text-gray-500 pb-2 border-b border-gray-100">
-                      <span>Modalidade de fornecimento</span>
-                      <strong className="text-gray-800">Carga fechada ou fracionada</strong>
+
+                  <div className="grid grid-cols-2 gap-3 text-xs">
+                    <div className="bg-[#0A2540]/70 p-3 rounded-xl border border-blue-400/20">
+                      <div className="text-blue-300 font-medium text-[11px]">Concreto Usinado</div>
+                      <div className="text-white font-bold text-sm mt-0.5">GC Mix Sertão</div>
+                      <div className="text-[10px] text-blue-200">Traços e laudos técnicos</div>
                     </div>
-                    <div className="flex items-center justify-between text-xs text-gray-500 pb-2 border-b border-gray-100">
-                      <span>Pesagem & Romaneio</span>
-                      <strong className="text-teal-700">Controle rigoroso por m³ e Ton</strong>
-                    </div>
-                    <div className="flex items-center justify-between text-xs text-gray-500">
-                      <span>Canais de Atendimento</span>
-                      <strong className="text-gray-800">WhatsApp & E-mail Comercial</strong>
+                    <div className="bg-[#0A2540]/70 p-3 rounded-xl border border-blue-400/20">
+                      <div className="text-blue-300 font-medium text-[11px]">Britador Móvel</div>
+                      <div className="text-amber-300 font-bold text-sm mt-0.5">Lokotrack C M</div>
+                      <div className="text-[10px] text-blue-200">Esmagamento na obra</div>
                     </div>
                   </div>
 
-                  <button
-                    onClick={() => rolarParaOrcamento()}
-                    className="w-full py-3 bg-amber-50 hover:bg-amber-100 border border-amber-200 text-amber-900 rounded-xl text-xs font-semibold flex items-center justify-center gap-2 transition-colors cursor-pointer"
+                  <a
+                    href="#cm-lokotrack"
+                    className="w-full py-3 bg-gradient-to-r from-amber-400 to-amber-500 hover:from-amber-300 hover:to-amber-400 text-slate-950 rounded-xl text-xs font-black flex items-center justify-center gap-2 transition-all shadow-md cursor-pointer"
                   >
-                    <span>Consulte tabela e frete para sua cidade</span>
-                    <ChevronDown className="w-4 h-4" />
-                  </button>
+                    <span>Conheça a locação do Britador Móvel Lokotrack</span>
+                    <ArrowRight className="w-4 h-4" />
+                  </a>
                 </div>
               </div>
             </div>
           </div>
         </section>
 
-        {/* SEÇÃO PRODUTOS (Exatamente os 5 sob consulta) */}
-        <section id="produtos" className="py-20 bg-white">
+        {/* CALLOUT DESTAQUE: C M CONSTRUÇÕES / LOKOTRACK NO TOPO (Como no site antigo) */}
+        <section className="bg-gradient-to-r from-[#172554] via-[#1E3A8A] to-[#1E40AF] text-white py-6 px-4 border-b border-blue-700/50">
+          <div className="max-w-7xl mx-auto flex flex-col md:flex-row items-center justify-between gap-4">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-amber-400 text-slate-950 flex items-center justify-center shrink-0 font-black shadow-md">
+                <Wrench className="w-5 h-5" />
+              </div>
+              <div>
+                <span className="text-[11px] uppercase tracking-wider font-bold text-amber-300 block">
+                  Outra Empresa do Grupo GC do Amaral
+                </span>
+                <span className="text-base font-extrabold text-white block">
+                  C M Construções — Britador Móvel Lokotrack
+                </span>
+                <span className="text-xs text-blue-200 hidden sm:inline">
+                  Locação de britador de mandíbula móvel: esmagamos a pedra direto na sua obra, com
+                  alta produção e sem custo de transporte.
+                </span>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-3 w-full md:w-auto">
+              <a
+                href="#cm-lokotrack"
+                className="w-full md:w-auto text-center px-4 py-2.5 bg-white hover:bg-blue-50 text-[#1E3A8A] font-bold text-xs rounded-xl shadow-xs transition-colors shrink-0"
+              >
+                Conhecer o Lokotrack →
+              </a>
+              <a
+                href={INSTITUCIONAL_CONFIG.whatsappUrlLokotrack}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="w-full md:w-auto text-center px-4 py-2.5 bg-amber-400 hover:bg-amber-300 text-slate-950 font-black text-xs rounded-xl shadow-xs transition-colors shrink-0"
+              >
+                Orçamento Lokotrack
+              </a>
+            </div>
+          </div>
+        </section>
+
+        {/* SEÇÃO O QUE FAZEMOS / SERVIÇOS (Conteúdo real do site antigo) */}
+        <section id="servicos" className="py-20 bg-white border-b border-blue-100">
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
             <div className="text-center max-w-3xl mx-auto mb-16">
               <Badge
                 variant="outline"
-                className="border-teal-600 text-teal-700 bg-teal-50 px-3 py-1 mb-3 text-xs uppercase tracking-wider font-semibold"
+                className="border-[#1D4ED8] text-[#1D4ED8] bg-blue-50 px-3 py-1 mb-3 text-xs uppercase tracking-wider font-bold"
               >
-                Catálogo Oficial de Agregados
+                Serviços do Grupo
               </Badge>
-              <h2 className="text-3xl sm:text-4xl font-extrabold text-gray-900 tracking-tight">
+              <h2 className="text-3xl sm:text-4xl font-black text-[#0A2540] tracking-tight">
+                O Que Fazemos
+              </h2>
+              <p className="mt-3 text-base sm:text-lg text-slate-600 leading-relaxed">
+                Do britado à dosagem do concreto — tudo com produção própria, controle de qualidade
+                e frota integrada.
+              </p>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              {SERVICOS_GC.map((servico) => (
+                <Card
+                  key={servico.id}
+                  className={`rounded-2xl border transition-all duration-300 hover:shadow-xl flex flex-col justify-between ${
+                    servico.destaque
+                      ? 'border-[#2563EB] bg-gradient-to-b from-blue-50/50 to-white shadow-md'
+                      : 'border-slate-200 bg-white hover:border-[#3B82F6]'
+                  }`}
+                >
+                  <CardContent className="p-7 space-y-4">
+                    <div className="flex items-center justify-between">
+                      <div className="w-13 h-13 rounded-2xl bg-[#1E3A8A] text-white flex items-center justify-center shadow-md shadow-blue-900/20">
+                        {servico.icone === 'concreto' && (
+                          <Building2 className="w-6 h-6 text-amber-300" />
+                        )}
+                        {servico.icone === 'betoneira' && <Truck className="w-6 h-6 text-white" />}
+                        {servico.icone === 'agregados' && (
+                          <Layers className="w-6 h-6 text-amber-300" />
+                        )}
+                        {servico.icone === 'dosagem' && <Compass className="w-6 h-6 text-white" />}
+                        {servico.icone === 'lokotrack' && (
+                          <Wrench className="w-6 h-6 text-amber-300" />
+                        )}
+                      </div>
+
+                      {servico.destaque && (
+                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-[#1D4ED8] text-white uppercase tracking-wider">
+                          Destaque
+                        </span>
+                      )}
+                    </div>
+
+                    <div>
+                      <h3 className="text-xl font-bold text-[#0A2540]">{servico.titulo}</h3>
+                      <p className="text-sm text-slate-600 mt-2 leading-relaxed">
+                        {servico.descricao}
+                      </p>
+                    </div>
+                  </CardContent>
+
+                  <div className="p-6 pt-0">
+                    {servico.link ? (
+                      <a
+                        href={servico.link}
+                        className="inline-flex items-center gap-1.5 text-xs font-bold text-[#1D4ED8] hover:text-[#1E3A8A]"
+                      >
+                        <span>Saiba mais detalhes</span>
+                        <ArrowRight className="w-3.5 h-3.5" />
+                      </a>
+                    ) : (
+                      <button
+                        onClick={() => rolarParaSecao('orcamento', servico.titulo)}
+                        className="inline-flex items-center gap-1.5 text-xs font-bold text-[#1D4ED8] hover:text-[#1E3A8A] cursor-pointer"
+                      >
+                        <span>Solicitar cotação</span>
+                        <ArrowRight className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+                  </div>
+                </Card>
+              ))}
+
+              {/* Card CTA Direto */}
+              <Card className="rounded-2xl border-none bg-gradient-to-br from-[#0A2540] via-[#1E3A8A] to-[#1D4ED8] text-white p-7 flex flex-col justify-between shadow-xl">
+                <div className="space-y-3">
+                  <span className="text-xs font-bold uppercase tracking-wider text-amber-300 block">
+                    Atendimento Imediato
+                  </span>
+                  <h3 className="text-2xl font-black">Precisa de concreto ou brita hoje?</h3>
+                  <p className="text-xs text-blue-100 leading-relaxed">
+                    Nossa equipe comercial programa o volume e o horário exato da entrega na sua
+                    obra.
+                  </p>
+                  <div className="pt-2 text-xs text-blue-200 space-y-1">
+                    <div>✓ Atendimento pelo 0800 083 1200</div>
+                    <div>✓ WhatsApp direto com consultores</div>
+                    <div>✓ 5 unidades para entrega rápida</div>
+                  </div>
+                </div>
+
+                <div className="pt-6">
+                  <a
+                    href={INSTITUCIONAL_CONFIG.whatsappUrlConcreto}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="w-full inline-flex items-center justify-center gap-2 py-3 rounded-xl bg-amber-400 hover:bg-amber-300 text-slate-950 font-black text-xs shadow-md transition-colors"
+                  >
+                    <MessageCircle className="w-4 h-4" />
+                    Chamar no WhatsApp agora
+                  </a>
+                </div>
+              </Card>
+            </div>
+          </div>
+        </section>
+
+        {/* SEÇÃO DEDICADA: C M CONSTRUÇÕES — BRITADOR MÓVEL LOKOTRACK */}
+        <section
+          id="cm-lokotrack"
+          className="py-20 bg-gradient-to-b from-[#0A2540] to-[#0F172A] text-white relative overflow-hidden"
+        >
+          <div className="absolute top-0 right-0 -mr-20 -mt-20 w-96 h-96 rounded-full bg-[#1D4ED8]/20 blur-3xl pointer-events-none" />
+          <div className="absolute bottom-0 left-0 -ml-20 -mb-20 w-80 h-80 rounded-full bg-amber-500/10 blur-3xl pointer-events-none" />
+
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
+            <div className="text-center max-w-3xl mx-auto mb-14">
+              <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-amber-400/20 border border-amber-400/40 text-amber-300 text-xs font-bold uppercase tracking-wider mb-3">
+                <Wrench className="w-3.5 h-3.5 text-amber-400" />
+                Outra empresa do grupo
+              </div>
+              <h2 className="text-3xl sm:text-5xl font-black text-white tracking-tight">
+                C M Construções — Britador Móvel Lokotrack
+              </h2>
+              <p className="mt-4 text-base sm:text-lg text-blue-100 leading-relaxed font-normal">
+                Locação de britador de mandíbula móvel <strong>Lokotrack</strong> — esmagamento de
+                pedra direto na sua obra, pedreira ou serviço, com produção alta e mobilidade total.
+              </p>
+
+              <div className="mt-6 flex flex-wrap items-center justify-center gap-4">
+                <a
+                  href={INSTITUCIONAL_CONFIG.whatsappUrlLokotrack}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-2 bg-gradient-to-r from-amber-400 to-amber-500 hover:from-amber-300 hover:to-amber-400 text-slate-950 font-black text-sm px-6 py-3.5 rounded-xl shadow-lg shadow-amber-500/25 transition-all hover:scale-105"
+                >
+                  <MessageCircle className="w-4 h-4" />
+                  Pedir orçamento do Lokotrack
+                </a>
+
+                <button
+                  onClick={() =>
+                    rolarParaSecao('orcamento', 'Britador Móvel Lokotrack — C M Construções')
+                  }
+                  className="inline-flex items-center gap-2 bg-[#1E3A8A] hover:bg-[#1D4ED8] text-white font-bold text-sm px-6 py-3.5 rounded-xl border border-blue-400/40 transition-colors cursor-pointer"
+                >
+                  Solicitar via formulário
+                </button>
+              </div>
+            </div>
+
+            {/* Grid com Fotos Reais do Lokotrack e C M Construções */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              {/* Foto 1: Lokotrack 1 */}
+              <div className="group rounded-2xl overflow-hidden border border-blue-400/20 bg-slate-900/60 shadow-xl backdrop-blur-xs">
+                <div className="relative h-64 overflow-hidden">
+                  <img
+                    src={INSTITUCIONAL_CONFIG.fotosReais.lokotrack1}
+                    alt="Britador móvel Lokotrack — C M Construções"
+                    className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                    loading="lazy"
+                  />
+                  <div className="absolute top-3 left-3">
+                    <span className="bg-[#0A2540]/90 text-amber-300 text-[10px] font-bold px-2.5 py-1 rounded-md border border-amber-400/30">
+                      Britador Metso Lokotrack
+                    </span>
+                  </div>
+                </div>
+                <div className="p-5">
+                  <h4 className="text-base font-bold text-white">
+                    Britador Móvel Lokotrack — C M Construções
+                  </h4>
+                  <p className="text-xs text-blue-200 mt-1 leading-relaxed">
+                    Equipamento móvel de alta produção sobre esteiras para britagem no próprio local
+                    da jazida ou canteiro de obras.
+                  </p>
+                </div>
+              </div>
+
+              {/* Foto 2: Lokotrack em operação */}
+              <div className="group rounded-2xl overflow-hidden border border-blue-400/20 bg-slate-900/60 shadow-xl backdrop-blur-xs">
+                <div className="relative h-64 overflow-hidden">
+                  <img
+                    src={INSTITUCIONAL_CONFIG.fotosReais.lokotrack2}
+                    alt="Lokotrack em operação britando pedra"
+                    className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                    loading="lazy"
+                  />
+                  <div className="absolute top-3 left-3">
+                    <span className="bg-[#1D4ED8]/90 text-white text-[10px] font-bold px-2.5 py-1 rounded-md border border-blue-300/30">
+                      Em Operação
+                    </span>
+                  </div>
+                </div>
+                <div className="p-5">
+                  <h4 className="text-base font-bold text-white">Lokotrack em Operação</h4>
+                  <p className="text-xs text-blue-200 mt-1 leading-relaxed">
+                    Esmagamento de pedra direto na obra, reduzindo custos de transporte de rocha
+                    bruta e acelerando o cronograma.
+                  </p>
+                </div>
+              </div>
+
+              {/* Foto 3: Britador de mandíbula móvel */}
+              <div className="group rounded-2xl overflow-hidden border border-blue-400/20 bg-slate-900/60 shadow-xl backdrop-blur-xs">
+                <div className="relative h-64 overflow-hidden">
+                  <img
+                    src={INSTITUCIONAL_CONFIG.fotosReais.lokotrack3}
+                    alt="Britador de mandíbula móvel em operação"
+                    className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                    loading="lazy"
+                  />
+                  <div className="absolute top-3 left-3">
+                    <span className="bg-[#0A2540]/90 text-amber-300 text-[10px] font-bold px-2.5 py-1 rounded-md border border-amber-400/30">
+                      Mandíbula Móvel
+                    </span>
+                  </div>
+                </div>
+                <div className="p-5">
+                  <h4 className="text-base font-bold text-white">Britador de Mandíbula Móvel</h4>
+                  <p className="text-xs text-blue-200 mt-1 leading-relaxed">
+                    Potência industrial para desmonte e fracionamento de matacões e rocha granítica
+                    com granulometria controlada.
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {/* Linha adicional com pilhas de brita e pátio */}
+            <div className="mt-8 grid grid-cols-1 sm:grid-cols-3 gap-6">
+              <div className="group rounded-2xl overflow-hidden border border-blue-400/20 bg-slate-900/60">
+                <div className="relative h-48 overflow-hidden">
+                  <img
+                    src={INSTITUCIONAL_CONFIG.fotosReais.cmPilhas1}
+                    alt="Brita produzida pelo Lokotrack"
+                    className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                    loading="lazy"
+                  />
+                </div>
+                <div className="p-4">
+                  <div className="text-xs font-bold text-white">Brita Produzida na Obra</div>
+                  <div className="text-[11px] text-blue-200">Produção in loco pelo Lokotrack</div>
+                </div>
+              </div>
+
+              <div className="group rounded-2xl overflow-hidden border border-blue-400/20 bg-slate-900/60">
+                <div className="relative h-48 overflow-hidden">
+                  <img
+                    src={INSTITUCIONAL_CONFIG.fotosReais.cmPilhas2}
+                    alt="Pilha de brita gerada pelo Lokotrack"
+                    className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                    loading="lazy"
+                  />
+                </div>
+                <div className="p-4">
+                  <div className="text-xs font-bold text-white">Pilha de Brita Uniforme</div>
+                  <div className="text-[11px] text-blue-200">Alta produtividade por hora</div>
+                </div>
+              </div>
+
+              <div className="group rounded-2xl overflow-hidden border border-blue-400/20 bg-slate-900/60">
+                <div className="relative h-48 overflow-hidden">
+                  <img
+                    src={INSTITUCIONAL_CONFIG.fotosReais.cmPatio}
+                    alt="Pátio de brita e pó de pedra"
+                    className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                    loading="lazy"
+                  />
+                </div>
+                <div className="p-4">
+                  <div className="text-xs font-bold text-white">Pátio de Brita e Pó de Pedra</div>
+                  <div className="text-[11px] text-blue-200">Estoque pronto para carregamento</div>
+                </div>
+              </div>
+            </div>
+
+            {/* Banner de Vantagens da locação */}
+            <div className="mt-10 p-6 sm:p-8 rounded-2xl bg-gradient-to-r from-[#1E3A8A]/80 via-[#1D4ED8]/60 to-[#0A2540] border border-blue-400/30 flex flex-col md:flex-row items-center justify-between gap-6">
+              <div className="space-y-1 text-center md:text-left">
+                <h4 className="text-lg font-bold text-white">
+                  Por que alugar o Britador Móvel Lokotrack da C M Construções?
+                </h4>
+                <p className="text-xs text-blue-100">
+                  Zero frete de transporte de pedra bruta • Operação rápida no local • Capacidade
+                  para grandes volumes de britagem.
+                </p>
+              </div>
+
+              <a
+                href={INSTITUCIONAL_CONFIG.whatsappUrlLokotrack}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-2 bg-amber-400 hover:bg-amber-300 text-slate-950 font-black text-xs px-6 py-3 rounded-xl shadow-md shrink-0 transition-transform hover:scale-105"
+              >
+                <Phone className="w-3.5 h-3.5" />
+                Falar com consultor Lokotrack
+              </a>
+            </div>
+          </div>
+        </section>
+
+        {/* SEÇÃO PEDREIRA CORDEIRO (PRODUÇÃO PRÓPRIA — CONTEÚDO REAL) */}
+        <section id="pedreira" className="py-20 bg-white border-b border-blue-100">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-12 items-center">
+              <div className="lg:col-span-6 space-y-6">
+                <Badge
+                  variant="outline"
+                  className="border-[#1D4ED8] text-[#1D4ED8] bg-blue-50 px-3 py-1 text-xs uppercase tracking-wider font-bold"
+                >
+                  Produção Própria
+                </Badge>
+
+                <h2 className="text-3xl sm:text-4xl font-black text-[#0A2540] tracking-tight">
+                  Pedreira Cordeiro
+                </h2>
+
+                <p className="text-base sm:text-lg text-slate-700 leading-relaxed">
+                  Nossa pedreira própria em <strong>Patos — PB</strong> garante matéria-prima de
+                  qualidade e preço competitivo para as obras da região.
+                </p>
+
+                {/* Bullets reais do site antigo */}
+                <div className="space-y-3 pt-2">
+                  {INSTITUCIONAL_CONFIG.pedreiraDestaques.map((item, idx) => (
+                    <div
+                      key={idx}
+                      className="flex items-center gap-3 p-3.5 rounded-xl bg-blue-50/70 border border-blue-100"
+                    >
+                      <div className="w-7 h-7 rounded-lg bg-[#1D4ED8] text-white flex items-center justify-center shrink-0 shadow-xs">
+                        <Check className="w-4 h-4 font-bold" />
+                      </div>
+                      <span className="text-sm font-semibold text-[#0A2540]">{item}</span>
+                    </div>
+                  ))}
+                </div>
+
+                <div className="pt-4 flex flex-col sm:flex-row items-center gap-4">
+                  <button
+                    onClick={() => rolarParaSecao('produtos')}
+                    className="w-full sm:w-auto inline-flex items-center justify-center gap-2 bg-[#1D4ED8] hover:bg-[#1E40AF] text-white font-bold text-sm px-6 py-3.5 rounded-xl shadow-md shadow-blue-800/20 transition-colors cursor-pointer"
+                  >
+                    <Boxes className="w-4 h-4" />
+                    Ver Catálogo de Agregados
+                  </button>
+
+                  <a
+                    href={INSTITUCIONAL_CONFIG.whatsappUrlConcreto}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="w-full sm:w-auto inline-flex items-center justify-center gap-2 border border-[#1D4ED8] text-[#1D4ED8] hover:bg-blue-50 font-bold text-sm px-6 py-3.5 rounded-xl transition-colors"
+                  >
+                    <MessageCircle className="w-4 h-4 text-emerald-600" />
+                    Orçamento Direto
+                  </a>
+                </div>
+              </div>
+
+              {/* Foto real aérea da Pedreira Cordeiro */}
+              <div className="lg:col-span-6">
+                <div className="relative rounded-3xl overflow-hidden border border-blue-100 shadow-2xl bg-white">
+                  <div className="relative h-80 sm:h-96 overflow-hidden group">
+                    <img
+                      src={INSTITUCIONAL_CONFIG.fotosReais.pedreiraBritador}
+                      alt="Usina de britagem da Pedreira Cordeiro em Patos PB"
+                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700"
+                    />
+                    <div className="absolute top-3 right-3">
+                      <span className="bg-[#0A2540]/90 backdrop-blur-xs text-white text-[10px] font-bold px-3 py-1 rounded-full border border-blue-400/30 shadow-xs flex items-center gap-1.5">
+                        <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                        Patos — PB
+                      </span>
+                    </div>
+                  </div>
+                  <div className="p-6 bg-gradient-to-r from-blue-50 to-white border-t border-blue-100 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+                    <div>
+                      <div className="text-sm font-black text-[#0A2540]">
+                        Jazida Própria & Central de Britagem
+                      </div>
+                      <div className="text-xs text-slate-600">
+                        Fazenda Várzea da Jurema, S/N — Patos — PB
+                      </div>
+                    </div>
+                    <Badge className="bg-[#1D4ED8] text-white hover:bg-[#1E40AF]">
+                      Pedreira Cordeiro
+                    </Badge>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        {/* SEÇÃO PRODUTOS / AGREGADOS DA PEDREIRA */}
+        <section id="produtos" className="py-20 bg-[#F8FAFC]">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div className="text-center max-w-3xl mx-auto mb-16">
+              <Badge
+                variant="outline"
+                className="border-[#1D4ED8] text-[#1D4ED8] bg-blue-50 px-3 py-1 mb-3 text-xs uppercase tracking-wider font-bold"
+              >
+                Catálogo de Agregados
+              </Badge>
+              <h2 className="text-3xl sm:text-4xl font-black text-[#0A2540] tracking-tight">
                 Produtos da Pedreira Cordeiro
               </h2>
-              <p className="mt-3 text-base sm:text-lg text-gray-600 leading-relaxed">
-                Todos os agregados são produzidos em conformidade com as normas técnicas de
-                granulometria e tenacidade. Trabalhamos sob consulta para garantir a melhor proposta
-                por volume e localidade.
+              <p className="mt-3 text-base sm:text-lg text-slate-600 leading-relaxed">
+                Brita 1 2, Brita 1 9, Pedra Rachão, Pó de Pedra e Cascalhinho. Controle
+                granulométrico para concreto estrutural, pavimentação e drenagem.
               </p>
             </div>
 
@@ -377,61 +869,63 @@ export default function HomePublica() {
               {PRODUTOS_PEDREIRA.map((item: ProdutoPedreiraItem) => (
                 <Card
                   key={item.id}
-                  className="group bg-[#FAF9F7] hover:bg-white border-[#ECEAE4] hover:border-teal-300 rounded-2xl overflow-hidden transition-all duration-300 hover:shadow-xl flex flex-col justify-between"
+                  className="group bg-white hover:border-[#2563EB] border-slate-200 rounded-2xl overflow-hidden transition-all duration-300 hover:shadow-xl flex flex-col justify-between"
                 >
                   <div>
                     {/* Imagem do produto */}
-                    <div className="relative h-48 overflow-hidden bg-gray-100">
+                    <div className="relative h-48 overflow-hidden bg-slate-100">
                       <img
                         src={item.imagem}
                         alt={item.nome}
                         className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
                       />
                       <div className="absolute top-3 left-3">
-                        <span className="bg-slate-900/80 backdrop-blur-xs text-white text-[10px] font-mono font-semibold px-2.5 py-1 rounded-md">
+                        <span className="bg-[#0A2540]/85 backdrop-blur-xs text-white text-[10px] font-mono font-bold px-2.5 py-1 rounded-md">
                           {item.codigoRef}
                         </span>
                       </div>
                       <div className="absolute bottom-3 right-3">
-                        <span className="bg-teal-700/90 backdrop-blur-xs text-white text-[11px] font-medium px-2 py-0.5 rounded">
+                        <span className="bg-[#1D4ED8]/95 backdrop-blur-xs text-white text-[11px] font-semibold px-2 py-0.5 rounded">
                           Densidade {item.densidadeMedia}
                         </span>
                       </div>
                     </div>
 
                     <CardContent className="p-6">
-                      <h3 className="text-2xl font-bold text-gray-900 mb-1 group-hover:text-teal-700 transition-colors">
+                      <h3 className="text-2xl font-bold text-[#0A2540] mb-1 group-hover:text-[#1D4ED8] transition-colors">
                         {item.nome}
                       </h3>
 
-                      <div className="text-xs font-semibold text-teal-700 mb-3 flex items-center gap-1.5">
+                      <div className="text-xs font-bold text-[#1D4ED8] mb-3 flex items-center gap-1.5">
                         <Layers className="w-3.5 h-3.5" />
                         <span>{item.granulometria}</span>
                       </div>
 
-                      <p className="text-sm text-gray-600 mb-4 leading-relaxed">{item.descricao}</p>
+                      <p className="text-sm text-slate-600 mb-4 leading-relaxed">
+                        {item.descricao}
+                      </p>
 
-                      <div className="p-3 bg-white rounded-xl border border-[#ECEAE4] text-xs space-y-1">
-                        <span className="font-semibold text-gray-700 block">
+                      <div className="p-3 bg-blue-50/50 rounded-xl border border-blue-100 text-xs space-y-1">
+                        <span className="font-bold text-[#0A2540] block">
                           Principais Aplicações:
                         </span>
-                        <span className="text-gray-500 leading-snug block">{item.aplicacao}</span>
+                        <span className="text-slate-600 leading-snug block">{item.aplicacao}</span>
                       </div>
                     </CardContent>
                   </div>
 
-                  <div className="p-6 pt-0 border-t border-[#ECEAE4]/60 mt-4 flex items-center justify-between">
+                  <div className="p-6 pt-0 border-t border-slate-100 mt-4 flex items-center justify-between">
                     <div>
-                      <span className="text-[11px] uppercase tracking-wider text-gray-400 font-semibold block">
+                      <span className="text-[11px] uppercase tracking-wider text-slate-400 font-bold block">
                         Valores
                       </span>
-                      <span className="text-xs font-semibold text-gray-700">Sob Consulta</span>
+                      <span className="text-xs font-bold text-[#0A2540]">Sob Consulta</span>
                     </div>
 
                     <Button
                       size="sm"
-                      onClick={() => rolarParaOrcamento(item.nome)}
-                      className="bg-teal-700 hover:bg-teal-800 text-white rounded-xl px-4 py-2 text-xs font-semibold shadow-xs"
+                      onClick={() => rolarParaSecao('orcamento', item.nome)}
+                      className="bg-[#1D4ED8] hover:bg-[#1E40AF] text-white rounded-xl px-4 py-2 text-xs font-bold shadow-xs cursor-pointer"
                     >
                       Pedir Orçamento
                     </Button>
@@ -439,40 +933,45 @@ export default function HomePublica() {
                 </Card>
               ))}
 
-              {/* Card especial de Atendimento sob Medida */}
-              <Card className="bg-gradient-to-br from-teal-900 to-slate-900 text-white rounded-2xl p-8 flex flex-col justify-between border-none shadow-xl">
+              {/* Card Concreto GC Mix Integrado */}
+              <Card className="bg-gradient-to-br from-[#0A2540] via-[#1E3A8A] to-[#1D4ED8] text-white rounded-2xl p-8 flex flex-col justify-between border-none shadow-xl">
                 <div className="space-y-4">
-                  <div className="w-12 h-12 rounded-xl bg-teal-500/20 border border-teal-400/30 flex items-center justify-center text-teal-300">
+                  <div className="w-12 h-12 rounded-xl bg-white/10 border border-white/20 flex items-center justify-center text-amber-300">
                     <Building2 className="w-6 h-6" />
                   </div>
-                  <h3 className="text-2xl font-bold">Fornecimento para Grandes Obras</h3>
-                  <p className="text-sm text-slate-300 leading-relaxed">
-                    Precisa de entrega programada, contratos contínuos ou mix de agregados para
-                    usinas e rodovias? Nossa equipe técnica avalia a logística ideal para seu
-                    projeto.
+                  <div>
+                    <span className="text-xs uppercase tracking-wider font-bold text-amber-300 block">
+                      Concreto Usinado
+                    </span>
+                    <h3 className="text-2xl font-black mt-1">Concreto Usinado GC Mix</h3>
+                  </div>
+                  <p className="text-sm text-blue-100 leading-relaxed">
+                    Produzido com brita e pó de pedra da nossa própria pedreira, garantindo o mais
+                    alto rigor de traço, resistência (FCK) e agilidade de entrega com caminhões
+                    betoneira.
                   </p>
-                  <ul className="text-xs text-slate-300 space-y-2 pt-2">
+                  <ul className="text-xs text-blue-100 space-y-2 pt-2">
                     <li className="flex items-center gap-2">
-                      <CheckCircle2 className="w-4 h-4 text-teal-400 shrink-0" />
-                      Programação semanal de viagens
+                      <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                      Dosagem computadorizada em central
                     </li>
                     <li className="flex items-center gap-2">
-                      <CheckCircle2 className="w-4 h-4 text-teal-400 shrink-0" />
-                      Faturamento direto e romaneio oficial
+                      <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                      Frota de betoneiras para despejo pontual
                     </li>
                     <li className="flex items-center gap-2">
-                      <CheckCircle2 className="w-4 h-4 text-teal-400 shrink-0" />
-                      Frota própria com caminhões traçados
+                      <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                      Traços para laje, piso, fundação e muro
                     </li>
                   </ul>
                 </div>
 
                 <div className="pt-6">
                   <Button
-                    onClick={() => rolarParaOrcamento('Outro / não sei ainda')}
-                    className="w-full bg-teal-500 hover:bg-teal-400 text-slate-950 font-bold rounded-xl"
+                    onClick={() => rolarParaSecao('orcamento', 'Concreto Usinado GC Mix')}
+                    className="w-full bg-amber-400 hover:bg-amber-300 text-slate-950 font-black rounded-xl cursor-pointer"
                   >
-                    Falar com Especialista
+                    Cotar Concreto Usinado
                   </Button>
                 </div>
               </Card>
@@ -480,271 +979,221 @@ export default function HomePublica() {
           </div>
         </section>
 
-        {/* SEÇÃO MISSÃO, VISÃO E OBJETIVOS (Conteúdo oficial extraído de pedreiracordeiro.com.br) */}
-        <section id="missao-visao" className="py-20 bg-white border-b border-[#ECEAE4]">
+        {/* SEÇÃO NOSSAS UNIDADES (Conteúdo real do site antigo) */}
+        <section id="unidades" className="py-20 bg-white border-b border-blue-100">
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
             <div className="text-center max-w-3xl mx-auto mb-16">
               <Badge
                 variant="outline"
-                className="border-teal-600 text-teal-700 bg-teal-50 px-3 py-1 mb-3 text-xs uppercase tracking-wider font-semibold"
+                className="border-[#1D4ED8] text-[#1D4ED8] bg-blue-50 px-3 py-1 mb-3 text-xs uppercase tracking-wider font-bold"
               >
-                Propósito & Diretrizes Estratégicas
+                Onde Estamos
               </Badge>
-              <h2 className="text-3xl sm:text-4xl font-extrabold text-gray-900 tracking-tight">
-                Missão, Visão e Objetivos
+              <h2 className="text-3xl sm:text-4xl font-black text-[#0A2540] tracking-tight">
+                Nossas Unidades
               </h2>
-              <p className="mt-3 text-base sm:text-lg text-gray-600 leading-relaxed">
-                Os pilares que orientam o <strong>{INSTITUCIONAL_CONFIG.nomeFantasia}</strong> no
-                fornecimento de concreto usinado e agregados minerais para o sertão de Pernambuco,
-                Paraíba e Rio Grande do Norte.
+              <p className="mt-3 text-base sm:text-lg text-slate-600 leading-relaxed">
+                Onde você estiver na região, tem uma unidade <strong>GC do Amaral</strong> perto de
+                você.
+              </p>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-5">
+              {UNIDADES_GC.map((unidade) => (
+                <div
+                  key={unidade.id}
+                  className={`rounded-2xl p-6 text-center flex flex-col justify-between transition-all duration-300 hover:shadow-lg ${
+                    unidade.destaque
+                      ? 'bg-gradient-to-b from-[#1E3A8A] to-[#0A2540] text-white shadow-md ring-2 ring-[#2563EB]'
+                      : 'bg-[#F8FAFC] border border-blue-100 text-slate-800 hover:border-[#2563EB]'
+                  }`}
+                >
+                  <div className="space-y-3">
+                    <div
+                      className={`w-12 h-12 mx-auto rounded-2xl flex items-center justify-center font-bold ${
+                        unidade.destaque
+                          ? 'bg-amber-400 text-slate-950 shadow-md'
+                          : 'bg-blue-100 text-[#1D4ED8]'
+                      }`}
+                    >
+                      <MapPin className="w-6 h-6" />
+                    </div>
+
+                    <div>
+                      <h3 className="text-xl font-black">
+                        {unidade.cidade} — {unidade.uf}
+                      </h3>
+                      <p
+                        className={`text-xs mt-1 leading-relaxed ${
+                          unidade.destaque ? 'text-blue-200' : 'text-slate-600'
+                        }`}
+                      >
+                        {unidade.descricao}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="pt-4 mt-4 border-t border-blue-200/40">
+                    <span
+                      className={`text-[11px] font-bold px-2.5 py-1 rounded-full ${
+                        unidade.destaque
+                          ? 'bg-white/10 text-amber-300 border border-white/20'
+                          : 'bg-blue-50 text-[#1D4ED8] border border-blue-200'
+                      }`}
+                    >
+                      {unidade.tipo}
+                    </span>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {/* Banner de Atendimento Regional */}
+            <div className="mt-12 p-6 sm:p-8 rounded-3xl bg-gradient-to-r from-blue-50 via-slate-50 to-blue-50 border border-blue-200 flex flex-col md:flex-row items-center justify-between gap-6">
+              <div className="space-y-1 text-center md:text-left">
+                <span className="text-xs uppercase font-bold text-[#1D4ED8] tracking-wider block">
+                  Logística Integrada no Sertão
+                </span>
+                <h4 className="text-xl font-black text-[#0A2540]">
+                  Entregas programadas em dezenas de municípios da PB, PE e RN
+                </h4>
+                <p className="text-xs text-slate-600">
+                  Matriz em Patos (PB), concreteiras em Santa Luzia, Monteiro, São José do Egito e
+                  Caicó.
+                </p>
+              </div>
+
+              <div className="flex items-center gap-3 shrink-0">
+                <a
+                  href={INSTITUCIONAL_CONFIG.telefoneTelLink}
+                  className="px-5 py-3 rounded-xl bg-[#1D4ED8] hover:bg-[#1E40AF] text-white font-bold text-xs shadow-md transition-colors flex items-center gap-2"
+                >
+                  <Phone className="w-4 h-4" />
+                  0800 083 1200
+                </a>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        {/* SEÇÃO MISSÃO, VISÃO E OBJETIVOS (Conteúdo oficial do site antigo) */}
+        <section id="sobre" className="py-20 bg-[#F8FAFC] border-b border-blue-100">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div className="text-center max-w-3xl mx-auto mb-16">
+              <Badge
+                variant="outline"
+                className="border-[#1D4ED8] text-[#1D4ED8] bg-blue-50 px-3 py-1 mb-3 text-xs uppercase tracking-wider font-bold"
+              >
+                O Grupo
+              </Badge>
+              <h2 className="text-3xl sm:text-4xl font-black text-[#0A2540] tracking-tight">
+                Quem Somos
+              </h2>
+              <p className="mt-3 text-base sm:text-lg text-slate-600 leading-relaxed">
+                Missão, visão e objetivos do <strong>{INSTITUCIONAL_CONFIG.nomeFantasia}</strong>.
               </p>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
               {/* Card Missão */}
-              <Card className="bg-[#FAF9F7] border-[#ECEAE4] hover:border-teal-300 rounded-2xl overflow-hidden transition-all duration-300 hover:shadow-xl flex flex-col justify-between">
+              <Card className="bg-white border-blue-100 hover:border-[#2563EB] rounded-2xl overflow-hidden transition-all duration-300 hover:shadow-xl flex flex-col justify-between">
                 <CardContent className="p-8 space-y-4">
-                  <div className="w-13 h-13 rounded-2xl bg-teal-100/80 border border-teal-200 text-teal-800 flex items-center justify-center shadow-xs">
+                  <div className="w-13 h-13 rounded-2xl bg-blue-50 border border-blue-200 text-[#1D4ED8] flex items-center justify-center shadow-xs">
                     <Target className="w-7 h-7" />
                   </div>
                   <div>
-                    <span className="text-[11px] font-bold uppercase tracking-wider text-teal-700">
+                    <span className="text-[11px] font-bold uppercase tracking-wider text-[#1D4ED8]">
                       Nosso Propósito
                     </span>
-                    <h3 className="text-2xl font-bold text-gray-900 mt-1">Missão</h3>
+                    <h3 className="text-2xl font-black text-[#0A2540] mt-1">Missão</h3>
                   </div>
-                  <p className="text-gray-700 text-sm sm:text-base leading-relaxed font-normal">
+                  <p className="text-slate-700 text-sm sm:text-base leading-relaxed font-normal">
                     &ldquo;{INSTITUCIONAL_CONFIG.missao}&rdquo;
                   </p>
                 </CardContent>
-                <div className="px-8 py-3 bg-teal-50/50 border-t border-teal-100/60 text-xs font-semibold text-teal-800 flex items-center gap-2">
-                  <Check className="w-4 h-4 text-teal-600" />
+                <div className="px-8 py-3 bg-blue-50/70 border-t border-blue-100 text-xs font-bold text-[#1D4ED8] flex items-center gap-2">
+                  <Check className="w-4 h-4 text-[#1D4ED8]" />
                   Qualidade, prazo e preço justo
                 </div>
               </Card>
 
               {/* Card Visão */}
-              <Card className="bg-[#FAF9F7] border-[#ECEAE4] hover:border-teal-300 rounded-2xl overflow-hidden transition-all duration-300 hover:shadow-xl flex flex-col justify-between">
+              <Card className="bg-white border-blue-100 hover:border-[#2563EB] rounded-2xl overflow-hidden transition-all duration-300 hover:shadow-xl flex flex-col justify-between">
                 <CardContent className="p-8 space-y-4">
-                  <div className="w-13 h-13 rounded-2xl bg-amber-100/80 border border-amber-200 text-amber-800 flex items-center justify-center shadow-xs">
+                  <div className="w-13 h-13 rounded-2xl bg-amber-50 border border-amber-200 text-amber-700 flex items-center justify-center shadow-xs">
                     <Eye className="w-7 h-7" />
                   </div>
                   <div>
                     <span className="text-[11px] font-bold uppercase tracking-wider text-amber-700">
                       Onde queremos chegar
                     </span>
-                    <h3 className="text-2xl font-bold text-gray-900 mt-1">Visão</h3>
+                    <h3 className="text-2xl font-black text-[#0A2540] mt-1">Visão</h3>
                   </div>
-                  <p className="text-gray-700 text-sm sm:text-base leading-relaxed font-normal">
+                  <p className="text-slate-700 text-sm sm:text-base leading-relaxed font-normal">
                     &ldquo;{INSTITUCIONAL_CONFIG.visao}&rdquo;
                   </p>
                 </CardContent>
-                <div className="px-8 py-3 bg-amber-50/50 border-t border-amber-100/60 text-xs font-semibold text-amber-800 flex items-center gap-2">
+                <div className="px-8 py-3 bg-amber-50/70 border-t border-amber-100 text-xs font-bold text-amber-800 flex items-center gap-2">
                   <Check className="w-4 h-4 text-amber-600" />
-                  Referência regional no sertão (PB, PE e RN)
+                  Referência no sertão (PB, PE e RN)
                 </div>
               </Card>
 
               {/* Card Objetivos */}
-              <Card className="bg-[#FAF9F7] border-[#ECEAE4] hover:border-teal-300 rounded-2xl overflow-hidden transition-all duration-300 hover:shadow-xl flex flex-col justify-between">
+              <Card className="bg-white border-blue-100 hover:border-[#2563EB] rounded-2xl overflow-hidden transition-all duration-300 hover:shadow-xl flex flex-col justify-between">
                 <CardContent className="p-8 space-y-4">
-                  <div className="w-13 h-13 rounded-2xl bg-slate-200/80 border border-slate-300 text-slate-800 flex items-center justify-center shadow-xs">
-                    <TrendingUp className="w-7 h-7" />
+                  <div className="w-13 h-13 rounded-2xl bg-[#1E3A8A] text-white flex items-center justify-center shadow-xs">
+                    <TrendingUp className="w-7 h-7 text-amber-300" />
                   </div>
                   <div>
-                    <span className="text-[11px] font-bold uppercase tracking-wider text-slate-600">
+                    <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500">
                       Nossas Metas Práticas
                     </span>
-                    <h3 className="text-2xl font-bold text-gray-900 mt-1">Objetivos</h3>
+                    <h3 className="text-2xl font-black text-[#0A2540] mt-1">Objetivos</h3>
                   </div>
-                  <ul className="space-y-2.5 text-xs sm:text-sm text-gray-700 pt-1">
+                  <ul className="space-y-2.5 text-xs sm:text-sm text-slate-700 pt-1">
                     {INSTITUCIONAL_CONFIG.objetivos.map((obj, i) => (
                       <li key={i} className="flex items-start gap-2">
-                        <CheckCircle2 className="w-4 h-4 text-teal-600 shrink-0 mt-0.5" />
+                        <CheckCircle2 className="w-4 h-4 text-[#1D4ED8] shrink-0 mt-0.5" />
                         <span>{obj}</span>
                       </li>
                     ))}
                   </ul>
                 </CardContent>
-                <div className="px-8 py-3 bg-slate-100/60 border-t border-slate-200 text-xs font-semibold text-slate-700 flex items-center gap-2">
-                  <Check className="w-4 h-4 text-teal-600" />
-                  Pontualidade, rigor de dosagem e emprego local
+                <div className="px-8 py-3 bg-blue-50/70 border-t border-blue-100 text-xs font-bold text-[#0A2540] flex items-center gap-2">
+                  <Check className="w-4 h-4 text-[#1D4ED8]" />
+                  Pontualidade e geração de emprego local
                 </div>
               </Card>
             </div>
           </div>
         </section>
 
-        {/* SEÇÃO SOBRE & DIFERENCIAIS (com foto aérea real da pedreira e dados) */}
-        <section id="sobre" className="py-20 bg-[#FAF9F7] border-b border-[#ECEAE4]">
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-            <div className="grid grid-cols-1 lg:grid-cols-12 gap-12 items-center">
-              <div className="lg:col-span-6 space-y-6">
-                <Badge
-                  variant="outline"
-                  className="border-teal-600 text-teal-700 bg-teal-50 px-3 py-1 text-xs uppercase tracking-wider font-semibold"
-                >
-                  Sobre a Pedreira Cordeiro
-                </Badge>
-
-                <h2 className="text-3xl sm:text-4xl font-extrabold text-gray-900 tracking-tight">
-                  Compromisso com a solidez da sua infraestrutura
-                </h2>
-
-                <p className="text-base sm:text-lg text-gray-600 leading-relaxed">
-                  O <strong>{INSTITUCIONAL_CONFIG.nomeFantasia}</strong> atua no setor de mineração
-                  e agregados para a construção civil, com jazidas operando com maquinário moderno
-                  de britagem, peneiramento e separação granulométrica precisa.
-                </p>
-
-                <p className="text-sm sm:text-base text-gray-600 leading-relaxed">
-                  Localizada estrategicamente no Sertão do Pajeú e Moxotó, a pedreira atende
-                  municípios de Pernambuco, Paraíba e Rio Grande do Norte com agilidade logística,
-                  faturamento transparente e pontualidade de entrega na obra.
-                </p>
-
-                <div className="p-4 bg-white rounded-2xl border border-[#ECEAE4] space-y-2">
-                  <div className="text-xs font-semibold text-gray-800">
-                    Razão Social & Dados Corporativos:
-                  </div>
-                  <div className="text-xs text-gray-600 grid grid-cols-1 sm:grid-cols-2 gap-2">
-                    <div>
-                      <strong className="text-gray-700">Razão Social:</strong>{' '}
-                      {INSTITUCIONAL_CONFIG.razaoSocial}
-                    </div>
-                    <div>
-                      <strong className="text-gray-700">CNPJ:</strong> {INSTITUCIONAL_CONFIG.cnpj}
-                    </div>
-                    <div>
-                      <strong className="text-gray-700">Inscrição Estadual:</strong>{' '}
-                      {INSTITUCIONAL_CONFIG.inscricaoEstadual}
-                    </div>
-                    <div>
-                      <strong className="text-gray-700">Sede Operacional:</strong>{' '}
-                      {INSTITUCIONAL_CONFIG.localizacao}
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              {/* Imagem institucional REAL: Britador visto do alto */}
-              <div className="lg:col-span-6">
-                <div className="relative rounded-3xl overflow-hidden border border-[#ECEAE4] shadow-xl bg-white">
-                  <div className="relative h-80 sm:h-96 overflow-hidden group">
-                    <img
-                      src={INSTITUCIONAL_CONFIG.fotosReais.pedreiraBritador}
-                      alt="Operação e Britador da Pedreira Cordeiro — Foto real"
-                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700"
-                    />
-                    <div className="absolute top-3 right-3">
-                      <span className="bg-slate-900/85 backdrop-blur-xs text-white text-[10px] font-semibold px-2.5 py-1 rounded-full border border-white/20 shadow-xs flex items-center gap-1">
-                        <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-                        Foto Real
-                      </span>
-                    </div>
-                  </div>
-                  <div className="p-6 bg-white border-t border-[#ECEAE4] flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
-                    <div>
-                      <div className="text-sm font-bold text-gray-900">
-                        Usina de Britagem & Pátio de Agregados
-                      </div>
-                      <div className="text-xs text-gray-500">
-                        Foto aérea real da central em operação contínua
-                      </div>
-                    </div>
-                    <Badge className="bg-teal-100 text-teal-800 border-teal-200">Garantia GC</Badge>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* Diferenciais em 4 cards com imagens reais da frota / usina */}
-            <div id="diferenciais" className="mt-20">
-              <div className="text-center max-w-2xl mx-auto mb-12">
-                <h3 className="text-2xl sm:text-3xl font-extrabold text-gray-900">
-                  Por que escolher a Pedreira Cordeiro?
-                </h3>
-                <p className="mt-2 text-sm sm:text-base text-gray-600">
-                  Estrutura preparada para obras de todos os portes com padrão de qualidade
-                  inegociável.
-                </p>
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-                <div className="bg-white p-6 rounded-2xl border border-[#ECEAE4] hover:border-teal-300 transition-all shadow-xs space-y-3">
-                  <div className="w-11 h-11 rounded-xl bg-teal-50 border border-teal-200 flex items-center justify-center text-teal-700">
-                    <Award className="w-6 h-6" />
-                  </div>
-                  <h4 className="text-lg font-bold text-gray-900">Qualidade do Material</h4>
-                  <p className="text-xs text-gray-600 leading-relaxed">
-                    Pedra com alta resistência mecânica à abrasão e esmagamento, ideal para
-                    concretos de alto desempenho e pavimentações exigentes.
-                  </p>
-                </div>
-
-                <div className="bg-white p-6 rounded-2xl border border-[#ECEAE4] hover:border-teal-300 transition-all shadow-xs space-y-3">
-                  <div className="w-11 h-11 rounded-xl bg-amber-50 border border-amber-200 flex items-center justify-center text-amber-700">
-                    <Truck className="w-6 h-6" />
-                  </div>
-                  <h4 className="text-lg font-bold text-gray-900">Entrega com Frota Própria</h4>
-                  <p className="text-xs text-gray-600 leading-relaxed">
-                    Caminhões e carretas basculantes próprios com acompanhamento de rotas, reduzindo
-                    custos de intermediários e evitando atrasos na obra.
-                  </p>
-                </div>
-
-                <div className="bg-white p-6 rounded-2xl border border-[#ECEAE4] hover:border-teal-300 transition-all shadow-xs space-y-3">
-                  <div className="w-11 h-11 rounded-xl bg-teal-50 border border-teal-200 flex items-center justify-center text-teal-700">
-                    <MessageCircle className="w-6 h-6" />
-                  </div>
-                  <h4 className="text-lg font-bold text-gray-900">Atendimento Ágil</h4>
-                  <p className="text-xs text-gray-600 leading-relaxed">
-                    Cotação rápida por WhatsApp ou e-mail, facilidade de negociação para faturamento
-                    corporativo e suporte comercial direto.
-                  </p>
-                </div>
-
-                <div className="bg-white p-6 rounded-2xl border border-[#ECEAE4] hover:border-teal-300 transition-all shadow-xs space-y-3">
-                  <div className="w-11 h-11 rounded-xl bg-slate-100 border border-slate-200 flex items-center justify-center text-slate-700">
-                    <ShieldCheck className="w-6 h-6" />
-                  </div>
-                  <h4 className="text-lg font-bold text-gray-900">Tradição e Confiabilidade</h4>
-                  <p className="text-xs text-gray-600 leading-relaxed">
-                    Atuação consolidada no interior pernambucano e paraibano, com fornecimento para
-                    as principais obras e construtoras regionais.
-                  </p>
-                </div>
-              </div>
-            </div>
-          </div>
-        </section>
-
-        {/* SEÇÃO VÍDEO INSTITUCIONAL (Vídeo oficial da empresa: A história da empresa) */}
-        <section id="video" className="py-20 bg-slate-900 text-white relative overflow-hidden">
-          <div className="absolute -top-32 -left-32 w-96 h-96 rounded-full bg-teal-500/10 blur-3xl pointer-events-none" />
+        {/* SEÇÃO VÍDEO INSTITUCIONAL (Oficial) */}
+        <section id="video" className="py-20 bg-[#0A2540] text-white relative overflow-hidden">
+          <div className="absolute -top-32 -left-32 w-96 h-96 rounded-full bg-[#1D4ED8]/20 blur-3xl pointer-events-none" />
           <div className="absolute -bottom-32 -right-32 w-96 h-96 rounded-full bg-amber-500/10 blur-3xl pointer-events-none" />
 
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
             <div className="text-center max-w-3xl mx-auto mb-12">
               <Badge
                 variant="outline"
-                className="border-teal-400 text-teal-300 bg-teal-950/60 px-3 py-1 mb-3 text-xs uppercase tracking-wider font-semibold"
+                className="border-blue-400 text-blue-300 bg-blue-950/60 px-3 py-1 mb-3 text-xs uppercase tracking-wider font-bold"
               >
-                Vídeo Institucional
+                Nossa História
               </Badge>
-              <h2 className="text-3xl sm:text-4xl font-extrabold text-white tracking-tight">
-                A História da Nossa Empresa
+              <h2 className="text-3xl sm:text-4xl font-black text-white tracking-tight">
+                A História da Empresa
               </h2>
-              <p className="mt-3 text-base sm:text-lg text-slate-300 leading-relaxed">
-                Do primeiro caminhão à frota de hoje — conheça a caminhada, a estrutura e o
-                compromisso do <strong>{INSTITUCIONAL_CONFIG.nomeFantasia}</strong> no vídeo oficial
-                exibido no site da empresa.
+              <p className="mt-3 text-base sm:text-lg text-blue-100 leading-relaxed">
+                Do primeiro caminhão à frota de hoje — a caminhada do{' '}
+                <strong>Grupo GC do Amaral</strong>.
               </p>
             </div>
 
-            {/* Player de Vídeo Responsivo (aspect-video) com fallback e download direto */}
+            {/* Player de Vídeo Responsivo */}
             <div className="max-w-4xl mx-auto">
-              <div className="relative rounded-3xl overflow-hidden border border-slate-700 bg-slate-950 shadow-2xl">
+              <div className="relative rounded-3xl overflow-hidden border border-blue-400/30 bg-slate-950 shadow-2xl">
                 <div className="aspect-video w-full bg-black relative flex items-center justify-center">
                   <video
                     controls
@@ -757,17 +1206,17 @@ export default function HomePublica() {
                   </video>
                 </div>
 
-                <div className="p-5 sm:p-6 bg-slate-950/95 border-t border-slate-800 flex flex-col sm:flex-row items-center justify-between gap-4">
+                <div className="p-5 sm:p-6 bg-[#0A1A3B] border-t border-blue-900 flex flex-col sm:flex-row items-center justify-between gap-4">
                   <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-xl bg-teal-600/20 border border-teal-500/30 flex items-center justify-center text-teal-400 shrink-0">
-                      <Play className="w-5 h-5 fill-teal-400/20" />
+                    <div className="w-10 h-10 rounded-xl bg-[#1D4ED8]/30 border border-[#1D4ED8]/50 flex items-center justify-center text-amber-300 shrink-0">
+                      <Play className="w-5 h-5 fill-amber-300/20" />
                     </div>
                     <div>
                       <h4 className="text-sm font-bold text-white">
                         Do primeiro caminhão à frota de hoje
                       </h4>
-                      <p className="text-xs text-slate-400">
-                        Vídeo institucional oficial gravado nas instalações da pedreira e frota GC
+                      <p className="text-xs text-blue-200">
+                        Vídeo institucional oficial gravado nas instalações do grupo
                       </p>
                     </div>
                   </div>
@@ -776,7 +1225,7 @@ export default function HomePublica() {
                     href={INSTITUCIONAL_CONFIG.videoInstitucionalUrl}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-teal-300 text-xs font-semibold border border-slate-700 transition-colors"
+                    className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-[#1E3A8A] hover:bg-[#1D4ED8] text-white text-xs font-bold border border-blue-400/30 transition-colors"
                   >
                     <span>Abrir vídeo em nova aba</span>
                     <ExternalLink className="w-3.5 h-3.5" />
@@ -787,222 +1236,228 @@ export default function HomePublica() {
           </div>
         </section>
 
-        {/* SEÇÃO GALERIA DE FOTOS REAIS (Extraídas de pedreiracordeiro.com.br) */}
-        <section id="galeria" className="py-20 bg-white border-b border-[#ECEAE4]">
+        {/* SEÇÃO GALERIA DE FOTOS REAIS (Enriquecida com fotos reais do site antigo) */}
+        <section id="galeria" className="py-20 bg-white border-b border-blue-100">
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
             <div className="text-center max-w-3xl mx-auto mb-14">
               <Badge
                 variant="outline"
-                className="border-teal-600 text-teal-700 bg-teal-50 px-3 py-1 mb-3 text-xs uppercase tracking-wider font-semibold"
+                className="border-[#1D4ED8] text-[#1D4ED8] bg-blue-50 px-3 py-1 mb-3 text-xs uppercase tracking-wider font-bold"
               >
-                Galeria Real da Empresa
+                Galeria
               </Badge>
-              <h2 className="text-3xl sm:text-4xl font-extrabold text-gray-900 tracking-tight">
+              <h2 className="text-3xl sm:text-4xl font-black text-[#0A2540] tracking-tight">
                 Nossa Estrutura em Ação
               </h2>
-              <p className="mt-3 text-base sm:text-lg text-gray-600 leading-relaxed">
-                Fotos reais das operações, jazida, frotas de betoneiras GC Mix, silos e o britador
-                móvel Lokotrack, fotografados em nossas unidades e obras parceiras.
+              <p className="mt-3 text-base sm:text-lg text-slate-600 leading-relaxed">
+                Frota, equipamentos e obras atendidas pela GC do Amaral, GC Mix, Pedreira Cordeiro e
+                C M Construções.
               </p>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-              {/* Foto 1 */}
-              <div className="group rounded-2xl overflow-hidden border border-[#ECEAE4] bg-[#FAF9F7] shadow-xs hover:shadow-xl transition-all duration-300">
-                <div className="relative h-60 overflow-hidden">
-                  <img
-                    src={INSTITUCIONAL_CONFIG.fotosReais.heroAerea}
-                    alt="Vista aérea da Pedreira Cordeiro"
-                    className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
-                    loading="lazy"
-                  />
-                  <div className="absolute top-3 left-3">
-                    <span className="bg-slate-900/80 backdrop-blur-xs text-white text-[10px] font-semibold px-2 py-0.5 rounded">
-                      Drone / Aérea
-                    </span>
+            {/* Grid de Fotos Reais */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
+              {[
+                {
+                  src: INSTITUCIONAL_CONFIG.fotosReais.betoneira1,
+                  titulo: 'Betoneira GC Mix em Entrega',
+                  legenda: 'Frota ativa atendendo obras na Paraíba',
+                  badge: 'Betoneira GC Mix',
+                },
+                {
+                  src: INSTITUCIONAL_CONFIG.fotosReais.betoneira2,
+                  titulo: 'Betoneira GC Mix & Pedreira',
+                  legenda: 'Carregamento no pátio de agregados',
+                  badge: 'Operação Integrada',
+                },
+                {
+                  src: INSTITUCIONAL_CONFIG.fotosReais.frotaGcMix,
+                  titulo: 'Frota de Betoneiras GC Mix',
+                  legenda: 'Caminhões traçados para entregas volumosas',
+                  badge: 'Frota Própria',
+                },
+                {
+                  src: INSTITUCIONAL_CONFIG.fotosReais.betoneiraRota,
+                  titulo: 'Betoneira em Rota',
+                  legenda: 'Logística ágil no interior',
+                  badge: 'Logística',
+                },
+                {
+                  src: INSTITUCIONAL_CONFIG.fotosReais.betoneira5,
+                  titulo: 'Caminhão Betoneira GC Mix',
+                  legenda: 'Equipamentos revisados e com lacre',
+                  badge: 'Qualidade',
+                },
+                {
+                  src: INSTITUCIONAL_CONFIG.fotosReais.betoneira7,
+                  titulo: 'Betoneira GC Mix em Canteiro',
+                  legenda: 'Descarga direta na bomba ou caçamba',
+                  badge: 'Canteiro de Obras',
+                },
+                {
+                  src: INSTITUCIONAL_CONFIG.fotosReais.silo2,
+                  titulo: 'Silo GC Mix',
+                  legenda: 'Central dosadora de alta capacidade',
+                  badge: 'Central Dosadora',
+                },
+                {
+                  src: INSTITUCIONAL_CONFIG.fotosReais.siloMonteiro,
+                  titulo: 'Silo GC Mix — Monteiro — PB',
+                  legenda: 'Central com atendimento 0800 083 1200',
+                  badge: 'Unidade Monteiro',
+                },
+                {
+                  src: INSTITUCIONAL_CONFIG.fotosReais.concretagemPatos,
+                  titulo: 'Concretagem em Patos — PB',
+                  legenda: 'Despejo contínuo em laje estrutural',
+                  badge: 'Patos — PB',
+                },
+                {
+                  src: INSTITUCIONAL_CONFIG.fotosReais.pisoIndustrial,
+                  titulo: 'Piso de Concreto Industrial',
+                  legenda: 'Resistência calculada e nivelamento',
+                  badge: 'Piso Industrial',
+                },
+                {
+                  src: INSTITUCIONAL_CONFIG.fotosReais.pisoAcabamento,
+                  titulo: 'Acabamento de Piso',
+                  legenda: 'Polimento e cura do concreto usinado',
+                  badge: 'Acabamento',
+                },
+                {
+                  src: INSTITUCIONAL_CONFIG.fotosReais.preparacaoObra,
+                  titulo: 'Preparação de Obra',
+                  legenda: 'Nivelamento com motoniveladora',
+                  badge: 'Terraplanagem',
+                },
+                {
+                  src: INSTITUCIONAL_CONFIG.fotosReais.pedreiraAerea2,
+                  titulo: 'GCA Pedreira Cordeiro',
+                  legenda: 'Vista aérea da jazida de extração',
+                  badge: 'Jazida Própria',
+                },
+                {
+                  src: INSTITUCIONAL_CONFIG.fotosReais.pedreiraBritador,
+                  titulo: 'Britador Visto do Alto',
+                  legenda: 'Peneiramento contínuo de rocha',
+                  badge: 'Central Britagem',
+                },
+                {
+                  src: INSTITUCIONAL_CONFIG.fotosReais.pedreiraRegiao,
+                  titulo: 'Pedreira Cordeiro e Região',
+                  legenda: 'Inserção estratégica no sertão',
+                  badge: 'Região Sertão',
+                },
+                {
+                  src: INSTITUCIONAL_CONFIG.fotosReais.lokotrack1,
+                  titulo: 'Britador Lokotrack — C M',
+                  legenda: 'Britador móvel sobre esteiras',
+                  badge: 'Lokotrack C M',
+                },
+              ].map((foto, idx) => (
+                <div
+                  key={idx}
+                  onClick={() => setFotoAtiva(foto.src)}
+                  className="group rounded-2xl overflow-hidden border border-slate-200 bg-[#F8FAFC] shadow-xs hover:shadow-xl transition-all duration-300 cursor-pointer"
+                >
+                  <div className="relative h-48 overflow-hidden bg-slate-100">
+                    <img
+                      src={foto.src}
+                      alt={foto.titulo}
+                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                      loading="lazy"
+                    />
+                    <div className="absolute top-2.5 left-2.5">
+                      <span className="bg-[#0A2540]/85 backdrop-blur-xs text-white text-[10px] font-bold px-2 py-0.5 rounded">
+                        {foto.badge}
+                      </span>
+                    </div>
+                  </div>
+                  <div className="p-3.5 bg-white">
+                    <h4 className="text-xs font-bold text-[#0A2540] group-hover:text-[#1D4ED8] transition-colors line-clamp-1">
+                      {foto.titulo}
+                    </h4>
+                    <p className="text-[11px] text-slate-500 mt-0.5 line-clamp-1">{foto.legenda}</p>
                   </div>
                 </div>
-                <div className="p-4 bg-white">
-                  <h4 className="text-sm font-bold text-gray-900">
-                    Vista Aérea — Pedreira Cordeiro
-                  </h4>
-                  <p className="text-xs text-gray-500 mt-1">
-                    Jazida própria e ampla área de estocagem de agregados
-                  </p>
-                </div>
-              </div>
-
-              {/* Foto 2 */}
-              <div className="group rounded-2xl overflow-hidden border border-[#ECEAE4] bg-[#FAF9F7] shadow-xs hover:shadow-xl transition-all duration-300">
-                <div className="relative h-60 overflow-hidden">
-                  <img
-                    src={INSTITUCIONAL_CONFIG.fotosReais.frotaGcMix}
-                    alt="Frota de Caminhões Betoneira GC Mix"
-                    className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
-                    loading="lazy"
-                  />
-                  <div className="absolute top-3 left-3">
-                    <span className="bg-teal-700/85 backdrop-blur-xs text-white text-[10px] font-semibold px-2 py-0.5 rounded">
-                      Frota Própria
-                    </span>
-                  </div>
-                </div>
-                <div className="p-4 bg-white">
-                  <h4 className="text-sm font-bold text-gray-900">Frota de Caminhões GC Mix</h4>
-                  <p className="text-xs text-gray-500 mt-1">
-                    Caminhões betoneira modernos para entrega pontual na obra
-                  </p>
-                </div>
-              </div>
-
-              {/* Foto 3 */}
-              <div className="group rounded-2xl overflow-hidden border border-[#ECEAE4] bg-[#FAF9F7] shadow-xs hover:shadow-xl transition-all duration-300">
-                <div className="relative h-60 overflow-hidden">
-                  <img
-                    src={INSTITUCIONAL_CONFIG.fotosReais.lokotrack1}
-                    alt="Britador Móvel Lokotrack — C M Construções"
-                    className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
-                    loading="lazy"
-                  />
-                  <div className="absolute top-3 left-3">
-                    <span className="bg-amber-600/85 backdrop-blur-xs text-white text-[10px] font-semibold px-2 py-0.5 rounded">
-                      Britador Lokotrack
-                    </span>
-                  </div>
-                </div>
-                <div className="p-4 bg-white">
-                  <h4 className="text-sm font-bold text-gray-900">Britador Móvel Lokotrack</h4>
-                  <p className="text-xs text-gray-500 mt-1">
-                    Esmagamento direto de rocha na obra com alta produção
-                  </p>
-                </div>
-              </div>
-
-              {/* Foto 4 */}
-              <div className="group rounded-2xl overflow-hidden border border-[#ECEAE4] bg-[#FAF9F7] shadow-xs hover:shadow-xl transition-all duration-300">
-                <div className="relative h-60 overflow-hidden">
-                  <img
-                    src={INSTITUCIONAL_CONFIG.fotosReais.pedreiraBritador}
-                    alt="Usina de Britagem da Pedreira Cordeiro"
-                    className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
-                    loading="lazy"
-                  />
-                  <div className="absolute top-3 left-3">
-                    <span className="bg-slate-900/80 backdrop-blur-xs text-white text-[10px] font-semibold px-2 py-0.5 rounded">
-                      Usina de Britagem
-                    </span>
-                  </div>
-                </div>
-                <div className="p-4 bg-white">
-                  <h4 className="text-sm font-bold text-gray-900">
-                    Britador e Peneiras Vistos do Alto
-                  </h4>
-                  <p className="text-xs text-gray-500 mt-1">
-                    Separação granulométrica precisa das britas 1, 2 e pó de pedra
-                  </p>
-                </div>
-              </div>
-
-              {/* Foto 5 */}
-              <div className="group rounded-2xl overflow-hidden border border-[#ECEAE4] bg-[#FAF9F7] shadow-xs hover:shadow-xl transition-all duration-300">
-                <div className="relative h-60 overflow-hidden">
-                  <img
-                    src={INSTITUCIONAL_CONFIG.fotosReais.siloMonteiro}
-                    alt="Silo GC Mix em Monteiro - PB"
-                    className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
-                    loading="lazy"
-                  />
-                  <div className="absolute top-3 left-3">
-                    <span className="bg-teal-700/85 backdrop-blur-xs text-white text-[10px] font-semibold px-2 py-0.5 rounded">
-                      Unidade Monteiro-PB
-                    </span>
-                  </div>
-                </div>
-                <div className="p-4 bg-white">
-                  <h4 className="text-sm font-bold text-gray-900">Silo GC Mix & 0800 083 1200</h4>
-                  <p className="text-xs text-gray-500 mt-1">
-                    Central dosadora com identificação oficial da GC Mix
-                  </p>
-                </div>
-              </div>
-
-              {/* Foto 6 */}
-              <div className="group rounded-2xl overflow-hidden border border-[#ECEAE4] bg-[#FAF9F7] shadow-xs hover:shadow-xl transition-all duration-300">
-                <div className="relative h-60 overflow-hidden">
-                  <img
-                    src={INSTITUCIONAL_CONFIG.fotosReais.concretagemPatos}
-                    alt="Concretagem em Patos - PB"
-                    className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
-                    loading="lazy"
-                  />
-                  <div className="absolute top-3 left-3">
-                    <span className="bg-slate-900/80 backdrop-blur-xs text-white text-[10px] font-semibold px-2 py-0.5 rounded">
-                      Aplicação em Obra
-                    </span>
-                  </div>
-                </div>
-                <div className="p-4 bg-white">
-                  <h4 className="text-sm font-bold text-gray-900">
-                    Concretagem Estrutural em Obra
-                  </h4>
-                  <p className="text-xs text-gray-500 mt-1">
-                    Despejo pontual direto na laje e fundações com controle de traço
-                  </p>
-                </div>
-              </div>
+              ))}
             </div>
 
-            {/* Aviso sobre fonte real */}
-            <div className="mt-10 p-4 rounded-2xl bg-[#FAF9F7] border border-[#ECEAE4] flex flex-col sm:flex-row items-center justify-between text-xs text-gray-600 gap-3">
+            {/* Aviso sobre fotos oficiais */}
+            <div className="mt-10 p-4 rounded-2xl bg-blue-50/70 border border-blue-200 flex flex-col sm:flex-row items-center justify-between text-xs text-slate-700 gap-3">
               <div className="flex items-center gap-2">
-                <ImageIcon className="w-4 h-4 text-teal-600 shrink-0" />
+                <ImageIcon className="w-4 h-4 text-[#1D4ED8] shrink-0" />
                 <span>
-                  Fotos oficiais integradas a partir do site corporativo da empresa:{' '}
-                  <strong>pedreiracordeiro.com.br</strong>
+                  Fotos oficiais integradas do site <strong>pedreiracordeiro.com.br</strong> (GC
+                  Mix, Pedreira Cordeiro e C M Construções).
                 </span>
               </div>
               <a
                 href={INSTITUCIONAL_CONFIG.siteUrl}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="inline-flex items-center gap-1 font-semibold text-teal-700 hover:underline shrink-0"
+                className="inline-flex items-center gap-1 font-bold text-[#1D4ED8] hover:underline shrink-0"
               >
-                <span>Acessar pedreiracordeiro.com.br</span>
+                <span>Acessar site institucional</span>
                 <ExternalLink className="w-3.5 h-3.5" />
               </a>
             </div>
           </div>
         </section>
 
+        {/* MODAL / LIGHTBOX DE FOTO EXPANDIDA */}
+        {fotoAtiva && (
+          <div
+            className="fixed inset-0 z-50 bg-black/85 flex items-center justify-center p-4 backdrop-blur-xs"
+            onClick={() => setFotoAtiva(null)}
+          >
+            <div className="relative max-w-4xl max-h-[90vh] overflow-hidden rounded-2xl shadow-2xl">
+              <img
+                src={fotoAtiva}
+                alt="Foto ampliada da Pedreira Cordeiro"
+                className="w-full h-full max-h-[85vh] object-contain"
+              />
+              <button
+                onClick={() => setFotoAtiva(null)}
+                className="absolute top-4 right-4 bg-slate-900/80 hover:bg-slate-900 text-white rounded-full p-2 text-xs font-bold transition-colors cursor-pointer"
+              >
+                ✕ Fechar
+              </button>
+            </div>
+          </div>
+        )}
+
         {/* SEÇÃO ORÇAMENTO (WhatsApp e E-mail — SEM GRAVAÇÃO NO ERP) */}
-        <section id="orcamento" className="py-20 bg-white relative">
+        <section id="orcamento" className="py-20 bg-[#F8FAFC] relative">
           <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
             <div className="text-center mb-10">
               <Badge
                 variant="outline"
-                className="border-teal-600 text-teal-700 bg-teal-50 px-3 py-1 text-xs uppercase tracking-wider font-semibold mb-3"
+                className="border-[#1D4ED8] text-[#1D4ED8] bg-blue-50 px-3 py-1 text-xs uppercase tracking-wider font-bold mb-3"
               >
-                Cotação Direta e Sem Burocracia
+                Cotação Rápida Sem Burocracia
               </Badge>
-              <h2 className="text-3xl sm:text-4xl font-extrabold text-gray-900 tracking-tight">
+              <h2 className="text-3xl sm:text-4xl font-black text-[#0A2540] tracking-tight">
                 Solicite seu Orçamento
               </h2>
-              <p className="mt-3 text-base text-gray-600 max-w-xl mx-auto">
-                Preencha os dados abaixo e escolha se deseja despachar a cotação pelo{' '}
-                <strong>WhatsApp</strong> ou por <strong>E-mail</strong>. Nossa equipe comercial
-                responderá rapidamente.
+              <p className="mt-3 text-base text-slate-600 max-w-xl mx-auto">
+                Preencha os dados abaixo e envie diretamente para o nosso{' '}
+                <strong>WhatsApp comercial</strong> ou por <strong>E-mail</strong>. Orçamentos
+                rápidos e sem compromisso.
               </p>
             </div>
 
-            <Card className="border-[#ECEAE4] shadow-xl rounded-3xl overflow-hidden bg-[#FAF9F7]">
-              <div className="h-2 bg-gradient-to-r from-teal-700 via-teal-600 to-amber-500" />
+            <Card className="border-blue-100 shadow-xl rounded-3xl overflow-hidden bg-white">
+              <div className="h-2.5 bg-gradient-to-r from-[#0A2540] via-[#1D4ED8] to-amber-400" />
               <CardContent className="p-6 sm:p-10">
                 {statusConfirmacao && (
-                  <div className="mb-8 p-4 rounded-2xl bg-teal-50 border border-teal-200 text-teal-900 flex items-start gap-3 animate-fade-in">
-                    <CheckCircle2 className="w-5 h-5 text-teal-600 shrink-0 mt-0.5" />
+                  <div className="mb-8 p-4 rounded-2xl bg-emerald-50 border border-emerald-200 text-emerald-900 flex items-start gap-3 animate-fade-in">
+                    <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0 mt-0.5" />
                     <div className="space-y-1">
                       <strong className="text-sm block">Seu orçamento foi encaminhado!</strong>
-                      <p className="text-xs text-teal-800 leading-relaxed">{statusConfirmacao}</p>
+                      <p className="text-xs text-emerald-800 leading-relaxed">
+                        {statusConfirmacao}
+                      </p>
                     </div>
                   </div>
                 )}
@@ -1011,7 +1466,7 @@ export default function HomePublica() {
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
                     {/* Nome */}
                     <div className="space-y-2">
-                      <Label htmlFor="nome" className="text-xs font-semibold text-gray-700">
+                      <Label htmlFor="nome" className="text-xs font-bold text-slate-700">
                         Nome ou Razão Social <span className="text-red-500">*</span>
                       </Label>
                       <Input
@@ -1022,8 +1477,8 @@ export default function HomePublica() {
                           if (erros.nome) setErros((prev) => ({ ...prev, nome: undefined }))
                         }}
                         placeholder="Ex: Construtora Silva ou João Santos"
-                        className={`bg-white border-[#ECEAE4] h-11 ${
-                          erros.nome ? 'border-red-500 focus-visible:ring-red-400' : ''
+                        className={`bg-white border-slate-200 h-11 focus-visible:ring-[#1D4ED8] ${
+                          erros.nome ? 'border-red-500' : ''
                         }`}
                       />
                       {erros.nome && <p className="text-[11px] text-red-600">{erros.nome}</p>}
@@ -1031,7 +1486,7 @@ export default function HomePublica() {
 
                     {/* Telefone / WhatsApp */}
                     <div className="space-y-2">
-                      <Label htmlFor="telefone" className="text-xs font-semibold text-gray-700">
+                      <Label htmlFor="telefone" className="text-xs font-bold text-slate-700">
                         Telefone / WhatsApp <span className="text-red-500">*</span>
                       </Label>
                       <Input
@@ -1041,9 +1496,9 @@ export default function HomePublica() {
                           setTelefone(e.target.value)
                           if (erros.telefone) setErros((prev) => ({ ...prev, telefone: undefined }))
                         }}
-                        placeholder="Ex: (87) 99999-0000"
-                        className={`bg-white border-[#ECEAE4] h-11 ${
-                          erros.telefone ? 'border-red-500 focus-visible:ring-red-400' : ''
+                        placeholder="Ex: (83) 98899-0000"
+                        className={`bg-white border-slate-200 h-11 focus-visible:ring-[#1D4ED8] ${
+                          erros.telefone ? 'border-red-500' : ''
                         }`}
                       />
                       {erros.telefone && (
@@ -1055,9 +1510,9 @@ export default function HomePublica() {
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
                     {/* E-mail (opcional) */}
                     <div className="space-y-2">
-                      <Label htmlFor="email" className="text-xs font-semibold text-gray-700">
+                      <Label htmlFor="email" className="text-xs font-bold text-slate-700">
                         E-mail de contato{' '}
-                        <span className="text-gray-400 font-normal">(opcional)</span>
+                        <span className="text-slate-400 font-normal">(opcional)</span>
                       </Label>
                       <Input
                         id="email"
@@ -1065,73 +1520,82 @@ export default function HomePublica() {
                         value={email}
                         onChange={(e) => setEmail(e.target.value)}
                         placeholder="contato@suaempresa.com.br"
-                        className="bg-white border-[#ECEAE4] h-11"
+                        className="bg-white border-slate-200 h-11 focus-visible:ring-[#1D4ED8]"
                       />
                     </div>
 
                     {/* Produto de interesse */}
                     <div className="space-y-2">
-                      <Label className="text-xs font-semibold text-gray-700">
-                        Produto de interesse
+                      <Label className="text-xs font-bold text-slate-700">
+                        Produto ou Serviço de Interesse
                       </Label>
                       <Select value={produto} onValueChange={setProduto}>
-                        <SelectTrigger className="bg-white border-[#ECEAE4] h-11">
-                          <SelectValue placeholder="Selecione o produto" />
+                        <SelectTrigger className="bg-white border-slate-200 h-11">
+                          <SelectValue placeholder="Selecione o produto ou serviço" />
                         </SelectTrigger>
-                        <SelectContent className="bg-white border-[#ECEAE4]">
-                          <SelectItem value="Brita 1 2">Brita 1 2</SelectItem>
-                          <SelectItem value="Brita 1 9">Brita 1 9</SelectItem>
-                          <SelectItem value="Pedra Rachão">Pedra Rachão</SelectItem>
-                          <SelectItem value="Pó de Pedra">Pó de Pedra</SelectItem>
-                          <SelectItem value="Cascalhinho">Cascalhinho</SelectItem>
-                          <SelectItem value="Outro / não sei ainda">
-                            Outro / não sei ainda
+                        <SelectContent className="bg-white border-slate-200">
+                          <SelectItem value="Concreto Usinado GC Mix">
+                            Concreto Usinado GC Mix (Traços diversos)
+                          </SelectItem>
+                          <SelectItem value="Brita 1 2">Brita 1 2 (9,5 a 19 mm)</SelectItem>
+                          <SelectItem value="Brita 1 9">Brita 1 9 (19 a 25 mm)</SelectItem>
+                          <SelectItem value="Pedra Rachão">
+                            Pedra Rachão (Muros/Contenções)
+                          </SelectItem>
+                          <SelectItem value="Pó de Pedra">
+                            Pó de Pedra (Argamassas e assentamento)
+                          </SelectItem>
+                          <SelectItem value="Cascalhinho">Cascalhinho (Pedrisco limpo)</SelectItem>
+                          <SelectItem value="Britador Móvel Lokotrack — C M Construções">
+                            Britador Móvel Lokotrack (C M Construções)
+                          </SelectItem>
+                          <SelectItem value="Outro / Mix de Materiais">
+                            Outro / Mix de Materiais
                           </SelectItem>
                         </SelectContent>
                       </Select>
                     </div>
                   </div>
 
-                  {/* Quantidade estimada */}
+                  {/* Quantidade estimada e Cidade */}
                   <div className="space-y-2">
-                    <Label htmlFor="quantidade" className="text-xs font-semibold text-gray-700">
-                      Quantidade estimada / Cidade de entrega{' '}
-                      <span className="text-gray-400 font-normal">(texto livre)</span>
+                    <Label htmlFor="quantidade" className="text-xs font-bold text-slate-700">
+                      Volume estimado / Cidade e Local da Obra
                     </Label>
                     <Input
                       id="quantidade"
                       value={quantidade}
                       onChange={(e) => setQuantidade(e.target.value)}
-                      placeholder="Ex: 3 caçambas (45 m³) para entrega em Sertânia / PE"
-                      className="bg-white border-[#ECEAE4] h-11"
+                      placeholder="Ex: 8 m³ de concreto usinado para laje em Patos — PB"
+                      className="bg-white border-slate-200 h-11 focus-visible:ring-[#1D4ED8]"
                     />
                   </div>
 
                   {/* Mensagem / Observações */}
                   <div className="space-y-2">
-                    <Label htmlFor="mensagem" className="text-xs font-semibold text-gray-700">
-                      Mensagem adicional ou especificações da obra
+                    <Label htmlFor="mensagem" className="text-xs font-bold text-slate-700">
+                      Observações adicionais ou data desejada da entrega
                     </Label>
                     <Textarea
                       id="mensagem"
                       value={mensagem}
                       onChange={(e) => setMensagem(e.target.value)}
                       rows={3}
-                      placeholder="Descreva detalhes como prazo desejado, tipo de veículo que acessa o local, forma de pagamento preferida..."
-                      className="bg-white border-[#ECEAE4] resize-none"
+                      placeholder="Descreva detalhes como fck do concreto, necessidade de bomba, tipo de acesso para caminhões..."
+                      className="bg-white border-slate-200 resize-none focus-visible:ring-[#1D4ED8]"
                     />
                   </div>
 
-                  {/* Botões de Ação com os dois canais */}
-                  <div className="pt-4 border-t border-[#ECEAE4] flex flex-col sm:flex-row items-center justify-between gap-4">
-                    <div className="text-xs text-gray-500 text-center sm:text-left">
-                      <span>Escolha o canal pelo qual prefere despachar:</span>
+                  {/* Botões de Ação */}
+                  <div className="pt-4 border-t border-slate-100 flex flex-col sm:flex-row items-center justify-between gap-4">
+                    <div className="text-xs text-slate-500 text-center sm:text-left">
+                      <span>Orçamento rápido despachado diretamente para nossos consultores:</span>
                     </div>
 
                     <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 w-full sm:w-auto">
                       <Button
                         type="submit"
-                        className="bg-emerald-600 hover:bg-emerald-700 text-white font-semibold rounded-xl h-12 px-6 shadow-md shadow-emerald-600/20 flex items-center justify-center gap-2"
+                        className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl h-12 px-6 shadow-md shadow-emerald-600/20 flex items-center justify-center gap-2 cursor-pointer"
                       >
                         <MessageCircle className="w-4 h-4" />
                         Enviar pelo WhatsApp
@@ -1141,9 +1605,9 @@ export default function HomePublica() {
                         type="button"
                         variant="outline"
                         onClick={enviarPorEmail}
-                        className="bg-white hover:bg-gray-100 text-gray-700 border-gray-300 font-semibold rounded-xl h-12 px-6 flex items-center justify-center gap-2"
+                        className="bg-white hover:bg-slate-50 text-slate-700 border-slate-300 font-bold rounded-xl h-12 px-6 flex items-center justify-center gap-2 cursor-pointer"
                       >
-                        <Mail className="w-4 h-4 text-teal-700" />
+                        <Mail className="w-4 h-4 text-[#1D4ED8]" />
                         Enviar por E-mail
                       </Button>
                     </div>
@@ -1154,65 +1618,86 @@ export default function HomePublica() {
           </div>
         </section>
 
-        {/* SEÇÃO CONTATO DIRETO */}
-        <section id="contato" className="py-16 bg-[#FAF9F7] border-t border-[#ECEAE4]">
+        {/* SEÇÃO CONTATO DIRETO / FALE COM A GENTE (Com o endereço corrigido e telefones reais) */}
+        <section id="contato" className="py-16 bg-white border-t border-blue-100">
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-              <div className="bg-white p-6 rounded-2xl border border-[#ECEAE4] space-y-3">
-                <div className="w-10 h-10 rounded-xl bg-teal-50 border border-teal-200 flex items-center justify-center text-teal-700">
+            <div className="text-center max-w-2xl mx-auto mb-12">
+              <Badge
+                variant="outline"
+                className="border-[#1D4ED8] text-[#1D4ED8] bg-blue-50 px-3 py-1 mb-2 text-xs uppercase tracking-wider font-bold"
+              >
+                Contato
+              </Badge>
+              <h3 className="text-3xl font-black text-[#0A2540]">Fale com a Gente</h3>
+              <p className="text-sm text-slate-600 mt-1">
+                Atendimento de segunda a sábado, em todas as unidades.
+              </p>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+              {/* Telefone 0800 */}
+              <div className="bg-[#F8FAFC] p-6 rounded-2xl border border-blue-100 space-y-3">
+                <div className="w-11 h-11 rounded-xl bg-[#1D4ED8] text-white flex items-center justify-center shadow-md shadow-blue-800/20">
                   <Phone className="w-5 h-5" />
                 </div>
-                <h4 className="font-bold text-gray-900">Atendimento Comercial</h4>
-                <p className="text-xs text-gray-600">
-                  Fale com um consultor comercial para cotações rápidas e agendamento de entregas.
-                </p>
-                <div className="flex flex-wrap items-center gap-3 pt-1">
+                <h4 className="font-bold text-[#0A2540]">Central de Atendimento</h4>
+                <p className="text-xs text-slate-600">Ligação gratuita para todo o Brasil.</p>
+                <div className="pt-1">
                   <a
                     href={INSTITUCIONAL_CONFIG.telefoneTelLink}
-                    className="inline-flex items-center gap-1.5 text-sm font-bold text-teal-700 hover:underline"
-                    title="Ligar para Atendimento Comercial"
+                    className="inline-flex items-center gap-1.5 text-base font-black text-[#1D4ED8] hover:underline"
                   >
                     {INSTITUCIONAL_CONFIG.telefoneFormatado}
                   </a>
-                  <span className="text-xs text-gray-300">•</span>
+                </div>
+              </div>
+
+              {/* WhatsApp Oficial */}
+              <div className="bg-[#F8FAFC] p-6 rounded-2xl border border-blue-100 space-y-3">
+                <div className="w-11 h-11 rounded-xl bg-emerald-600 text-white flex items-center justify-center shadow-md shadow-emerald-700/20">
+                  <MessageCircle className="w-5 h-5" />
+                </div>
+                <h4 className="font-bold text-[#0A2540]">WhatsApp Comercial</h4>
+                <p className="text-xs text-slate-600">Cotações de concreto e do Lokotrack.</p>
+                <div className="pt-1">
                   <a
-                    href={`https://wa.me/${INSTITUCIONAL_CONFIG.whatsappNumero}`}
+                    href={INSTITUCIONAL_CONFIG.whatsappUrlConcreto}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="inline-flex items-center gap-1 text-xs font-semibold text-emerald-700 hover:underline"
-                    title="Chamar no WhatsApp"
+                    className="inline-flex items-center gap-1.5 text-base font-black text-emerald-700 hover:underline"
                   >
-                    <span>WhatsApp</span>
-                    <ExternalLink className="w-3 h-3" />
+                    {INSTITUCIONAL_CONFIG.whatsappNumeroFormatado}
+                    <ExternalLink className="w-3.5 h-3.5" />
                   </a>
                 </div>
               </div>
 
-              <div className="bg-white p-6 rounded-2xl border border-[#ECEAE4] space-y-3">
-                <div className="w-10 h-10 rounded-xl bg-teal-50 border border-teal-200 flex items-center justify-center text-teal-700">
-                  <Mail className="w-5 h-5" />
-                </div>
-                <h4 className="font-bold text-gray-900">E-mail Comercial</h4>
-                <p className="text-xs text-gray-600">
-                  Envie solicitações formais de cotação para licitações e contratos de suprimento.
-                </p>
-                <a
-                  href={`mailto:${INSTITUCIONAL_CONFIG.emailComercial}`}
-                  className="inline-flex items-center gap-1.5 text-sm font-bold text-teal-700 hover:underline pt-1"
-                >
-                  {INSTITUCIONAL_CONFIG.emailComercial}
-                  <ExternalLink className="w-3.5 h-3.5" />
-                </a>
-              </div>
-
-              <div className="bg-white p-6 rounded-2xl border border-[#ECEAE4] space-y-3">
-                <div className="w-10 h-10 rounded-xl bg-teal-50 border border-teal-200 flex items-center justify-center text-teal-700">
+              {/* Endereço Exato da Matriz */}
+              <div className="bg-[#F8FAFC] p-6 rounded-2xl border border-blue-100 space-y-3">
+                <div className="w-11 h-11 rounded-xl bg-[#1E3A8A] text-white flex items-center justify-center shadow-md shadow-blue-900/20">
                   <MapPin className="w-5 h-5" />
                 </div>
-                <h4 className="font-bold text-gray-900">Localização e Operação</h4>
-                <p className="text-xs text-gray-600">{INSTITUCIONAL_CONFIG.localizacao}</p>
-                <div className="text-xs text-gray-500 font-medium pt-1">
-                  Atendimento: {INSTITUCIONAL_CONFIG.horarioAtendimento}
+                <h4 className="font-bold text-[#0A2540]">Endereço da Matriz</h4>
+                <div className="text-xs text-slate-700 leading-relaxed">
+                  <strong>{INSTITUCIONAL_CONFIG.enderecoMatriz}</strong>
+                  <div>{INSTITUCIONAL_CONFIG.cidadeUfCepMatriz}</div>
+                </div>
+                <div className="text-[11px] text-slate-500 font-medium pt-1">
+                  Matriz • Pedreira Cordeiro e GC Mix
+                </div>
+              </div>
+
+              {/* Horário */}
+              <div className="bg-[#F8FAFC] p-6 rounded-2xl border border-blue-100 space-y-3">
+                <div className="w-11 h-11 rounded-xl bg-amber-500 text-slate-950 flex items-center justify-center shadow-md shadow-amber-500/20">
+                  <Clock className="w-5 h-5" />
+                </div>
+                <h4 className="font-bold text-[#0A2540]">Horário de Funcionamento</h4>
+                <div className="text-xs text-slate-700 leading-relaxed font-semibold">
+                  {INSTITUCIONAL_CONFIG.horarioAtendimento}
+                </div>
+                <div className="text-[11px] text-slate-500">
+                  Plantão comercial e logística de concretagem
                 </div>
               </div>
             </div>
@@ -1220,16 +1705,16 @@ export default function HomePublica() {
         </section>
       </main>
 
-      {/* RODAPÉ INSTITUCIONAL */}
-      <footer className="bg-slate-950 text-slate-400 border-t border-slate-900 pt-16 pb-12">
+      {/* RODAPÉ INSTITUCIONAL EM AZUL PROFUNDO MUNIQUE */}
+      <footer className="bg-[#0A1A3B] text-slate-300 border-t border-[#1E3A8A] pt-16 pb-12">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 space-y-12">
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-12 gap-8 items-start">
             {/* Coluna 1: Marca & Descrição */}
             <div className="lg:col-span-5 space-y-4">
               <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-teal-600 flex items-center justify-center text-white">
+                <div className="w-11 h-11 rounded-xl bg-gradient-to-br from-[#1E3A8A] to-[#1D4ED8] flex items-center justify-center text-white shadow-md">
                   <svg
-                    className="w-5 h-5"
+                    className="w-6 h-6 text-white"
                     viewBox="0 0 24 24"
                     fill="none"
                     stroke="currentColor"
@@ -1241,65 +1726,90 @@ export default function HomePublica() {
                   </svg>
                 </div>
                 <div>
-                  <span className="text-lg font-bold text-white block">Pedreira Cordeiro</span>
-                  <span className="text-[11px] text-teal-400 font-bold uppercase tracking-wider block">
+                  <span className="text-lg font-black text-white block">
                     {INSTITUCIONAL_CONFIG.nomeFantasia}
+                  </span>
+                  <span className="text-[11px] text-[#60A5FA] font-bold uppercase tracking-wider block">
+                    GC Mix • Pedreira Cordeiro • C M Construções
                   </span>
                 </div>
               </div>
 
-              <p className="text-xs text-slate-400 max-w-sm leading-relaxed">
-                Mineração, extração e britagem de rocha granítica para construção civil, rodovias,
-                concreto e obras de infraestrutura com excelência e pontualidade.
+              <p className="text-xs text-slate-300 max-w-sm leading-relaxed">
+                Concreto usinado dosado em central, extração e britagem de rocha granítica, e
+                locação de britador móvel Lokotrack para Paraíba, Pernambuco e Rio Grande do Norte.
               </p>
 
-              <div className="text-xs text-slate-500 space-y-1 pt-2 font-mono">
+              <div className="text-xs text-slate-400 space-y-1 pt-2 font-mono">
                 <div>CNPJ: {INSTITUCIONAL_CONFIG.cnpj}</div>
                 <div>Razão Social: {INSTITUCIONAL_CONFIG.razaoSocial}</div>
-                <div>Website: {INSTITUCIONAL_CONFIG.site}</div>
+                <div>
+                  Endereço: {INSTITUCIONAL_CONFIG.enderecoMatriz} —{' '}
+                  {INSTITUCIONAL_CONFIG.cidadeUfCepMatriz}
+                </div>
               </div>
             </div>
 
-            {/* Coluna 2: Produtos */}
+            {/* Coluna 2: Unidades e Serviços */}
             <div className="lg:col-span-3 space-y-3">
-              <span className="text-xs uppercase tracking-wider font-bold text-slate-200 block">
-                Agregados Disponíveis
+              <span className="text-xs uppercase tracking-wider font-bold text-white block">
+                Nossas Unidades
               </span>
-              <ul className="text-xs space-y-2">
-                {PRODUTOS_PEDREIRA.map((p) => (
-                  <li key={p.id}>
-                    <button
-                      onClick={() => rolarParaOrcamento(p.nome)}
-                      className="hover:text-teal-400 transition-colors cursor-pointer text-left"
-                    >
-                      {p.nome}
-                    </button>
+              <ul className="text-xs space-y-2 text-slate-300">
+                {UNIDADES_GC.map((u) => (
+                  <li key={u.id} className="flex items-center gap-1.5">
+                    <span className="w-1.5 h-1.5 rounded-full bg-[#38BDF8]" />
+                    <span>
+                      {u.cidade} — {u.uf} ({u.tipo})
+                    </span>
                   </li>
                 ))}
               </ul>
+
+              <div className="pt-2">
+                <span className="text-xs uppercase tracking-wider font-bold text-white block mb-1">
+                  C M Construções
+                </span>
+                <a href="#cm-lokotrack" className="text-xs text-amber-300 hover:underline block">
+                  Britador Móvel Lokotrack →
+                </a>
+              </div>
             </div>
 
-            {/* Coluna 3: Links e Acesso */}
+            {/* Coluna 3: Acesso Restrito & Colaborador */}
             <div className="lg:col-span-4 space-y-4">
-              <span className="text-xs uppercase tracking-wider font-bold text-slate-200 block">
+              <span className="text-xs uppercase tracking-wider font-bold text-white block">
                 Área Restrita do Colaborador
               </span>
-              <p className="text-xs text-slate-400 leading-relaxed">
-                Acesso exclusivo para funcionários, frotistas e setor administrativo realizarem
-                lançamentos de romaneios, abastecimentos, exames e finanças.
+              <p className="text-xs text-slate-300 leading-relaxed">
+                Acesso exclusivo para colaboradores e setor administrativo para romaneios, vendas,
+                frotas, contas a pagar/receber e exames.
               </p>
 
               <Link
                 to="/login"
-                className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-teal-400 hover:text-teal-300 border border-slate-800 text-xs font-semibold transition-all shadow-sm"
+                className="inline-flex items-center gap-2 px-5 py-3 rounded-xl bg-gradient-to-r from-[#1E3A8A] to-[#1D4ED8] hover:from-[#172554] hover:to-[#1E40AF] text-white text-xs font-bold transition-all shadow-md border border-blue-400/30"
               >
-                <LogIn className="w-4 h-4" />
+                <LogIn className="w-4 h-4 text-amber-300" />
                 <span>Entrar no Sistema (ERP Pedreira Cordeiro)</span>
               </Link>
+
+              <div className="pt-2 flex flex-col gap-1 text-xs text-slate-400">
+                <div>
+                  Central 0800:{' '}
+                  <strong className="text-white">{INSTITUCIONAL_CONFIG.telefoneFormatado}</strong>
+                </div>
+                <div>
+                  WhatsApp:{' '}
+                  <strong className="text-emerald-400">
+                    {INSTITUCIONAL_CONFIG.whatsappNumeroFormatado}
+                  </strong>
+                </div>
+              </div>
             </div>
           </div>
 
-          <div className="pt-8 border-t border-slate-900 flex flex-col sm:flex-row items-center justify-between text-xs text-slate-500 gap-4">
+          <div className="pt-8 border-t border-[#1E3A8A]/60 flex flex-col sm:flex-row items-center justify-between text-xs text-slate-400 gap-4">
             <div>
               © {new Date().getFullYear()} {INSTITUCIONAL_CONFIG.nomeFantasia}. Todos os direitos
               reservados.
@@ -1307,12 +1817,17 @@ export default function HomePublica() {
 
             <div className="flex items-center gap-6">
               <a
-                href={`https://${INSTITUCIONAL_CONFIG.site}`}
-                className="hover:text-slate-300 transition-colors"
+                href={INSTITUCIONAL_CONFIG.siteUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="hover:text-white transition-colors"
               >
                 {INSTITUCIONAL_CONFIG.site}
               </a>
-              <Link to="/login" className="hover:text-teal-400 transition-colors text-slate-400">
+              <Link
+                to="/login"
+                className="hover:text-[#60A5FA] transition-colors text-slate-300 font-semibold"
+              >
                 Área do Colaborador
               </Link>
             </div>

@@ -1,13 +1,33 @@
 /**
- * Informações institucionais e canais de contato da Pedreira Cordeiro.
+ * Informações institucionais e canais de contato da Pedreira Cordeiro / Grupo GC do Amaral / GC Mix / C M Construções.
  *
- * NOTA: Estes dados são editáveis diretamente aqui caso a empresa altere o número
- * de WhatsApp ou e-mail de atendimento comercial.
+ * Conteúdo sincronizado com o site oficial pedreiracordeiro.com.br
  */
+
+export interface UnidadeEmpresa {
+  id: string
+  cidade: string
+  uf: string
+  descricao: string
+  tipo: string
+  destaque?: boolean
+}
+
+export interface ServicoItem {
+  id: string
+  titulo: string
+  descricao: string
+  icone: 'concreto' | 'betoneira' | 'agregados' | 'dosagem' | 'lokotrack'
+  link?: string
+  destaque?: boolean
+}
 
 export const INSTITUCIONAL_CONFIG = {
   // Nome da Empresa e Marca
-  nomeFantasia: 'Grupo Pedreira Cordeiro',
+  nomeFantasia: 'Grupo GC do Amaral',
+  marcaPedreira: 'Pedreira Cordeiro',
+  marcaConcreto: 'GC Mix',
+  empresaLokotrack: 'C M Construções',
   razaoSocial: 'G C DO AMARAL SERTANIA',
   cnpj: '05.581.899/0001-05',
   inscricaoEstadual: '123.456.789.000',
@@ -15,25 +35,34 @@ export const INSTITUCIONAL_CONFIG = {
   siteUrl: 'https://pedreiracordeiro.com.br',
 
   // Atendimento Comercial e Telefone / WhatsApp
-  // O número comercial fornecido é "0800 083 1200" (gratuito nacional).
-  // Números 0800 no Brasil são telefones fixos gratuitos nacionais sem DDD geográfico.
-  // Para ligações diretas via navegador / smartphone, o protocolo tel: usa o formato E.164: +5508000831200.
-  // Para wa.me, o formato internacional correspondente com DDI 55 é 5508000831200 (ou 558000831200);
-  // mantemos wa.me apontando para o número brasileiro oficial e disponibilizamos também o link tel: para discagem direta.
   telefoneNumero: '08000831200',
   telefoneFormatado: '0800 083 1200',
-  telefoneTelLink: 'tel:+5508000831200',
+  telefoneTelLink: 'tel:08000831200',
 
-  // Canal WhatsApp Comercial
-  whatsappNumero: '558000831200',
-  whatsappNumeroFormatado: '0800 083 1200',
+  // Canal WhatsApp Comercial Real
+  whatsappNumero: '5583988996640',
+  whatsappNumeroFormatado: '(83) 98899-6640',
+  whatsappUrlConcreto:
+    'https://wa.me/5583988996640?text=Ol%C3%A1!%20Quero%20um%20or%C3%A7amento%20de%20concreto.',
+  whatsappUrlLokotrack:
+    'https://wa.me/5583988996640?text=Ol%C3%A1!%20Quero%20um%20or%C3%A7amento%20de%20loca%C3%A7%C3%A3o%20do%20britador%20Lokotrack.',
 
   // E-mail Comercial
   emailComercial: 'pedreiracordeiro@gmail.com',
 
-  // Localização e Atendimento
-  localizacao: 'Sertânia — PE / Região do Pajeú e Moxotó',
-  horarioAtendimento: 'Segunda a Sexta: 07h às 17h | Sábado: 07h às 12h',
+  // Localização e Endereço Oficial
+  localizacao: 'Patos — PB / Sertão Paraibano, Pernambucano e Potiguar',
+  enderecoMatriz: 'Fazenda Várzea da Jurema, S/N — Zona Rural',
+  cidadeUfCepMatriz: 'Patos — PB, CEP 58700-000',
+  horarioAtendimento: 'Segunda a sábado — Conforme programação da obra',
+
+  // Hero Stats
+  statsHero: [
+    { valor: '5', label: 'Unidades GC do Amaral' },
+    { valor: '1', label: 'Pedreira própria' },
+    { valor: '3', label: 'Estados atendidos' },
+    { valor: '0800', label: 'Atendimento gratuito' },
+  ],
 
   // Missão, Visão e Objetivos extraídos diretamente do site oficial (pedreiracordeiro.com.br)
   missao:
@@ -45,6 +74,14 @@ export const INSTITUCIONAL_CONFIG = {
     'Manter o controle de qualidade em cada dosagem;',
     'Atender bem o cliente em todas as unidades;',
     'Crescer com responsabilidade, gerando emprego na região.',
+  ],
+
+  // Bullets reais da Pedreira Cordeiro
+  pedreiraDestaques: [
+    'Brita 1 e Brita 2 para concreto e drenagem',
+    'Pó de pedra para contrapiso e alvenaria',
+    'Carga à pronta e entrega programada',
+    'Abastecimento direto das nossas concreteiras',
   ],
 
   // Vídeo institucional oficial do site
@@ -77,6 +114,88 @@ export const INSTITUCIONAL_CONFIG = {
   },
 } as const
 
+// Unidades reais da empresa
+export const UNIDADES_GC: UnidadeEmpresa[] = [
+  {
+    id: 'patos',
+    cidade: 'Patos',
+    uf: 'PB',
+    descricao: 'Matriz • Concreto usinado e Pedreira Cordeiro',
+    tipo: 'Concreteira + Pedreira',
+    destaque: true,
+  },
+  {
+    id: 'santa-luzia',
+    cidade: 'Santa Luzia',
+    uf: 'PB',
+    descricao: 'Concreto usinado',
+    tipo: 'Concreteira GC Mix',
+  },
+  {
+    id: 'sao-jose-do-egito',
+    cidade: 'São José do Egito',
+    uf: 'PE',
+    descricao: 'Concreto usinado',
+    tipo: 'Concreteira GC Mix',
+  },
+  {
+    id: 'caico',
+    cidade: 'Caicó',
+    uf: 'RN',
+    descricao: 'Concreto usinado',
+    tipo: 'Concreteira GC Mix',
+  },
+  {
+    id: 'monteiro',
+    cidade: 'Monteiro',
+    uf: 'PB',
+    descricao: 'Concreto usinado',
+    tipo: 'Concreteira GC Mix',
+  },
+]
+
+// Serviços reais
+export const SERVICOS_GC: ServicoItem[] = [
+  {
+    id: 'concreto-usinado',
+    titulo: 'Concreto Usinado GC Mix',
+    descricao:
+      'Concreto dosado em central, com controle rigoroso de resistência e entrega programada para a sua obra.',
+    icone: 'concreto',
+    destaque: true,
+  },
+  {
+    id: 'entrega-betoneira',
+    titulo: 'Entrega com Betoneira',
+    descricao:
+      'Frota de caminhões betoneira GC Mix para despejo direto na obra, com pontualidade no horário combinado.',
+    icone: 'betoneira',
+  },
+  {
+    id: 'britas-agregados',
+    titulo: 'Britas e Agregados',
+    descricao:
+      'Brita 1, brita 2, pedra rachão e pó de pedra da Pedreira Cordeiro — máxima qualidade direto da fonte.',
+    icone: 'agregados',
+  },
+  {
+    id: 'dosagem-sob-medida',
+    titulo: 'Dosagem sob Medida',
+    descricao:
+      'Traços desenvolvidos para cada aplicação técnica: fundações, lajes, pisos industriais, muros e concretos especiais.',
+    icone: 'dosagem',
+  },
+  {
+    id: 'britador-lokotrack',
+    titulo: 'Britador Móvel Lokotrack',
+    descricao:
+      'Locação de britador de mandíbula móvel pela C M Construções — esmagamento de rocha direto na sua obra ou pedreira.',
+    icone: 'lokotrack',
+    link: '#cm-lokotrack',
+    destaque: true,
+  },
+]
+
 // Lista oficial dos 5 produtos sob consulta da pedreira
 export interface ProdutoPedreiraItem {
   id: string
@@ -95,7 +214,7 @@ export const PRODUTOS_PEDREIRA: ProdutoPedreiraItem[] = [
     nome: 'Brita 1 2',
     codigoRef: 'PRD-BRITA12',
     granulometria: '9,5 mm a 19 mm (Brita 1 / 1/2")',
-    aplicacao: 'Concreto usinado, lajes, vigas, pilares e fundações estruturais',
+    aplicacao: 'Concreto usinado GC Mix, lajes, vigas, pilares e fundações estruturais',
     descricao:
       'Agregado graúdo de excelente adesão e granulometria uniforme, essencial para concreto de alta resistência estrutural e pisos industriais.',
     imagem: 'https://img.usecurling.com/p/600/400?q=crushed%20stone%20gravel&color=slate',
@@ -106,7 +225,7 @@ export const PRODUTOS_PEDREIRA: ProdutoPedreiraItem[] = [
     nome: 'Brita 1 9',
     codigoRef: 'PRD-BRITA19',
     granulometria: '19 mm a 25 mm (Brita 2 / 19mm)',
-    aplicacao: 'Concreto pesado, drenagens, lastros ferroviários e pavimentação',
+    aplicacao: 'Concreto pesado, drenagens profundas, lastros e pavimentação',
     descricao:
       'Ideal para obras de infraestrutura pesada, bases de pavimentação asfáltica, drenagens profundas e concretos estruturais de grande porte.',
     imagem: 'https://img.usecurling.com/p/600/400?q=coarse%20gravel%20stones&color=stone',
