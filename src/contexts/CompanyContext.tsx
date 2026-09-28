@@ -67,7 +67,17 @@ export const CompanyProvider: React.FC<{ children: React.ReactNode }> = ({ child
 
       if (empresasParaExibir.length > 0) {
         const savedId = localStorage.getItem(LOCAL_STORAGE_KEY)
-        const matched = empresasParaExibir.find((e) => e.id === savedId) || empresasParaExibir[0]
+        // Priorizar: 1º escolha salva em localStorage (se pertencer à lista de autorizadas),
+        // 2º empresa padrão configurada no perfil do usuário (empresa_padrao_id),
+        // 3º primeira empresa autorizada.
+        const userEmpresaPadraoId = (user as any)?.empresa_padrao_id
+        const matched =
+          (savedId ? empresasParaExibir.find((e) => e.id === savedId) : null) ||
+          (userEmpresaPadraoId
+            ? empresasParaExibir.find((e) => e.id === userEmpresaPadraoId)
+            : null) ||
+          empresasParaExibir[0]
+
         setCurrentEmpresa(matched)
 
         const activeMembro = userMembros.find((m) => m.empresa_id === matched.id)

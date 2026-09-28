@@ -11,6 +11,7 @@ export interface OperadorItem {
   updated: string
   role: UserRole
   empresa_id?: string
+  empresa_padrao_id?: string
   empresa_nome?: string
   membros?: Array<{
     id: string
@@ -26,6 +27,7 @@ export interface CriarOperadorPayload {
   password: string
   role: UserRole
   empresa_id?: string
+  empresa_padrao_id?: string
 }
 
 export interface AtualizarOperadorPayload {
@@ -34,6 +36,7 @@ export interface AtualizarOperadorPayload {
   role?: UserRole
   ativo?: boolean
   empresa_id?: string
+  empresa_padrao_id?: string
 }
 
 export interface RedefinirSenhaResponse {

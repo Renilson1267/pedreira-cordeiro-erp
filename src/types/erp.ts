@@ -6,6 +6,7 @@ export interface User {
   name: string
   avatar?: string
   verified?: boolean
+  empresa_padrao_id?: string
 }
 
 export interface Empresa {

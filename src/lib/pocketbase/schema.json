@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-09-28T13:41:08.091Z",
+  "generatedAt": "2026-09-28T14:06:30.671Z",
   "collections": [
     {
       "name": "users",
@@ -43,6 +43,13 @@
           "type": "bool",
           "required": false,
           "system": false
+        },
+        {
+          "name": "empresa_padrao_id",
+          "type": "relation",
+          "required": false,
+          "system": false,
+          "collectionRef": "empresas"
         }
       ],
       "indexes": [

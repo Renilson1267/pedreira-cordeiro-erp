@@ -209,7 +209,7 @@ export default function Operadores() {
     setOperadorEditando(op)
     setEditNome(op.name)
     setEditRole(op.role)
-    setEditEmpresaId(op.empresa_id || '')
+    setEditEmpresaId(op.empresa_padrao_id || op.empresa_id || '')
     setModalEditarOpen(true)
   }
 
@@ -235,10 +235,12 @@ export default function Operadores() {
         name: editNome.trim(),
         role: editRole,
         empresa_id: editEmpresaId,
+        empresa_padrao_id: editEmpresaId,
       })
 
       toast({
         title: 'Operador atualizado com sucesso!',
+        description: 'As alterações de papel, nome e empresa padrão foram salvas.',
       })
       setModalEditarOpen(false)
       carregarOperadores()
@@ -767,10 +769,10 @@ export default function Operadores() {
             </div>
 
             <div>
-              <Label className="text-xs font-semibold text-gray-700">Empresa Vinculada</Label>
+              <Label className="text-xs font-semibold text-gray-700">Empresa Padrão *</Label>
               <Select value={editEmpresaId} onValueChange={setEditEmpresaId}>
                 <SelectTrigger className="mt-1 text-xs">
-                  <SelectValue placeholder="Selecione a empresa..." />
+                  <SelectValue placeholder="Selecione a empresa padrão..." />
                 </SelectTrigger>
                 <SelectContent>
                   {empresas.map((e) => (
@@ -780,6 +782,9 @@ export default function Operadores() {
                   ))}
                 </SelectContent>
               </Select>
+              <p className="text-[10px] text-gray-400 mt-1">
+                Define a empresa inicial ao entrar no sistema e o vínculo primário do operador.
+              </p>
             </div>
 
             <DialogFooter className="pt-4 flex justify-between items-center">

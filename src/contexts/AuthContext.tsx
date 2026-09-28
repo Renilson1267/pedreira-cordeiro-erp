@@ -24,6 +24,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         name: pb.authStore.record.name || 'Usuário',
         avatar: pb.authStore.record.avatar,
         verified: pb.authStore.record.verified,
+        empresa_padrao_id: pb.authStore.record.empresa_padrao_id || undefined,
       })
     } else {
       setUser(null)

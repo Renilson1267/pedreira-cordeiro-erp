@@ -74,6 +74,14 @@ routerAdd(
         const ativoVal = u.get('ativo')
         const isAtivo = ativoVal === undefined || ativoVal === null ? true : Boolean(ativoVal)
 
+        // Empresa padrão gravada diretamente no cadastro do usuário
+        const userEmpresaPadraoId = u.getString('empresa_padrao_id') || ''
+        const chosenEmpresaId = userEmpresaPadraoId || primaryMembro?.empresa_id || ''
+        const chosenEmpresaNome =
+          empresaMap[chosenEmpresaId]?.nome_fantasia ||
+          primaryMembro?.empresa_nome ||
+          'Grupo Pedreira Cordeiro'
+
         return {
           id: u.id,
           name: u.getString('name') || '',
@@ -84,8 +92,9 @@ routerAdd(
           updated: u.getString('updated'),
           membros: userMembros,
           role: primaryMembro?.role || 'leitura',
-          empresa_id: primaryMembro?.empresa_id || '',
-          empresa_nome: primaryMembro?.empresa_nome || 'Todas',
+          empresa_id: chosenEmpresaId,
+          empresa_padrao_id: chosenEmpresaId,
+          empresa_nome: chosenEmpresaNome,
         }
       })
 
@@ -175,6 +184,9 @@ routerAdd(
       newUser.setVerified(true)
       newUser.set('name', name)
       newUser.set('ativo', true)
+      if (targetEmpresaId) {
+        newUser.set('empresa_padrao_id', targetEmpresaId)
+      }
       $app.save(newUser)
 
       // Criar membro na empresa principal
@@ -271,7 +283,7 @@ routerAdd(
     const name = (body.name || '').trim()
     const role = body.role
     const ativo = body.ativo
-    const empresaId = body.empresa_id
+    const empresaId = body.empresa_id !== undefined ? body.empresa_id : body.empresa_padrao_id
 
     if (!id) {
       return e.json(400, { error: 'ID do operador não fornecido' })
@@ -291,25 +303,70 @@ routerAdd(
       const targetUser = $app.findFirstRecordByData('_pb_users_auth_', 'id', id)
       const oldName = targetUser.getString('name')
       const oldAtivo = targetUser.get('ativo') !== false
+      const oldEmpresaPadraoId = targetUser.getString('empresa_padrao_id') || ''
       const mudancas = []
+      const detalheCampos = []
 
       if (name && name !== oldName) {
         mudancas.push(`Nome alterado de "${oldName}" para "${name}"`)
+        detalheCampos.push({
+          campo: 'name',
+          campo_label: 'Nome do Operador',
+          valor_anterior: oldName,
+          valor_novo: name,
+        })
         targetUser.set('name', name)
       }
 
       if (ativo !== undefined && ativo !== oldAtivo) {
         mudancas.push(ativo ? 'Operador ativado' : 'Operador desativado')
+        detalheCampos.push({
+          campo: 'ativo',
+          campo_label: 'Status do Operador',
+          valor_anterior: oldAtivo ? 'Ativo' : 'Inativo',
+          valor_novo: ativo ? 'Ativo' : 'Inativo',
+        })
         targetUser.set('ativo', Boolean(ativo))
+      }
+
+      const targetEmpresaId = empresaId !== undefined ? empresaId || '' : oldEmpresaPadraoId
+
+      // Se foi informada alteração de empresa padrão
+      if (empresaId !== undefined && empresaId !== oldEmpresaPadraoId) {
+        let oldNomeEmpresa = 'Nenhuma'
+        let newNomeEmpresa = 'Nenhuma'
+        try {
+          if (oldEmpresaPadraoId) {
+            const oldEmp = $app.findFirstRecordByData('empresas', 'id', oldEmpresaPadraoId)
+            oldNomeEmpresa = oldEmp.getString('nome_fantasia')
+          }
+        } catch (_) {}
+        try {
+          if (empresaId) {
+            const newEmp = $app.findFirstRecordByData('empresas', 'id', empresaId)
+            newNomeEmpresa = newEmp.getString('nome_fantasia')
+          }
+        } catch (_) {}
+
+        mudancas.push(`Empresa padrão alterada de "${oldNomeEmpresa}" para "${newNomeEmpresa}"`)
+        detalheCampos.push({
+          campo: 'empresa_padrao_id',
+          campo_label: 'Empresa Padrão',
+          valor_anterior: oldNomeEmpresa,
+          valor_novo: newNomeEmpresa,
+          valor_anterior_formatado: oldNomeEmpresa,
+          valor_novo_formatado: newNomeEmpresa,
+        })
+
+        targetUser.set('empresa_padrao_id', empresaId || null)
       }
 
       $app.save(targetUser)
 
       const empresaMembrosCol = $app.findCollectionByNameOrId('empresa_membros')
-      const targetEmpresaId = empresaId || ''
 
       if (role) {
-        // Atualizar papel
+        // Atualizar papel em todos os vínculos do usuário
         const membros = $app.findRecordsByFilter(
           'empresa_membros',
           `usuario_id = '${id}'`,
@@ -325,6 +382,12 @@ routerAdd(
               m.set('role', role)
               $app.save(m)
               mudancas.push(`Papel atualizado para "${role}"`)
+              detalheCampos.push({
+                campo: 'role',
+                campo_label: 'Papel de Acesso',
+                valor_anterior: oldRole,
+                valor_novo: role,
+              })
             }
           }
         } else if (targetEmpresaId) {
@@ -333,11 +396,11 @@ routerAdd(
           novoMembro.set('usuario_id', id)
           novoMembro.set('role', role)
           $app.save(novoMembro)
-          mudancas.push(`Papel definido como "${role}"`)
+          mudancas.push(`Papel definido como "${role}" na empresa`)
         }
       }
 
-      // Se mudou empresa padrão e ela foi informada
+      // Se mudou empresa padrão e ela foi informada, garantir que o usuário é membro dessa empresa
       if (targetEmpresaId) {
         const memEmpresa = $app.findRecordsByFilter(
           'empresa_membros',
@@ -359,8 +422,8 @@ routerAdd(
       try {
         const histCol = $app.findCollectionByNameOrId('historico_alteracoes')
         const recHist = new Record(histCol)
-        recHist.set('empresa_id', targetEmpresaId || '6nt8u83eiyzf6xr')
-        recHist.set('colecao_origem', 'outros')
+        recHist.set('empresa_id', targetEmpresaId || oldEmpresaPadraoId || '6nt8u83eiyzf6xr')
+        recHist.set('colecao_origem', 'operadores')
         recHist.set('registro_id', id)
         recHist.set('acao', 'editar')
         recHist.set('usuario_id', authRecord.id)
@@ -372,12 +435,25 @@ routerAdd(
         recHist.set('detalhes', {
           operador_id: id,
           operador_nome: targetUser.getString('name'),
-          alteracoes: mudancas,
+          alteracoes: detalheCampos,
+          mudancas_texto: mudancas,
         })
         $app.save(recHist)
       } catch (histErr) {
         console.log('Aviso ao registrar historico operador:', histErr)
       }
+
+      let resEmpresaNome = ''
+      try {
+        if (targetUser.getString('empresa_padrao_id')) {
+          const emp = $app.findFirstRecordByData(
+            'empresas',
+            'id',
+            targetUser.getString('empresa_padrao_id'),
+          )
+          resEmpresaNome = emp.getString('nome_fantasia')
+        }
+      } catch (_) {}
 
       return e.json(200, {
         success: true,
@@ -387,6 +463,9 @@ routerAdd(
           email: targetUser.getString('email'),
           ativo: targetUser.get('ativo') !== false,
           role: role,
+          empresa_id: targetUser.getString('empresa_padrao_id') || '',
+          empresa_padrao_id: targetUser.getString('empresa_padrao_id') || '',
+          empresa_nome: resEmpresaNome,
         },
       })
     } catch (err) {
