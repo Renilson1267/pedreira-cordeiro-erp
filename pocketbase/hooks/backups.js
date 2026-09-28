@@ -3863,14 +3863,40 @@ routerAdd(
   'GET',
   '/backend/v1/google-drive/drive-oauth-start',
   (e) => {
+    var allowedOrigins = [
+      'https://erp-empresarial-completo-575bb.goskip.app',
+      'https://erp-empresarial-completo-575bb--preview.goskip.app',
+    ]
+    var callbackPath = '/backend/v1/google-drive/oauth-callback'
+
+    function resolverRedirect(candidateUri, fallbackPref) {
+      var raw = (candidateUri || '').trim()
+      if (raw) {
+        for (var i = 0; i < allowedOrigins.length; i++) {
+          if (raw === allowedOrigins[i] + callbackPath) return raw
+        }
+        for (var j = 0; j < allowedOrigins.length; j++) {
+          if (raw.replace(/\/+$/, '') === allowedOrigins[j]) return allowedOrigins[j] + callbackPath
+        }
+      }
+      if (fallbackPref) {
+        var cleanPref = fallbackPref.replace(/\/+$/, '')
+        for (var k = 0; k < allowedOrigins.length; k++) {
+          if (cleanPref === allowedOrigins[k]) return cleanPref + callbackPath
+        }
+      }
+      return allowedOrigins[0] + callbackPath
+    }
+
     var authRecord = e.auth
     if (!authRecord) {
       return e.json(401, { error: 'Não autorizado' })
     }
 
     var clientId = ''
+    var configRec = null
     try {
-      var configRec = $app.findFirstRecordByData('config_google_drive', 'chave', 'padrao')
+      configRec = $app.findFirstRecordByData('config_google_drive', 'chave', 'padrao')
       if (configRec) {
         clientId = configRec.getString('oauth_client_id') || configRec.getString('client_id') || ''
       }
@@ -3883,32 +3909,65 @@ routerAdd(
       })
     }
 
-    var host = ''
+    var candidateUri = ''
     try {
-      if (e && e.request) {
-        host = e.request.header.get('x-forwarded-host') || e.request.header.get('host') || ''
+      if (e && e.request && e.request.url && e.request.url.query) {
+        var q = e.request.url.query()
+        candidateUri = q.get('redirect_uri') || q.get('redirect') || ''
       }
     } catch (_) {}
 
-    var proto = 'https'
+    var refererOrigin = ''
     try {
-      if (e && e.request) {
-        var xfp = e.request.header.get('x-forwarded-proto')
-        if (xfp) proto = xfp
+      if (e && e.request && e.request.header) {
+        var ref = e.request.header.get('referer') || e.request.header.get('origin') || ''
+        if (ref.indexOf('--preview.goskip.app') !== -1) {
+          refererOrigin = 'https://erp-empresarial-completo-575bb--preview.goskip.app'
+        } else if (ref.indexOf('.goskip.app') !== -1) {
+          refererOrigin = 'https://erp-empresarial-completo-575bb.goskip.app'
+        }
       }
     } catch (_) {}
 
-    var redirectUri = ''
-    if (host) {
-      redirectUri = proto + '://' + host + '/backend/v1/google-drive/oauth-callback'
-    } else {
-      var envSiteUrl = $os.getenv('PB_INSTANCE_URL') || $os.getenv('SITE_URL') || ''
-      if (envSiteUrl) {
-        redirectUri = envSiteUrl.replace(/\/+$/, '') + '/backend/v1/google-drive/oauth-callback'
-      } else {
-        redirectUri =
-          'https://erp-empresarial-completo-575bb.shrd00.internal.goskip.dev/backend/v1/google-drive/oauth-callback'
+    if (candidateUri) {
+      var rawTrim = candidateUri.trim()
+      var bateuAllowlist = false
+      for (var a = 0; a < allowedOrigins.length; a++) {
+        var uExata = allowedOrigins[a] + callbackPath
+        if (rawTrim === uExata || rawTrim.replace(/\/+$/, '') === allowedOrigins[a]) {
+          bateuAllowlist = true
+          break
+        }
       }
+      if (!bateuAllowlist) {
+        return e.json(400, {
+          error: 'redirect_uri não permitido. Domínios aceitos: ' + allowedOrigins.join(', '),
+        })
+      }
+    }
+
+    var redirectUri = resolverRedirect(candidateUri, refererOrigin)
+
+    try {
+      if (!configRec) {
+        var configCol = $app.findCollectionByNameOrId('config_google_drive')
+        configRec = new Record(configCol)
+        configRec.set('chave', 'padrao')
+      }
+      var rawDet = configRec.get('detalhes')
+      var det = {}
+      try {
+        det =
+          typeof rawDet === 'string' ? JSON.parse(rawDet) : JSON.parse(JSON.stringify(rawDet || {}))
+      } catch (_) {
+        det = {}
+      }
+      det.oauth_last_redirect_uri = redirectUri
+      det.oauth_last_start_at = new Date().toISOString()
+      configRec.set('detalhes', det)
+      $app.save(configRec)
+    } catch (eSaveRedirect) {
+      console.warn('[OAUTH_START] Aviso ao persistir redirect_uri:', eSaveRedirect)
     }
 
     var scope = 'https://www.googleapis.com/auth/drive.file'
@@ -3924,6 +3983,8 @@ routerAdd(
       encodeURIComponent(scope) +
       '&access_type=offline' +
       '&prompt=consent'
+
+    console.log('[OAUTH_START] Consent URL gerada com redirect_uri: ' + redirectUri)
 
     return e.json(200, {
       success: true,
@@ -3939,14 +4000,40 @@ routerAdd(
   'GET',
   '/backend/v1/google-drive/oauth-start',
   (e) => {
+    var allowedOrigins = [
+      'https://erp-empresarial-completo-575bb.goskip.app',
+      'https://erp-empresarial-completo-575bb--preview.goskip.app',
+    ]
+    var callbackPath = '/backend/v1/google-drive/oauth-callback'
+
+    function resolverRedirect(candidateUri, fallbackPref) {
+      var raw = (candidateUri || '').trim()
+      if (raw) {
+        for (var i = 0; i < allowedOrigins.length; i++) {
+          if (raw === allowedOrigins[i] + callbackPath) return raw
+        }
+        for (var j = 0; j < allowedOrigins.length; j++) {
+          if (raw.replace(/\/+$/, '') === allowedOrigins[j]) return allowedOrigins[j] + callbackPath
+        }
+      }
+      if (fallbackPref) {
+        var cleanPref = fallbackPref.replace(/\/+$/, '')
+        for (var k = 0; k < allowedOrigins.length; k++) {
+          if (cleanPref === allowedOrigins[k]) return cleanPref + callbackPath
+        }
+      }
+      return allowedOrigins[0] + callbackPath
+    }
+
     var authRecord = e.auth
     if (!authRecord) {
       return e.json(401, { error: 'Não autorizado' })
     }
 
     var clientId = ''
+    var configRec = null
     try {
-      var configRec = $app.findFirstRecordByData('config_google_drive', 'chave', 'padrao')
+      configRec = $app.findFirstRecordByData('config_google_drive', 'chave', 'padrao')
       if (configRec) {
         clientId = configRec.getString('oauth_client_id') || configRec.getString('client_id') || ''
       }
@@ -3959,32 +4046,65 @@ routerAdd(
       })
     }
 
-    var host = ''
+    var candidateUri = ''
     try {
-      if (e && e.request) {
-        host = e.request.header.get('x-forwarded-host') || e.request.header.get('host') || ''
+      if (e && e.request && e.request.url && e.request.url.query) {
+        var q = e.request.url.query()
+        candidateUri = q.get('redirect_uri') || q.get('redirect') || ''
       }
     } catch (_) {}
 
-    var proto = 'https'
+    var refererOrigin = ''
     try {
-      if (e && e.request) {
-        var xfp = e.request.header.get('x-forwarded-proto')
-        if (xfp) proto = xfp
+      if (e && e.request && e.request.header) {
+        var ref = e.request.header.get('referer') || e.request.header.get('origin') || ''
+        if (ref.indexOf('--preview.goskip.app') !== -1) {
+          refererOrigin = 'https://erp-empresarial-completo-575bb--preview.goskip.app'
+        } else if (ref.indexOf('.goskip.app') !== -1) {
+          refererOrigin = 'https://erp-empresarial-completo-575bb.goskip.app'
+        }
       }
     } catch (_) {}
 
-    var redirectUri = ''
-    if (host) {
-      redirectUri = proto + '://' + host + '/backend/v1/google-drive/oauth-callback'
-    } else {
-      var envSiteUrl = $os.getenv('PB_INSTANCE_URL') || $os.getenv('SITE_URL') || ''
-      if (envSiteUrl) {
-        redirectUri = envSiteUrl.replace(/\/+$/, '') + '/backend/v1/google-drive/oauth-callback'
-      } else {
-        redirectUri =
-          'https://erp-empresarial-completo-575bb.shrd00.internal.goskip.dev/backend/v1/google-drive/oauth-callback'
+    if (candidateUri) {
+      var rawTrim = candidateUri.trim()
+      var bateuAllowlist = false
+      for (var a = 0; a < allowedOrigins.length; a++) {
+        var uExata = allowedOrigins[a] + callbackPath
+        if (rawTrim === uExata || rawTrim.replace(/\/+$/, '') === allowedOrigins[a]) {
+          bateuAllowlist = true
+          break
+        }
       }
+      if (!bateuAllowlist) {
+        return e.json(400, {
+          error: 'redirect_uri não permitido. Domínios aceitos: ' + allowedOrigins.join(', '),
+        })
+      }
+    }
+
+    var redirectUri = resolverRedirect(candidateUri, refererOrigin)
+
+    try {
+      if (!configRec) {
+        var configCol = $app.findCollectionByNameOrId('config_google_drive')
+        configRec = new Record(configCol)
+        configRec.set('chave', 'padrao')
+      }
+      var rawDet = configRec.get('detalhes')
+      var det = {}
+      try {
+        det =
+          typeof rawDet === 'string' ? JSON.parse(rawDet) : JSON.parse(JSON.stringify(rawDet || {}))
+      } catch (_) {
+        det = {}
+      }
+      det.oauth_last_redirect_uri = redirectUri
+      det.oauth_last_start_at = new Date().toISOString()
+      configRec.set('detalhes', det)
+      $app.save(configRec)
+    } catch (eSaveRedirect) {
+      console.warn('[OAUTH_START] Aviso ao persistir redirect_uri:', eSaveRedirect)
     }
 
     var scope = 'https://www.googleapis.com/auth/drive.file'
@@ -4000,6 +4120,8 @@ routerAdd(
       encodeURIComponent(scope) +
       '&access_type=offline' +
       '&prompt=consent'
+
+    console.log('[OAUTH_START] Consent URL gerada com redirect_uri: ' + redirectUri)
 
     return e.json(200, {
       success: true,
@@ -4016,6 +4138,31 @@ routerAdd(
   'POST',
   '/backend/v1/google-drive/oauth-config',
   (e) => {
+    var allowedOrigins = [
+      'https://erp-empresarial-completo-575bb.goskip.app',
+      'https://erp-empresarial-completo-575bb--preview.goskip.app',
+    ]
+    var callbackPath = '/backend/v1/google-drive/oauth-callback'
+
+    function resolverRedirect(candidateUri, fallbackPref) {
+      var raw = (candidateUri || '').trim()
+      if (raw) {
+        for (var i = 0; i < allowedOrigins.length; i++) {
+          if (raw === allowedOrigins[i] + callbackPath) return raw
+        }
+        for (var j = 0; j < allowedOrigins.length; j++) {
+          if (raw.replace(/\/+$/, '') === allowedOrigins[j]) return allowedOrigins[j] + callbackPath
+        }
+      }
+      if (fallbackPref) {
+        var cleanPref = fallbackPref.replace(/\/+$/, '')
+        for (var k = 0; k < allowedOrigins.length; k++) {
+          if (cleanPref === allowedOrigins[k]) return cleanPref + callbackPath
+        }
+      }
+      return allowedOrigins[0] + callbackPath
+    }
+
     var authRecord = e.auth
     if (!authRecord) {
       return e.json(401, { error: 'Não autorizado' })
@@ -4024,6 +4171,7 @@ routerAdd(
     var body = e.requestInfo().body || {}
     var clientId = (body.client_id || body.oauth_client_id || '').trim()
     var clientSecret = (body.client_secret || body.oauth_client_secret || '').trim()
+    var candidateRedirect = (body.redirect_uri || '').trim()
 
     if (!clientId) {
       return e.json(400, { error: 'Client ID é obrigatório' })
@@ -4042,40 +4190,38 @@ routerAdd(
         configRec.set('chave', 'padrao')
       }
 
+      var refererOrigin = ''
+      try {
+        if (e && e.request && e.request.header) {
+          var ref = e.request.header.get('referer') || e.request.header.get('origin') || ''
+          if (ref.indexOf('--preview.goskip.app') !== -1) {
+            refererOrigin = 'https://erp-empresarial-completo-575bb--preview.goskip.app'
+          } else if (ref.indexOf('.goskip.app') !== -1) {
+            refererOrigin = 'https://erp-empresarial-completo-575bb.goskip.app'
+          }
+        }
+      } catch (_) {}
+
+      var redirectUri = resolverRedirect(candidateRedirect, refererOrigin)
+
       configRec.set('oauth_client_id', clientId)
       configRec.set('oauth_client_secret', clientSecret)
       configRec.set('client_id', clientId)
       configRec.set('client_secret', clientSecret)
       configRec.set('ativo', true)
-      $app.save(configRec)
 
-      var host = ''
+      var rawDet = configRec.get('detalhes')
+      var det = {}
       try {
-        if (e && e.request) {
-          host = e.request.header.get('x-forwarded-host') || e.request.header.get('host') || ''
-        }
-      } catch (_) {}
-
-      var proto = 'https'
-      try {
-        if (e && e.request) {
-          var xfp = e.request.header.get('x-forwarded-proto')
-          if (xfp) proto = xfp
-        }
-      } catch (_) {}
-
-      var redirectUri = ''
-      if (host) {
-        redirectUri = proto + '://' + host + '/backend/v1/google-drive/oauth-callback'
-      } else {
-        var envSiteUrl = $os.getenv('PB_INSTANCE_URL') || $os.getenv('SITE_URL') || ''
-        if (envSiteUrl) {
-          redirectUri = envSiteUrl.replace(/\/+$/, '') + '/backend/v1/google-drive/oauth-callback'
-        } else {
-          redirectUri =
-            'https://erp-empresarial-completo-575bb.shrd00.internal.goskip.dev/backend/v1/google-drive/oauth-callback'
-        }
+        det =
+          typeof rawDet === 'string' ? JSON.parse(rawDet) : JSON.parse(JSON.stringify(rawDet || {}))
+      } catch (_) {
+        det = {}
       }
+      det.oauth_last_redirect_uri = redirectUri
+      configRec.set('detalhes', det)
+
+      $app.save(configRec)
 
       return e.json(200, {
         success: true,
@@ -4094,6 +4240,31 @@ routerAdd(
 
 // GET /backend/v1/google-drive/oauth-callback
 routerAdd('GET', '/backend/v1/google-drive/oauth-callback', (e) => {
+  var allowedOrigins = [
+    'https://erp-empresarial-completo-575bb.goskip.app',
+    'https://erp-empresarial-completo-575bb--preview.goskip.app',
+  ]
+  var callbackPath = '/backend/v1/google-drive/oauth-callback'
+
+  function resolverRedirect(candidateUri, fallbackPref) {
+    var raw = (candidateUri || '').trim()
+    if (raw) {
+      for (var i = 0; i < allowedOrigins.length; i++) {
+        if (raw === allowedOrigins[i] + callbackPath) return raw
+      }
+      for (var j = 0; j < allowedOrigins.length; j++) {
+        if (raw.replace(/\/+$/, '') === allowedOrigins[j]) return allowedOrigins[j] + callbackPath
+      }
+    }
+    if (fallbackPref) {
+      var cleanPref = fallbackPref.replace(/\/+$/, '')
+      for (var k = 0; k < allowedOrigins.length; k++) {
+        if (cleanPref === allowedOrigins[k]) return cleanPref + callbackPath
+      }
+    }
+    return allowedOrigins[0] + callbackPath
+  }
+
   var code = ''
   try {
     code = e.request.url.query().get('code') || ''
@@ -4189,33 +4360,35 @@ routerAdd('GET', '/backend/v1/google-drive/oauth-callback', (e) => {
     )
   }
 
-  var host = ''
-  try {
-    if (e && e.request) {
-      host = e.request.header.get('x-forwarded-host') || e.request.header.get('host') || ''
-    }
-  } catch (_) {}
-
-  var proto = 'https'
-  try {
-    if (e && e.request) {
-      var xfp = e.request.header.get('x-forwarded-proto')
-      if (xfp) proto = xfp
-    }
-  } catch (_) {}
-
+  // Obter o redirect_uri exato que foi usado no consentimento
   var redirectUri = ''
-  if (host) {
-    redirectUri = proto + '://' + host + '/backend/v1/google-drive/oauth-callback'
-  } else {
-    var envSiteUrl = $os.getenv('PB_INSTANCE_URL') || $os.getenv('SITE_URL') || ''
-    if (envSiteUrl) {
-      redirectUri = envSiteUrl.replace(/\/+$/, '') + '/backend/v1/google-drive/oauth-callback'
-    } else {
-      redirectUri =
-        'https://erp-empresarial-completo-575bb.shrd00.internal.goskip.dev/backend/v1/google-drive/oauth-callback'
-    }
+  if (configRec) {
+    var rawDet = configRec.get('detalhes')
+    try {
+      var det =
+        typeof rawDet === 'string' ? JSON.parse(rawDet) : JSON.parse(JSON.stringify(rawDet || {}))
+      if (det && det.oauth_last_redirect_uri) {
+        redirectUri = resolverRedirect(det.oauth_last_redirect_uri)
+      }
+    } catch (_) {}
   }
+
+  // Se não estava persistido, tenta identificar a partir do host/headers da requisição validando na allowlist
+  if (!redirectUri) {
+    var reqHost = ''
+    try {
+      if (e && e.request) {
+        reqHost = e.request.header.get('x-forwarded-host') || e.request.header.get('host') || ''
+      }
+    } catch (_) {}
+    var preferredOrigin = ''
+    if (reqHost.indexOf('--preview.goskip.app') !== -1) {
+      preferredOrigin = 'https://erp-empresarial-completo-575bb--preview.goskip.app'
+    }
+    redirectUri = resolverRedirect('', preferredOrigin)
+  }
+
+  console.log('[OAUTH_CALLBACK] Trocando code por token usando redirect_uri: ' + redirectUri)
 
   try {
     var tokenBody =

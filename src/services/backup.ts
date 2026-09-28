@@ -314,7 +314,7 @@ export const backupService = {
    * Salva credenciais do cliente OAuth 2.0 (client_id e client_secret) no backend
    */
   async salvarConfiguracoesOAuth(
-    payload: SalvarConfigDriveOAuthPayload,
+    payload: SalvarConfigDriveOAuthPayload & { redirect_uri?: string },
   ): Promise<{ success: boolean; message?: string; error?: string }> {
     return await pb.send('/backend/v1/google-drive/oauth-config', {
       method: 'POST',
@@ -323,16 +323,17 @@ export const backupService = {
   },
 
   /**
-   * Solicita URL de autorização OAuth do Google Drive
+   * Solicita URL de autorização OAuth do Google Drive enviando a redirect_uri esperada
    */
-  async iniciarOAuthDrive(): Promise<{
+  async iniciarOAuthDrive(redirectUri?: string): Promise<{
     success: boolean
     url?: string
     auth_url?: string
     redirect_uri?: string
     error?: string
   }> {
-    return await pb.send('/backend/v1/google-drive/drive-oauth-start', {
+    const query = redirectUri ? `?redirect_uri=${encodeURIComponent(redirectUri)}` : ''
+    return await pb.send(`/backend/v1/google-drive/drive-oauth-start${query}`, {
       method: 'GET',
     })
   },

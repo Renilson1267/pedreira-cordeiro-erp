@@ -244,6 +244,7 @@ export function Backups() {
       const res = await backupService.salvarConfiguracoesOAuth({
         client_id: cid,
         client_secret: csec,
+        redirect_uri: redirectUriExibida || undefined,
       })
       toast({
         title: 'Credenciais salvas!',
@@ -266,7 +267,12 @@ export function Backups() {
   const conectarComGoogleOAuth = async () => {
     try {
       setIniciandoOAuth(true)
-      const res = await backupService.iniciarOAuthDrive()
+      const redirectParaEnviar =
+        redirectUriExibida ||
+        (typeof window !== 'undefined'
+          ? `${window.location.origin}/backend/v1/google-drive/oauth-callback`
+          : undefined)
+      const res = await backupService.iniciarOAuthDrive(redirectParaEnviar)
       const targetUrl = res.url || res.auth_url
       if (!targetUrl) {
         throw new Error(res.error || 'URL de autorização não retornada pelo servidor.')
@@ -977,7 +983,9 @@ export function Backups() {
                   </span>
                   <code className="bg-background px-2 py-1 rounded text-xs font-mono border text-primary font-medium select-all">
                     {redirectUriExibida ||
-                      'https://erp-empresarial-completo-575bb.shrd00.internal.goskip.dev/backend/v1/google-drive/oauth-callback'}
+                      (typeof window !== 'undefined'
+                        ? `${window.location.origin}/backend/v1/google-drive/oauth-callback`
+                        : '')}
                   </code>
                   <Button
                     size="sm"
@@ -1067,7 +1075,9 @@ export function Backups() {
                     <div className="mt-1">
                       <code className="bg-background px-2 py-1 rounded text-[11px] font-mono border text-primary block w-fit select-all">
                         {redirectUriExibida ||
-                          'https://erp-empresarial-completo-575bb.shrd00.internal.goskip.dev/backend/v1/google-drive/oauth-callback'}
+                          (typeof window !== 'undefined'
+                            ? `${window.location.origin}/backend/v1/google-drive/oauth-callback`
+                            : '')}
                       </code>
                     </div>
                   </li>
@@ -1823,7 +1833,9 @@ export function Backups() {
               </div>
               <code className="block bg-background p-2 rounded text-[11px] font-mono border break-all text-primary select-all">
                 {redirectUriExibida ||
-                  'https://erp-empresarial-completo-575bb.shrd00.internal.goskip.dev/backend/v1/google-drive/oauth-callback'}
+                  (typeof window !== 'undefined'
+                    ? `${window.location.origin}/backend/v1/google-drive/oauth-callback`
+                    : '')}
               </code>
               <p className="text-[11px] text-muted-foreground">
                 No Google Cloud Console, cole exatamente esta URL no campo{' '}
