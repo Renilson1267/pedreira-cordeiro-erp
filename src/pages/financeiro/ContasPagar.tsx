@@ -719,7 +719,8 @@ export default function ContasPagar() {
                     data_pagamento: new Date(vencimento).toISOString(),
                     valor_pago: valorTituloTotal,
                   }
-                : {}),            }
+                : {}),
+            }
 
             const updatedRecord = await pb
               .collection('contas_pagar')
@@ -768,6 +769,16 @@ export default function ContasPagar() {
             const fornecedorNomeCriado =
               fornecedores.find((f) => f.id === finalFornecedorId)?.nome || descricao.trim()
 
+            const veicSel =
+              veiculoIdForm && veiculoIdForm !== 'none'
+                ? veiculos.find((v) => v.id === veiculoIdForm)
+                : null
+            const origemFrotaCalculada = veicSel
+              ? `Frota — ${veicSel.codigo_interno}${veicSel.placa ? ' (' + veicSel.placa + ')' : ''}`
+              : setorForm
+                ? `Setor — ${setorForm}`
+                : null
+
             for (let i = 0; i < parcelasParaSalvar.length; i++) {
               const item = parcelasParaSalvar[i]
               const dataVencIso = item.vencimento
@@ -786,6 +797,8 @@ export default function ContasPagar() {
                 fornecedor_id: finalFornecedorId,
                 categoria_id: categoriaId === 'none' || !categoriaId ? null : categoriaId,
                 centro_custo_id: centroCustoId === 'none' || !centroCustoId ? null : centroCustoId,
+                veiculo_id: veicSel?.id || null,
+                origem_frota: origemFrotaCalculada || undefined,
                 valor: valorParcelaNum,
                 vencimento: dataVencIso,
                 data_emissao: dataEmissaoIso || undefined,
@@ -1510,6 +1523,20 @@ export default function ContasPagar() {
       })),
     ]
   }, [centrosCusto])
+
+  const veiculosOptions = useMemo(() => {
+    const filtrados = setorForm ? veiculos.filter((v) => v.setor === setorForm) : veiculos
+
+    return [
+      { id: 'none', label: 'Nenhum equipamento / Operação geral' },
+      ...filtrados.map((v) => ({
+        id: v.id,
+        label: `${v.codigo_interno}${v.modelo ? ' • ' + v.modelo : ''}`,
+        sublabel: `${v.setor || 'Geral'}${v.placa ? ' • Placa: ' + v.placa : ''}`,
+        keywords: [v.codigo_interno, v.placa, v.modelo, v.setor].filter(Boolean) as string[],
+      })),
+    ]
+  }, [veiculos, setorForm])
   const centrosCustoFiltroOptions = useMemo(() => {
     return [
       { id: 'todos', label: 'Todos os Centros de Custo' },
@@ -2278,6 +2305,58 @@ export default function ContasPagar() {
                   emptyText="Nenhuma categoria encontrada."
                   className="mt-1"
                   options={categoriasOptions}
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <Label className="text-xs font-semibold text-gray-700">Área / Setor</Label>
+                <Select
+                  value={setorForm || 'nenhum'}
+                  onValueChange={(val) => {
+                    const novoSetor = val === 'nenhum' ? '' : val
+                    setSetorForm(novoSetor)
+                    if (veiculoIdForm && veiculoIdForm !== 'none') {
+                      const v = veiculos.find((veic) => veic.id === veiculoIdForm)
+                      if (v && novoSetor && v.setor !== novoSetor) {
+                        setVeiculoIdForm('')
+                      }
+                    }
+                  }}
+                >
+                  <SelectTrigger className="mt-1">
+                    <SelectValue placeholder="Selecione a área / setor..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="nenhum">Nenhum / Geral</SelectItem>
+                    {SETORES_FROTA.map((s) => (
+                      <SelectItem key={s} value={s}>
+                        {s}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div>
+                <Label className="text-xs font-semibold text-gray-700">Veículo / Equipamento</Label>
+                <ComboboxPesquisavel
+                  value={veiculoIdForm}
+                  onChange={(val) => {
+                    setVeiculoIdForm(val)
+                    if (val && val !== 'none') {
+                      const v = veiculos.find((veic) => veic.id === val)
+                      if (v?.setor) {
+                        setSetorForm(v.setor)
+                      }
+                    }
+                  }}
+                  placeholder="Vincular equipamento..."
+                  searchPlaceholder="Buscar por placa, prefixo ou modelo..."
+                  emptyText="Nenhum equipamento encontrado."
+                  className="mt-1"
+                  options={veiculosOptions}
                 />
               </div>
             </div>
