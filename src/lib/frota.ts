@@ -15,6 +15,20 @@ export const SETORES_FROTA = [
 export type SetorFrota = (typeof SETORES_FROTA)[number]
 
 /**
+ * 5 Unidades operacionais do Grupo GC / Pedreira Cordeiro
+ * (Patos matriz, Santa Luzia, Monteiro, São José do Egito, Caicó)
+ */
+export const UNIDADES_GRUPO = [
+  'Patos (Matriz)',
+  'Santa Luzia',
+  'Monteiro',
+  'São José do Egito',
+  'Caicó',
+] as const
+
+export type UnidadeGrupo = (typeof UNIDADES_GRUPO)[number]
+
+/**
  * Lista expandida aceitando variações legadas (ex: "Entrega de Brita").
  * Mantida para retrocompatibilidade onde existirem registros anteriores no banco.
  */

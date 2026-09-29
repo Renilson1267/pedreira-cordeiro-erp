@@ -332,6 +332,8 @@ export interface Veiculo {
   updated: string
 }
 
+export type TipoPostoAbastecimento = 'interno' | 'externo'
+
 export interface Abastecimento {
   id: string
   empresa_id: string
@@ -351,6 +353,10 @@ export interface Abastecimento {
   consumo_l_h?: number
   custo_por_unidade?: number
   fornecedor_id?: string
+  posto_id?: string
+  tipo_posto?: TipoPostoAbastecimento
+  unidade?: string
+  setor?: string
   conta_pagar_id?: string
   motorista_operador?: string
   observacoes?: string
@@ -359,6 +365,7 @@ export interface Abastecimento {
   expand?: {
     veiculo_id?: Veiculo
     fornecedor_id?: Fornecedor
+    posto_id?: PostoCombustivel
     conta_pagar_id?: ContaPagar
   }
 }

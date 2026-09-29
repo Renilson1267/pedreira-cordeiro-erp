@@ -1033,8 +1033,8 @@ export default function HomePublica() {
                 Produtos da Pedreira Cordeiro
               </h2>
               <p className="mt-3 text-base sm:text-lg text-slate-600 leading-relaxed">
-                Brita 1 2, Brita 1 9, Pedra Rachão, Pó de Pedra e Cascalhinho. Controle
-                granulométrico para concreto estrutural, pavimentação e drenagem.
+                Brita 12, Brita 19, Pedra rachão, Pó de pedra e Cascalhinho. Controle granulométrico
+                para concreto estrutural, pavimentação e drenagem.
               </p>
             </div>
 
@@ -1775,13 +1775,13 @@ export default function HomePublica() {
                           <SelectItem value="Concreto Usinado GC Mix">
                             Concreto Usinado GC Mix (Traços diversos)
                           </SelectItem>
-                          <SelectItem value="Brita 1 2">Brita 1 2 (9,5 a 19 mm)</SelectItem>
-                          <SelectItem value="Brita 1 9">Brita 1 9 (19 a 25 mm)</SelectItem>
-                          <SelectItem value="Pedra Rachão">
-                            Pedra Rachão (Muros/Contenções)
+                          <SelectItem value="Brita 12">Brita 12 (9,5 a 19 mm)</SelectItem>
+                          <SelectItem value="Brita 19">Brita 19 (19 a 25 mm)</SelectItem>
+                          <SelectItem value="Pedra rachão">
+                            Pedra rachão (Muros/Contenções)
                           </SelectItem>
-                          <SelectItem value="Pó de Pedra">
-                            Pó de Pedra (Argamassas e assentamento)
+                          <SelectItem value="Pó de pedra">
+                            Pó de pedra (Argamassas e assentamento)
                           </SelectItem>
                           <SelectItem value="Cascalhinho">Cascalhinho (Pedrisco limpo)</SelectItem>
                           <SelectItem value="Britador Móvel Lokotrack — C M Construções">

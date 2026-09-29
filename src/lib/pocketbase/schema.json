@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-09-29T22:51:14.191Z",
+  "generatedAt": "2026-09-29T23:20:04.163Z",
   "collections": [
     {
       "name": "users",
@@ -1454,6 +1454,33 @@
           "type": "text",
           "required": false,
           "system": false
+        },
+        {
+          "name": "tipo_posto",
+          "type": "select",
+          "required": false,
+          "system": false,
+          "selectValues": ["interno", "externo"]
+        },
+        {
+          "name": "unidade",
+          "type": "select",
+          "required": false,
+          "system": false,
+          "selectValues": [
+            "Patos (Matriz)",
+            "Santa Luzia",
+            "Monteiro",
+            "São José do Egito",
+            "Caicó"
+          ]
+        },
+        {
+          "name": "posto_id",
+          "type": "relation",
+          "required": false,
+          "system": false,
+          "collectionRef": "postos_combustivel"
         }
       ],
       "indexes": [

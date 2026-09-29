@@ -15,7 +15,15 @@ import {
 } from '@/components/financeiro/RelatorioListagemImpressaoModal'
 import { PostosCombustivelTab } from '@/components/frotas/PostosCombustivelTab'
 import { postosCombustivelService } from '@/services/postosCombustivel'
-import type { Abastecimento, Veiculo, Fornecedor, PlanoConta, PostoCombustivel } from '@/types/erp'
+import { SETORES_FROTA, UNIDADES_GRUPO } from '@/lib/frota'
+import type {
+  Abastecimento,
+  Veiculo,
+  Fornecedor,
+  PlanoConta,
+  PostoCombustivel,
+  TipoPostoAbastecimento,
+} from '@/types/erp'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -85,6 +93,13 @@ export default function Abastecimentos() {
   const [editingId, setEditingId] = useState<string | null>(null)
   const [existingContaPagarId, setExistingContaPagarId] = useState<string | null>(null)
 
+  // Tipo de posto: 'interno' (usina/comboio interno) vs 'externo' (postos credenciados)
+  const [tipoPosto, setTipoPosto] = useState<TipoPostoAbastecimento>('interno')
+  // Unidade do Grupo (Patos, Santa Luzia, Monteiro, São José do Egito, Caicó)
+  const [unidade, setUnidade] = useState<string>('Patos (Matriz)')
+  // Setor / Área da frota
+  const [setorSelecionado, setSetorSelecionado] = useState<string>('')
+
   const [veiculoId, setVeiculoId] = useState('')
   const [dataAbast, setDataAbast] = useState(() => new Date().toISOString().slice(0, 10))
   const [combustivel, setCombustivel] = useState<
@@ -97,7 +112,7 @@ export default function Abastecimentos() {
   const [kmOdometro, setKmOdometro] = useState<number>(0)
   const [horimetro, setHorimetro] = useState<number>(0)
 
-  // Seletor unificado: Fornecedor ou Posto Cadastrado
+  // Posto Externo ou Fornecedor
   const [fornecedorId, setFornecedorId] = useState<string>('')
   const [postoId, setPostoId] = useState<string>('')
   const [motoristaOperador, setMotoristaOperador] = useState('')
@@ -291,6 +306,27 @@ export default function Abastecimentos() {
     return `Abastecimento${postoTxt} — ${veicTxt} — ${litrosVal}L ${comb}`
   }
 
+  // Gerador de descrição considerando Posto Interno vs Externo
+  const gerarDescricaoCompleta = (
+    v: Veiculo,
+    litrosVal: number,
+    comb: string,
+    tipo: TipoPostoAbastecimento,
+    unid?: string,
+    postoOuFornNome?: string,
+  ) => {
+    const veicTxt = `[${v.codigo_interno}${v.placa ? ` ${v.placa}` : ''}]`
+    let localTxt = ''
+    if (tipo === 'interno') {
+      localTxt = ` — Posto Interno (${unid || 'Matriz'})`
+    } else if (postoOuFornNome) {
+      localTxt = ` — Posto Externo (${postoOuFornNome})`
+    } else {
+      localTxt = ' — Posto Externo'
+    }
+    return `Abastecimento${localTxt} — ${veicTxt} — ${litrosVal}L ${comb}`
+  }
+
   // Nome do posto ou fornecedor para descrição
   const nomePostoOuFornSelecionado = useMemo(() => {
     if (postoId) {
@@ -307,8 +343,11 @@ export default function Abastecimentos() {
   const openCreateModal = () => {
     setEditingId(null)
     setExistingContaPagarId(null)
+    setTipoPosto('interno')
+    setUnidade('Patos (Matriz)')
     const firstVeic = veiculos[0]
     setVeiculoId(firstVeic ? firstVeic.id : '')
+    setSetorSelecionado(firstVeic?.setor || '')
     setDataAbast(new Date().toISOString().slice(0, 10))
     setCombustivel((firstVeic?.combustivel_padrao as any) || 'Diesel S10')
     setLitros(100)
@@ -337,7 +376,11 @@ export default function Abastecimentos() {
   const openEditModal = (a: Abastecimento) => {
     setEditingId(a.id)
     setExistingContaPagarId(a.conta_pagar_id || null)
+    setTipoPosto(a.tipo_posto || (a.fornecedor_id || a.posto_id ? 'externo' : 'interno'))
+    setUnidade(a.unidade || 'Patos (Matriz)')
     setVeiculoId(a.veiculo_id)
+    const v = veiculos.find((veic) => veic.id === a.veiculo_id)
+    setSetorSelecionado(a.setor || v?.setor || '')
     setDataAbast(a.data ? a.data.slice(0, 10) : new Date().toISOString().slice(0, 10))
     setCombustivel(a.combustivel)
     setLitros(a.litros)
@@ -346,21 +389,25 @@ export default function Abastecimentos() {
     setHorimetro(a.horimetro || 0)
 
     // Tenta casar posto
-    const forn = a.expand?.fornecedor_id
-    const postoMatch = postos.find(
-      (p) =>
-        (forn && p.nome.trim().toLowerCase() === forn.nome.trim().toLowerCase()) ||
-        (forn?.cnpj_cpf &&
-          p.cnpj &&
-          p.cnpj.replace(/\D/g, '') === forn.cnpj_cpf.replace(/\D/g, '')),
-    )
-
-    if (postoMatch) {
-      setPostoId(postoMatch.id)
+    if (a.posto_id) {
+      setPostoId(a.posto_id)
       setFornecedorId(a.fornecedor_id || '')
     } else {
-      setPostoId('')
-      setFornecedorId(a.fornecedor_id || '')
+      const forn = a.expand?.fornecedor_id
+      const postoMatch = postos.find(
+        (p) =>
+          (forn && p.nome.trim().toLowerCase() === forn.nome.trim().toLowerCase()) ||
+          (forn?.cnpj_cpf &&
+            p.cnpj &&
+            p.cnpj.replace(/\D/g, '') === forn.cnpj_cpf.replace(/\D/g, '')),
+      )
+      if (postoMatch) {
+        setPostoId(postoMatch.id)
+        setFornecedorId(a.fornecedor_id || '')
+      } else {
+        setPostoId('')
+        setFornecedorId(a.fornecedor_id || '')
+      }
     }
 
     setMotoristaOperador(a.motorista_operador || '')
@@ -374,6 +421,9 @@ export default function Abastecimentos() {
     setVeiculoId(vid)
     const v = veiculos.find((item) => item.id === vid)
     if (v) {
+      if (v.setor) {
+        setSetorSelecionado(v.setor)
+      }
       if (v.combustivel_padrao) {
         setCombustivel(v.combustivel_padrao as any)
       }
@@ -381,6 +431,18 @@ export default function Abastecimentos() {
       setHorimetro(v.horimetro_atual ? v.horimetro_atual + 8 : 0)
     }
   }
+
+  // Veículos filtrados pelo setor se selecionado
+  const veiculosOpcoes = useMemo(() => {
+    const list = setorSelecionado ? veiculos.filter((v) => v.setor === setorSelecionado) : veiculos
+
+    return list.map((v) => ({
+      id: v.id,
+      label: `${v.codigo_interno}${v.modelo ? ' • ' + v.modelo : ''}`,
+      sublabel: `${v.setor || 'Geral'}${v.placa ? ' • Placa: ' + v.placa : ''}`,
+      keywords: [v.codigo_interno, v.placa || '', v.modelo || '', v.setor || ''],
+    }))
+  }, [veiculos, setorSelecionado])
 
   // Ação individual: Gerar Conta a Pagar para registro antigo/sem vínculo
   const handleGerarContaPagarIndividual = async (a: Abastecimento) => {
@@ -394,8 +456,16 @@ export default function Abastecimentos() {
       const v = a.expand?.veiculo_id || veiculos.find((ve) => ve.id === a.veiculo_id)
       const veicCod = v ? `[${v.codigo_interno}${v.placa ? ` ${v.placa}` : ''}]` : '[Veículo]'
       const fornecedorNome = a.expand?.fornecedor_id?.nome || ''
-      const postoTxt = fornecedorNome ? ` — ${fornecedorNome}` : ''
-      const descRica = `Abastecimento${postoTxt} — ${veicCod} — ${a.litros}L ${a.combustivel}`
+
+      let localTxt = ''
+      if (a.tipo_posto === 'interno') {
+        localTxt = ` — Posto Interno (${a.unidade || 'Matriz'})`
+      } else if (fornecedorNome) {
+        localTxt = ` — Posto Externo (${fornecedorNome})`
+      } else {
+        localTxt = ' — Posto'
+      }
+      const descRica = `Abastecimento${localTxt} — ${veicCod} — ${a.litros}L ${a.combustivel}`
 
       const catComb =
         planoContas.find((pc) => pc.codigo === '2.2') ||
@@ -404,7 +474,7 @@ export default function Abastecimentos() {
 
       const payloadConta = {
         empresa_id: currentEmpresa.id,
-        fornecedor_id: a.fornecedor_id || null,
+        fornecedor_id: a.tipo_posto === 'interno' ? null : a.fornecedor_id || null,
         veiculo_id: a.veiculo_id || null,
         origem_frota: 'abastecimento',
         descricao: descRica,
@@ -414,7 +484,7 @@ export default function Abastecimentos() {
         data_emissao: new Date(a.data).toISOString(),
         parcelas: 1,
         status: 'Aberta',
-        observacoes: `Gerado manualmente a partir da listagem de abastecimentos. Km: ${a.km_odometro || '—'}, Horímetro: ${a.horimetro || '—'}. Operador: ${a.motorista_operador || 'Não informado'}`,
+        observacoes: `Gerado manualmente a partir da listagem de abastecimentos (${a.tipo_posto === 'interno' ? `Posto Interno - ${a.unidade || 'Matriz'}` : 'Posto Externo'}). Km: ${a.km_odometro || '—'}, Horímetro: ${a.horimetro || '—'}. Operador: ${a.motorista_operador || 'Não informado'}`,
       }
 
       const cp = await pb.collection('contas_pagar').create(payloadConta)
@@ -487,12 +557,20 @@ export default function Abastecimentos() {
           const v = a.expand?.veiculo_id || veiculos.find((ve) => ve.id === a.veiculo_id)
           const veicCod = v ? `[${v.codigo_interno}${v.placa ? ` ${v.placa}` : ''}]` : '[Veículo]'
           const fornecedorNome = a.expand?.fornecedor_id?.nome || ''
-          const postoTxt = fornecedorNome ? ` — ${fornecedorNome}` : ''
-          const descRica = `Abastecimento${postoTxt} — ${veicCod} — ${a.litros}L ${a.combustivel}`
+
+          let localTxt = ''
+          if (a.tipo_posto === 'interno') {
+            localTxt = ` — Posto Interno (${a.unidade || 'Matriz'})`
+          } else if (fornecedorNome) {
+            localTxt = ` — Posto Externo (${fornecedorNome})`
+          } else {
+            localTxt = ' — Posto'
+          }
+          const descRica = `Abastecimento${localTxt} — ${veicCod} — ${a.litros}L ${a.combustivel}`
 
           const payloadConta = {
             empresa_id: currentEmpresa!.id,
-            fornecedor_id: a.fornecedor_id || null,
+            fornecedor_id: a.tipo_posto === 'interno' ? null : a.fornecedor_id || null,
             veiculo_id: a.veiculo_id || null,
             origem_frota: 'abastecimento',
             descricao: descRica,
@@ -551,9 +629,17 @@ export default function Abastecimentos() {
         planoContas.find((pc) => pc.nome.toLowerCase().includes('combust')) ||
         null
 
-      const descRica = gerarDescricaoRica(v, litros, combustivel, nomePostoOuFornSelecionado)
+      const descRica = gerarDescricaoCompleta(
+        v,
+        litros,
+        combustivel,
+        tipoPosto,
+        unidade,
+        tipoPosto === 'externo' ? nomePostoOuFornSelecionado : undefined,
+      )
 
       let contaPagarIdFinal: string | null = existingContaPagarId
+      const finalFornecedorId = tipoPosto === 'externo' ? fornecedorId || null : null
 
       // Anti-duplicação: se já existe título, sincroniza descrição e valor; senão, cria novo se solicitado
       if (gerarFinanceiro) {
@@ -562,7 +648,7 @@ export default function Abastecimentos() {
             await pb.collection('contas_pagar').update(existingContaPagarId, {
               descricao: descRica,
               valor: valorTotal,
-              fornecedor_id: fornecedorId || null,
+              fornecedor_id: finalFornecedorId,
               veiculo_id: v.id,
               origem_frota: 'abastecimento',
               vencimento: new Date(dataAbast).toISOString(),
@@ -573,7 +659,7 @@ export default function Abastecimentos() {
         } else {
           const payloadConta = {
             empresa_id: currentEmpresa!.id,
-            fornecedor_id: fornecedorId || null,
+            fornecedor_id: finalFornecedorId,
             veiculo_id: v.id,
             origem_frota: 'abastecimento',
             descricao: descRica,
@@ -583,7 +669,7 @@ export default function Abastecimentos() {
             data_emissao: new Date(dataAbast).toISOString(),
             parcelas: 1,
             status: 'Aberta',
-            observacoes: `Gerado pelo Módulo de Frotas. Km: ${kmOdometro || '—'}, Horímetro: ${horimetro || '—'}. Operador: ${motoristaOperador || 'Não informado'}`,
+            observacoes: `Gerado pelo Módulo de Frotas (${tipoPosto === 'interno' ? `Posto Interno - ${unidade}` : 'Posto Externo'}). Km: ${kmOdometro || '—'}, Horímetro: ${horimetro || '—'}. Operador: ${motoristaOperador || 'Não informado'}`,
           }
 
           const cp = await pb.collection('contas_pagar').create(payloadConta)
@@ -615,7 +701,11 @@ export default function Abastecimentos() {
             : deltaHoras > 0
               ? Number((valorTotal / deltaHoras).toFixed(2))
               : null,
-        fornecedor_id: fornecedorId || null,
+        tipo_posto: tipoPosto,
+        unidade: tipoPosto === 'interno' ? unidade : null,
+        posto_id: tipoPosto === 'externo' ? postoId || null : null,
+        fornecedor_id: finalFornecedorId,
+        setor: setorSelecionado || v.setor || null,
         conta_pagar_id: contaPagarIdFinal,
         motorista_operador: motoristaOperador.trim() || null,
         observacoes: observacoes.trim() || null,
@@ -822,8 +912,32 @@ export default function Abastecimentos() {
       },
       {
         key: 'fornecedor',
-        header: 'Fornecedor / Posto',
-        render: (a) => a.expand?.fornecedor_id?.nome || '—',
+        header: 'Origem / Posto',
+        render: (a) => {
+          if (a.tipo_posto === 'interno') {
+            return (
+              <div>
+                <Badge
+                  variant="outline"
+                  className="text-[10px] bg-sky-50 text-sky-800 border-sky-200"
+                >
+                  Interno
+                </Badge>
+                <div className="text-[11px] font-medium text-gray-700 mt-0.5">
+                  {a.unidade || 'Matriz'}
+                </div>
+              </div>
+            )
+          }
+          return (
+            <div>
+              <span className="text-gray-800 font-medium">
+                {a.expand?.fornecedor_id?.nome || a.expand?.posto_id?.nome || 'Posto Externo'}
+              </span>
+              <div className="text-[10px] text-gray-400">Externo credenciado</div>
+            </div>
+          )
+        },
       },
     ]
   }, [])
@@ -1213,8 +1327,26 @@ export default function Abastecimentos() {
                             </div>
                           </td>
                           <td className="py-3 px-4 text-gray-600">{a.motorista_operador || '—'}</td>
-                          <td className="py-3 px-4 text-gray-700 truncate max-w-[130px]">
-                            {a.expand?.fornecedor_id?.nome || '—'}
+                          <td className="py-3 px-4 text-gray-700">
+                            {a.tipo_posto === 'interno' ? (
+                              <div className="flex flex-col">
+                                <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-blue-900 bg-blue-50 px-1.5 py-0.5 rounded border border-blue-200 w-fit">
+                                  Posto Interno
+                                </span>
+                                <span className="text-[10px] text-gray-600 mt-0.5 font-medium truncate max-w-[140px]">
+                                  {a.unidade || 'Matriz'}
+                                </span>
+                              </div>
+                            ) : (
+                              <div className="flex flex-col">
+                                <span className="text-gray-900 font-medium truncate max-w-[140px]">
+                                  {a.expand?.fornecedor_id?.nome ||
+                                    a.expand?.posto_id?.nome ||
+                                    'Posto Externo'}
+                                </span>
+                                <span className="text-[10px] text-gray-400">Posto Externo</span>
+                              </div>
+                            )}
                           </td>
                           <td className="py-3 px-4 text-center">
                             {temConta ? (
@@ -1291,24 +1423,128 @@ export default function Abastecimentos() {
           </SheetHeader>
 
           <form onSubmit={handleSave} className="space-y-4 py-4 text-xs">
-            <div>
-              <Label className="text-xs font-semibold text-gray-700">
-                Veículo / Máquina de Pedreira *
+            {/* 1. SELETOR POSTO INTERNO OU EXTERNO */}
+            <div className="p-3.5 bg-blue-50/70 rounded-xl border border-blue-200 space-y-2.5">
+              <Label className="text-xs font-bold text-blue-950 flex items-center justify-between">
+                <span>Tipo de Posto de Combustível *</span>
+                <span className="text-[10px] font-normal text-blue-700">
+                  {tipoPosto === 'interno' ? 'Combustível da usina' : 'Posto credenciado externo'}
+                </span>
               </Label>
-              <ComboboxPesquisavel
-                value={veiculoId}
-                onChange={handleVeiculoChange}
-                placeholder="Pesquisar equipamento..."
-                searchPlaceholder="Buscar por código ou modelo..."
-                emptyText="Nenhum equipamento encontrado."
-                triggerClassName="mt-1 font-medium"
-                options={veiculos.map((v) => ({
-                  id: v.id,
-                  label: `${v.codigo_interno} • ${v.modelo}`,
-                  sublabel: `${v.setor || 'Geral'}${v.placa ? ` • Placa: ${v.placa}` : ''}`,
-                  keywords: [v.codigo_interno, v.modelo, v.placa || ''],
-                }))}
-              />
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={() => setTipoPosto('interno')}
+                  className={`p-2.5 rounded-lg border text-left transition-all ${
+                    tipoPosto === 'interno'
+                      ? 'bg-blue-700 text-white border-blue-700 shadow-xs'
+                      : 'bg-white text-gray-700 border-gray-200 hover:bg-gray-50'
+                  }`}
+                >
+                  <div className="font-bold text-xs flex items-center gap-1.5">
+                    <span>⛽ Posto Interno</span>
+                  </div>
+                  <div
+                    className={`text-[10px] mt-0.5 ${
+                      tipoPosto === 'interno' ? 'text-blue-100' : 'text-gray-500'
+                    }`}
+                  >
+                    Combustível interno da usina / pátio
+                  </div>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setTipoPosto('externo')}
+                  className={`p-2.5 rounded-lg border text-left transition-all ${
+                    tipoPosto === 'externo'
+                      ? 'bg-blue-700 text-white border-blue-700 shadow-xs'
+                      : 'bg-white text-gray-700 border-gray-200 hover:bg-gray-50'
+                  }`}
+                >
+                  <div className="font-bold text-xs flex items-center gap-1.5">
+                    <span>🏪 Posto Externo</span>
+                  </div>
+                  <div
+                    className={`text-[10px] mt-0.5 ${
+                      tipoPosto === 'externo' ? 'text-blue-100' : 'text-gray-500'
+                    }`}
+                  >
+                    Postos comerciais da região
+                  </div>
+                </button>
+              </div>
+
+              {/* Quando for Posto Interno: Seletor das 5 unidades do Grupo */}
+              {tipoPosto === 'interno' && (
+                <div className="pt-2 border-t border-blue-200">
+                  <Label className="text-xs font-semibold text-blue-950">
+                    Unidade do Grupo onde foi abastecido *
+                  </Label>
+                  <Select value={unidade} onValueChange={setUnidade}>
+                    <SelectTrigger className="mt-1 bg-white border-blue-200">
+                      <SelectValue placeholder="Selecione a unidade..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {UNIDADES_GRUPO.map((u) => (
+                        <SelectItem key={u} value={u}>
+                          {u}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <p className="text-[10px] text-blue-700 mt-1">
+                    Unidades: Patos matriz, Santa Luzia, Monteiro, São José do Egito ou Caicó.
+                  </p>
+                </div>
+              )}
+            </div>
+
+            {/* 2. SELEÇÃO DE EQUIPAMENTO E ÁREA/SETOR */}
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <Label className="text-xs font-semibold text-gray-700">Área / Setor da Frota</Label>
+                <Select
+                  value={setorSelecionado || 'todos'}
+                  onValueChange={(val) => {
+                    const novoSetor = val === 'todos' ? '' : val
+                    setSetorSelecionado(novoSetor)
+                    if (veiculoId) {
+                      const v = veiculos.find((veic) => veic.id === veiculoId)
+                      if (v && novoSetor && v.setor !== novoSetor) {
+                        setVeiculoId('')
+                      }
+                    }
+                  }}
+                >
+                  <SelectTrigger className="mt-1">
+                    <SelectValue placeholder="Todos os setores" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="todos">Todos os setores</SelectItem>
+                    {SETORES_FROTA.map((s) => (
+                      <SelectItem key={s} value={s}>
+                        {s}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div>
+                <Label className="text-xs font-semibold text-gray-700">
+                  A Qual Equipamento Pertence *
+                </Label>
+                <ComboboxPesquisavel
+                  value={veiculoId}
+                  onChange={handleVeiculoChange}
+                  placeholder="Selecione o equipamento..."
+                  searchPlaceholder="Buscar por código, placa ou modelo..."
+                  emptyText="Nenhum equipamento encontrado."
+                  className="mt-1"
+                  options={veiculosOpcoes}
+                />
+              </div>
             </div>
 
             <div className="grid grid-cols-2 gap-3">
@@ -1435,10 +1671,13 @@ export default function Abastecimentos() {
               </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-3">
-              <div>
+            {/* Posto Externo: Combobox de Postos / Fornecedores */}
+            {tipoPosto === 'externo' && (
+              <div className="p-3 bg-amber-50/60 rounded-xl border border-amber-200 space-y-2">
                 <div className="flex items-center justify-between">
-                  <Label className="text-xs font-semibold text-gray-700">Posto / Fornecedor</Label>
+                  <Label className="text-xs font-semibold text-amber-950">
+                    Posto Credenciado / Fornecedor Externo *
+                  </Label>
                   <button
                     type="button"
                     onClick={() => {
@@ -1453,14 +1692,16 @@ export default function Abastecimentos() {
                 <ComboboxPesquisavel
                   value={selectedPostoOuFornId}
                   onChange={handleSelectPostoOuForn}
-                  placeholder="Selecione o posto ou fornecedor..."
-                  searchPlaceholder="Buscar posto cadastrado..."
+                  placeholder="Selecione o posto externo cadastrado..."
+                  searchPlaceholder="Buscar por posto, bandeira ou cidade..."
                   emptyText="Nenhum posto ou fornecedor encontrado."
-                  triggerClassName="mt-1"
+                  className="bg-white"
                   options={opcoesPostosFornecedores}
                 />
               </div>
+            )}
 
+            <div className="grid grid-cols-1 gap-3">
               <div>
                 <Label className="text-xs font-semibold text-gray-700">Motorista / Operador</Label>
                 <Input
@@ -1489,8 +1730,8 @@ export default function Abastecimentos() {
                 </span>
                 <span className="text-teal-700 text-[11px] block mt-0.5">
                   {existingContaPagarId
-                    ? `Título vinculado #${existingContaPagarId.slice(0, 8)}. Salvar atualizará valor (${formatCurrency(valorTotal)}) e descrição rica sem duplicar registro.`
-                    : `Lança o valor total de ${formatCurrency(valorTotal)} na categoria "Combustíveis - Frota" com descrição rica vinculada ao equipamento e posto.`}
+                    ? `Título vinculado #${existingContaPagarId.slice(0, 8)}. Salvar atualizará valor (${formatCurrency(valorTotal)}) e descrição rica com indicação da ${tipoPosto === 'interno' ? `unidade ${unidade}` : 'posto externo'} sem duplicar registro.`
+                    : `Lança o valor total de ${formatCurrency(valorTotal)} na categoria "Combustíveis - Frota" com descrição rica vinculada ao equipamento e ${tipoPosto === 'interno' ? `unidade ${unidade}` : 'posto externo'}.`}
                 </span>
               </label>
             </div>
