@@ -205,6 +205,7 @@ export default function ContasReceber() {
   const [dataRecebimento, setDataRecebimento] = useState('')
   const [valorRecebido, setValorRecebido] = useState<number>(0)
   const [formaRecebimento, setFormaRecebimento] = useState<string>('Pix')
+  const [vencimentoRestante, setVencimentoRestante] = useState('')
   const [usarCreditoCliente, setUsarCreditoCliente] = useState(false)
   const [valorCreditoUsado, setValorCreditoUsado] = useState<number>(0)
   const [isSubmitting, setIsSubmitting] = useState(false)
@@ -1666,6 +1667,10 @@ export default function ContasReceber() {
     const saldo = getSaldoRestante(conta)
     setValorRecebido(saldo > 0 ? saldo : conta.valor)
     setFormaRecebimento(conta.forma_recebimento || 'Pix')
+    const vencOrig = conta.vencimento
+      ? toInputDate(conta.vencimento)
+      : toInputDate(new Date().toISOString())
+    setVencimentoRestante(vencOrig)
     setUsarCreditoCliente(false)
     setValorCreditoUsado(0)
     setSettleModalOpen(true)
@@ -1758,10 +1763,16 @@ export default function ContasReceber() {
       return
     }
 
+    const saldoAbertoAtual = getSaldoRestante(settlingConta)
+    const isParcial = valorBaixa < saldoAbertoAtual - 0.009
+    const valorRestanteCalculado = Number(Math.max(0, saldoAbertoAtual - valorBaixa).toFixed(2))
+
     setConfirmDialogData({
-      title: 'Confirmar recebimento / baixa',
-      description: `Deseja registrar o recebimento de ${formatCurrency(valorBaixa)} em ${dataRecebimento ? formatDate(dataRecebimento) : 'hoje'} via ${formaRecebimento}? Isso atualizará o saldo e lançará a entrada no caixa.`,
-      confirmLabel: 'Confirmar Recebimento',
+      title: isParcial ? 'Confirmar recebimento parcial' : 'Confirmar recebimento / baixa',
+      description: isParcial
+        ? `Deseja registrar o recebimento parcial de ${formatCurrency(valorBaixa)} via ${formaRecebimento}? O título original ficará com status "Parcial" e será gerado automaticamente um novo lançamento no valor restante de ${formatCurrency(valorRestanteCalculado)} (status "Aberta").`
+        : `Deseja registrar o recebimento de ${formatCurrency(valorBaixa)} em ${dataRecebimento ? formatDate(dataRecebimento) : 'hoje'} via ${formaRecebimento}? Isso atualizará o saldo e lançará a entrada no caixa.`,
+      confirmLabel: isParcial ? 'Confirmar Recebimento Parcial' : 'Confirmar Recebimento',
       confirmVariant: 'default',
       action: async () => {
         try {
@@ -1790,13 +1801,14 @@ export default function ContasReceber() {
           }
 
           const totalAcumuladoAntes = getValorRecebidoEfetivo(settlingConta)
-          const novoTotalRecebido = totalAcumuladoAntes + valorBaixa
+          const novoTotalRecebido = Number((totalAcumuladoAntes + valorBaixa).toFixed(2))
           const valorTituloTotal = Number(settlingConta.valor || 0)
           const estaQuitado = novoTotalRecebido >= valorTituloTotal - 0.009
           const novoStatus = estaQuitado ? 'Recebida' : 'Parcial'
 
           const obsBaixa = ` [Baixa ${novoStatus === 'Recebida' ? 'total' : 'parcial'} de ${formatCurrency(valorBaixa)} em ${formatDate(recDateISO)}${usarCreditoCliente ? ` (Crédito: ${formatCurrency(valorCreditoUsado)})` : ''}]`
 
+          // 1. Atualizar título original
           await pb.collection('contas_receber').update(settlingConta.id, {
             status: novoStatus,
             valor_recebido: novoTotalRecebido,
@@ -1824,7 +1836,62 @@ export default function ContasReceber() {
             conciliado: false,
           })
 
-          // 3. Registrar histórico de baixa
+          // 2. Se for recebimento parcial com saldo restante > 0, gerar automaticamente novo lançamento
+          let novoTituloCriado: ContaReceber | null = null
+          if (!estaQuitado && valorRestanteCalculado > 0) {
+            const dataVencNovo = vencimentoRestante
+              ? new Date(`${vencimentoRestante}T12:00:00Z`).toISOString()
+              : settlingConta.vencimento
+
+            const descBase = (settlingConta.descricao || '').trim()
+            const docRef = settlingConta.nota ? ` DOC ${settlingConta.nota}` : ''
+            const sufixoRestante = ` (Parcial — saldo remanescente${docRef || ` de ${settlingConta.id.slice(0, 8)}`})`
+            const novaDescricao = descBase
+              ? `${descBase}${sufixoRestante}`
+              : `Saldo remanescente${docRef ? ` de DOC ${settlingConta.nota}` : ` de ${clienteNomeTitulo || 'título original'}`}`
+
+            novoTituloCriado = await pb.collection('contas_receber').create<ContaReceber>({
+              empresa_id: currentEmpresa!.id,
+              cliente_id: settlingConta.cliente_id || null,
+              cliente_depositante: settlingConta.cliente_depositante || '',
+              categoria_id: settlingConta.categoria_id || null,
+              centro_custo_id: settlingConta.centro_custo_id || null,
+              valor_bruto: valorRestanteCalculado,
+              valor: valorRestanteCalculado,
+              valor_recebido: 0,
+              vencimento: dataVencNovo,
+              data_emissao: settlingConta.data_emissao || undefined,
+              status: 'Aberta',
+              forma_recebimento: formaFinal || settlingConta.forma_recebimento || null,
+              descricao: novaDescricao,
+              endereco: settlingConta.endereco || '',
+              nota: settlingConta.nota || '',
+              observacoes: `[Saldo remanescente de ${formatCurrency(valorRestanteCalculado)} originado do recebimento parcial de ${formatCurrency(valorBaixa)} do título ${settlingConta.id}]`,
+            })
+
+            // Registrar histórico da criação automática do título restante
+            await historicoService.registrar({
+              empresaId: currentEmpresa!.id,
+              colecaoOrigem: 'contas_receber',
+              registroId: novoTituloCriado.id,
+              acao: 'criar',
+              usuarioId: user?.id,
+              usuarioNome: user?.name || user?.email || 'Usuário',
+              descricao: `Título de saldo remanescente gerado automaticamente no valor de ${formatCurrency(valorRestanteCalculado)} a partir da baixa parcial do título "${settlingConta.descricao || settlingConta.id}".`,
+              detalhes: {
+                valor: valorRestanteCalculado,
+                extra: {
+                  titulo_origem_id: settlingConta.id,
+                  valor_pago_original: valorBaixa,
+                  saldo_restante: valorRestanteCalculado,
+                  forma_recebimento: formaFinal,
+                  vencimento: dataVencNovo,
+                },
+              },
+            })
+          }
+
+          // 3. Registrar histórico de baixa do título original
           await historicoService.registrar({
             empresaId: currentEmpresa!.id,
             colecaoOrigem: 'contas_receber',
@@ -1832,7 +1899,7 @@ export default function ContasReceber() {
             acao: 'baixa',
             usuarioId: user?.id,
             usuarioNome: user?.name || user?.email || 'Usuário',
-            descricao: `Baixa ${novoStatus === 'Recebida' ? 'total' : 'parcial'} de ${formatCurrency(valorBaixa)} via ${formaFinal} em ${formatDate(recDateISO)}${usarCreditoCliente ? ` (Crédito usado: ${formatCurrency(valorCreditoUsado)})` : ''}. Saldo restante: ${formatCurrency(Math.max(0, valorTituloTotal - novoTotalRecebido))}.`,
+            descricao: `Baixa ${novoStatus === 'Recebida' ? 'total' : 'parcial'} de ${formatCurrency(valorBaixa)} via ${formaFinal} em ${formatDate(recDateISO)}${usarCreditoCliente ? ` (Crédito usado: ${formatCurrency(valorCreditoUsado)})` : ''}. Saldo restante: ${formatCurrency(Math.max(0, valorTituloTotal - novoTotalRecebido))}.${novoTituloCriado ? ` Gerado novo lançamento ${novoTituloCriado.id} de ${formatCurrency(valorRestanteCalculado)}.` : ''}`,
             detalhes: {
               valor: valorBaixa,
               extra: {
@@ -1842,6 +1909,8 @@ export default function ContasReceber() {
                 usar_credito_cliente: usarCreditoCliente,
                 valor_credito_usado: valorCreditoUsado,
                 movimento_financeiro_id: mov.id,
+                novo_titulo_restante_id: novoTituloCriado?.id,
+                valor_restante_lancado: valorRestanteCalculado,
               },
             },
           })
@@ -1852,11 +1921,12 @@ export default function ContasReceber() {
               : 'Recebimento parcial registrado com sucesso!',
             description: estaQuitado
               ? `Valor recebido: ${formatCurrency(valorBaixa)}`
-              : `Recebido: ${formatCurrency(valorBaixa)}. Saldo restante: ${formatCurrency(Math.max(0, valorTituloTotal - novoTotalRecebido))}`,
+              : `Recebido: ${formatCurrency(valorBaixa)}. Foi criado automaticamente o lançamento restante de ${formatCurrency(valorRestanteCalculado)} (Aberta).`,
           })
           setSettleModalOpen(false)
           setSearchParams({})
           await loadData()
+          await carregarTotaisCards()
         } catch (err: any) {
           toast({
             title: 'Erro ao liquidar recebimento',
@@ -2844,6 +2914,11 @@ export default function ContasReceber() {
                               variant="outline"
                               onClick={() => handleOpenSettle(c)}
                               className="h-6 px-2 text-[11px] border-emerald-200 text-emerald-700 hover:bg-emerald-50"
+                              title={
+                                c.status === 'Parcial'
+                                  ? 'Amortizar saldo restante'
+                                  : 'Registrar recebimento'
+                              }
                             >
                               <CheckCircle className="w-3 h-3 mr-1" />
                               {c.status === 'Parcial' ? 'Amortizar' : 'Receber'}
@@ -3660,11 +3735,13 @@ export default function ContasReceber() {
               {settlingConta && (
                 <div className="mt-1.5 flex items-center justify-between text-[11px]">
                   {Number(valorRecebido) < getSaldoRestante(settlingConta) ? (
-                    <span className="text-amber-700 font-medium">
-                      ⚠️ Baixa parcial: restará um saldo em aberto de{' '}
+                    <span className="text-amber-800 font-medium">
+                      ⚠️ Recebimento parcial: restará um saldo de{' '}
                       <strong>
                         {formatCurrency(
-                          Math.max(0, getSaldoRestante(settlingConta) - Number(valorRecebido)),
+                          Number(
+                            (getSaldoRestante(settlingConta) - Number(valorRecebido)).toFixed(2),
+                          ),
                         )}
                       </strong>
                     </span>
@@ -3676,6 +3753,52 @@ export default function ContasReceber() {
                 </div>
               )}
             </div>
+
+            {/* Bloco explicativo e vencimento do novo lançamento em caso de Recebimento Parcial */}
+            {settlingConta &&
+              Number(valorRecebido) > 0 &&
+              Number(valorRecebido) < getSaldoRestante(settlingConta) && (
+                <div className="p-3 bg-amber-50/90 rounded-xl border border-amber-200 space-y-2">
+                  <div className="flex items-start gap-2">
+                    <span className="text-amber-600 font-bold text-sm leading-none mt-0.5">ℹ️</span>
+                    <div className="space-y-1 text-[11px] text-amber-900 leading-snug">
+                      <p className="font-semibold text-amber-950">Recebimento Parcial Detectado</p>
+                      <p>
+                        O título atual registrará o recebimento de{' '}
+                        <strong>{formatCurrency(Number(valorRecebido))}</strong> (status Parcial).
+                      </p>
+                      <p>
+                        Será gerado <strong>automaticamente um novo lançamento</strong> de{' '}
+                        <strong className="text-amber-950 font-mono text-xs">
+                          {formatCurrency(
+                            Number(
+                              (getSaldoRestante(settlingConta) - Number(valorRecebido)).toFixed(2),
+                            ),
+                          )}
+                        </strong>{' '}
+                        com status Aberta referente ao saldo restante.
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="pt-2 border-t border-amber-200/80">
+                    <Label className="text-[11px] font-semibold text-amber-950">
+                      Vencimento do Novo Lançamento (Saldo Restante) *
+                    </Label>
+                    <Input
+                      type="date"
+                      required
+                      value={vencimentoRestante}
+                      onChange={(e) => setVencimentoRestante(e.target.value)}
+                      className="mt-1 font-mono text-xs bg-white border-amber-300 text-gray-900"
+                    />
+                    <p className="text-[10px] text-amber-800/90 mt-1">
+                      Sugerido o vencimento original do título. Ajuste se o cliente combinou outra
+                      data para o restante.
+                    </p>
+                  </div>
+                </div>
+              )}
 
             {/* Opção: Usar Crédito do Cliente */}
             {totalCreditoDisponivelCliente > 0 && (
