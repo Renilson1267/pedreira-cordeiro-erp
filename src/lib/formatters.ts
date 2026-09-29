@@ -58,3 +58,36 @@ export function formatHours(value: number | undefined | null, includeUnit = true
   })
   return includeUnit ? `${formatted}h` : formatted
 }
+
+/**
+ * Converte valor numérico decimal em horas e minutos ("HH:MM").
+ * Ex: 7.5 -> "07:30"
+ */
+export function formatHoursTime(value: number | undefined | null): string {
+  if (value === undefined || value === null || isNaN(value) || value <= 0) {
+    return '00:00'
+  }
+  const pos = Math.max(0, value)
+  const h = Math.floor(pos)
+  const m = Math.round((pos - h) * 60)
+  const totalH = m >= 60 ? h + 1 : h
+  const finalM = m >= 60 ? 0 : m
+  return `${String(totalH).padStart(2, '0')}:${String(finalM).padStart(2, '0')}`
+}
+
+/**
+ * Formata exibindo o decimal com o equivalente em hora:minuto junto.
+ * Ex: 7.5 -> "7,50h (07:30)"
+ */
+export function formatHoursWithTime(
+  value: number | undefined | null,
+  opcoes?: { ocultarSeZero?: boolean },
+): string {
+  const num = typeof value === 'number' && !isNaN(value) ? value : 0
+  if (num <= 0 && opcoes?.ocultarSeZero) {
+    return '—'
+  }
+  const hStr = formatHours(num, true)
+  const tStr = formatHoursTime(num)
+  return `${hStr} (${tStr})`
+}

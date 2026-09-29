@@ -84,3 +84,111 @@ const baseLimpa = limparDescricaoBase('Fornecimento de Brita (2/5)')
 assert(baseLimpa === 'Fornecimento de Brita', 'Limpa sufixo (2/5) retornando a descrição base')
 
 console.log('🎉 Todos os testes de recebimento parcial e parcelamento passaram!')
+
+// 5. TESTES DO PARSER DE HORAS EXTRAS (HORA:MINUTO E DECIMAL)
+import {
+  parseHorasExtrasInput,
+  decimalParaHorasMinutos,
+  horasMinutosParaDecimal,
+  formatarHoraMinuto,
+  formatarHorasCombinado,
+} from './src/lib/horasExtrasParser'
+import { formatHoursWithTime, formatHoursTime } from './src/lib/formatters'
+
+console.log('\n=== TESTES DO PARSER DE HORAS EXTRAS (HORA:MINUTO E DECIMAL) ===')
+
+// Teste 1: Requisito explícito do usuário - "07:30", "7:30" ou "7h30" -> 7 horas e 30 minutos (decimal 7.5)
+const p1 = parseHorasExtrasInput('07:30')
+assert(
+  p1.valido && p1.decimal === 7.5 && p1.horas === 7 && p1.minutos === 30,
+  '07:30 deve converter para 7.5',
+)
+assert(
+  p1.equivalenciaRealTime === '07:30 = 7,50h',
+  'Equivalência de 07:30 deve ser "07:30 = 7,50h"',
+)
+
+const p2 = parseHorasExtrasInput('7:30')
+assert(
+  p2.valido && p2.decimal === 7.5 && p2.horas === 7 && p2.minutos === 30,
+  '7:30 deve converter para 7.5',
+)
+
+const p3 = parseHorasExtrasInput('7h30')
+assert(
+  p3.valido && p3.decimal === 7.5 && p3.horas === 7 && p3.minutos === 30,
+  '7h30 deve converter para 7.5',
+)
+
+const p3b = parseHorasExtrasInput('07h30min')
+assert(
+  p3b.valido && p3b.decimal === 7.5 && p3b.horas === 7 && p3b.minutos === 30,
+  '07h30min deve converter para 7.5',
+)
+
+// Teste 2: Requisito explícito do usuário - "7,5" ou "7.5" -> decimal 7.5 (07:30)
+const p4 = parseHorasExtrasInput('7,5')
+assert(
+  p4.valido && p4.decimal === 7.5 && p4.horas === 7 && p4.minutos === 30,
+  '7,5 deve converter para decimal 7.5',
+)
+assert(p4.equivalenciaRealTime === '7,50h = 07:30', 'Equivalência de 7,5 deve ser "7,50h = 07:30"')
+
+const p5 = parseHorasExtrasInput('7.5')
+assert(
+  p5.valido && p5.decimal === 7.5 && p5.horas === 7 && p5.minutos === 30,
+  '7.5 deve converter para decimal 7.5',
+)
+
+// Teste 3: Atalho comum de ponto eletrônico "0730" ou "730"
+const p6 = parseHorasExtrasInput('0730')
+assert(
+  p6.valido && p6.decimal === 7.5 && p6.horas === 7 && p6.minutos === 30,
+  '0730 deve converter para 7.5 (07:30)',
+)
+
+const p7 = parseHorasExtrasInput('730')
+assert(
+  p7.valido && p7.decimal === 7.5 && p7.horas === 7 && p7.minutos === 30,
+  '730 deve converter para 7.5 (07:30)',
+)
+
+// Teste 4: Outros horários (12h15 -> 12.25, 08h45 -> 8.75)
+const p8 = parseHorasExtrasInput('12:15')
+assert(
+  p8.valido && p8.decimal === 12.25 && p8.horas === 12 && p8.minutos === 15,
+  '12:15 deve converter para 12.25',
+)
+
+const p9 = parseHorasExtrasInput('08:45')
+assert(
+  p9.valido && p9.decimal === 8.75 && p9.horas === 8 && p9.minutos === 45,
+  '08:45 deve converter para 8.75',
+)
+
+// Teste 5: Validação amigável de erro (minutos >= 60)
+const pInvalidoMinutos = parseHorasExtrasInput('07:65')
+assert(
+  !pInvalidoMinutos.valido && pInvalidoMinutos.decimal === null,
+  '07:65 deve ser marcado como inválido',
+)
+
+const pInvalidoTexto = parseHorasExtrasInput('abc')
+assert(
+  !pInvalidoTexto.valido && pInvalidoTexto.decimal === null,
+  '"abc" deve ser marcado como inválido',
+)
+
+// Teste 6: Helpers de formatação combinada
+assert(formatarHoraMinuto(7.5) === '07:30', 'formatarHoraMinuto(7.5) deve ser 07:30')
+assert(formatHoursTime(7.5) === '07:30', 'formatHoursTime(7.5) deve ser 07:30')
+assert(
+  formatHoursWithTime(7.5) === '7,50h (07:30)',
+  'formatHoursWithTime(7.5) deve ser "7,50h (07:30)"',
+)
+assert(
+  formatarHorasCombinado(7.5) === '7,50h (07:30)',
+  'formatarHorasCombinado(7.5) deve ser "7,50h (07:30)"',
+)
+
+console.log('🎉 Todos os testes de conversão e parsing de horas extras passaram com perfeição!')

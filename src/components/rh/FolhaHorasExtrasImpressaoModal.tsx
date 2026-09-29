@@ -8,7 +8,7 @@ import {
 } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { Printer, Building, FileSpreadsheet } from 'lucide-react'
-import { formatCurrency, formatHours } from '@/lib/formatters'
+import { formatCurrency, formatHours, formatHoursWithTime, formatHoursTime } from '@/lib/formatters'
 import type { FolhaHorasExtras, Empresa } from '@/types/erp'
 
 interface FolhaHorasExtrasImpressaoModalProps {
@@ -219,7 +219,12 @@ export const FolhaHorasExtrasImpressaoModal: React.FC<FolhaHorasExtrasImpressaoM
                             </div>
                           </td>
                           <td className="py-1.5 px-2 text-center font-mono border-r border-gray-200 tabular-nums">
-                            <div>{formatHours(folha.horas_50 || 0)}</div>
+                            <div className="font-semibold text-gray-900">
+                              {formatHours(folha.horas_50 || 0)}{' '}
+                              <span className="text-[9px] text-teal-800 font-normal">
+                                ({formatHoursTime(folha.horas_50 || 0)})
+                              </span>
+                            </div>
                             <div className="text-[9px] text-gray-500">
                               {formatCurrency(folha.valor_horas_50 || 0)}
                             </div>
@@ -227,7 +232,12 @@ export const FolhaHorasExtrasImpressaoModal: React.FC<FolhaHorasExtrasImpressaoM
                           <td className="py-1.5 px-2 text-center font-mono border-r border-gray-200 tabular-nums">
                             {folha.horas_100 && folha.horas_100 > 0 ? (
                               <>
-                                <div>{formatHours(folha.horas_100)}</div>
+                                <div className="font-semibold text-gray-900">
+                                  {formatHours(folha.horas_100)}{' '}
+                                  <span className="text-[9px] text-purple-800 font-normal">
+                                    ({formatHoursTime(folha.horas_100)})
+                                  </span>
+                                </div>
                                 <div className="text-[9px] text-gray-500">
                                   {formatCurrency(folha.valor_horas_100 || 0)}
                                 </div>
@@ -237,7 +247,10 @@ export const FolhaHorasExtrasImpressaoModal: React.FC<FolhaHorasExtrasImpressaoM
                             )}
                           </td>
                           <td className="py-1.5 px-1.5 text-center font-mono font-bold text-gray-900 border-r border-gray-200 tabular-nums">
-                            {formatHours(folha.total_horas || 0)}
+                            <div>{formatHours(folha.total_horas || 0)}</div>
+                            <div className="text-[9px] text-gray-500 font-normal">
+                              ({formatHoursTime(folha.total_horas || 0)})
+                            </div>
                           </td>
                           <td className="py-1.5 px-2 text-right font-mono font-semibold text-gray-800 border-r border-gray-200 tabular-nums">
                             {formatCurrency(folha.total_valor || 0)}
@@ -278,19 +291,32 @@ export const FolhaHorasExtrasImpressaoModal: React.FC<FolhaHorasExtrasImpressaoM
                       TOTAIS GERAIS DO PERÍODO:
                     </td>
                     <td className="py-2.5 px-2 text-center font-mono border-r border-gray-300 tabular-nums">
-                      <div>{formatHours(totalHoras50)}</div>
+                      <div className="font-bold">
+                        {formatHours(totalHoras50)}{' '}
+                        <span className="text-[10px] text-gray-600 font-normal">
+                          ({formatHoursTime(totalHoras50)})
+                        </span>
+                      </div>
                       <div className="text-[9px] text-gray-600 font-normal">
                         {formatCurrency(totalValor50)}
                       </div>
                     </td>
                     <td className="py-2.5 px-2 text-center font-mono border-r border-gray-300 tabular-nums">
-                      <div>{formatHours(totalHoras100)}</div>
+                      <div className="font-bold">
+                        {formatHours(totalHoras100)}{' '}
+                        <span className="text-[10px] text-gray-600 font-normal">
+                          ({formatHoursTime(totalHoras100)})
+                        </span>
+                      </div>
                       <div className="text-[9px] text-gray-600 font-normal">
                         {formatCurrency(totalValor100)}
                       </div>
                     </td>
                     <td className="py-2.5 px-1.5 text-center font-mono font-extrabold border-r border-gray-300 tabular-nums">
-                      {formatHours(totalHorasGeral)}
+                      <div>{formatHours(totalHorasGeral)}</div>
+                      <div className="text-[10px] text-gray-600 font-normal">
+                        ({formatHoursTime(totalHorasGeral)})
+                      </div>
                     </td>
                     <td className="py-2.5 px-2 text-right font-mono font-extrabold text-gray-950 border-r border-gray-300 tabular-nums">
                       {formatCurrency(totalBrutoGeral)}

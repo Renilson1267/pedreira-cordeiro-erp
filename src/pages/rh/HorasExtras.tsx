@@ -4,7 +4,14 @@ import { useAuth } from '@/contexts/AuthContext'
 import { useCompany } from '@/contexts/CompanyContext'
 import pb from '@/lib/pocketbase/client'
 import { useRealtime } from '@/hooks/use-realtime'
-import { formatCurrency, formatDate, formatHours } from '@/lib/formatters'
+import {
+  formatCurrency,
+  formatDate,
+  formatHours,
+  formatHoursWithTime,
+  formatHoursTime,
+} from '@/lib/formatters'
+import { HorasExtrasInput } from '@/components/rh/HorasExtrasInput'
 import type { Funcionario, FolhaHorasExtras, ModoCalculoHorasExtras, PlanoConta } from '@/types/erp'
 import { folhaHorasExtrasService } from '@/services/folhaHorasExtras'
 import {
@@ -792,7 +799,12 @@ export default function HorasExtras() {
         render: (f) =>
           (f.horas_50 || 0) > 0 ? (
             <div>
-              <div>{formatHours(f.horas_50 || 0)}</div>
+              <div className="font-semibold text-gray-900">
+                {formatHours(f.horas_50 || 0)}{' '}
+                <span className="text-[11px] text-teal-800 font-normal">
+                  ({formatHoursTime(f.horas_50 || 0)})
+                </span>
+              </div>
               <div className="text-[10px] text-gray-500">
                 {formatCurrency(f.valor_horas_50 || 0)}
               </div>
@@ -809,7 +821,12 @@ export default function HorasExtras() {
         render: (f) =>
           (f.horas_100 || 0) > 0 ? (
             <div>
-              <div>{formatHours(f.horas_100 || 0)}</div>
+              <div className="font-semibold text-gray-900">
+                {formatHours(f.horas_100 || 0)}{' '}
+                <span className="text-[11px] text-purple-800 font-normal">
+                  ({formatHoursTime(f.horas_100 || 0)})
+                </span>
+              </div>
               <div className="text-[10px] text-gray-500">
                 {formatCurrency(f.valor_horas_100 || 0)}
               </div>
@@ -823,7 +840,7 @@ export default function HorasExtras() {
         header: 'Total H.',
         align: 'center',
         className: 'font-mono font-bold whitespace-nowrap',
-        render: (f) => formatHours(f.total_horas || 0),
+        render: (f) => formatHoursWithTime(f.total_horas || 0),
       },
       {
         key: 'bruto',
@@ -899,19 +916,19 @@ export default function HorasExtras() {
       },
       {
         label: '',
-        value: formatHours(somaHoras50),
+        value: `${formatHours(somaHoras50)} (${formatHoursTime(somaHoras50)})`,
         colSpan: 1,
         align: 'center',
       },
       {
         label: '',
-        value: formatHours(somaHoras100),
+        value: `${formatHours(somaHoras100)} (${formatHoursTime(somaHoras100)})`,
         colSpan: 1,
         align: 'center',
       },
       {
         label: '',
-        value: formatHours(somaHoras50 + somaHoras100),
+        value: formatHoursWithTime(somaHoras50 + somaHoras100),
         colSpan: 1,
         align: 'center',
         className: 'font-extrabold',
@@ -1025,8 +1042,8 @@ export default function HorasExtras() {
             </div>
           </div>
           <div className="text-2xl font-bold text-gray-900 mt-2 font-mono">{totalLancamentos}</div>
-          <p className="text-[11px] text-teal-700 mt-0.5">
-            {formatHours(totalHorasGeral)} extras somadas
+          <p className="text-[11px] text-teal-700 mt-0.5 font-medium">
+            {formatHours(totalHorasGeral)} ({formatHoursTime(totalHorasGeral)}) extras
           </p>
         </Card>
 
@@ -1290,12 +1307,20 @@ export default function HorasExtras() {
 
                       <td className="py-3.5 px-4 text-center">
                         <div className="font-mono font-bold text-gray-900">
-                          {formatHours(folha.total_horas || 0)}
+                          {formatHours(folha.total_horas || 0)}{' '}
+                          <span className="text-xs font-semibold text-teal-800">
+                            ({formatHoursTime(folha.total_horas || 0)})
+                          </span>
                         </div>
-                        <div className="text-[10px] text-gray-400 font-mono">
-                          50%: {formatHours(folha.horas_50 || 0)}
+                        <div className="text-[10px] text-gray-500 font-mono">
+                          50%: {formatHours(folha.horas_50 || 0)} (
+                          {formatHoursTime(folha.horas_50 || 0)})
                           {folha.modo_calculo === 'clt_vigente' && (
-                            <span> | 100%: {formatHours(folha.horas_100 || 0)}</span>
+                            <span>
+                              {' '}
+                              | 100%: {formatHours(folha.horas_100 || 0)} (
+                              {formatHoursTime(folha.horas_100 || 0)})
+                            </span>
                           )}
                         </div>
                       </td>
@@ -1523,72 +1548,44 @@ export default function HorasExtras() {
               </RadioGroup>
             </div>
 
-            {/* 4. QUANTIDADE DE HORAS INFORMADAS */}
+            {/* 4. QUANTIDADE DE HORAS INFORMADAS (ACEITA HORA:MINUTO OU DECIMAL) */}
             {modoCalculo === 'padrao_50' ? (
               <div className="p-3 bg-blue-50/50 border border-blue-200 rounded-xl">
-                <Label className="text-xs font-semibold text-blue-950">
-                  Quantidade Total de Horas Extras (50%) *
-                </Label>
-                <Input
-                  type="number"
-                  step="0.01"
+                <HorasExtrasInput
+                  id="horas-50-todas"
+                  label="Quantidade Total de Horas Extras (50%)"
+                  sublabel="Aceita tanto hora:minuto (ex: 07:30, 7h30) quanto decimal (ex: 7,5 ou 7.5)."
+                  placeholder="Ex: 07:30 ou 7,5"
                   required
-                  min="0.01"
                   value={horas50Todas}
-                  onChange={(e) =>
-                    setHoras50Todas(e.target.value === '' ? '' : parseFloat(e.target.value) || 0)
-                  }
-                  placeholder="Ex: 7.35"
-                  className="mt-1 bg-white font-mono font-bold text-base text-blue-900"
+                  onChange={setHoras50Todas}
+                  colorTheme="blue"
                 />
-                <span className="text-[10px] text-blue-700 mt-1 block">
-                  Informe o número decimal com até dois dígitos (ex: 7.35 ou 15.50).
-                </span>
               </div>
             ) : (
               <div className="grid grid-cols-2 gap-3 p-3 bg-purple-50/50 border border-purple-200 rounded-xl">
                 <div>
-                  <Label className="text-xs font-semibold text-purple-950">
-                    Horas em Dias Úteis (50%)
-                  </Label>
-                  <Input
-                    type="number"
-                    step="0.01"
-                    min="0"
+                  <HorasExtrasInput
+                    id="horas-clt-uteis-50"
+                    label="Dias Úteis (50%)"
+                    sublabel="Segunda a sábado. Ex: 07:30 ou 7,5"
+                    placeholder="Ex: 07:30 ou 7,5"
                     value={horasCltUteis50}
-                    onChange={(e) =>
-                      setHorasCltUteis50(
-                        e.target.value === '' ? '' : parseFloat(e.target.value) || 0,
-                      )
-                    }
-                    placeholder="Ex: 12.00"
-                    className="mt-1 bg-white font-mono font-bold text-purple-900"
+                    onChange={setHorasCltUteis50}
+                    colorTheme="purple"
                   />
-                  <span className="text-[10px] text-purple-700 mt-0.5 block">
-                    Segunda a sábado (step 0.01)
-                  </span>
                 </div>
 
                 <div>
-                  <Label className="text-xs font-semibold text-purple-950">
-                    Horas Domingos/Feriados (100%)
-                  </Label>
-                  <Input
-                    type="number"
-                    step="0.01"
-                    min="0"
+                  <HorasExtrasInput
+                    id="horas-clt-domingos-100"
+                    label="Domingos/Feriados (100%)"
+                    sublabel="Adicional 100%. Ex: 04:00 ou 4,0"
+                    placeholder="Ex: 04:00 ou 4,0"
                     value={horasCltDomingos100}
-                    onChange={(e) =>
-                      setHorasCltDomingos100(
-                        e.target.value === '' ? '' : parseFloat(e.target.value) || 0,
-                      )
-                    }
-                    placeholder="Ex: 6.00"
-                    className="mt-1 bg-white font-mono font-bold text-purple-900"
+                    onChange={setHorasCltDomingos100}
+                    colorTheme="purple"
                   />
-                  <span className="text-[10px] text-purple-700 mt-0.5 block">
-                    Domingos & Feriados (step 0.01)
-                  </span>
                 </div>
               </div>
             )}
@@ -1683,8 +1680,7 @@ export default function HorasExtras() {
                 <div className="flex items-center justify-between text-xs">
                   <span className="text-gray-600">Total de Horas Extras:</span>
                   <span className="font-mono font-bold text-gray-900">
-                    {formatHours(memoriaCalculo.totalHoras, false)} horas (
-                    {formatHours(memoriaCalculo.totalHoras)})
+                    {formatHoursWithTime(memoriaCalculo.totalHoras)}
                   </span>
                 </div>
 
