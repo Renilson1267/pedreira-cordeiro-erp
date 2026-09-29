@@ -645,6 +645,38 @@ export interface ExamePeriodico {
   }
 }
 
+export interface PostoCombustivel {
+  id: string
+  empresa_id: string
+  nome: string
+  bandeira?: string
+  cnpj?: string
+  contato?: string
+  telefone?: string
+  cidade?: string
+  endereco?: string
+  observacoes?: string
+  ativo?: boolean
+  created: string
+  updated: string
+}
+
+export interface FornecedorPecas {
+  id: string
+  empresa_id: string
+  nome: string
+  cnpj?: string
+  contato?: string
+  telefone?: string
+  tipo_pecas?: string
+  cidade?: string
+  endereco?: string
+  observacoes?: string
+  ativo?: boolean
+  created: string
+  updated: string
+}
+
 export interface Entrega {
   id: string
   empresa_id: string
@@ -674,6 +706,7 @@ export interface Entrega {
   preco_unitario_venda?: number
   status: StatusEntrega
   conta_pagar_id?: string
+  conta_receber_id?: string
   observacoes?: string
   sequencial_romaneio?: string
   numero_sequencial?: number
@@ -685,6 +718,7 @@ export interface Entrega {
     funcionario_id?: Funcionario
     produto_id?: Produto
     conta_pagar_id?: ContaPagar
+    conta_receber_id?: ContaReceber
     venda_id?: Venda
     cliente_id?: Cliente
   }

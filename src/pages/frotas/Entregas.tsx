@@ -84,6 +84,8 @@ import {
   DollarSign,
   AlertCircle,
   Link as LinkIcon,
+  FileCheck2,
+  Unlink,
 } from 'lucide-react'
 import { CidadeInputAutocomplete } from '@/components/frotas/CidadeInputAutocomplete'
 import { BlocoKmRota } from '@/components/frotas/BlocoKmRota'
@@ -161,6 +163,8 @@ export default function Entregas() {
   // Drawer Form State
   const [isDrawerOpen, setIsDrawerOpen] = useState(false)
   const [editingEntregaId, setEditingEntregaId] = useState<string | null>(null)
+  const [existingContaReceberId, setExistingContaReceberId] = useState<string | null>(null)
+  const [gerarContaReceber, setGerarContaReceber] = useState(true)
 
   // Diálogo de Confirmação Obrigatório
   const [confirmDialogOpen, setConfirmDialogOpen] = useState(false)

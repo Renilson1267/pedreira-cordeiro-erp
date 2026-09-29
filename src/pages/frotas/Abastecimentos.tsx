@@ -7,13 +7,16 @@ import { formatCurrency, formatDate } from '@/lib/formatters'
 import { calcularDatasPeriodoRapido, estaDentroDoPeriodo } from '@/lib/periodo'
 import FiltroPeriodoBar from '@/components/financeiro/FiltroPeriodoBar'
 import { Checkbox } from '@/components/ui/checkbox'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import {
   RelatorioListagemImpressaoModal,
   type ColunaRelatorioImpressao,
   type TotalizadorRelatorioImpressao,
 } from '@/components/financeiro/RelatorioListagemImpressaoModal'
-import type { Abastecimento, Veiculo, Fornecedor, PlanoConta } from '@/types/erp'
-import { Card, CardContent } from '@/components/ui/card'
+import { PostosCombustivelTab } from '@/components/frotas/PostosCombustivelTab'
+import { postosCombustivelService } from '@/services/postosCombustivel'
+import type { Abastecimento, Veiculo, Fornecedor, PlanoConta, PostoCombustivel } from '@/types/erp'
+import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -37,25 +40,33 @@ import {
   TrendingDown,
   Gauge,
   Clock,
-  ArrowRight,
   Receipt,
   FileCheck2,
-  Calendar,
+  Unlink,
+  CheckCircle2,
+  Layers,
+  Store,
+  Pencil,
 } from 'lucide-react'
 
 export default function Abastecimentos() {
   const { currentEmpresa, canEdit } = useCompany()
   const { user } = useAuth()
 
+  // Aba ativa: 'lancamentos' | 'postos'
+  const [activeTab, setActiveTab] = useState<'lancamentos' | 'postos'>('lancamentos')
+
   const [abastecimentos, setAbastecimentos] = useState<Abastecimento[]>([])
   const [veiculos, setVeiculos] = useState<Veiculo[]>([])
   const [fornecedores, setFornecedores] = useState<Fornecedor[]>([])
+  const [postos, setPostos] = useState<PostoCombustivel[]>([])
   const [planoContas, setPlanoContas] = useState<PlanoConta[]>([])
   const [loading, setLoading] = useState(false)
 
-  // Seleção múltipla para impressão
+  // Seleção múltipla para impressão e ações em lote
   const [selectedIds, setSelectedIds] = useState<string[]>([])
   const [relatorioImpressaoOpen, setRelatorioImpressaoOpen] = useState(false)
+  const [isProcessandoLote, setIsProcessandoLote] = useState(false)
 
   const [selectedVeiculoFilter, setSelectedVeiculoFilter] = useState('todos')
   const [searchQuery, setSearchQuery] = useState('')
@@ -69,8 +80,11 @@ export default function Abastecimentos() {
     return calcularDatasPeriodoRapido('este_mes').fim
   })
 
-  // Drawer Form
+  // Drawer Form (Criar / Editar)
   const [isDrawerOpen, setIsDrawerOpen] = useState(false)
+  const [editingId, setEditingId] = useState<string | null>(null)
+  const [existingContaPagarId, setExistingContaPagarId] = useState<string | null>(null)
+
   const [veiculoId, setVeiculoId] = useState('')
   const [dataAbast, setDataAbast] = useState(() => new Date().toISOString().slice(0, 10))
   const [combustivel, setCombustivel] = useState<
@@ -83,7 +97,9 @@ export default function Abastecimentos() {
   const [kmOdometro, setKmOdometro] = useState<number>(0)
   const [horimetro, setHorimetro] = useState<number>(0)
 
+  // Seletor unificado: Fornecedor ou Posto Cadastrado
   const [fornecedorId, setFornecedorId] = useState<string>('')
+  const [postoId, setPostoId] = useState<string>('')
   const [motoristaOperador, setMotoristaOperador] = useState('')
   const [observacoes, setObservacoes] = useState('')
   const [gerarFinanceiro, setGerarFinanceiro] = useState(true)
@@ -91,12 +107,13 @@ export default function Abastecimentos() {
 
   useRealtime('abastecimentos', () => loadData())
   useRealtime('veiculos', () => loadData())
+  useRealtime('postos_combustivel', () => loadData())
 
   const loadData = async () => {
     if (!currentEmpresa) return
     try {
       setLoading(true)
-      const [abList, veList, forList, plList] = await Promise.all([
+      const [abList, veList, forList, plList, postList] = await Promise.all([
         pb.collection('abastecimentos').getFullList<Abastecimento>({
           filter: `empresa_id = '${currentEmpresa.id}'`,
           expand: 'veiculo_id,fornecedor_id,conta_pagar_id',
@@ -113,12 +130,14 @@ export default function Abastecimentos() {
         pb.collection('plano_contas').getFullList<PlanoConta>({
           filter: `empresa_id = '${currentEmpresa.id}'`,
         }),
+        postosCombustivelService.listar(currentEmpresa.id).catch(() => []),
       ])
 
       setAbastecimentos(abList)
       setVeiculos(veList)
       setFornecedores(forList)
       setPlanoContas(plList)
+      setPostos(postList)
     } catch (err) {
       console.error('Error fetching abastecimentos data:', err)
     } finally {
@@ -130,6 +149,66 @@ export default function Abastecimentos() {
     loadData()
   }, [currentEmpresa])
 
+  // Opções unificadas de Postos/Fornecedores para o Combobox
+  const opcoesPostosFornecedores = useMemo(() => {
+    const list: Array<{ id: string; label: string; sublabel?: string; keywords?: string[] }> = []
+
+    // 1. Postos cadastrados da frota (prioridade)
+    postos.forEach((p) => {
+      list.push({
+        id: `posto:${p.id}`,
+        label: p.nome,
+        sublabel: `Posto Cadastrado${p.bandeira ? ` • ${p.bandeira}` : ''}${p.cidade ? ` • ${p.cidade}` : ''}`,
+        keywords: [p.nome, p.bandeira || '', p.cidade || '', p.cnpj || ''],
+      })
+    })
+
+    // 2. Fornecedores gerais
+    fornecedores.forEach((f) => {
+      list.push({
+        id: `forn:${f.id}`,
+        label: f.nome,
+        sublabel: `Fornecedor Geral${f.cidade ? ` • ${f.cidade}` : ''}`,
+        keywords: [f.nome, f.cidade || '', f.cnpj_cpf || ''],
+      })
+    })
+
+    return list
+  }, [postos, fornecedores])
+
+  // Helper para o seletor atual no form
+  const selectedPostoOuFornId = useMemo(() => {
+    if (postoId) return `posto:${postoId}`
+    if (fornecedorId) return `forn:${fornecedorId}`
+    return ''
+  }, [postoId, fornecedorId])
+
+  const handleSelectPostoOuForn = (val: string) => {
+    if (!val) {
+      setPostoId('')
+      setFornecedorId('')
+      return
+    }
+    if (val.startsWith('posto:')) {
+      const pId = val.replace('posto:', '')
+      setPostoId(pId)
+      // Tenta achar fornecedor com nome similar ou deixa fornecedorId vazio
+      const pObj = postos.find((p) => p.id === pId)
+      const matchingForn = fornecedores.find(
+        (f) =>
+          f.nome.trim().toLowerCase() === pObj?.nome.trim().toLowerCase() ||
+          (pObj?.cnpj &&
+            f.cnpj_cpf &&
+            f.cnpj_cpf.replace(/\D/g, '') === pObj.cnpj.replace(/\D/g, '')),
+      )
+      setFornecedorId(matchingForn ? matchingForn.id : '')
+    } else if (val.startsWith('forn:')) {
+      const fId = val.replace('forn:', '')
+      setFornecedorId(fId)
+      setPostoId('')
+    }
+  }
+
   // Selected veiculo helper
   const currentVeiculo = useMemo(() => {
     return veiculos.find((v) => v.id === veiculoId)
@@ -138,8 +217,8 @@ export default function Abastecimentos() {
   // Ultimo abastecimento do veiculo
   const ultimoAbastecimentoVeiculo = useMemo(() => {
     if (!veiculoId) return null
-    return abastecimentos.find((a) => a.veiculo_id === veiculoId)
-  }, [abastecimentos, veiculoId])
+    return abastecimentos.find((a) => a.veiculo_id === veiculoId && a.id !== editingId)
+  }, [abastecimentos, veiculoId, editingId])
 
   // Anterior Km
   const kmAnterior = useMemo(() => {
@@ -200,7 +279,34 @@ export default function Abastecimentos() {
     return 0
   }, [deltaHoras, litros])
 
+  // Helper para gerar descrição rica padrão
+  const gerarDescricaoRica = (
+    v: Veiculo,
+    litrosVal: number,
+    comb: string,
+    postoOuFornNome?: string,
+  ) => {
+    const postoTxt = postoOuFornNome ? ` — ${postoOuFornNome}` : ''
+    const veicTxt = `[${v.codigo_interno}${v.placa ? ` ${v.placa}` : ''}]`
+    return `Abastecimento${postoTxt} — ${veicTxt} — ${litrosVal}L ${comb}`
+  }
+
+  // Nome do posto ou fornecedor para descrição
+  const nomePostoOuFornSelecionado = useMemo(() => {
+    if (postoId) {
+      const p = postos.find((item) => item.id === postoId)
+      if (p) return p.nome
+    }
+    if (fornecedorId) {
+      const f = fornecedores.find((item) => item.id === fornecedorId)
+      if (f) return f.nome
+    }
+    return ''
+  }, [postoId, fornecedorId, postos, fornecedores])
+
   const openCreateModal = () => {
+    setEditingId(null)
+    setExistingContaPagarId(null)
     const firstVeic = veiculos[0]
     setVeiculoId(firstVeic ? firstVeic.id : '')
     setDataAbast(new Date().toISOString().slice(0, 10))
@@ -210,13 +316,57 @@ export default function Abastecimentos() {
     setKmOdometro(firstVeic ? (firstVeic.km_atual || 0) + 50 : 0)
     setHorimetro(firstVeic ? (firstVeic.horimetro_atual || 0) + 8 : 0)
 
-    const posto = fornecedores.find(
-      (f) => f.nome.toLowerCase().includes('posto') || f.nome.toLowerCase().includes('combustivel'),
-    )
-    setFornecedorId(posto ? posto.id : fornecedores[0]?.id || '')
+    const primeiroPosto = postos[0]
+    if (primeiroPosto) {
+      setPostoId(primeiroPosto.id)
+      const matchingForn = fornecedores.find(
+        (f) => f.nome.trim().toLowerCase() === primeiroPosto.nome.trim().toLowerCase(),
+      )
+      setFornecedorId(matchingForn ? matchingForn.id : '')
+    } else {
+      setPostoId('')
+      setFornecedorId(fornecedores[0]?.id || '')
+    }
+
     setMotoristaOperador('')
     setObservacoes('')
     setGerarFinanceiro(true)
+    setIsDrawerOpen(true)
+  }
+
+  const openEditModal = (a: Abastecimento) => {
+    setEditingId(a.id)
+    setExistingContaPagarId(a.conta_pagar_id || null)
+    setVeiculoId(a.veiculo_id)
+    setDataAbast(a.data ? a.data.slice(0, 10) : new Date().toISOString().slice(0, 10))
+    setCombustivel(a.combustivel)
+    setLitros(a.litros)
+    setPrecoLitro(a.preco_litro)
+    setKmOdometro(a.km_odometro || 0)
+    setHorimetro(a.horimetro || 0)
+
+    // Tenta casar posto
+    const forn = a.expand?.fornecedor_id
+    const postoMatch = postos.find(
+      (p) =>
+        (forn && p.nome.trim().toLowerCase() === forn.nome.trim().toLowerCase()) ||
+        (forn?.cnpj_cpf &&
+          p.cnpj &&
+          p.cnpj.replace(/\D/g, '') === forn.cnpj_cpf.replace(/\D/g, '')),
+    )
+
+    if (postoMatch) {
+      setPostoId(postoMatch.id)
+      setFornecedorId(a.fornecedor_id || '')
+    } else {
+      setPostoId('')
+      setFornecedorId(a.fornecedor_id || '')
+    }
+
+    setMotoristaOperador(a.motorista_operador || '')
+    setObservacoes(a.observacoes || '')
+    // Se já tem conta a pagar, mantém ativo para sincronizar
+    setGerarFinanceiro(Boolean(a.conta_pagar_id))
     setIsDrawerOpen(true)
   }
 
@@ -232,6 +382,155 @@ export default function Abastecimentos() {
     }
   }
 
+  // Ação individual: Gerar Conta a Pagar para registro antigo/sem vínculo
+  const handleGerarContaPagarIndividual = async (a: Abastecimento) => {
+    if (!currentEmpresa) return
+    if (a.conta_pagar_id) {
+      toast({ title: 'Este abastecimento já possui título em Contas a Pagar.' })
+      return
+    }
+
+    try {
+      const v = a.expand?.veiculo_id || veiculos.find((ve) => ve.id === a.veiculo_id)
+      const veicCod = v ? `[${v.codigo_interno}${v.placa ? ` ${v.placa}` : ''}]` : '[Veículo]'
+      const fornecedorNome = a.expand?.fornecedor_id?.nome || ''
+      const postoTxt = fornecedorNome ? ` — ${fornecedorNome}` : ''
+      const descRica = `Abastecimento${postoTxt} — ${veicCod} — ${a.litros}L ${a.combustivel}`
+
+      const catComb =
+        planoContas.find((pc) => pc.codigo === '2.2') ||
+        planoContas.find((pc) => pc.nome.toLowerCase().includes('combust')) ||
+        null
+
+      const payloadConta = {
+        empresa_id: currentEmpresa.id,
+        fornecedor_id: a.fornecedor_id || null,
+        veiculo_id: a.veiculo_id || null,
+        origem_frota: 'abastecimento',
+        descricao: descRica,
+        categoria_id: catComb?.id || null,
+        valor: a.valor_total,
+        vencimento: new Date(a.data).toISOString(),
+        data_emissao: new Date(a.data).toISOString(),
+        parcelas: 1,
+        status: 'Aberta',
+        observacoes: `Gerado manualmente a partir da listagem de abastecimentos. Km: ${a.km_odometro || '—'}, Horímetro: ${a.horimetro || '—'}. Operador: ${a.motorista_operador || 'Não informado'}`,
+      }
+
+      const cp = await pb.collection('contas_pagar').create(payloadConta)
+      await pb.collection('abastecimentos').update(a.id, { conta_pagar_id: cp.id })
+
+      toast({
+        title: 'Título gerado com sucesso!',
+        description: `Conta a Pagar de ${formatCurrency(a.valor_total)} vinculada ao abastecimento.`,
+      })
+      await loadData()
+    } catch (err: any) {
+      toast({
+        title: 'Erro ao gerar Conta a Pagar',
+        description: err.message,
+        variant: 'destructive',
+      })
+    }
+  }
+
+  // Ação: Desvincular Conta a Pagar
+  const handleDesvincularContaPagar = async (a: Abastecimento) => {
+    if (
+      !confirm(
+        'Deseja desvincular este abastecimento do Contas a Pagar? O título financeiro existente não será apagado, apenas desvinculado.',
+      )
+    ) {
+      return
+    }
+    try {
+      await pb.collection('abastecimentos').update(a.id, { conta_pagar_id: null })
+      toast({ title: 'Vínculo removido com sucesso.' })
+      await loadData()
+    } catch (err: any) {
+      toast({ title: 'Erro ao desvincular', description: err.message, variant: 'destructive' })
+    }
+  }
+
+  // Ação em Lote: Gerar Contas a Pagar para todos os selecionados sem vínculo
+  const handleGerarLoteContasPagar = async () => {
+    if (selectedIds.length === 0) return
+    const elegiveis = abastecimentos.filter((a) => selectedIds.includes(a.id) && !a.conta_pagar_id)
+
+    if (elegiveis.length === 0) {
+      toast({
+        title: 'Nenhum abastecimento elegível',
+        description:
+          'Todos os abastecimentos selecionados já possuem vínculo com o Contas a Pagar.',
+      })
+      return
+    }
+
+    if (
+      !confirm(
+        `Gerar ${elegiveis.length} título(s) em Contas a Pagar para os abastecimentos selecionados?`,
+      )
+    ) {
+      return
+    }
+
+    try {
+      setIsProcessandoLote(true)
+      let sucessos = 0
+      const catComb =
+        planoContas.find((pc) => pc.codigo === '2.2') ||
+        planoContas.find((pc) => pc.nome.toLowerCase().includes('combust')) ||
+        null
+
+      for (const a of elegiveis) {
+        try {
+          const v = a.expand?.veiculo_id || veiculos.find((ve) => ve.id === a.veiculo_id)
+          const veicCod = v ? `[${v.codigo_interno}${v.placa ? ` ${v.placa}` : ''}]` : '[Veículo]'
+          const fornecedorNome = a.expand?.fornecedor_id?.nome || ''
+          const postoTxt = fornecedorNome ? ` — ${fornecedorNome}` : ''
+          const descRica = `Abastecimento${postoTxt} — ${veicCod} — ${a.litros}L ${a.combustivel}`
+
+          const payloadConta = {
+            empresa_id: currentEmpresa!.id,
+            fornecedor_id: a.fornecedor_id || null,
+            veiculo_id: a.veiculo_id || null,
+            origem_frota: 'abastecimento',
+            descricao: descRica,
+            categoria_id: catComb?.id || null,
+            valor: a.valor_total,
+            vencimento: new Date(a.data).toISOString(),
+            data_emissao: new Date(a.data).toISOString(),
+            parcelas: 1,
+            status: 'Aberta',
+            observacoes: `Gerado em lote a partir do Módulo de Frotas. Km: ${a.km_odometro || '—'}, Horímetro: ${a.horimetro || '—'}. Operador: ${a.motorista_operador || 'Não informado'}`,
+          }
+
+          const cp = await pb.collection('contas_pagar').create(payloadConta)
+          await pb.collection('abastecimentos').update(a.id, { conta_pagar_id: cp.id })
+          sucessos++
+        } catch (itemErr) {
+          console.error(`Erro ao processar abastecimento ${a.id}:`, itemErr)
+        }
+      }
+
+      toast({
+        title: 'Geração em lote concluída!',
+        description: `${sucessos} título(s) gerado(s) em Contas a Pagar.`,
+      })
+      setSelectedIds([])
+      await loadData()
+    } catch (err: any) {
+      toast({
+        title: 'Erro na geração em lote',
+        description: err.message,
+        variant: 'destructive',
+      })
+    } finally {
+      setIsProcessandoLote(false)
+    }
+  }
+
+  // Salvar formulário (Create ou Edit)
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!veiculoId) {
@@ -247,32 +546,52 @@ export default function Abastecimentos() {
       setIsSubmitting(true)
       const v = currentVeiculo!
 
-      let contaPagarId: string | null = null
+      const catComb =
+        planoContas.find((pc) => pc.codigo === '2.2') ||
+        planoContas.find((pc) => pc.nome.toLowerCase().includes('combust')) ||
+        null
 
-      // 1. Gerar Conta a Pagar se solicitado
+      const descRica = gerarDescricaoRica(v, litros, combustivel, nomePostoOuFornSelecionado)
+
+      let contaPagarIdFinal: string | null = existingContaPagarId
+
+      // Anti-duplicação: se já existe título, sincroniza descrição e valor; senão, cria novo se solicitado
       if (gerarFinanceiro) {
-        const catComb =
-          planoContas.find((pc) => pc.codigo === '2.2') ||
-          planoContas.find((pc) => pc.nome.toLowerCase().includes('combust')) ||
-          null
+        if (existingContaPagarId) {
+          try {
+            await pb.collection('contas_pagar').update(existingContaPagarId, {
+              descricao: descRica,
+              valor: valorTotal,
+              fornecedor_id: fornecedorId || null,
+              veiculo_id: v.id,
+              origem_frota: 'abastecimento',
+              vencimento: new Date(dataAbast).toISOString(),
+            })
+          } catch (syncErr) {
+            console.warn('Não foi possível sincronizar título existente:', syncErr)
+          }
+        } else {
+          const payloadConta = {
+            empresa_id: currentEmpresa!.id,
+            fornecedor_id: fornecedorId || null,
+            veiculo_id: v.id,
+            origem_frota: 'abastecimento',
+            descricao: descRica,
+            categoria_id: catComb?.id || null,
+            valor: valorTotal,
+            vencimento: new Date(dataAbast).toISOString(),
+            data_emissao: new Date(dataAbast).toISOString(),
+            parcelas: 1,
+            status: 'Aberta',
+            observacoes: `Gerado pelo Módulo de Frotas. Km: ${kmOdometro || '—'}, Horímetro: ${horimetro || '—'}. Operador: ${motoristaOperador || 'Não informado'}`,
+          }
 
-        const payloadConta = {
-          empresa_id: currentEmpresa!.id,
-          fornecedor_id: fornecedorId || null,
-          descricao: `Abastecimento ${v.codigo_interno} (${v.modelo}) - ${litros}L ${combustivel}`,
-          categoria_id: catComb?.id || null,
-          valor: valorTotal,
-          vencimento: new Date(dataAbast).toISOString(),
-          parcelas: 1,
-          status: 'Aberta',
-          observacoes: `Gerado pelo Módulo de Frotas. Km: ${kmOdometro || '—'}, Horímetro: ${horimetro || '—'}. Operador: ${motoristaOperador || 'Não informado'}`,
+          const cp = await pb.collection('contas_pagar').create(payloadConta)
+          contaPagarIdFinal = cp.id
         }
-
-        const cp = await pb.collection('contas_pagar').create(payloadConta)
-        contaPagarId = cp.id
       }
 
-      // 2. Registrar Abastecimento
+      // 2. Registrar / Atualizar Abastecimento
       const medidorPrincipal = kmOdometro > 0 ? kmOdometro : horimetro || 0
       const payloadAbast = {
         empresa_id: currentEmpresa!.id,
@@ -297,35 +616,40 @@ export default function Abastecimentos() {
               ? Number((valorTotal / deltaHoras).toFixed(2))
               : null,
         fornecedor_id: fornecedorId || null,
-        conta_pagar_id: contaPagarId,
+        conta_pagar_id: contaPagarIdFinal,
         motorista_operador: motoristaOperador.trim() || null,
         observacoes: observacoes.trim() || null,
       }
 
-      await pb.collection('abastecimentos').create(payloadAbast)
+      if (editingId) {
+        await pb.collection('abastecimentos').update(editingId, payloadAbast)
+        toast({ title: 'Abastecimento atualizado com sucesso!' })
+      } else {
+        await pb.collection('abastecimentos').create(payloadAbast)
 
-      // 3. Atualizar o km_atual e horimetro_atual do veículo
-      const veiculoUpdates: Partial<Veiculo> = {}
-      if (kmOdometro > (v.km_atual || 0)) {
-        veiculoUpdates.km_atual = Number(kmOdometro)
-      }
-      if (horimetro > (v.horimetro_atual || 0)) {
-        veiculoUpdates.horimetro_atual = Number(horimetro)
-      }
-      if (Object.keys(veiculoUpdates).length > 0) {
-        await pb.collection('veiculos').update(v.id, veiculoUpdates)
-      }
+        // 3. Atualizar o km_atual e horimetro_atual do veículo
+        const veiculoUpdates: Partial<Veiculo> = {}
+        if (kmOdometro > (v.km_atual || 0)) {
+          veiculoUpdates.km_atual = Number(kmOdometro)
+        }
+        if (horimetro > (v.horimetro_atual || 0)) {
+          veiculoUpdates.horimetro_atual = Number(horimetro)
+        }
+        if (Object.keys(veiculoUpdates).length > 0) {
+          await pb.collection('veiculos').update(v.id, veiculoUpdates)
+        }
 
-      toast({
-        title: 'Abastecimento registrado com sucesso!',
-        description: gerarFinanceiro ? 'Conta a pagar gerada no módulo financeiro.' : undefined,
-      })
+        toast({
+          title: 'Abastecimento registrado com sucesso!',
+          description: gerarFinanceiro ? 'Conta a pagar gerada no módulo financeiro.' : undefined,
+        })
+      }
 
       setIsDrawerOpen(false)
       await loadData()
     } catch (err: any) {
       toast({
-        title: 'Erro ao registrar abastecimento',
+        title: 'Erro ao salvar abastecimento',
         description: err.message,
         variant: 'destructive',
       })
@@ -370,11 +694,17 @@ export default function Abastecimentos() {
         const cod = a.expand?.veiculo_id?.codigo_interno?.toLowerCase() || ''
         const mod = a.expand?.veiculo_id?.modelo?.toLowerCase() || ''
         const mot = a.motorista_operador?.toLowerCase() || ''
-        return cod.includes(q) || mod.includes(q) || mot.includes(q)
+        const forn = (a.expand?.fornecedor_id?.nome || '').toLowerCase()
+        return cod.includes(q) || mod.includes(q) || mot.includes(q) || forn.includes(q)
       }
       return true
     })
   }, [abastecimentos, selectedVeiculoFilter, searchQuery, dataInicio, dataFim])
+
+  // Contagem de selecionados sem conta a pagar para botão em lote
+  const selecionadosSemContaCount = useMemo(() => {
+    return abastecimentos.filter((a) => selectedIds.includes(a.id) && !a.conta_pagar_id).length
+  }, [abastecimentos, selectedIds])
 
   // Itens para impressão
   const itensParaImpressao = useMemo(() => {
@@ -490,6 +820,11 @@ export default function Abastecimentos() {
         header: 'Motorista / Operador',
         render: (a) => a.motorista_operador || '—',
       },
+      {
+        key: 'fornecedor',
+        header: 'Fornecedor / Posto',
+        render: (a) => a.expand?.fornecedor_id?.nome || '—',
+      },
     ]
   }, [])
 
@@ -528,7 +863,7 @@ export default function Abastecimentos() {
       {
         label: '',
         value: '',
-        colSpan: 3,
+        colSpan: 4,
         align: 'center',
       },
     ]
@@ -547,7 +882,7 @@ export default function Abastecimentos() {
 
   return (
     <div className="space-y-6">
-      {/* Header */}
+      {/* Header com Abas */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <div className="flex items-center gap-2">
@@ -563,306 +898,395 @@ export default function Abastecimentos() {
           </p>
         </div>
 
-        {canEdit && (
-          <Button
-            onClick={openCreateModal}
-            className="bg-teal-700 hover:bg-teal-800 text-white rounded-xl shadow-xs"
-          >
-            <Plus className="w-4 h-4 mr-1.5" />
-            Novo Abastecimento
-          </Button>
+        {canEdit && activeTab === 'lancamentos' && (
+          <div className="flex items-center gap-2">
+            {selecionadosSemContaCount > 0 && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleGerarLoteContasPagar}
+                disabled={isProcessandoLote}
+                className="border-emerald-300 text-emerald-800 bg-emerald-50 hover:bg-emerald-100 text-xs rounded-xl"
+              >
+                <FileCheck2 className="w-3.5 h-3.5 mr-1.5" />
+                {isProcessandoLote
+                  ? 'Gerando...'
+                  : `Gerar Contas a Pagar em Lote (${selecionadosSemContaCount})`}
+              </Button>
+            )}
+            <Button
+              onClick={openCreateModal}
+              className="bg-teal-700 hover:bg-teal-800 text-white rounded-xl shadow-xs"
+            >
+              <Plus className="w-4 h-4 mr-1.5" />
+              Novo Abastecimento
+            </Button>
+          </div>
         )}
       </div>
 
-      {/* KPI Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <Card className="rounded-2xl border-[#ECEAE4] bg-white shadow-xs p-4">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold text-gray-500 uppercase">
-              {dataInicio || dataFim ? 'Volume no Período' : 'Volume Total'}
-            </span>
-            <div className="w-8 h-8 rounded-lg bg-teal-50 text-teal-700 flex items-center justify-center">
-              <Fuel className="w-4 h-4" />
+      {/* Navegação por Abas */}
+      <Tabs value={activeTab} onValueChange={(v: any) => setActiveTab(v)} className="w-full">
+        <TabsList className="bg-white border border-[#ECEAE4] p-1 rounded-xl">
+          <TabsTrigger
+            value="lancamentos"
+            className="data-[state=active]:bg-teal-50 data-[state=active]:text-teal-900 text-xs rounded-lg"
+          >
+            <Fuel className="w-3.5 h-3.5 mr-1.5" />
+            Lançamentos de Abastecimento ({abastecimentos.length})
+          </TabsTrigger>
+          <TabsTrigger
+            value="postos"
+            className="data-[state=active]:bg-teal-50 data-[state=active]:text-teal-900 text-xs rounded-lg"
+          >
+            <Store className="w-3.5 h-3.5 mr-1.5" />
+            Postos Cadastrados ({postos.length})
+          </TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="postos" className="mt-4">
+          <PostosCombustivelTab
+            empresaId={currentEmpresa?.id || ''}
+            postos={postos}
+            canEdit={canEdit}
+            onReload={loadData}
+          />
+        </TabsContent>
+
+        <TabsContent value="lancamentos" className="mt-4 space-y-6">
+          {/* KPI Cards */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <Card className="rounded-2xl border-[#ECEAE4] bg-white shadow-xs p-4">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-semibold text-gray-500 uppercase">
+                  {dataInicio || dataFim ? 'Volume no Período' : 'Volume Total'}
+                </span>
+                <div className="w-8 h-8 rounded-lg bg-teal-50 text-teal-700 flex items-center justify-center">
+                  <Fuel className="w-4 h-4" />
+                </div>
+              </div>
+              <div className="text-2xl font-bold text-gray-900 mt-2 font-mono">
+                {totalLitrosPeriodo.toLocaleString('pt-BR')}{' '}
+                <span className="text-xs font-normal text-gray-500">Litros</span>
+              </div>
+              <p className="text-[11px] text-gray-400 mt-0.5">
+                Consumo total da pedreira no período
+              </p>
+            </Card>
+
+            <Card className="rounded-2xl border-[#ECEAE4] bg-white shadow-xs p-4">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-semibold text-gray-500 uppercase">
+                  Custo Total ({filteredAbastecimentos.length} reg.)
+                </span>
+                <div className="w-8 h-8 rounded-lg bg-red-50 text-red-600 flex items-center justify-center">
+                  <Receipt className="w-4 h-4" />
+                </div>
+              </div>
+              <div className="text-2xl font-bold text-red-600 mt-2 font-mono tabular-nums">
+                {formatCurrency(totalCustoPeriodo)}
+              </div>
+              <p className="text-[11px] text-gray-400 mt-0.5">Integrado com Contas a Pagar</p>
+            </Card>
+
+            <Card className="rounded-2xl border-[#ECEAE4] bg-white shadow-xs p-4">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-semibold text-gray-500 uppercase">
+                  Preço Médio / Litro
+                </span>
+                <div className="w-8 h-8 rounded-lg bg-amber-50 text-amber-700 flex items-center justify-center">
+                  <TrendingDown className="w-4 h-4" />
+                </div>
+              </div>
+              <div className="text-2xl font-bold text-gray-900 mt-2 font-mono tabular-nums">
+                {formatCurrency(precoMedioLitro)}
+              </div>
+              <p className="text-[11px] text-gray-400 mt-0.5">Média ponderada do período</p>
+            </Card>
+          </div>
+
+          {/* Filter and Search Bar */}
+          <Card className="rounded-2xl border-[#ECEAE4] bg-white shadow-xs p-4 space-y-3">
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
+              <div className="flex flex-wrap items-center gap-2">
+                <Select value={selectedVeiculoFilter} onValueChange={setSelectedVeiculoFilter}>
+                  <SelectTrigger className="w-[260px] bg-[#FAF9F7] border-[#ECEAE4] text-xs h-9">
+                    <SelectValue placeholder="Filtrar por Máquina/Veículo" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="todos">Todos os Veículos & Máquinas</SelectItem>
+                    {veiculos.map((v) => (
+                      <SelectItem key={v.id} value={v.id}>
+                        {v.codigo_interno} • {v.modelo}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+
+                {selectedVeiculoFilter !== 'todos' && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setSelectedVeiculoFilter('todos')}
+                    className="h-9 text-xs text-gray-500"
+                  >
+                    Todos os veículos
+                  </Button>
+                )}
+              </div>
+
+              <div className="relative w-full sm:w-72">
+                <Search className="w-4 h-4 absolute left-3 top-2.5 text-gray-400" />
+                <Input
+                  placeholder="Buscar por operador, veículo, posto..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="pl-9 bg-[#FAF9F7] border-[#ECEAE4] text-xs h-9 rounded-xl"
+                />
+              </div>
             </div>
-          </div>
-          <div className="text-2xl font-bold text-gray-900 mt-2 font-mono">
-            {totalLitrosPeriodo.toLocaleString('pt-BR')}{' '}
-            <span className="text-xs font-normal text-gray-500">Litros</span>
-          </div>
-          <p className="text-[11px] text-gray-400 mt-0.5">Consumo total da pedreira no período</p>
-        </Card>
 
-        <Card className="rounded-2xl border-[#ECEAE4] bg-white shadow-xs p-4">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold text-gray-500 uppercase">
-              Custo Total ({filteredAbastecimentos.length} reg.)
-            </span>
-            <div className="w-8 h-8 rounded-lg bg-red-50 text-red-600 flex items-center justify-center">
-              <Receipt className="w-4 h-4" />
-            </div>
-          </div>
-          <div className="text-2xl font-bold text-red-600 mt-2 font-mono tabular-nums">
-            {formatCurrency(totalCustoPeriodo)}
-          </div>
-          <p className="text-[11px] text-gray-400 mt-0.5">Integrado com Contas a Pagar</p>
-        </Card>
-
-        <Card className="rounded-2xl border-[#ECEAE4] bg-white shadow-xs p-4">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold text-gray-500 uppercase">
-              Preço Médio / Litro
-            </span>
-            <div className="w-8 h-8 rounded-lg bg-amber-50 text-amber-700 flex items-center justify-center">
-              <TrendingDown className="w-4 h-4" />
-            </div>
-          </div>
-          <div className="text-2xl font-bold text-gray-900 mt-2 font-mono tabular-nums">
-            {formatCurrency(precoMedioLitro)}
-          </div>
-          <p className="text-[11px] text-gray-400 mt-0.5">Média ponderada do período</p>
-        </Card>
-      </div>
-
-      {/* Filter and Search Bar */}
-      <Card className="rounded-2xl border-[#ECEAE4] bg-white shadow-xs p-4 space-y-3">
-        <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
-          <div className="flex flex-wrap items-center gap-2">
-            <Select value={selectedVeiculoFilter} onValueChange={setSelectedVeiculoFilter}>
-              <SelectTrigger className="w-[260px] bg-[#FAF9F7] border-[#ECEAE4] text-xs h-9">
-                <SelectValue placeholder="Filtrar por Máquina/Veículo" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="todos">Todos os Veículos & Máquinas</SelectItem>
-                {veiculos.map((v) => (
-                  <SelectItem key={v.id} value={v.id}>
-                    {v.codigo_interno} • {v.modelo}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-
-            {selectedVeiculoFilter !== 'todos' && (
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => setSelectedVeiculoFilter('todos')}
-                className="h-9 text-xs text-gray-500"
-              >
-                Todos os veículos
-              </Button>
-            )}
-          </div>
-
-          <div className="relative w-full sm:w-72">
-            <Search className="w-4 h-4 absolute left-3 top-2.5 text-gray-400" />
-            <Input
-              placeholder="Buscar por operador, veículo..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="pl-9 bg-[#FAF9F7] border-[#ECEAE4] text-xs h-9 rounded-xl"
+            {/* Barra de Filtro de Período Padrão */}
+            <FiltroPeriodoBar
+              rotulo="Data do abastecimento:"
+              opcaoPeriodo={opcaoPeriodo}
+              onOpcaoChange={setOpcaoPeriodo}
+              dataInicio={dataInicio}
+              onDataInicioChange={setDataInicio}
+              dataFim={dataFim}
+              onDataFimChange={setDataFim}
+              onImprimir={() => setRelatorioImpressaoOpen(true)}
+              totalSelecionados={selectedIds.length}
+              mostrarLimpar={
+                opcaoPeriodo !== 'todos' ||
+                Boolean(dataInicio || dataFim) ||
+                selectedVeiculoFilter !== 'todos' ||
+                Boolean(searchQuery.trim()) ||
+                selectedIds.length > 0
+              }
+              onLimpar={() => {
+                setOpcaoPeriodo('todos')
+                setDataInicio('')
+                setDataFim('')
+                setSelectedVeiculoFilter('todos')
+                setSearchQuery('')
+                setSelectedIds([])
+              }}
             />
-          </div>
-        </div>
+          </Card>
 
-        {/* Barra de Filtro de Período Padrão */}
-        <FiltroPeriodoBar
-          rotulo="Data do abastecimento:"
-          opcaoPeriodo={opcaoPeriodo}
-          onOpcaoChange={setOpcaoPeriodo}
-          dataInicio={dataInicio}
-          onDataInicioChange={setDataInicio}
-          dataFim={dataFim}
-          onDataFimChange={setDataFim}
-          onImprimir={() => setRelatorioImpressaoOpen(true)}
-          totalSelecionados={selectedIds.length}
-          mostrarLimpar={
-            opcaoPeriodo !== 'todos' ||
-            Boolean(dataInicio || dataFim) ||
-            selectedVeiculoFilter !== 'todos' ||
-            Boolean(searchQuery.trim()) ||
-            selectedIds.length > 0
-          }
-          onLimpar={() => {
-            setOpcaoPeriodo('todos')
-            setDataInicio('')
-            setDataFim('')
-            setSelectedVeiculoFilter('todos')
-            setSearchQuery('')
-            setSelectedIds([])
-          }}
-        />
-      </Card>
-
-      {/* Table */}
-      <Card className="rounded-2xl border-[#ECEAE4] bg-white shadow-xs overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full text-left border-collapse text-xs">
-            <thead>
-              <tr className="bg-[#FAF9F7] border-b border-[#ECEAE4] text-gray-500 uppercase font-semibold">
-                <th className="py-3 px-3 text-center w-8">
-                  <Checkbox
-                    checked={
-                      filteredAbastecimentos.length > 0 &&
-                      selectedIds.length === filteredAbastecimentos.length
-                    }
-                    onCheckedChange={handleToggleSelectAll}
-                    aria-label="Selecionar todos os abastecimentos visíveis"
-                    className="border-gray-300"
-                  />
-                </th>
-                <th className="py-3 px-4">Data</th>
-                <th className="py-3 px-4">Veículo / Máquina</th>
-                <th className="py-3 px-4">Combustível</th>
-                <th className="py-3 px-4 text-right">Litros</th>
-                <th className="py-3 px-4 text-right">Preço/L</th>
-                <th className="py-3 px-4 text-right">Valor Total</th>
-                <th className="py-3 px-4 text-right">Odômetro (Km)</th>
-                <th className="py-3 px-4 text-right">Horímetro (h)</th>
-                <th className="py-3 px-4 text-right">Consumo Médio</th>
-                <th className="py-3 px-4">Motorista/Operador</th>
-                <th className="py-3 px-4 text-center">Financeiro</th>
-                <th className="py-3 px-4 text-right">Ações</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-[#ECEAE4]">
-              {filteredAbastecimentos.length === 0 ? (
-                <tr>
-                  <td colSpan={13} className="py-12 text-center text-gray-400">
-                    Nenhum abastecimento encontrado.
-                  </td>
-                </tr>
-              ) : (
-                filteredAbastecimentos.map((a) => {
-                  const veic = a.expand?.veiculo_id
-                  const temConta = !!a.conta_pagar_id
-                  const hasKm = (a.km_odometro || 0) > 0
-                  const hasHoras = (a.horimetro || 0) > 0
-                  const isSelected = selectedIds.includes(a.id)
-
-                  return (
-                    <tr
-                      key={a.id}
-                      className={`transition-colors ${
-                        isSelected ? 'bg-teal-50/60 hover:bg-teal-50/80' : 'hover:bg-teal-50/20'
-                      }`}
-                    >
-                      <td
-                        className="py-3 px-3 text-center"
-                        onClick={(evt) => evt.stopPropagation()}
-                      >
-                        <Checkbox
-                          checked={isSelected}
-                          onCheckedChange={() => handleToggleSelectOne(a.id)}
-                          aria-label={`Selecionar abastecimento ${a.id}`}
-                          className="border-gray-300"
-                        />
-                      </td>
-                      <td className="py-3 px-4 font-mono text-gray-700 whitespace-nowrap">
-                        {formatDate(a.data)}
-                      </td>
-                      <td className="py-3 px-4">
-                        <div className="font-semibold text-gray-900 flex items-center gap-1.5">
-                          <span className="font-mono text-teal-800">{veic?.codigo_interno}</span>
-                          <span>•</span>
-                          <span className="text-gray-700 truncate max-w-[140px]">
-                            {veic?.modelo}
-                          </span>
-                        </div>
-                        {veic?.placa && (
-                          <div className="text-[10px] text-gray-400 font-mono">{veic.placa}</div>
-                        )}
-                      </td>
-                      <td className="py-3 px-4">
-                        <Badge variant="outline" className="text-[10px]">
-                          {a.combustivel}
-                        </Badge>
-                      </td>
-                      <td className="py-3 px-4 text-right font-mono font-bold text-gray-800">
-                        {a.litros.toFixed(1)} L
-                      </td>
-                      <td className="py-3 px-4 text-right font-mono text-gray-500 tabular-nums">
-                        {formatCurrency(a.preco_litro)}
-                      </td>
-                      <td className="py-3 px-4 text-right font-mono font-bold text-red-600 tabular-nums">
-                        {formatCurrency(a.valor_total)}
-                      </td>
-                      <td className="py-3 px-4 text-right font-mono">
-                        {hasKm ? (
-                          <span className="font-semibold text-gray-900">
-                            {Number(a.km_odometro).toLocaleString('pt-BR')}{' '}
-                            <span className="text-[10px] text-gray-400">km</span>
-                          </span>
-                        ) : (
-                          <span className="text-gray-400">—</span>
-                        )}
-                      </td>
-                      <td className="py-3 px-4 text-right font-mono">
-                        {hasHoras ? (
-                          <span className="font-semibold text-amber-800">
-                            {Number(a.horimetro).toLocaleString('pt-BR')}{' '}
-                            <span className="text-[10px] text-amber-600">h</span>
-                          </span>
-                        ) : (
-                          <span className="text-gray-400">—</span>
-                        )}
-                      </td>
-                      <td className="py-3 px-4 text-right">
-                        <div className="flex flex-col items-end gap-0.5">
-                          {a.consumo_km_l ? (
-                            <span className="font-mono text-[11px] font-semibold text-teal-800 bg-teal-50 px-1.5 py-0.2 rounded">
-                              {a.consumo_km_l.toFixed(2)} km/l
-                            </span>
-                          ) : null}
-                          {a.consumo_l_h ? (
-                            <span className="font-mono text-[11px] font-semibold text-amber-900 bg-amber-50 px-1.5 py-0.2 rounded">
-                              {a.consumo_l_h.toFixed(2)} l/h
-                            </span>
-                          ) : null}
-                          {!a.consumo_km_l && !a.consumo_l_h && (
-                            <span className="text-gray-400">
-                              {a.consumo_medio ? `${a.consumo_medio.toFixed(2)} med.` : '—'}
-                            </span>
-                          )}
-                        </div>
-                      </td>
-                      <td className="py-3 px-4 text-gray-600">{a.motorista_operador || '—'}</td>
-                      <td className="py-3 px-4 text-center">
-                        {temConta ? (
-                          <Badge className="bg-emerald-50 text-emerald-700 border-emerald-200 text-[10px]">
-                            ✓ A Pagar
-                          </Badge>
-                        ) : (
-                          <span className="text-gray-400 text-[10px]">Manual</span>
-                        )}
-                      </td>
-                      <td className="py-3 px-4 text-right">
-                        {canEdit && (
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            onClick={() => handleDelete(a)}
-                            className="h-7 w-7 p-0 text-red-400 hover:text-red-700 hover:bg-red-50"
-                            title="Remover"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </Button>
-                        )}
+          {/* Table */}
+          <Card className="rounded-2xl border-[#ECEAE4] bg-white shadow-xs overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="w-full text-left border-collapse text-xs">
+                <thead>
+                  <tr className="bg-[#FAF9F7] border-b border-[#ECEAE4] text-gray-500 uppercase font-semibold">
+                    <th className="py-3 px-3 text-center w-8">
+                      <Checkbox
+                        checked={
+                          filteredAbastecimentos.length > 0 &&
+                          selectedIds.length === filteredAbastecimentos.length
+                        }
+                        onCheckedChange={handleToggleSelectAll}
+                        aria-label="Selecionar todos os abastecimentos visíveis"
+                        className="border-gray-300"
+                      />
+                    </th>
+                    <th className="py-3 px-4">Data</th>
+                    <th className="py-3 px-4">Veículo / Máquina</th>
+                    <th className="py-3 px-4">Combustível</th>
+                    <th className="py-3 px-4 text-right">Litros</th>
+                    <th className="py-3 px-4 text-right">Preço/L</th>
+                    <th className="py-3 px-4 text-right">Valor Total</th>
+                    <th className="py-3 px-4 text-right">Odômetro (Km)</th>
+                    <th className="py-3 px-4 text-right">Horímetro (h)</th>
+                    <th className="py-3 px-4 text-right">Consumo Médio</th>
+                    <th className="py-3 px-4">Motorista/Operador</th>
+                    <th className="py-3 px-4">Posto / Fornecedor</th>
+                    <th className="py-3 px-4 text-center">Financeiro</th>
+                    <th className="py-3 px-4 text-right">Ações</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-[#ECEAE4]">
+                  {filteredAbastecimentos.length === 0 ? (
+                    <tr>
+                      <td colSpan={14} className="py-12 text-center text-gray-400">
+                        Nenhum abastecimento encontrado.
                       </td>
                     </tr>
-                  )
-                })
-              )}
-            </tbody>
-          </table>
-        </div>
-      </Card>
+                  ) : (
+                    filteredAbastecimentos.map((a) => {
+                      const veic = a.expand?.veiculo_id
+                      const temConta = !!a.conta_pagar_id
+                      const hasKm = (a.km_odometro || 0) > 0
+                      const hasHoras = (a.horimetro || 0) > 0
+                      const isSelected = selectedIds.includes(a.id)
 
-      {/* Drawer Create Form */}
+                      return (
+                        <tr
+                          key={a.id}
+                          className={`transition-colors ${
+                            isSelected ? 'bg-teal-50/60 hover:bg-teal-50/80' : 'hover:bg-teal-50/20'
+                          }`}
+                        >
+                          <td
+                            className="py-3 px-3 text-center"
+                            onClick={(evt) => evt.stopPropagation()}
+                          >
+                            <Checkbox
+                              checked={isSelected}
+                              onCheckedChange={() => handleToggleSelectOne(a.id)}
+                              aria-label={`Selecionar abastecimento ${a.id}`}
+                              className="border-gray-300"
+                            />
+                          </td>
+                          <td className="py-3 px-4 font-mono text-gray-700 whitespace-nowrap">
+                            {formatDate(a.data)}
+                          </td>
+                          <td className="py-3 px-4">
+                            <div className="font-semibold text-gray-900 flex items-center gap-1.5">
+                              <span className="font-mono text-teal-800">
+                                {veic?.codigo_interno}
+                              </span>
+                              <span>•</span>
+                              <span className="text-gray-700 truncate max-w-[140px]">
+                                {veic?.modelo}
+                              </span>
+                            </div>
+                            {veic?.placa && (
+                              <div className="text-[10px] text-gray-400 font-mono">
+                                {veic.placa}
+                              </div>
+                            )}
+                          </td>
+                          <td className="py-3 px-4">
+                            <Badge variant="outline" className="text-[10px]">
+                              {a.combustivel}
+                            </Badge>
+                          </td>
+                          <td className="py-3 px-4 text-right font-mono font-bold text-gray-800">
+                            {a.litros.toFixed(1)} L
+                          </td>
+                          <td className="py-3 px-4 text-right font-mono text-gray-500 tabular-nums">
+                            {formatCurrency(a.preco_litro)}
+                          </td>
+                          <td className="py-3 px-4 text-right font-mono font-bold text-red-600 tabular-nums">
+                            {formatCurrency(a.valor_total)}
+                          </td>
+                          <td className="py-3 px-4 text-right font-mono">
+                            {hasKm ? (
+                              <span className="font-semibold text-gray-900">
+                                {Number(a.km_odometro).toLocaleString('pt-BR')}{' '}
+                                <span className="text-[10px] text-gray-400">km</span>
+                              </span>
+                            ) : (
+                              <span className="text-gray-400">—</span>
+                            )}
+                          </td>
+                          <td className="py-3 px-4 text-right font-mono">
+                            {hasHoras ? (
+                              <span className="font-semibold text-amber-800">
+                                {Number(a.horimetro).toLocaleString('pt-BR')}{' '}
+                                <span className="text-[10px] text-amber-600">h</span>
+                              </span>
+                            ) : (
+                              <span className="text-gray-400">—</span>
+                            )}
+                          </td>
+                          <td className="py-3 px-4 text-right">
+                            <div className="flex flex-col items-end gap-0.5">
+                              {a.consumo_km_l ? (
+                                <span className="font-mono text-[11px] font-semibold text-teal-800 bg-teal-50 px-1.5 py-0.2 rounded">
+                                  {a.consumo_km_l.toFixed(2)} km/l
+                                </span>
+                              ) : null}
+                              {a.consumo_l_h ? (
+                                <span className="font-mono text-[11px] font-semibold text-amber-900 bg-amber-50 px-1.5 py-0.2 rounded">
+                                  {a.consumo_l_h.toFixed(2)} l/h
+                                </span>
+                              ) : null}
+                              {!a.consumo_km_l && !a.consumo_l_h && (
+                                <span className="text-gray-400">
+                                  {a.consumo_medio ? `${a.consumo_medio.toFixed(2)} med.` : '—'}
+                                </span>
+                              )}
+                            </div>
+                          </td>
+                          <td className="py-3 px-4 text-gray-600">{a.motorista_operador || '—'}</td>
+                          <td className="py-3 px-4 text-gray-700 truncate max-w-[130px]">
+                            {a.expand?.fornecedor_id?.nome || '—'}
+                          </td>
+                          <td className="py-3 px-4 text-center">
+                            {temConta ? (
+                              <div className="inline-flex items-center gap-1">
+                                <Badge className="bg-emerald-50 text-emerald-700 border-emerald-200 text-[10px] font-normal">
+                                  ✓ Vinculado
+                                </Badge>
+                                {canEdit && (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleDesvincularContaPagar(a)}
+                                    className="text-gray-400 hover:text-red-600 p-0.5 rounded"
+                                    title="Desvincular título"
+                                  >
+                                    <Unlink className="w-3 h-3" />
+                                  </button>
+                                )}
+                              </div>
+                            ) : canEdit ? (
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => handleGerarContaPagarIndividual(a)}
+                                className="h-6 px-2 text-[10px] border-teal-300 text-teal-800 bg-teal-50 hover:bg-teal-100"
+                              >
+                                + Gerar Título
+                              </Button>
+                            ) : (
+                              <span className="text-gray-400 text-[10px]">Sem vínculo</span>
+                            )}
+                          </td>
+                          <td className="py-3 px-4 text-right">
+                            {canEdit && (
+                              <div className="flex items-center justify-end gap-1">
+                                <Button
+                                  size="sm"
+                                  variant="ghost"
+                                  onClick={() => openEditModal(a)}
+                                  className="h-7 w-7 p-0 text-gray-500 hover:text-teal-700 hover:bg-teal-50"
+                                  title="Editar"
+                                >
+                                  <Pencil className="w-3.5 h-3.5" />
+                                </Button>
+                                <Button
+                                  size="sm"
+                                  variant="ghost"
+                                  onClick={() => handleDelete(a)}
+                                  className="h-7 w-7 p-0 text-red-400 hover:text-red-700 hover:bg-red-50"
+                                  title="Remover"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </Button>
+                              </div>
+                            )}
+                          </td>
+                        </tr>
+                      )
+                    })
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </Card>
+        </TabsContent>
+      </Tabs>
+
+      {/* Drawer Create/Edit Form */}
       <Sheet open={isDrawerOpen} onOpenChange={setIsDrawerOpen}>
         <SheetContent className="sm:max-w-[560px] w-full bg-white border-l border-[#ECEAE4] p-6 overflow-y-auto">
           <SheetHeader>
             <SheetTitle className="text-lg font-bold text-gray-900">
-              Registrar Abastecimento de Frota
+              {editingId ? 'Editar Abastecimento de Frota' : 'Registrar Abastecimento de Frota'}
             </SheetTitle>
           </SheetHeader>
 
@@ -1013,19 +1437,27 @@ export default function Abastecimentos() {
 
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <Label className="text-xs font-semibold text-gray-700">Fornecedor / Posto</Label>
+                <div className="flex items-center justify-between">
+                  <Label className="text-xs font-semibold text-gray-700">Posto / Fornecedor</Label>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsDrawerOpen(false)
+                      setActiveTab('postos')
+                    }}
+                    className="text-[11px] text-teal-700 hover:underline"
+                  >
+                    + Novo Posto
+                  </button>
+                </div>
                 <ComboboxPesquisavel
-                  value={fornecedorId}
-                  onChange={setFornecedorId}
-                  placeholder="Selecione o fornecedor..."
-                  searchPlaceholder="Buscar fornecedor..."
-                  emptyText="Nenhum fornecedor encontrado."
+                  value={selectedPostoOuFornId}
+                  onChange={handleSelectPostoOuForn}
+                  placeholder="Selecione o posto ou fornecedor..."
+                  searchPlaceholder="Buscar posto cadastrado..."
+                  emptyText="Nenhum posto ou fornecedor encontrado."
                   triggerClassName="mt-1"
-                  options={fornecedores.map((f) => ({
-                    id: f.id,
-                    label: f.nome,
-                    sublabel: f.cnpj_cpf || f.cidade || undefined,
-                  }))}
+                  options={opcoesPostosFornecedores}
                 />
               </div>
 
@@ -1040,7 +1472,7 @@ export default function Abastecimentos() {
               </div>
             </div>
 
-            {/* Checkbox Integração Financeiro */}
+            {/* Checkbox Integração Financeiro com Anti-Duplicação */}
             <div className="p-3 bg-teal-50/70 rounded-xl border border-teal-200 flex items-start space-x-3">
               <input
                 type="checkbox"
@@ -1051,11 +1483,14 @@ export default function Abastecimentos() {
               />
               <label htmlFor="gerarFinanceiro" className="cursor-pointer text-xs">
                 <span className="font-semibold text-teal-900 block">
-                  Gerar Conta a Pagar automaticamente no Financeiro
+                  {existingContaPagarId
+                    ? 'Sincronizar título correspondente em Contas a Pagar'
+                    : 'Gerar Conta a Pagar automaticamente no Financeiro'}
                 </span>
                 <span className="text-teal-700 text-[11px] block mt-0.5">
-                  Lança o valor total de {formatCurrency(valorTotal)} na categoria "Combustíveis -
-                  Frota" vinculada ao fornecedor selecionado.
+                  {existingContaPagarId
+                    ? `Título vinculado #${existingContaPagarId.slice(0, 8)}. Salvar atualizará valor (${formatCurrency(valorTotal)}) e descrição rica sem duplicar registro.`
+                    : `Lança o valor total de ${formatCurrency(valorTotal)} na categoria "Combustíveis - Frota" com descrição rica vinculada ao equipamento e posto.`}
                 </span>
               </label>
             </div>
@@ -1080,12 +1515,17 @@ export default function Abastecimentos() {
                 disabled={isSubmitting}
                 className="bg-teal-700 hover:bg-teal-800 text-white"
               >
-                {isSubmitting ? 'Salvando...' : 'Confirmar Abastecimento'}
+                {isSubmitting
+                  ? 'Salvando...'
+                  : editingId
+                    ? 'Atualizar Abastecimento'
+                    : 'Confirmar Abastecimento'}
               </Button>
             </SheetFooter>
           </form>
         </SheetContent>
       </Sheet>
+
       {/* Relatório de Impressão A4 de Abastecimentos */}
       <RelatorioListagemImpressaoModal
         open={relatorioImpressaoOpen}
