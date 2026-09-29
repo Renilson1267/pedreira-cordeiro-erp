@@ -110,6 +110,7 @@ import {
   chequesPredatadosService,
   FORMAS_RECEBIMENTO_PADRAO,
 } from '@/services/formasRecebimento'
+import { normalizarFormaRecebimento } from '@/lib/planilhaRecebimentosUtils'
 
 export default function ContasReceber() {
   const { currentEmpresa, canEdit, isReadOnly } = useCompany()
@@ -536,11 +537,18 @@ export default function ContasReceber() {
     setValor(c.valor)
     setVencimento(venc)
     setDataEmissao(c.data_emissao ? toInputDate(c.data_emissao) : '')
-    setParcelas(numP)
+    const formaDetectada =
+      c.forma_recebimento && c.forma_recebimento.trim()
+        ? c.forma_recebimento.trim()
+        : normalizarFormaRecebimento(c.observacoes, c.descricao)
+    setFormaRecebimentoForm(formaDetectada || 'Pix')
+
+    // Na edição de um título já existente, default de parcelas é 1 caso queira desmembrar em N parcelas
+    const numPForm = numP > 1 ? 1 : numP || 1
+    setParcelas(numPForm)
     setPrazoSelecionado('mensal')
     setDatasCustomizadasManuais(false)
-    setGradeParcelas(gerarGradeParcelas(venc, numP, 'mensal', c.valor))
-    setFormaRecebimentoForm(c.forma_recebimento || 'Pix')
+    setGradeParcelas(gerarGradeParcelas(venc, numPForm, 'mensal', c.valor))
     setEndereco(c.endereco || '')
     setNota(c.nota || '')
     setStatus(c.status === 'Recebida' ? 'Recebida' : 'Aberta')
@@ -565,12 +573,18 @@ export default function ContasReceber() {
     setIsDrawerOpen(true)
   }
 
+  // Determina se a forma de recebimento permite parcelamento (Boleto, Dividido ou A Prazo)
+  const isFormaParcelavel = useMemo(() => {
+    const f = (formaRecebimentoForm || '').trim().toLowerCase()
+    return f === 'boleto' || f === 'dividido' || f === 'a prazo'
+  }, [formaRecebimentoForm])
+
   // Handlers para parcelamento com prazos rápidos e datas livres
   const handleChangeVencimentoBase = (novaData: string) => {
     setVencimento(novaData)
-    if (!editingId && !datasCustomizadasManuais) {
-      setGradeParcelas(gerarGradeParcelas(novaData, parcelas, prazoSelecionado, valor))
-    } else if (!editingId && gradeParcelas.length > 0) {
+    if (!datasCustomizadasManuais) {
+      setGradeParcelas(gerarGradeParcelas(novaData, parcelas, prazoSelecionado, valorLiquidoCalc))
+    } else if (gradeParcelas.length > 0) {
       setGradeParcelas((prev) =>
         prev.map((item, idx) => (idx === 0 ? { ...item, vencimento: novaData } : item)),
       )
@@ -590,14 +604,14 @@ export default function ContasReceber() {
     const liq = Number(Math.max(0, novoBruto - desc).toFixed(2))
     setValor(liq)
 
-    if (!editingId && gradeParcelas.length > 0) {
+    if (gradeParcelas.length > 0) {
       const n = gradeParcelas.length
-      const unit = liq > 0 ? Number((liq / n).toFixed(2)) : 0
+      const unit = liq > 0 ? Math.floor((liq / n) * 100) / 100 : 0
       setGradeParcelas((prev) =>
         prev.map((item, idx) => {
           let v = unit
           if (idx === n - 1 && liq > 0) {
-            const somaAnt = unit * (n - 1)
+            const somaAnt = Number((unit * (n - 1)).toFixed(2))
             const diff = Number((liq - somaAnt).toFixed(2))
             if (diff > 0) v = diff
           }
@@ -610,14 +624,14 @@ export default function ContasReceber() {
   // Atualizar grade quando o desconto ou valor líquido mudar
   const sincronizarGradeComLiquido = (liq: number) => {
     setValor(liq)
-    if (!editingId && gradeParcelas.length > 0) {
+    if (gradeParcelas.length > 0) {
       const n = gradeParcelas.length
-      const unit = liq > 0 ? Number((liq / n).toFixed(2)) : 0
+      const unit = liq > 0 ? Math.floor((liq / n) * 100) / 100 : 0
       setGradeParcelas((prev) =>
         prev.map((item, idx) => {
           let v = unit
           if (idx === n - 1 && liq > 0) {
-            const somaAnt = unit * (n - 1)
+            const somaAnt = Number((unit * (n - 1)).toFixed(2))
             const diff = Number((liq - somaAnt).toFixed(2))
             if (diff > 0) v = diff
           }
@@ -630,13 +644,13 @@ export default function ContasReceber() {
   const handleChangeNumParcelas = (novoNum: number) => {
     setParcelas(novoNum)
     setDatasCustomizadasManuais(false)
-    setGradeParcelas(gerarGradeParcelas(vencimento, novoNum, prazoSelecionado, valor))
+    setGradeParcelas(gerarGradeParcelas(vencimento, novoNum, prazoSelecionado, valorLiquidoCalc))
   }
 
   const handleSelecionarPrazoRapido = (novoPrazo: TipoPrazo) => {
     setPrazoSelecionado(novoPrazo)
     setDatasCustomizadasManuais(false)
-    setGradeParcelas(gerarGradeParcelas(vencimento, parcelas, novoPrazo, valor))
+    setGradeParcelas(gerarGradeParcelas(vencimento, parcelas, novoPrazo, valorLiquidoCalc))
   }
 
   const handleChangeDataParcelaIndividual = (index: number, novaData: string) => {
@@ -726,92 +740,280 @@ export default function ContasReceber() {
 
           if (editingId) {
             const registroAntes = contas.find((c) => c.id === editingId)
+            const numParcelas = isFormaParcelavel ? Math.max(1, Number(parcelas)) : 1
 
-            // Se status for Recebida, garantir coerência de valor_recebido e data_recebimento
-            let valorRecebidoAtualizado = registroAntes?.valor_recebido
-            let dataRecebimentoAtualizada = registroAntes?.data_recebimento
-            if (isStatusRecebida) {
-              const recValido =
-                registroAntes?.valor_recebido && registroAntes.valor_recebido > 0
-                  ? Number(registroAntes.valor_recebido)
-                  : valorFinalLiquido
-              valorRecebidoAtualizado = recValido > 0 ? recValido : valorFinalLiquido
-              dataRecebimentoAtualizada = registroAntes?.data_recebimento || hojeIso
-            }
+            if (numParcelas > 1) {
+              // Parcelamento na Edição:
+              // Título editado vira Parcela 1/N e parcelas 2..N são criadas vinculadas
+              const parcelasParaSalvar =
+                gradeParcelas.length === numParcelas
+                  ? gradeParcelas
+                  : gerarGradeParcelas(vencimento, numParcelas, prazoSelecionado, valorFinalLiquido)
 
-            const novoObj: Partial<ContaReceber> = {
-              descricao: descFinal,
-              cliente_id: clienteId === 'none' || !clienteId ? null : clienteId,
-              cliente_depositante: clienteDepositante.trim() || '',
-              categoria_id: categoriaId === 'none' || !categoriaId ? null : categoriaId,
-              centro_custo_id: centroCustoId === 'none' || !centroCustoId ? null : centroCustoId,
-              valor_bruto: valorFinalBruto,
-              tipo_desconto: valorFinalDesconto > 0 ? tipoDesconto : null,
-              desconto_percentual:
-                valorFinalDesconto > 0 && tipoDesconto === 'percentual'
-                  ? Number(descontoPercentual)
-                  : null,
-              valor_desconto: valorFinalDesconto > 0 ? valorFinalDesconto : 0,
-              valor: valorFinalLiquido, // Grava líquido no título
-              vencimento: new Date(vencimento).toISOString(),
-              data_emissao: dataEmissaoIso,
-              parcelas: Number(parcelas),
-              status: status,
-              forma_recebimento: formaRecebimentoForm || null,
-              endereco: endereco.trim(),
-              nota: nota.trim(),
-              observacoes: observacoes.trim(),
-              ...(isStatusRecebida
-                ? {
-                    valor_recebido: valorRecebidoAtualizado,
-                    data_recebimento: dataRecebimentoAtualizada,
-                  }
-                : {}),
-            }
+              const p1 = parcelasParaSalvar[0]
+              const p1Valor =
+                Number(p1?.valor) || Math.floor((valorFinalLiquido / numParcelas) * 100) / 100
+              const p1Bruto = Math.floor((valorFinalBruto / numParcelas) * 100) / 100
+              const p1Desconto = Math.floor((valorFinalDesconto / numParcelas) * 100) / 100
 
-            await pb.collection('contas_receber').update(editingId, novoObj)
+              const baseDescLimpa = descFinal.replace(/\s*\(\d+\/\d+\)$/, '').trim()
+              const descP1 = `${baseDescLimpa} (1/${numParcelas})`
+              const sufixoObs = ` [Parcelamento em ${numParcelas}x gerado a partir do título original]`
+              const obsP1 = (observacoes.trim() ? `${observacoes.trim()}` : '') + sufixoObs
 
-            // Se for cheque pré-datado, sincronizar cheques
-            if (formaRecebimentoForm === 'Cheque Pré-datado' && chequesPredatadosForm.length > 0) {
-              await chequesPredatadosService.salvarLote(
-                currentEmpresa!.id,
-                editingId,
-                chequesPredatadosForm,
-              )
-            }
+              let valorRecebidoAtualizado = registroAntes?.valor_recebido
+              let dataRecebimentoAtualizada = registroAntes?.data_recebimento
+              if (isStatusRecebida) {
+                const recValido =
+                  registroAntes?.valor_recebido && registroAntes.valor_recebido > 0
+                    ? Number(registroAntes.valor_recebido)
+                    : p1Valor
+                valorRecebidoAtualizado = recValido > 0 ? recValido : p1Valor
+                dataRecebimentoAtualizada = registroAntes?.data_recebimento || hojeIso
+              }
 
-            // Gravar histórico de alteração com diff
-            if (registroAntes) {
-              const diffs = calcularDiffAlteracoes(registroAntes, novoObj, CAMPOS_CONFIG_RECEBER)
-              const clienteNomeNovo =
-                clientes.find((cli) => cli.id === (clienteId === 'none' ? '' : clienteId))?.nome ||
-                descFinal
+              const novoObjP1: Partial<ContaReceber> = {
+                descricao: descP1,
+                cliente_id: clienteId === 'none' || !clienteId ? null : clienteId,
+                cliente_depositante: clienteDepositante.trim() || '',
+                categoria_id: categoriaId === 'none' || !categoriaId ? null : categoriaId,
+                centro_custo_id: centroCustoId === 'none' || !centroCustoId ? null : centroCustoId,
+                valor_bruto: p1Bruto,
+                tipo_desconto: p1Desconto > 0 ? tipoDesconto : null,
+                desconto_percentual:
+                  p1Desconto > 0 && tipoDesconto === 'percentual'
+                    ? Number(descontoPercentual)
+                    : null,
+                valor_desconto: p1Desconto,
+                valor: p1Valor,
+                vencimento: p1.vencimento
+                  ? new Date(`${p1.vencimento}T12:00:00Z`).toISOString()
+                  : new Date(vencimento).toISOString(),
+                data_emissao: dataEmissaoIso,
+                parcelas: numParcelas,
+                status: status,
+                forma_recebimento: formaRecebimentoForm || null,
+                endereco: endereco.trim(),
+                nota: nota.trim(),
+                observacoes: obsP1.trim(),
+                ...(isStatusRecebida
+                  ? {
+                      valor_recebido: valorRecebidoAtualizado,
+                      data_recebimento: dataRecebimentoAtualizada,
+                    }
+                  : {}),
+              }
 
-              await historicoService.registrar({
-                empresaId: currentEmpresa!.id,
-                colecaoOrigem: 'contas_receber',
-                registroId: editingId,
-                acao: 'editar',
-                usuarioId: user?.id,
-                usuarioNome: user?.name || user?.email || 'Usuário',
-                descricao: `Título atualizado para "${descFinal}" (${formatCurrency(valorFinalLiquido)}) - Cliente: ${clienteNomeNovo}. ${diffs.length > 0 ? `${diffs.length} campo(s) modificado(s).` : 'Sem alteração de campos chave.'}`,
-                detalhes: {
-                  alteracoes: diffs,
-                  valor: valorFinalLiquido,
-                  extra: {
-                    valor_bruto: valorFinalBruto,
-                    valor_desconto: valorFinalDesconto,
-                    desconto_percentual: descontoPercentual,
-                    tipo_desconto: tipoDesconto,
-                    forma_recebimento: formaRecebimentoForm,
+              await pb.collection('contas_receber').update(editingId, novoObjP1)
+
+              // Se for cheque pré-datado na edição, sincronizar cheques
+              if (
+                formaRecebimentoForm === 'Cheque Pré-datado' &&
+                chequesPredatadosForm.length > 0
+              ) {
+                await chequesPredatadosService.salvarLote(
+                  currentEmpresa!.id,
+                  editingId,
+                  chequesPredatadosForm,
+                )
+              }
+
+              // Criar parcelas 2/N..N/N com status 'Aberta'
+              for (let i = 1; i < numParcelas; i++) {
+                const item = parcelasParaSalvar[i]
+                const dataVencIso = item.vencimento
+                  ? new Date(`${item.vencimento}T12:00:00Z`).toISOString()
+                  : new Date(vencimento).toISOString()
+
+                const parcelValue = Number(item.valor)
+                const parcelBruto =
+                  i === numParcelas - 1
+                    ? Number(
+                        (
+                          valorFinalBruto - Number((p1Bruto * (numParcelas - 1)).toFixed(2))
+                        ).toFixed(2),
+                      )
+                    : p1Bruto
+                const parcelDesconto =
+                  i === numParcelas - 1
+                    ? Number(
+                        (
+                          valorFinalDesconto - Number((p1Desconto * (numParcelas - 1)).toFixed(2))
+                        ).toFixed(2),
+                      )
+                    : p1Desconto
+
+                const descFilho = `${baseDescLimpa} (${i + 1}/${numParcelas})`
+
+                const createdFilho = await pb.collection('contas_receber').create<ContaReceber>({
+                  empresa_id: currentEmpresa!.id,
+                  descricao: descFilho,
+                  cliente_id: clienteId === 'none' || !clienteId ? null : clienteId,
+                  cliente_depositante: clienteDepositante.trim() || '',
+                  categoria_id: categoriaId === 'none' || !categoriaId ? null : categoriaId,
+                  centro_custo_id:
+                    centroCustoId === 'none' || !centroCustoId ? null : centroCustoId,
+                  valor_bruto: parcelBruto,
+                  tipo_desconto: parcelDesconto > 0 ? tipoDesconto : null,
+                  desconto_percentual:
+                    parcelDesconto > 0 && tipoDesconto === 'percentual'
+                      ? Number(descontoPercentual)
+                      : null,
+                  valor_desconto: parcelDesconto,
+                  valor: parcelValue,
+                  vencimento: dataVencIso,
+                  data_emissao: dataEmissaoIso || undefined,
+                  parcelas: numParcelas,
+                  status: 'Aberta',
+                  forma_recebimento: formaRecebimentoForm || null,
+                  endereco: endereco.trim(),
+                  nota: nota.trim(),
+                  observacoes:
+                    (observacoes.trim() ? `${observacoes.trim()}` : '') +
+                    ` [Parcela ${i + 1}/${numParcelas} originada da edição do título ${editingId}]`,
+                })
+
+                await historicoService.registrar({
+                  empresaId: currentEmpresa!.id,
+                  colecaoOrigem: 'contas_receber',
+                  registroId: createdFilho.id,
+                  acao: 'criar',
+                  usuarioId: user?.id,
+                  usuarioNome: user?.name || user?.email || 'Usuário',
+                  descricao: `Parcela ${i + 1}/${numParcelas} criada a partir do parcelamento de título na edição: ${descFilho} (${formatCurrency(parcelValue)}).`,
+                  detalhes: {
+                    valor: parcelValue,
+                    extra: {
+                      titulo_origem_id: editingId,
+                      parcela: `${i + 1}/${numParcelas}`,
+                      nota: nota.trim() || undefined,
+                    },
                   },
-                },
-              })
-            }
+                })
+              }
 
-            toast({ title: 'Conta a receber atualizada!' })
+              // Gravar histórico de alteração do título 1/N
+              if (registroAntes) {
+                const diffs = calcularDiffAlteracoes(
+                  registroAntes,
+                  novoObjP1,
+                  CAMPOS_CONFIG_RECEBER,
+                )
+                await historicoService.registrar({
+                  empresaId: currentEmpresa!.id,
+                  colecaoOrigem: 'contas_receber',
+                  registroId: editingId,
+                  acao: 'editar',
+                  usuarioId: user?.id,
+                  usuarioNome: user?.name || user?.email || 'Usuário',
+                  descricao: `Título parcelado em ${numParcelas}x na edição: virou Parcela 1/${numParcelas} (${formatCurrency(p1Valor)}) e geradas mais ${numParcelas - 1} parcela(s).`,
+                  detalhes: {
+                    alteracoes: diffs,
+                    valor: p1Valor,
+                    extra: {
+                      total_parcelas: numParcelas,
+                      valor_total_liquido: valorFinalLiquido,
+                      forma_recebimento: formaRecebimentoForm,
+                    },
+                  },
+                })
+              }
+
+              toast({
+                title: 'Título parcelado com sucesso!',
+                description: `Título original atualizado para Parcela 1/${numParcelas} e geradas ${numParcelas - 1} nova(s) parcela(s).`,
+              })
+            } else {
+              // Edição padrão sem parcelamento múltiplo (1 parcela)
+              let valorRecebidoAtualizado = registroAntes?.valor_recebido
+              let dataRecebimentoAtualizada = registroAntes?.data_recebimento
+              if (isStatusRecebida) {
+                const recValido =
+                  registroAntes?.valor_recebido && registroAntes.valor_recebido > 0
+                    ? Number(registroAntes.valor_recebido)
+                    : valorFinalLiquido
+                valorRecebidoAtualizado = recValido > 0 ? recValido : valorFinalLiquido
+                dataRecebimentoAtualizada = registroAntes?.data_recebimento || hojeIso
+              }
+
+              const novoObj: Partial<ContaReceber> = {
+                descricao: descFinal,
+                cliente_id: clienteId === 'none' || !clienteId ? null : clienteId,
+                cliente_depositante: clienteDepositante.trim() || '',
+                categoria_id: categoriaId === 'none' || !categoriaId ? null : categoriaId,
+                centro_custo_id: centroCustoId === 'none' || !centroCustoId ? null : centroCustoId,
+                valor_bruto: valorFinalBruto,
+                tipo_desconto: valorFinalDesconto > 0 ? tipoDesconto : null,
+                desconto_percentual:
+                  valorFinalDesconto > 0 && tipoDesconto === 'percentual'
+                    ? Number(descontoPercentual)
+                    : null,
+                valor_desconto: valorFinalDesconto > 0 ? valorFinalDesconto : 0,
+                valor: valorFinalLiquido, // Grava líquido no título
+                vencimento: new Date(vencimento).toISOString(),
+                data_emissao: dataEmissaoIso,
+                parcelas: 1,
+                status: status,
+                forma_recebimento: formaRecebimentoForm || null,
+                endereco: endereco.trim(),
+                nota: nota.trim(),
+                observacoes: observacoes.trim(),
+                ...(isStatusRecebida
+                  ? {
+                      valor_recebido: valorRecebidoAtualizado,
+                      data_recebimento: dataRecebimentoAtualizada,
+                    }
+                  : {}),
+              }
+
+              await pb.collection('contas_receber').update(editingId, novoObj)
+
+              // Se for cheque pré-datado, sincronizar cheques
+              if (
+                formaRecebimentoForm === 'Cheque Pré-datado' &&
+                chequesPredatadosForm.length > 0
+              ) {
+                await chequesPredatadosService.salvarLote(
+                  currentEmpresa!.id,
+                  editingId,
+                  chequesPredatadosForm,
+                )
+              }
+
+              // Gravar histórico de alteração com diff
+              if (registroAntes) {
+                const diffs = calcularDiffAlteracoes(registroAntes, novoObj, CAMPOS_CONFIG_RECEBER)
+                const clienteNomeNovo =
+                  clientes.find((cli) => cli.id === (clienteId === 'none' ? '' : clienteId))
+                    ?.nome || descFinal
+
+                await historicoService.registrar({
+                  empresaId: currentEmpresa!.id,
+                  colecaoOrigem: 'contas_receber',
+                  registroId: editingId,
+                  acao: 'editar',
+                  usuarioId: user?.id,
+                  usuarioNome: user?.name || user?.email || 'Usuário',
+                  descricao: `Título atualizado para "${descFinal}" (${formatCurrency(valorFinalLiquido)}) - Cliente: ${clienteNomeNovo}. ${diffs.length > 0 ? `${diffs.length} campo(s) modificado(s).` : 'Sem alteração de campos chave.'}`,
+                  detalhes: {
+                    alteracoes: diffs,
+                    valor: valorFinalLiquido,
+                    extra: {
+                      valor_bruto: valorFinalBruto,
+                      valor_desconto: valorFinalDesconto,
+                      desconto_percentual: descontoPercentual,
+                      tipo_desconto: tipoDesconto,
+                      forma_recebimento: formaRecebimentoForm,
+                    },
+                  },
+                })
+              }
+
+              toast({ title: 'Conta a receber atualizada!' })
+            }
           } else {
-            const numParcelas = Math.max(1, Number(parcelas))
+            // Criação: se forma for parcelável e parcelas > 1, cria N registros
+            const numParcelas = isFormaParcelavel ? Math.max(1, Number(parcelas)) : 1
             const parcelasParaSalvar =
               gradeParcelas.length === numParcelas
                 ? gradeParcelas
@@ -821,18 +1023,33 @@ export default function ContasReceber() {
               clientes.find((cli) => cli.id === (clienteId === 'none' ? '' : clienteId))?.nome ||
               descFinal
 
+            const unitBruto = Math.floor((valorFinalBruto / numParcelas) * 100) / 100
+            const unitDesconto = Math.floor((valorFinalDesconto / numParcelas) * 100) / 100
+
             for (let i = 0; i < parcelasParaSalvar.length; i++) {
               const item = parcelasParaSalvar[i]
               const dataVencIso = item.vencimento
                 ? new Date(`${item.vencimento}T12:00:00Z`).toISOString()
                 : new Date(vencimento).toISOString()
 
-              const parcelValue =
-                Number(item.valor) ||
-                Number(valorFinalLiquido) / (numParcelas > 1 ? numParcelas : 1)
+              const parcelValue = Number(item.valor)
 
-              const parcelBruto = Number((valorFinalBruto / numParcelas).toFixed(2))
-              const parcelDesconto = Number((valorFinalDesconto / numParcelas).toFixed(2))
+              const parcelBruto =
+                i === numParcelas - 1
+                  ? Number(
+                      (
+                        valorFinalBruto - Number((unitBruto * (numParcelas - 1)).toFixed(2))
+                      ).toFixed(2),
+                    )
+                  : unitBruto
+              const parcelDesconto =
+                i === numParcelas - 1
+                  ? Number(
+                      (
+                        valorFinalDesconto - Number((unitDesconto * (numParcelas - 1)).toFixed(2))
+                      ).toFixed(2),
+                    )
+                  : unitDesconto
 
               const desc = numParcelas > 1 ? `${descFinal} (${i + 1}/${numParcelas})` : descFinal
 
@@ -844,13 +1061,13 @@ export default function ContasReceber() {
                 categoria_id: categoriaId === 'none' || !categoriaId ? null : categoriaId,
                 centro_custo_id: centroCustoId === 'none' || !centroCustoId ? null : centroCustoId,
                 valor_bruto: parcelBruto,
-                tipo_desconto: valorFinalDesconto > 0 ? tipoDesconto : null,
+                tipo_desconto: parcelDesconto > 0 ? tipoDesconto : null,
                 desconto_percentual:
-                  valorFinalDesconto > 0 && tipoDesconto === 'percentual'
+                  parcelDesconto > 0 && tipoDesconto === 'percentual'
                     ? Number(descontoPercentual)
                     : null,
                 valor_desconto: parcelDesconto,
-                valor: parcelValue, // Valor líquido
+                valor: parcelValue, // Valor líquido rateado
                 vencimento: dataVencIso,
                 data_emissao: dataEmissaoIso || undefined,
                 parcelas: numParcelas,
@@ -1967,10 +2184,20 @@ export default function ContasReceber() {
   }, [categorias])
 
   const formasRecebimentoFormOptions = useMemo(() => {
-    if (formasCadastradas.length > 0) {
-      return formasCadastradas.map((f) => ({ id: f.nome, label: f.nome }))
+    const mapa = new Map<string, string>()
+    // 1. Inserir primeiro as opções padrão
+    for (const f of FORMAS_RECEBIMENTO_PADRAO) {
+      if (f && f.trim()) {
+        mapa.set(f.trim().toLowerCase(), f.trim())
+      }
     }
-    return FORMAS_RECEBIMENTO_PADRAO.map((f) => ({ id: f, label: f }))
+    // 2. Inserir formas ativas cadastradas no banco (preservando o nome cadastrado caso difira)
+    for (const f of formasCadastradas) {
+      if (f?.nome && f.nome.trim()) {
+        mapa.set(f.nome.trim().toLowerCase(), f.nome.trim())
+      }
+    }
+    return Array.from(mapa.values()).map((nome) => ({ id: nome, label: nome }))
   }, [formasCadastradas])
 
   const formasRecebimentoSettleOptions = useMemo(() => {
@@ -1982,18 +2209,14 @@ export default function ContasReceber() {
         },
       ]
     }
-    const base =
-      formasCadastradas.length > 0
-        ? formasCadastradas.map((f) => ({ id: f.nome, label: f.nome }))
-        : FORMAS_RECEBIMENTO_PADRAO.map((f) => ({ id: f, label: f }))
     return [
-      ...base,
+      ...formasRecebimentoFormOptions,
       {
         id: 'Crédito do Cliente',
         label: 'Crédito do Cliente (Saldo Antecipado)',
       },
     ]
-  }, [usarCreditoCliente, formasCadastradas])
+  }, [usarCreditoCliente, formasRecebimentoFormOptions])
 
   // Totalizadores do rodapé do relatório
   const totalizadoresRelatorioReceber = useMemo<TotalizadorRelatorioImpressao[]>(() => {
@@ -2923,10 +3146,13 @@ export default function ContasReceber() {
                     value={formaRecebimentoForm}
                     onChange={(val) => {
                       setFormaRecebimentoForm(val)
-                      if (val === 'A Prazo' && Number(parcelas) <= 1 && !editingId) {
-                        setParcelas(2)
+                      const normVal = (val || '').trim().toLowerCase()
+                      const isParcelavel =
+                        normVal === 'a prazo' || normVal === 'boleto' || normVal === 'dividido'
+                      if (isParcelavel && Number(parcelas) <= 1 && !editingId) {
+                        setParcelas(1)
                         setGradeParcelas(
-                          gerarGradeParcelas(vencimento, 2, prazoSelecionado, valorLiquidoCalc),
+                          gerarGradeParcelas(vencimento, 1, prazoSelecionado, valorLiquidoCalc),
                         )
                       } else if (
                         val === 'Cheque Pré-datado' &&
@@ -3267,7 +3493,7 @@ export default function ContasReceber() {
               </div>
             </div>
 
-            {!editingId && (
+            {isFormaParcelavel && (
               <SeletorParcelas
                 parcelas={parcelas}
                 onChangeParcelas={handleChangeNumParcelas}

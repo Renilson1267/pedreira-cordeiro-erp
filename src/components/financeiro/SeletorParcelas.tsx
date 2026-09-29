@@ -57,8 +57,9 @@ export function gerarGradeParcelas(
   valorTotal: number,
 ): ItemParcela[] {
   const total = Math.max(0, valorTotal || 0)
-  const n = Math.max(1, Math.min(60, numParcelas || 1))
-  const valorUnitario = total > 0 ? Number((total / n).toFixed(2)) : 0
+  const n = Math.max(1, Math.min(36, numParcelas || 1))
+  // Parcelas 1..n-1 usam floor((total/n)*100)/100; a última parcela absorve os centavos restantes
+  const valorUnitario = total > 0 ? Math.floor((total / n) * 100) / 100 : 0
 
   const baseDate = parseDateInput(baseDateStr || formatDateInput(new Date()))
 
@@ -74,10 +75,10 @@ export function gerarGradeParcelas(
       d.setDate(baseDate.getDate() + i * diasIntervalo)
     }
 
-    // Ajusta centavos na última parcela se houver dízima
+    // Ajusta centavos na última parcela para somar exatamente o total
     let valorParcela = valorUnitario
     if (i === n - 1 && total > 0) {
-      const somaAnteriores = valorUnitario * (n - 1)
+      const somaAnteriores = Number((valorUnitario * (n - 1)).toFixed(2))
       const diff = Number((total - somaAnteriores).toFixed(2))
       if (diff > 0) {
         valorParcela = diff
@@ -124,18 +125,18 @@ export const SeletorParcelas: React.FC<SeletorParcelasProps> = ({
           <Input
             type="number"
             min="1"
-            max="60"
+            max="36"
             value={parcelas}
             onChange={(e) => {
               const val = parseInt(e.target.value) || 1
-              onChangeParcelas(Math.max(1, Math.min(60, val)))
+              onChangeParcelas(Math.max(1, Math.min(36, val)))
             }}
             className="w-24 font-mono font-semibold text-center bg-white h-9"
           />
           <span className="text-xs text-gray-500">
-            {parcelas > 1 ? 'parcelas' : 'parcela (à vista)'}
+            {parcelas > 1 ? 'parcelas' : 'parcela (1x)'}
           </span>
-        </div>
+        </div>{' '}
       </div>
 
       {parcelas > 1 && (
