@@ -1,0 +1,45 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 800" width="100%" height="100%">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0A2540" />
+      <stop offset="50%" stop-color="#1E3A8A" />
+      <stop offset="100%" stop-color="#0E1B38" />
+    </linearGradient>
+    <linearGradient id="accent" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#2563EB" />
+      <stop offset="100%" stop-color="#38BDF8" />
+    </linearGradient>
+    <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">
+      <path d="M 40 0 L 0 0 0 40" fill="none" stroke="#3B82F6" stroke-width="0.75" stroke-opacity="0.12" />
+    </pattern>
+  </defs>
+
+  <rect width="1200" height="800" fill="url(#bg)" />
+  <rect width="1200" height="800" fill="url(#grid)" />
+
+  <!-- Mountain Silhouette -->
+  <polygon points="0,550 250,420 480,500 700,380 950,480 1200,410 1200,800 0,800" fill="#0C1D3A" opacity="0.8" />
+  <polygon points="0,620 320,530 650,590 920,520 1200,580 1200,800 0,800" fill="#071224" />
+
+  <g transform="translate(600, 310)">
+    <circle cx="0" cy="0" r="100" fill="#1E3A8A" fill-opacity="0.5" stroke="#60A5FA" stroke-width="2" />
+    <!-- Compass Icon -->
+    <path d="M 0 -60 L 15 -10 L 60 0 L 15 10 L 0 60 L -15 10 L -60 0 L -15 -10 Z" fill="#F59E0B" />
+    <circle cx="0" cy="0" r="12" fill="#0A2540" stroke="#FFFFFF" stroke-width="2" />
+  </g>
+
+  <g transform="translate(600, 110)">
+    <rect x="-170" y="-20" width="340" height="40" rx="20" fill="#0A2540" stroke="#38BDF8" stroke-width="1.5" />
+    <circle cx="-145" cy="0" r="6" fill="#38BDF8" />
+    <text x="0" y="6" fill="#BAE6FD" font-family="system-ui, sans-serif" font-size="13" font-weight="800" letter-spacing="2" text-anchor="middle">GCA PEDREIRA CORDEIRO</text>
+  </g>
+
+  <text x="600" y="475" fill="#FFFFFF" font-family="system-ui, sans-serif" font-size="34" font-weight="900" text-anchor="middle">
+    Vista Aérea da Jazida de Extração
+  </text>
+  <text x="600" y="508" fill="#93C5FD" font-family="system-ui, sans-serif" font-size="16" font-weight="500" text-anchor="middle">
+    Reserva Mineral Própria em Patos — Paraíba
+  </text>
+
+  <rect x="0" y="788" width="1200" height="12" fill="url(#accent)" />
+</svg>

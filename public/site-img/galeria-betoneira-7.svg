@@ -1,0 +1,35 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 800" width="100%" height="100%">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0A2540" />
+      <stop offset="60%" stop-color="#1E3A8A" />
+      <stop offset="100%" stop-color="#1E293B" />
+    </linearGradient>
+  </defs>
+
+  <rect width="1200" height="800" fill="url(#bg)" />
+
+  <g transform="translate(600, 310)">
+    <circle cx="0" cy="0" r="110" fill="#0A2540" stroke="#F59E0B" stroke-width="3" />
+    <!-- Construction site / foundation pour -->
+    <rect x="-60" y="30" width="120" height="15" fill="#64748B" />
+    <!-- Concrete flow -->
+    <path d="M 0 -40 Q 20 0 30 30" stroke="#94A3B8" stroke-width="12" fill="none" stroke-linecap="round" />
+    <path d="M -40 -30 L 10 -40 L 0 -25 Z" fill="#F59E0B" />
+  </g>
+
+  <g transform="translate(600, 110)">
+    <rect x="-170" y="-20" width="340" height="40" rx="20" fill="#0A2540" stroke="#F59E0B" stroke-width="1.5" />
+    <circle cx="-145" cy="0" r="6" fill="#F59E0B" />
+    <text x="0" y="6" fill="#FDE68A" font-family="system-ui, sans-serif" font-size="13" font-weight="800" letter-spacing="2" text-anchor="middle">CANTEIRO DE OBRAS</text>
+  </g>
+
+  <text x="600" y="475" fill="#FFFFFF" font-family="system-ui, sans-serif" font-size="34" font-weight="900" text-anchor="middle">
+    Betoneira GC Mix em Canteiro
+  </text>
+  <text x="600" y="508" fill="#FDE68A" font-family="system-ui, sans-serif" font-size="16" font-weight="500" text-anchor="middle">
+    Descarga Direta na Bomba ou Caçamba na Frente da Obra
+  </text>
+
+  <rect x="0" y="788" width="1200" height="12" fill="#F59E0B" />
+</svg>

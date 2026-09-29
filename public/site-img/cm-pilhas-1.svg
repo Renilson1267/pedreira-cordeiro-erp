@@ -1,0 +1,45 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 800" width="100%" height="100%">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0A2540" />
+      <stop offset="50%" stop-color="#1E3A8A" />
+      <stop offset="100%" stop-color="#0B1528" />
+    </linearGradient>
+    <linearGradient id="gravel1" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#94A3B8" />
+      <stop offset="100%" stop-color="#475569" />
+    </linearGradient>
+  </defs>
+
+  <rect width="1200" height="800" fill="url(#bg)" />
+
+  <!-- Gravel Piles Artwork -->
+  <g transform="translate(600, 310)">
+    <circle cx="0" cy="0" r="110" fill="#0A2540" stroke="#F59E0B" stroke-width="3" />
+    <!-- Big gravel pile -->
+    <polygon points="-80,55 0,-40 80,55" fill="url(#gravel1)" stroke="#CBD5E1" stroke-width="2" />
+    <!-- Secondary pile in front -->
+    <polygon points="-40,55 20,-10 70,55" fill="#64748B" opacity="0.9" />
+    <!-- Small pile -->
+    <polygon points="-75,55 -40,15 -10,55" fill="#475569" opacity="0.9" />
+    <!-- Stones details -->
+    <circle cx="-15" cy="15" r="4" fill="#E2E8F0" />
+    <circle cx="5" cy="25" r="5" fill="#CBD5E1" />
+    <circle cx="25" cy="35" r="4" fill="#E2E8F0" />
+  </g>
+
+  <g transform="translate(600, 110)">
+    <rect x="-180" y="-20" width="360" height="40" rx="20" fill="#0A2540" stroke="#F59E0B" stroke-width="1.5" />
+    <circle cx="-155" cy="0" r="6" fill="#F59E0B" />
+    <text x="0" y="6" fill="#FDE68A" font-family="system-ui, sans-serif" font-size="13" font-weight="800" letter-spacing="2" text-anchor="middle">PRODUÇÃO DE BRITA NA OBRA</text>
+  </g>
+
+  <text x="600" y="475" fill="#FFFFFF" font-family="system-ui, sans-serif" font-size="34" font-weight="900" text-anchor="middle">
+    Brita Produzida na Obra
+  </text>
+  <text x="600" y="508" fill="#FDE68A" font-family="system-ui, sans-serif" font-size="16" font-weight="500" text-anchor="middle">
+    Pilhas de Brita com Granulometria Uniforme — C M Construções
+  </text>
+
+  <rect x="0" y="788" width="1200" height="12" fill="#F59E0B" />
+</svg>

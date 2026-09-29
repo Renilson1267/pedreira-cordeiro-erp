@@ -1,0 +1,41 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 800" width="100%" height="100%">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0A2540" />
+      <stop offset="50%" stop-color="#1E3A8A" />
+      <stop offset="100%" stop-color="#0F172A" />
+    </linearGradient>
+  </defs>
+
+  <rect width="1200" height="800" fill="url(#bg)" />
+
+  <!-- Quarry Yard Graphic -->
+  <g transform="translate(600, 310)">
+    <circle cx="0" cy="0" r="110" fill="#0A2540" stroke="#F59E0B" stroke-width="3" />
+    <!-- Yard ground perspective -->
+    <polygon points="-80,50 80,50 50,10 -50,10" fill="#334155" stroke="#64748B" stroke-width="1.5" />
+    <!-- Stockpiles along yard -->
+    <polygon points="-70,25 -50,-10 -30,25" fill="#64748B" />
+    <polygon points="-35,20 -15,-20 5,20" fill="#94A3B8" />
+    <polygon points="10,25 35,-15 60,25" fill="#CBD5E1" />
+    <!-- Wheel loader icon in yard -->
+    <rect x="-10" y="30" width="25" height="12" fill="#F59E0B" rx="2" />
+    <circle cx="-5" cy="42" r="5" fill="#0F172A" stroke="#FFFFFF" stroke-width="1.5" />
+    <circle cx="10" cy="42" r="5" fill="#0F172A" stroke="#FFFFFF" stroke-width="1.5" />
+  </g>
+
+  <g transform="translate(600, 110)">
+    <rect x="-180" y="-20" width="360" height="40" rx="20" fill="#0A2540" stroke="#F59E0B" stroke-width="1.5" />
+    <circle cx="-155" cy="0" r="6" fill="#F59E0B" />
+    <text x="0" y="6" fill="#FDE68A" font-family="system-ui, sans-serif" font-size="13" font-weight="800" letter-spacing="2" text-anchor="middle">PÁTIO DE EXPEDIÇÃO</text>
+  </g>
+
+  <text x="600" y="475" fill="#FFFFFF" font-family="system-ui, sans-serif" font-size="34" font-weight="900" text-anchor="middle">
+    Pátio de Brita e Pó de Pedra
+  </text>
+  <text x="600" y="508" fill="#FDE68A" font-family="system-ui, sans-serif" font-size="16" font-weight="500" text-anchor="middle">
+    Estoque Pronto para Carregamento Rápido e Distribuição
+  </text>
+
+  <rect x="0" y="788" width="1200" height="12" fill="#F59E0B" />
+</svg>

@@ -1057,8 +1057,8 @@ export default function HomePublica() {
                           if (item.imagemSecundaria && target.src !== item.imagemSecundaria) {
                             target.src = item.imagemSecundaria
                           } else {
-                            // Imagem fallback padrão de agregados da pedreira
-                            target.src = 'https://pedreiracordeiro.com.br/site-img/cm-patio.jpg'
+                            // Imagem fallback padrão local de agregados da pedreira
+                            target.src = '/site-img/cm-patio.svg'
                           }
                         }}
                       />
@@ -1626,19 +1626,17 @@ export default function HomePublica() {
               <div className="flex items-center gap-2">
                 <ImageIcon className="w-4 h-4 text-[#1D4ED8] shrink-0" />
                 <span>
-                  Fotos oficiais integradas do site <strong>pedreiracordeiro.com.br</strong> (GC
-                  Mix, Pedreira Cordeiro e C M Construções).
+                  Fotos e identidade visual 100% integradas da empresa (GC Mix, Pedreira Cordeiro e
+                  C M Construções).
                 </span>
               </div>
-              <a
-                href={INSTITUCIONAL_CONFIG.siteUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-flex items-center gap-1 font-bold text-[#1D4ED8] hover:underline shrink-0"
+              <button
+                onClick={() => rolarParaSecao('orcamento')}
+                className="inline-flex items-center gap-1 font-bold text-[#1D4ED8] hover:underline shrink-0 cursor-pointer"
               >
-                <span>Acessar site institucional</span>
-                <ExternalLink className="w-3.5 h-3.5" />
-              </a>
+                <span>Solicitar cotação online</span>
+                <ArrowRight className="w-3.5 h-3.5" />
+              </button>
             </div>
           </div>
         </section>
@@ -2047,14 +2045,7 @@ export default function HomePublica() {
             </div>
 
             <div className="flex items-center gap-6">
-              <a
-                href={INSTITUCIONAL_CONFIG.siteUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="hover:text-white transition-colors"
-              >
-                {INSTITUCIONAL_CONFIG.site}
-              </a>
+              <span className="text-slate-400 font-medium">{INSTITUCIONAL_CONFIG.site}</span>
               <Link
                 to="/login"
                 className="hover:text-[#60A5FA] transition-colors text-slate-300 font-semibold"

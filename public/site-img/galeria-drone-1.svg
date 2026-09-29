@@ -1,0 +1,65 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 800" width="100%" height="100%">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0A2540" />
+      <stop offset="50%" stop-color="#1E3A8A" />
+      <stop offset="100%" stop-color="#0B192C" />
+    </linearGradient>
+    <linearGradient id="glow" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#3B82F6" stop-opacity="0.8" />
+      <stop offset="100%" stop-color="#F59E0B" stop-opacity="0.8" />
+    </linearGradient>
+    <radialGradient id="sun" cx="70%" cy="30%" r="60%">
+      <stop offset="0%" stop-color="#60A5FA" stop-opacity="0.3" />
+      <stop offset="100%" stop-color="#0A2540" stop-opacity="0" />
+    </radialGradient>
+    <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">
+      <path d="M 40 0 L 0 0 0 40" fill="none" stroke="#2563EB" stroke-width="0.75" stroke-opacity="0.15" />
+    </pattern>
+  </defs>
+
+  <!-- Background -->
+  <rect width="1200" height="800" fill="url(#bg)" />
+  <rect width="1200" height="800" fill="url(#sun)" />
+  <rect width="1200" height="800" fill="url(#grid)" />
+
+  <!-- Landscape / Quarry Silhouette Layers -->
+  <path d="M 0 520 Q 250 440 500 500 T 1000 480 Q 1100 490 1200 530 L 1200 800 L 0 800 Z" fill="#0D1F38" opacity="0.9" />
+  <path d="M 0 580 Q 350 510 700 560 T 1200 550 L 1200 800 L 0 800 Z" fill="#081528" />
+
+  <!-- Quarry Terraces (Bancadas de Extração) -->
+  <path d="M 150 580 L 450 580 L 520 620 L 850 620 L 920 670 L 1200 670" stroke="#3B82F6" stroke-width="2" stroke-opacity="0.4" fill="none" stroke-dasharray="8 4" />
+  <path d="M 50 640 L 380 640 L 440 680 L 780 680 L 840 730 L 1200 730" stroke="#60A5FA" stroke-width="1.5" stroke-opacity="0.3" fill="none" />
+
+  <!-- Drone / Aerial Graphic Compass -->
+  <g transform="translate(600, 310)">
+    <circle cx="0" cy="0" r="110" fill="none" stroke="#60A5FA" stroke-width="2" stroke-dasharray="6 6" opacity="0.6" />
+    <circle cx="0" cy="0" r="85" fill="#1E3A8A" fill-opacity="0.5" stroke="#93C5FD" stroke-width="2" />
+    <!-- Drone Icon -->
+    <path d="M -45 -45 L 45 45 M -45 45 L 45 -45" stroke="#F59E0B" stroke-width="4" stroke-linecap="round" />
+    <circle cx="-45" cy="-45" r="18" fill="none" stroke="#93C5FD" stroke-width="3" />
+    <circle cx="45" cy="45" r="18" fill="none" stroke="#93C5FD" stroke-width="3" />
+    <circle cx="-45" cy="45" r="18" fill="none" stroke="#93C5FD" stroke-width="3" />
+    <circle cx="45" cy="-45" r="18" fill="none" stroke="#93C5FD" stroke-width="3" />
+    <circle cx="0" cy="0" r="22" fill="#0A2540" stroke="#F59E0B" stroke-width="3" />
+    <circle cx="0" cy="0" r="8" fill="#F59E0B" />
+  </g>
+
+  <!-- Tag Pill -->
+  <g transform="translate(600, 110)">
+    <rect x="-160" y="-20" width="320" height="40" rx="20" fill="#0A2540" stroke="#3B82F6" stroke-width="1.5" />
+    <circle cx="-135" cy="0" r="6" fill="#10B981" />
+    <text x="0" y="6" fill="#93C5FD" font-family="system-ui, sans-serif" font-size="13" font-weight="800" letter-spacing="2" text-anchor="middle">VISTA AÉREA • JAZIDA PRÓPRIA</text>
+  </g>
+
+  <!-- Title & Subtitle -->
+  <text x="600" y="475" fill="#FFFFFF" font-family="system-ui, sans-serif" font-size="34" font-weight="900" text-anchor="middle" letter-spacing="-0.5">
+    Pedreira Cordeiro — Matriz Patos-PB
+  </text>
+  <text x="600" y="508" fill="#93C5FD" font-family="system-ui, sans-serif" font-size="16" font-weight="500" text-anchor="middle">
+    Vista Aérea da Jazida de Extração e Parque de Agregados
+  </text>
+
+  <!-- Bottom Accent Stripe -->
+  <rect x="0" y="788" width="1200" height="12" fill="url(#glow)" />
+</svg>

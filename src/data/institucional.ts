@@ -87,32 +87,30 @@ export const INSTITUCIONAL_CONFIG = {
   // Vídeo institucional oficial do site
   videoInstitucionalUrl: 'https://pedreiracordeiro.com.br/video.mp4',
 
-  // Fotos reais extraídas do site oficial da empresa (pedreiracordeiro.com.br)
+  // Imagens locais do projeto (100% autossuficiente — sem dependência do domínio pedreiracordeiro.com.br)
   fotosReais: {
-    heroAerea: 'https://pedreiracordeiro.com.br/site-img/galeria-drone-1.jpg',
-    pedreiraAerea2: 'https://pedreiracordeiro.com.br/site-img/galeria-drone-2.jpg',
-    pedreiraBritador: 'https://pedreiracordeiro.com.br/site-img/galeria-drone-3.jpg',
-    pedreiraRegiao: 'https://pedreiracordeiro.com.br/site-img/galeria-drone-4.jpg',
-    betoneira1: 'https://pedreiracordeiro.com.br/site-img/galeria-betoneira-1.jpg',
-    betoneira2: 'https://pedreiracordeiro.com.br/site-img/galeria-betoneira-2.jpg',
-    frotaGcMix: 'https://pedreiracordeiro.com.br/site-img/galeria-betoneira-3.jpg',
-    betoneiraRota: 'https://pedreiracordeiro.com.br/site-img/galeria-betoneira-4.jpg',
-    betoneira5: 'https://pedreiracordeiro.com.br/site-img/galeria-betoneira-5.jpg',
-    betoneira7: 'https://pedreiracordeiro.com.br/site-img/galeria-betoneira-7.jpg',
-    silo2: 'https://pedreiracordeiro.com.br/site-img/galeria-silo-2.jpg',
-    siloMonteiro: 'https://pedreiracordeiro.com.br/site-img/hero-silo.jpg',
-    concretagemPatos: 'https://pedreiracordeiro.com.br/site-img/galeria-concretagem.jpg',
-    pisoIndustrial: 'https://pedreiracordeiro.com.br/site-img/galeria-piso-1.jpg',
-    pisoAcabamento: 'https://pedreiracordeiro.com.br/site-img/galeria-piso-2.jpg',
-    preparacaoObra: 'https://pedreiracordeiro.com.br/site-img/galeria-obra-grad.jpg',
-    // NOTA: As fotos cm-lokotrack-1.jpg, cm-lokotrack-2.jpg e cm-lokotrack-3.jpg são do
-    // britador fixo da matriz em Patos-PB e estão desatualizadas, NÃO correspondendo ao
-    // britador móvel Lokotrack. Foram desvinculadas das seções do Lokotrack móvel.
-    // cm-lokotrack-3 é mantido apenas como imagem de contexto do produto cascalhinho:
-    britadorFixoCm3: 'https://pedreiracordeiro.com.br/site-img/cm-lokotrack-3.jpg',
-    cmPilhas1: 'https://pedreiracordeiro.com.br/site-img/cm-pilhas-1.jpg',
-    cmPilhas2: 'https://pedreiracordeiro.com.br/site-img/cm-pilhas-2.jpg',
-    cmPatio: 'https://pedreiracordeiro.com.br/site-img/cm-patio.jpg',
+    heroAerea: '/site-img/galeria-drone-1.svg',
+    pedreiraAerea2: '/site-img/galeria-drone-2.svg',
+    pedreiraBritador: '/site-img/galeria-drone-3.svg',
+    pedreiraRegiao: '/site-img/galeria-drone-4.svg',
+    betoneira1: '/site-img/galeria-betoneira-1.svg',
+    betoneira2: '/site-img/galeria-betoneira-2.svg',
+    frotaGcMix: '/site-img/galeria-betoneira-3.svg',
+    betoneiraRota: '/site-img/galeria-betoneira-4.svg',
+    betoneira5: '/site-img/galeria-betoneira-5.svg',
+    betoneira7: '/site-img/galeria-betoneira-7.svg',
+    silo2: '/site-img/galeria-silo-2.svg',
+    siloMonteiro: '/site-img/hero-silo.svg',
+    concretagemPatos: '/site-img/galeria-concretagem.svg',
+    pisoIndustrial: '/site-img/galeria-piso-1.svg',
+    pisoAcabamento: '/site-img/galeria-piso-2.svg',
+    preparacaoObra: '/site-img/galeria-obra-grad.svg',
+    // NOTA: As fotos cm-lokotrack-1/2/3 são do britador fixo da matriz em Patos-PB
+    // e nunca devem ser rotuladas como Lokotrack móvel (correção v0.0.187).
+    britadorFixoCm3: '/site-img/cm-lokotrack-3.svg',
+    cmPilhas1: '/site-img/cm-pilhas-1.svg',
+    cmPilhas2: '/site-img/cm-pilhas-2.svg',
+    cmPatio: '/site-img/cm-patio.svg',
   },
 } as const
 
@@ -220,7 +218,7 @@ export const PRODUTOS_PEDREIRA: ProdutoPedreiraItem[] = [
     aplicacao: 'Concreto usinado GC Mix, lajes, vigas, pilares e fundações estruturais',
     descricao:
       'Agregado graúdo de excelente adesão e granulometria uniforme, essencial para concreto de alta resistência estrutural e pisos industriais.',
-    imagem: 'https://pedreiracordeiro.com.br/site-img/cm-pilhas-2.jpg',
+    imagem: '/site-img/cm-pilhas-2.svg',
     imagemSecundaria: 'https://img.usecurling.com/p/600/400?q=crushed%20stone%20gravel&color=slate',
     densidadeMedia: '~1,45 t/m³',
   },
@@ -232,7 +230,7 @@ export const PRODUTOS_PEDREIRA: ProdutoPedreiraItem[] = [
     aplicacao: 'Concreto pesado, drenagens profundas, lastros e pavimentação',
     descricao:
       'Ideal para obras de infraestrutura pesada, bases de pavimentação asfáltica, drenagens profundas e concretos estruturais de grande porte.',
-    imagem: 'https://pedreiracordeiro.com.br/site-img/cm-pilhas-1.jpg',
+    imagem: '/site-img/cm-pilhas-1.svg',
     imagemSecundaria: 'https://img.usecurling.com/p/600/400?q=coarse%20gravel%20stones&color=stone',
     densidadeMedia: '~1,47 t/m³',
   },
@@ -244,7 +242,7 @@ export const PRODUTOS_PEDREIRA: ProdutoPedreiraItem[] = [
     aplicacao: 'Muros de arrimo, contenções, gabiões, calçamentos e fundações de pedra',
     descricao:
       'Pedra de grande porte selecionada com alta tenacidade, ideal para contenção de encostas, muros de gravidade, enrocamentos e drenagens rústicas.',
-    imagem: 'https://pedreiracordeiro.com.br/site-img/galeria-drone-3.jpg',
+    imagem: '/site-img/galeria-drone-3.svg',
     imagemSecundaria: 'https://img.usecurling.com/p/600/400?q=quarry%20rocks%20boulders&color=gray',
     densidadeMedia: '~1,50 t/m³',
   },
@@ -256,7 +254,7 @@ export const PRODUTOS_PEDREIRA: ProdutoPedreiraItem[] = [
     aplicacao: 'Argamassas, assentamento de paralelepípedos e intertravados, misturas asfálticas',
     descricao:
       'Substitui com alta eficiência a areia em várias etapas construtivas, proporcionando excelente compactação, acabamento homogêneo e economia.',
-    imagem: 'https://pedreiracordeiro.com.br/site-img/cm-patio.jpg',
+    imagem: '/site-img/cm-patio.svg',
     imagemSecundaria: 'https://img.usecurling.com/p/600/400?q=stone%20dust%20quarry&color=zinc',
     densidadeMedia: '~1,56 t/m³',
   },
@@ -268,7 +266,7 @@ export const PRODUTOS_PEDREIRA: ProdutoPedreiraItem[] = [
     aplicacao: 'Blocos de concreto, pré-moldados, paisagismo, tubos e vigotas',
     descricao:
       'Pedrisco fino e limpo de alta rigidez, amplamente requisitado em fábricas de artefatos de cimento, lajotas e projetos de drenagem superficial.',
-    imagem: 'https://pedreiracordeiro.com.br/site-img/cm-lokotrack-3.jpg',
+    imagem: '/site-img/cm-lokotrack-3.svg',
     imagemSecundaria:
       'https://img.usecurling.com/p/600/400?q=fine%20gravel%20aggregate&color=neutral',
     densidadeMedia: '~1,50 t/m³',
