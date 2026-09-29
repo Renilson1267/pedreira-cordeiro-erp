@@ -639,6 +639,58 @@ async function run() {
     console.log('✓ Registro C (25 MB) e arquivo limpos com sucesso!')
 
     console.log('✓ Teste 8 (Upload Fracionado E2E de 25 MB com verificação e limpeza): OK')
+
+    // CASO D: Teste ponta a ponta do UPLOAD DIRETO via rota /backend/v1/video-institucional/upload
+    console.log('Testando Caso D: Upload Direto via /backend/v1/video-institucional/upload...')
+    const tamanhoDiretoBytes = 2 * 1024 * 1024 // 2 MB
+    const videoDiretoBytes = new Uint8Array(tamanhoDiretoBytes)
+    videoDiretoBytes.fill(88) // 'X'
+
+    const formDireto = new FormData()
+    formDireto.append('titulo', 'Vídeo Teste Upload Direto E2E')
+    formDireto.append('descricao', 'Validação do caminho monolítico direto com findUploadedFiles')
+    formDireto.append('ativo', 'false')
+    formDireto.append('tamanho_bytes', String(tamanhoDiretoBytes))
+    formDireto.append('duracao_segundos', '15')
+    formDireto.append(
+      'arquivo',
+      new Blob([videoDiretoBytes], { type: 'video/mp4' }),
+      'video_direto_teste.mp4',
+    )
+
+    const resDireto = await fetch(`${baseUrl}/backend/v1/video-institucional/upload`, {
+      method: 'POST',
+      headers: { Authorization: token },
+      body: formDireto,
+    })
+
+    if (!resDireto.ok) {
+      const errDireto = await resDireto.text()
+      throw new Error(`Falha no upload direto: HTTP ${resDireto.status} - ${errDireto}`)
+    }
+
+    const recordDireto = (await resDireto.json()) as {
+      id: string
+      arquivo: string
+      tamanho_bytes: number
+    }
+    if (
+      !recordDireto.id ||
+      !recordDireto.arquivo ||
+      recordDireto.tamanho_bytes !== tamanhoDiretoBytes
+    ) {
+      throw new Error(
+        `Registro de upload direto montado com inconsistência: ${JSON.stringify(recordDireto)}`,
+      )
+    }
+    console.log(
+      `✓ Vídeo Direto finalizado e verificado! ID: ${recordDireto.id}, Arquivo: ${recordDireto.arquivo}, Tamanho: ${recordDireto.tamanho_bytes} bytes`,
+    )
+
+    // Excluir registro de teste direto
+    await pbInstance.collection('config_video_institucional').delete(recordDireto.id)
+    console.log('✓ Registro Direto de teste excluído com sucesso!')
+    console.log('✓ Teste 9 (Upload Direto E2E com verificação e limpeza): OK')
   } catch (errAuth: any) {
     console.warn('Aviso ao executar teste E2E com PocketBase:', errAuth)
     throw errAuth

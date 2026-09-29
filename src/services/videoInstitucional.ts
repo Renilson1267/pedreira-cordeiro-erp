@@ -511,9 +511,8 @@ export const videoInstitucionalService = {
           await fetchAutenticadoComTimeout(partUrl, {
             method: 'POST',
             body: chunkForm,
-            timeoutMs: 120000, // 120 segundos por bloco de 10-15 MB para conexões residenciais
+            timeoutMs: 180000, // 180 segundos por bloco para conexões residenciais
           })
-
           sucessoBloco = true
           bytesEnviadosTotal += chunkSize
 
@@ -544,15 +543,17 @@ export const videoInstitucionalService = {
         try {
           const abortForm = new FormData()
           abortForm.append('session_id', sessionId)
-          await fetchAutenticadoComTimeout('/backend/v1/video-institucional/chunk/abort', {
-            method: 'POST',
-            body: abortForm,
-            timeoutMs: 15000,
-          })
+          await fetchAutenticadoComTimeout(
+            `/backend/v1/video-institucional/chunk/abort?session_id=${encodeURIComponent(sessionId)}`,
+            {
+              method: 'POST',
+              body: abortForm,
+              timeoutMs: 15000,
+            },
+          )
         } catch {
           /* intentionally ignored */
         }
-
         throw new Error(
           `Falha ao enviar bloco ${chunkIndex + 1} de ${totalChunks} após ${totalTentativasPermitidas} tentativas: ${obterMensagemErroAmigavel(ultimoErro)}`,
         )
@@ -574,14 +575,13 @@ export const videoInstitucionalService = {
       completeForm.append('session_id', sessionId)
 
       const completeRes = await fetchAutenticadoComTimeout<VideoInstitucionalRecord>(
-        '/backend/v1/video-institucional/chunk/complete',
+        `/backend/v1/video-institucional/chunk/complete?session_id=${encodeURIComponent(sessionId)}`,
         {
           method: 'POST',
           body: completeForm,
-          timeoutMs: 120000, // 2 minutos para montagem e persistência no banco
+          timeoutMs: 180000, // 3 minutos para montagem e persistência no banco
         },
       )
-
       params.onProgress?.({
         carregadoBytes: totalBytes,
         totalBytes: totalBytes,

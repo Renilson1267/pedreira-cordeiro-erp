@@ -20,7 +20,15 @@ routerAdd(
       return e.json(401, { error: 'Não autorizado. Faça login para continuar.' })
     }
 
-    var files = e.findUploadedFiles('arquivo')
+    var files = null
+    try {
+      files = e.findUploadedFiles('arquivo')
+    } catch (errFiles) {
+      return e.json(400, {
+        error:
+          'Arquivo não recebido na requisição. Verifique se o campo de arquivo foi anexado corretamente.',
+      })
+    }
     if (!files || files.length === 0) {
       return e.json(400, { error: 'Nenhum arquivo de vídeo foi enviado.' })
     }
@@ -33,10 +41,20 @@ routerAdd(
     }
 
     // Arquivo de poster opcional
-    var posterFiles = e.findUploadedFiles('poster')
-    var arquivoPoster = posterFiles && posterFiles.length > 0 ? posterFiles[0] : null
+    var arquivoPoster = null
+    try {
+      var posterFiles = e.findUploadedFiles('poster')
+      arquivoPoster = posterFiles && posterFiles.length > 0 ? posterFiles[0] : null
+    } catch (_) {
+      arquivoPoster = null
+    }
 
-    var body = e.requestInfo().body || {}
+    var body = {}
+    try {
+      body = e.requestInfo().body || {}
+    } catch (_) {
+      body = {}
+    }
     var titulo = (body.titulo || '').trim()
     var descricao = (body.descricao || '').trim()
     var substituindoId = (body.substituindo_id || '').trim()
@@ -269,10 +287,23 @@ routerAdd(
       return e.json(404, { error: 'Sessão de upload não encontrada ou expirada.' })
     }
 
-    var meta = JSON.parse(metaStr)
-    var files = e.findUploadedFiles('chunk')
+    var meta = null
+    try {
+      meta = JSON.parse(metaStr)
+    } catch (errJson) {
+      return e.json(500, { error: 'Erro ao interpretar metadados da sessão: ' + errJson })
+    }
+
+    var files = null
+    try {
+      files = e.findUploadedFiles('chunk')
+    } catch (errChunkFile) {
+      return e.json(400, {
+        error: 'Bloco de arquivo não recebido na requisição multipart: ' + errChunkFile,
+      })
+    }
     if (!files || files.length === 0) {
-      return e.json(400, { error: 'Nenhum arquivo de bloco recebido.' })
+      return e.json(400, { error: 'Nenhum arquivo de bloco recebido no campo "chunk".' })
     }
 
     var chunkFile = files[0]
@@ -360,8 +391,22 @@ routerAdd(
       return e.json(401, { error: 'Não autorizado.' })
     }
 
-    var body = e.requestInfo().body || {}
-    var sessionId = (body.session_id || '').trim()
+    var sessionId = ''
+    try {
+      var body = e.requestInfo().body || {}
+      sessionId = (body.session_id || '').trim()
+    } catch (_) {
+      sessionId = ''
+    }
+
+    // Fallback: ler da query string caso o body venha vazio
+    if (!sessionId) {
+      var q = e && e.request && e.request.url && e.request.url.query ? e.request.url.query() : null
+      if (q) {
+        sessionId = (q.get('session_id') || '').trim()
+      }
+    }
+
     if (!sessionId) {
       return e.json(400, { error: 'session_id é obrigatório.' })
     }
@@ -526,8 +571,22 @@ routerAdd(
       return e.json(401, { error: 'Não autorizado.' })
     }
 
-    var body = e.requestInfo().body || {}
-    var sessionId = (body.session_id || '').trim()
+    var sessionId = ''
+    try {
+      var body = e.requestInfo().body || {}
+      sessionId = (body.session_id || '').trim()
+    } catch (_) {
+      sessionId = ''
+    }
+
+    // Fallback: ler da query string caso o body venha vazio
+    if (!sessionId) {
+      var q = e && e.request && e.request.url && e.request.url.query ? e.request.url.query() : null
+      if (q) {
+        sessionId = (q.get('session_id') || '').trim()
+      }
+    }
+
     if (!sessionId) {
       return e.json(400, { error: 'session_id é obrigatório.' })
     }
