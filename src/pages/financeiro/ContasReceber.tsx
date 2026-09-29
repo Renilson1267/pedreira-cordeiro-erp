@@ -35,6 +35,7 @@ import {
   ItemParcela,
   gerarGradeParcelas,
 } from '@/components/financeiro/SeletorParcelas'
+import { EditarParcelasModal } from '@/components/financeiro/EditarParcelasModal'
 import { useDebounce } from '@/hooks/useDebounce'
 
 const ImportadorRecebimentosModal = React.lazy(() =>
@@ -198,6 +199,12 @@ export default function ContasReceber() {
     Array<{ id?: string; data: string; valor: number; numero: string; banco: string }>
   >([])
   const [observacoes, setObservacoes] = useState('')
+
+  // Modal de Edição Individual de Parcelas
+  const [editarParcelasModalOpen, setEditarParcelasModalOpen] = useState(false)
+  const [tituloParaEditarParcelas, setTituloParaEditarParcelas] = useState<ContaReceber | null>(
+    null,
+  )
 
   // Settle (Receber) Modal
   const [settleModalOpen, setSettleModalOpen] = useState(false)
@@ -574,11 +581,8 @@ export default function ContasReceber() {
     setIsDrawerOpen(true)
   }
 
-  // Determina se a forma de recebimento permite parcelamento (Boleto, Dividido ou A Prazo)
-  const isFormaParcelavel = useMemo(() => {
-    const f = (formaRecebimentoForm || '').trim().toLowerCase()
-    return f === 'boleto' || f === 'dividido' || f === 'a prazo'
-  }, [formaRecebimentoForm])
+  // Todas as formas de recebimento permitem parcelamento (solicitação do usuário)
+  const isFormaParcelavel = true
 
   // Handlers para parcelamento com prazos rápidos e datas livres
   const handleChangeVencimentoBase = (novaData: string) => {
@@ -667,6 +671,13 @@ export default function ContasReceber() {
     }
   }
 
+  const handleChangeValorParcelaIndividual = (index: number, novoValor: number) => {
+    setDatasCustomizadasManuais(true)
+    setGradeParcelas((prev) =>
+      prev.map((item, idx) => (idx === index ? { ...item, valor: Math.max(0, novoValor) } : item)),
+    )
+  }
+
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault()
     const valorFinalLiquido = valorLiquidoCalc
@@ -718,6 +729,25 @@ export default function ContasReceber() {
     if (!vencimento) {
       toast({ title: 'Preencha a data de vencimento', variant: 'destructive' })
       return
+    }
+
+    // Validação da soma das parcelas quando parcelas > 1
+    if (parcelas > 1 && gradeParcelas.length === parcelas) {
+      const somaParcelas = Number(
+        gradeParcelas.reduce((acc, p) => acc + (Number(p.valor) || 0), 0).toFixed(2),
+      )
+      const diffParcelas = Number((valorFinalLiquido - somaParcelas).toFixed(2))
+      if (Math.abs(diffParcelas) >= 0.01) {
+        toast({
+          title: 'Soma das parcelas inconsistente',
+          description:
+            diffParcelas > 0
+              ? `A soma das parcelas (${formatCurrency(somaParcelas)}) não fecha o valor total. Falta ${formatCurrency(diffParcelas)}.`
+              : `A soma das parcelas (${formatCurrency(somaParcelas)}) ultrapassa o valor total em ${formatCurrency(Math.abs(diffParcelas))}.`,
+          variant: 'destructive',
+        })
+        return
+      }
     }
 
     const descFinal = descricao.trim() || 'Título a Receber'
@@ -2950,6 +2980,20 @@ export default function ContasReceber() {
                           {canEdit && (
                             <Button
                               size="sm"
+                              variant="outline"
+                              onClick={() => {
+                                setTituloParaEditarParcelas(c)
+                                setEditarParcelasModalOpen(true)
+                              }}
+                              className="h-6 px-2 text-[11px] border-teal-200 text-teal-800 hover:bg-teal-50"
+                              title="Editar parcelas individualmente (datas e valores)"
+                            >
+                              Parcelas
+                            </Button>
+                          )}
+                          {canEdit && (
+                            <Button
+                              size="sm"
                               variant="ghost"
                               onClick={() => handleEdit(c)}
                               className="h-6 w-6 p-0 text-gray-500 hover:text-gray-900"
@@ -3221,18 +3265,7 @@ export default function ContasReceber() {
                     value={formaRecebimentoForm}
                     onChange={(val) => {
                       setFormaRecebimentoForm(val)
-                      const normVal = (val || '').trim().toLowerCase()
-                      const isParcelavel =
-                        normVal === 'a prazo' || normVal === 'boleto' || normVal === 'dividido'
-                      if (isParcelavel && Number(parcelas) <= 1 && !editingId) {
-                        setParcelas(1)
-                        setGradeParcelas(
-                          gerarGradeParcelas(vencimento, 1, prazoSelecionado, valorLiquidoCalc),
-                        )
-                      } else if (
-                        val === 'Cheque Pré-datado' &&
-                        chequesPredatadosForm.length === 0
-                      ) {
+                      if (val === 'Cheque Pré-datado' && chequesPredatadosForm.length === 0) {
                         setChequesPredatadosForm([
                           {
                             data: vencimento || toInputDate(new Date().toISOString()),
@@ -3576,6 +3609,7 @@ export default function ContasReceber() {
                 onSelecionarPrazo={handleSelecionarPrazoRapido}
                 listaParcelas={gradeParcelas}
                 onChangeDataParcela={handleChangeDataParcelaIndividual}
+                onChangeValorParcela={handleChangeValorParcelaIndividual}
                 valorTotal={valorLiquidoCalc}
               />
             )}
@@ -4165,6 +4199,21 @@ export default function ContasReceber() {
                   )}
 
                 {canEdit && (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => {
+                      const item = detailItem
+                      setTituloParaEditarParcelas(item)
+                      setEditarParcelasModalOpen(true)
+                    }}
+                    className="w-full border-teal-200 text-teal-800 hover:bg-teal-50 rounded-xl"
+                  >
+                    Editar Parcelas (Valores e Vencimentos)
+                  </Button>
+                )}
+
+                {canEdit && (
                   <div className="grid grid-cols-2 gap-2 pt-1">
                     <Button
                       variant="outline"
@@ -4279,6 +4328,17 @@ export default function ContasReceber() {
           />
         </React.Suspense>
       )}
+
+      {/* Modal de Edição Individual de Parcelas */}
+      <EditarParcelasModal
+        open={editarParcelasModalOpen}
+        onOpenChange={setEditarParcelasModalOpen}
+        tituloBase={tituloParaEditarParcelas}
+        onSuccess={() => {
+          loadData()
+          carregarTotaisCards()
+        }}
+      />
 
       {/* Relatório de Impressão A4 das Contas a Receber */}
       {relatorioImpressaoOpen && (

@@ -1,5 +1,5 @@
-import React from 'react'
-import { Calendar, Info } from 'lucide-react'
+import React, { useMemo } from 'react'
+import { Calendar, Info, RefreshCw, AlertCircle, CheckCircle2 } from 'lucide-react'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Button } from '@/components/ui/button'
@@ -110,8 +110,35 @@ export const SeletorParcelas: React.FC<SeletorParcelasProps> = ({
   onSelecionarPrazo,
   listaParcelas,
   onChangeDataParcela,
+  onChangeValorParcela,
   valorTotal,
 }) => {
+  const somaAtual = useMemo(() => {
+    return Number(listaParcelas.reduce((acc, p) => acc + (Number(p.valor) || 0), 0).toFixed(2))
+  }, [listaParcelas])
+
+  const diferenca = useMemo(() => {
+    return Number((valorTotal - somaAtual).toFixed(2))
+  }, [valorTotal, somaAtual])
+
+  const somaValida = Math.abs(diferenca) < 0.01
+
+  const handleDistribuirIgualmente = () => {
+    if (!onChangeValorParcela || listaParcelas.length === 0) return
+    const n = listaParcelas.length
+    const total = Math.max(0, valorTotal || 0)
+    const unit = total > 0 ? Math.floor((total / n) * 100) / 100 : 0
+    listaParcelas.forEach((_, idx) => {
+      let v = unit
+      if (idx === n - 1 && total > 0) {
+        const somaAnt = Number((unit * (n - 1)).toFixed(2))
+        const diff = Number((total - somaAnt).toFixed(2))
+        if (diff > 0) v = diff
+      }
+      onChangeValorParcela(idx, v)
+    })
+  }
+
   return (
     <div className="space-y-3 p-3.5 bg-gray-50/75 rounded-2xl border border-gray-200/80">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
@@ -175,16 +202,31 @@ export const SeletorParcelas: React.FC<SeletorParcelasProps> = ({
             </div>
           </div>
 
-          {/* Grade de Parcelas com Datas Editáveis/Digitáveis */}
+          {/* Grade de Parcelas com Datas e Valores Editáveis */}
           <div className="space-y-2 pt-2 border-t border-gray-200">
-            <div className="flex items-center justify-between">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1.5">
               <div className="flex items-center gap-1.5 text-xs font-semibold text-gray-800">
                 <Calendar className="w-3.5 h-3.5 text-teal-700" />
-                <span>Vencimentos das Parcelas</span>
+                <span>Vencimentos e Valores das Parcelas</span>
               </div>
-              <span className="text-[11px] text-teal-800 bg-teal-50 px-2 py-0.5 rounded-md font-medium border border-teal-200">
-                ✍️ Datas liberadas para digitação
-              </span>
+              <div className="flex items-center gap-2">
+                {onChangeValorParcela && (
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    onClick={handleDistribuirIgualmente}
+                    className="h-6 px-2 text-[11px] border-teal-300 text-teal-800 hover:bg-teal-50"
+                    title="Re-ratear o valor total igualmente entre as parcelas"
+                  >
+                    <RefreshCw className="w-2.5 h-2.5 mr-1" />
+                    Distribuir igualmente
+                  </Button>
+                )}
+                <span className="text-[11px] text-teal-800 bg-teal-50 px-2 py-0.5 rounded-md font-medium border border-teal-200">
+                  ✍️ Datas e valores livres
+                </span>
+              </div>
             </div>
 
             <div className="max-h-56 overflow-y-auto pr-1 space-y-1.5 rounded-lg">
@@ -208,20 +250,78 @@ export const SeletorParcelas: React.FC<SeletorParcelasProps> = ({
                     />
                   </div>
 
-                  <div className="w-24 text-right pr-1 shrink-0">
-                    <span className="text-xs font-bold text-gray-800 tabular-nums">
-                      {formatCurrency(parc.valor)}
-                    </span>
+                  <div className="w-32 shrink-0">
+                    {onChangeValorParcela ? (
+                      <div className="relative">
+                        <span className="absolute left-2 top-1.5 text-[10px] text-gray-400 font-medium">
+                          R$
+                        </span>
+                        <Input
+                          type="number"
+                          step="0.01"
+                          min="0.01"
+                          required
+                          value={parc.valor !== undefined ? parc.valor : ''}
+                          onChange={(e) => {
+                            const val = parseFloat(e.target.value) || 0
+                            onChangeValorParcela(idx, val)
+                          }}
+                          className="h-8 pl-7 pr-2 text-xs font-mono font-bold text-right bg-gray-50/50 hover:bg-white focus:bg-white"
+                          title={`Valor da ${parc.numero}ª parcela`}
+                        />
+                      </div>
+                    ) : (
+                      <div className="text-right pr-1">
+                        <span className="text-xs font-bold text-gray-800 tabular-nums">
+                          {formatCurrency(parc.valor)}
+                        </span>
+                      </div>
+                    )}
                   </div>
                 </div>
               ))}
             </div>
 
+            {/* Validação de soma em tempo real */}
+            {onChangeValorParcela && (
+              <div
+                className={`p-2 rounded-lg border text-xs flex items-center justify-between ${
+                  somaValida
+                    ? 'bg-emerald-50/80 border-emerald-200 text-emerald-900'
+                    : 'bg-amber-50/90 border-amber-300 text-amber-950'
+                }`}
+              >
+                <div className="flex items-center gap-1.5">
+                  {somaValida ? (
+                    <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                  ) : (
+                    <AlertCircle className="w-4 h-4 text-amber-600 shrink-0" />
+                  )}
+                  <span>
+                    Soma das parcelas:{' '}
+                    <strong className="font-mono">{formatCurrency(somaAtual)}</strong> de{' '}
+                    <strong className="font-mono">{formatCurrency(valorTotal)}</strong>
+                  </span>
+                </div>
+                <div>
+                  {somaValida ? (
+                    <span className="text-[11px] font-semibold text-emerald-700">✓ Soma exata</span>
+                  ) : (
+                    <span className="text-[11px] font-bold text-amber-800">
+                      {diferenca > 0
+                        ? `Falta ${formatCurrency(diferenca)}`
+                        : `Ultrapassa ${formatCurrency(Math.abs(diferenca))}`}
+                    </span>
+                  )}
+                </div>
+              </div>
+            )}
+
             <div className="flex items-center gap-1 text-[11px] text-gray-500 pt-1">
               <Info className="w-3 h-3 shrink-0 text-gray-400" />
               <span>
-                Você pode alterar livremente a data de qualquer parcela acima. O sistema respeita as
-                datas digitadas.
+                Você pode alterar livremente as datas e os valores de cada parcela. A soma deve
+                fechar o valor líquido total.
               </span>
             </div>
           </div>

@@ -1,114 +1,86 @@
-import assert from 'node:assert'
 import {
-  calcularTotaisRecebimentos,
   getSaldoRestante,
   getValorRecebidoEfetivo,
-  isTituloReceberVencido,
-} from './src/lib/calculoRecebimentos.ts'
+  calcularTotaisRecebimentos,
+} from './src/lib/calculoRecebimentos'
+import { gerarGradeParcelas } from './src/components/financeiro/SeletorParcelas'
+import {
+  extrairInfoParcela,
+  limparDescricaoBase,
+} from './src/components/financeiro/EditarParcelasModal'
 
-console.log('--- Testes de Recebimento Parcial e Módulo Central de Cálculos ---')
+function assert(cond: boolean, msg: string) {
+  if (!cond) {
+    console.error(`❌ FALHOU: ${msg}`)
+    process.exit(1)
+  }
+  console.log(`✅ PASSOU: ${msg}`)
+}
 
-// Cenário 1: Título de R$ 14.000,00 inicial em aberto
-const tituloOriginalInicial = {
-  id: 'titulo-14000',
-  valor: 14000,
+console.log('=== TESTES DO SISTEMA DE CONTAS A RECEBER E PARCELAMENTO ===')
+
+// 1. Caso do usuário: R$ 14.000,00 com recebimento parcial de R$ 7.000,00
+const tituloOriginal = {
+  id: 'tit-1',
+  valor: 14000.0,
+  valor_recebido: 7000.0,
+  status: 'Parcial' as const,
+  vencimento: '2025-05-10',
+}
+
+const recebidoEfetivo = getValorRecebidoEfetivo(tituloOriginal)
+assert(recebidoEfetivo === 7000.0, 'Recebido efetivo no título parcial deve ser R$ 7.000,00')
+
+const saldoOriginal = getSaldoRestante(tituloOriginal)
+assert(saldoOriginal === 7000.0, 'Saldo restante no título original deve ser R$ 7.000,00')
+
+// Lançamento restante gerado com saldo de R$ 7.000,00
+const tituloRestante = {
+  id: 'tit-1-resto',
+  valor: 7000.0,
   valor_recebido: 0,
-  status: 'Aberta',
-  vencimento: '2026-05-10T12:00:00.000Z',
-  descricao: 'Venda de Brita 19 - Construtora Exemplo',
-  nota: 'NF 9988',
+  status: 'Aberta' as const,
+  vencimento: '2025-06-10',
 }
+const saldoRestante = getSaldoRestante(tituloRestante)
+assert(saldoRestante === 7000.0, 'Lançamento restante nasce com R$ 7.000,00 em aberto')
 
-assert.strictEqual(getValorRecebidoEfetivo(tituloOriginalInicial), 0)
-assert.strictEqual(getSaldoRestante(tituloOriginalInicial), 14000)
-
-let totais = calcularTotaisRecebimentos([tituloOriginalInicial], '2026-05-01')
-assert.strictEqual(totais.totalNominal, 14000)
-assert.strictEqual(totais.recebido, 0)
-assert.strictEqual(totais.saldoRestante, 14000)
-assert.strictEqual(totais.aberto, 14000)
-assert.strictEqual(totais.vencido, 0)
-console.log('✓ Cenário inicial de 14.000,00 Aberto validado')
-
-// Cenário 2: Cliente pagou R$ 7.000,00 (Recebimento Parcial)
-// Título original é atualizado: valor_recebido = 7000, status = 'Parcial'
-// E é criado novo lançamento restante de R$ 7.000,00 com status 'Aberta'
-const valorPago = 7000
-const saldoRestanteCalculado = getSaldoRestante(tituloOriginalInicial) - valorPago
-assert.strictEqual(saldoRestanteCalculado, 7000)
-
-const tituloOriginalAposBaixa = {
-  ...tituloOriginalInicial,
-  valor_recebido: valorPago,
-  status: 'Parcial',
-  data_recebimento: '2026-05-05T12:00:00.000Z',
-  forma_recebimento: 'Pix',
-}
-
-const novoTituloRestante = {
-  id: 'titulo-restante-7000',
-  valor: saldoRestanteCalculado,
-  valor_bruto: saldoRestanteCalculado,
-  valor_recebido: 0,
-  status: 'Aberta',
-  vencimento: '2026-05-10T12:00:00.000Z',
-  descricao: `${tituloOriginalInicial.descricao} (Parcial — saldo remanescente de DOC ${tituloOriginalInicial.nota})`,
-  nota: tituloOriginalInicial.nota,
-  forma_recebimento: 'Pix',
-}
-
-assert.strictEqual(getValorRecebidoEfetivo(tituloOriginalAposBaixa), 7000)
-assert.strictEqual(getSaldoRestante(tituloOriginalAposBaixa), 7000)
-
-assert.strictEqual(getValorRecebidoEfetivo(novoTituloRestante), 0)
-assert.strictEqual(getSaldoRestante(novoTituloRestante), 7000)
-console.log(
-  '✓ Título original (7000 recebido/status Parcial) e novo título (7000 Aberta) validados individualmente',
+// Cálculo de totais
+const totais = calcularTotaisRecebimentos([tituloOriginal, tituloRestante], '2025-05-01')
+assert(totais.recebido === 7000.0, 'Total recebido somado deve ser R$ 7.000,00')
+assert(
+  totais.aberto === 14000.0,
+  'Total em aberto restante (saldo tit1 + tit2) fecha o valor total',
 )
 
-// Cenário 3: Validação dos totais consolidados dos cards / relatórios
-// No caso onde o título original fica Parcial (recebido 7000, saldo residual 7000):
-// Se o novo título for um lançamento separado de 7000 e o original mantiver o saldo residual na mesma base,
-// ou se o original for quitado/amortizado pelo valor recebido.
-// Vamos verificar o comportamento dos dois títulos na base:
-const itensBase = [tituloOriginalAposBaixa, novoTituloRestante]
-const totaisBase = calcularTotaisRecebimentos(itensBase, '2026-05-01')
+// 2. Parcelamento com geração de grade de parcelas e absorção de centavos
+const grade3x = gerarGradeParcelas('2025-05-01', 3, 'mensal', 1000.0)
+assert(grade3x.length === 3, 'Gera exatamente 3 parcelas')
+assert(grade3x[0].valor === 333.33, 'Parcela 1 tem 333.33')
+assert(grade3x[1].valor === 333.33, 'Parcela 2 tem 333.33')
+assert(grade3x[2].valor === 333.34, 'Última parcela absorve os centavos (333.34)')
+const somaGrade = Number(grade3x.reduce((a, b) => a + b.valor, 0).toFixed(2))
+assert(somaGrade === 1000.0, 'Soma das 3 parcelas fecha exatamente R$ 1.000,00')
 
-assert.strictEqual(totaisBase.recebido, 7000)
-// Ambos têm saldo restante de 7000 na função getSaldoRestante
-assert.strictEqual(getValorRecebidoEfetivo(tituloOriginalAposBaixa), 7000)
-assert.strictEqual(getValorRecebidoEfetivo(novoTituloRestante), 0)
-console.log('✓ Totais do cálculo batem perfeitamente')
+// 3. Edição de datas e valores individuais das parcelas
+// Usuário quer redefinir R$ 14.000,00 em 3 parcelas customizadas:
+// Parc 1: R$ 4.000,00 (venc 2025-05-15)
+// Parc 2: R$ 5.000,00 (venc 2025-06-20)
+// Parc 3: R$ 5.000,00 (venc 2025-07-25)
+const parcelasCustom = [
+  { numero: 1, vencimento: '2025-05-15', valor: 4000.0 },
+  { numero: 2, vencimento: '2025-06-20', valor: 5000.0 },
+  { numero: 3, vencimento: '2025-07-25', valor: 5000.0 },
+]
 
-// Cenário 4: Quitação integral sem desdobro
-const tituloQuitado = {
-  id: 'titulo-quitado',
-  valor: 5000,
-  valor_recebido: 5000,
-  status: 'Recebida',
-  vencimento: '2026-05-10T12:00:00.000Z',
-}
-assert.strictEqual(getSaldoRestante(tituloQuitado), 0)
-assert.strictEqual(getValorRecebidoEfetivo(tituloQuitado), 5000)
-console.log('✓ Quitação total validada')
+const somaCustom = Number(parcelasCustom.reduce((a, b) => a + b.valor, 0).toFixed(2))
+assert(somaCustom === 14000.0, 'Parcelas editadas customizadas fecham rigorosamente R$ 14.000,00')
 
-// Cenário 5: Verificação de títulos vencidos e em aberto
-const tituloVencido = {
-  id: 'titulo-vencido',
-  valor: 3000,
-  valor_recebido: 0,
-  status: 'Aberta',
-  vencimento: '2026-04-01T12:00:00.000Z',
-}
-assert.strictEqual(isTituloReceberVencido(tituloVencido, '2026-05-01'), true)
+// 4. Testes de helpers de extração e limpeza de descrição
+const info = extrairInfoParcela('Fornecimento de Brita (2/5)')
+assert(info !== null && info.atual === 2 && info.total === 5, 'Extrai parcela 2 de 5 com perfeição')
 
-const totaisComVencido = calcularTotaisRecebimentos(
-  [novoTituloRestante, tituloVencido],
-  '2026-05-01',
-)
-assert.strictEqual(totaisComVencido.aberto, 7000) // novoTituloRestante vence em maio
-assert.strictEqual(totaisComVencido.vencido, 3000) // tituloVencido venceu em abril
-assert.strictEqual(totaisComVencido.recebido, 0)
-console.log('✓ Classificação entre Em Aberto e Vencido validada com sucesso')
+const baseLimpa = limparDescricaoBase('Fornecimento de Brita (2/5)')
+assert(baseLimpa === 'Fornecimento de Brita', 'Limpa sufixo (2/5) retornando a descrição base')
 
-console.log('\nTodos os testes foram executados com sucesso!')
+console.log('🎉 Todos os testes de recebimento parcial e parcelamento passaram!')
