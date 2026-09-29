@@ -6,6 +6,7 @@ import pb from '@/lib/pocketbase/client'
 import { useRealtime } from '@/hooks/use-realtime'
 import { formatCurrency, formatDate } from '@/lib/formatters'
 import { calcularDatasPeriodoRapido, estaDentroDoPeriodo } from '@/lib/periodo'
+import { getValorRecebidoEfetivo, getSaldoRestante } from '@/lib/calculoRecebimentos'
 import FiltroPeriodoBar from '@/components/financeiro/FiltroPeriodoBar'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -234,19 +235,6 @@ export default function Dashboard() {
       setTotalPrevistoPagarPeriodo(totalGeralCompetePagar)
 
       // 4. Contas a Receber do Período (competência e recebimento)
-      const getValorRecebidoEfetivoCr = (cr: any) => {
-        if (cr.status === 'Recebida') {
-          return cr.valor_recebido && cr.valor_recebido > 0 ? cr.valor_recebido : cr.valor || 0
-        }
-        return cr.valor_recebido || 0
-      }
-
-      const getSaldoRestanteCr = (cr: any) => {
-        if (cr.status === 'Recebida') return 0
-        const jaRec = getValorRecebidoEfetivoCr(cr)
-        return Math.max(0, (cr.valor || 0) - jaRec)
-      }
-
       const getDataEfetivaRecebimento = (cr: any): string => {
         return (cr.data_recebimento || cr.vencimento || cr.data_emissao || '').slice(0, 10)
       }
@@ -262,14 +250,14 @@ export default function Dashboard() {
 
       // Total em aberto restante dos títulos do período (pendente de recebimento)
       const totalAbertoReceberPeriodo = crNoPeriodo.reduce(
-        (sum, cr) => sum + getSaldoRestanteCr(cr),
+        (sum, cr) => sum + getSaldoRestante(cr),
         0,
       )
       setReceberPeriodo(totalAbertoReceberPeriodo)
 
       // Total Recebido Efetivo Competente ao Período:
       const totalRecebidoCalculado = allCr.reduce((sum, cr) => {
-        const valRecebido = getValorRecebidoEfetivoCr(cr)
+        const valRecebido = getValorRecebidoEfetivo(cr)
         if (valRecebido <= 0) return sum
 
         const dataRecebimentoEfetiva = getDataEfetivaRecebimento(cr)
@@ -305,8 +293,7 @@ export default function Dashboard() {
       setAtrasoReceber({
         count: atrasoReceberItems.length,
         total: atrasoReceberItems.reduce((acc, c) => {
-          const jaRecebido = c.valor_recebido || 0
-          return acc + Math.max(0, (c.valor || 0) - jaRecebido)
+          return acc + getSaldoRestante(c)
         }, 0),
       })
 

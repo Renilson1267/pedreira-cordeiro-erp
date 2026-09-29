@@ -4,6 +4,7 @@ import { useAuth } from '@/contexts/AuthContext'
 import pb from '@/lib/pocketbase/client'
 import { formatCurrency, formatDate } from '@/lib/formatters'
 import { calcularDatasPeriodoRapido, estaDentroDoPeriodo } from '@/lib/periodo'
+import { getValorRecebidoEfetivo, getSaldoRestante } from '@/lib/calculoRecebimentos'
 import FiltroPeriodoBar from '@/components/financeiro/FiltroPeriodoBar'
 import type {
   MovimentoFinanceiro,
@@ -379,14 +380,8 @@ export default function Relatorios() {
         map[clienteId] = { id: clienteId, nome, aberto: 0, recebido: 0, total: 0, qtd: 0 }
       }
       map[clienteId].qtd += 1
-      const valorRecebido =
-        cr.status === 'Recebida'
-          ? cr.valor_recebido && cr.valor_recebido > 0
-            ? cr.valor_recebido
-            : cr.valor || 0
-          : cr.valor_recebido || 0
-      const saldoAberto =
-        cr.status === 'Recebida' ? 0 : Math.max(0, (cr.valor || 0) - valorRecebido)
+      const valorRecebido = getValorRecebidoEfetivo(cr)
+      const saldoAberto = getSaldoRestante(cr)
 
       map[clienteId].recebido += valorRecebido
       map[clienteId].aberto += saldoAberto

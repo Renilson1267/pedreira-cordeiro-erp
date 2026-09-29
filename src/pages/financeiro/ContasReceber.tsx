@@ -5,6 +5,11 @@ import { useAuth } from '@/contexts/AuthContext'
 import pb from '@/lib/pocketbase/client'
 import { useRealtime } from '@/hooks/use-realtime'
 import { formatCurrency, formatDate, toInputDate } from '@/lib/formatters'
+import {
+  calcularTotaisRecebimentos,
+  getValorRecebidoEfetivo,
+  getSaldoRestante,
+} from '@/lib/calculoRecebimentos'
 import type {
   ContaReceber,
   Cliente,
@@ -398,42 +403,22 @@ export default function ContasReceber() {
       const rows = await pb
         .collection('contas_receber')
         .getFullList<
-          Pick<ContaReceber, 'id' | 'valor' | 'valor_recebido' | 'status' | 'vencimento'>
+          Pick<
+            ContaReceber,
+            'id' | 'valor' | 'valor_recebido' | 'valor_desconto' | 'status' | 'vencimento'
+          >
         >({
           filter: parts.join(' && '),
-          fields: 'id,valor,valor_recebido,status,vencimento',
+          fields: 'id,valor,valor_recebido,valor_desconto,status,vencimento',
         })
 
-      let aberto = 0
-      let vencido = 0
-      let recebido = 0
-      let antecipado = 0
-
-      for (const r of rows) {
-        const valTotal = Number(r.valor || 0)
-        const valRec =
-          r.status === 'Recebida'
-            ? Number(r.valor_recebido && r.valor_recebido > 0 ? r.valor_recebido : valTotal)
-            : Number(r.valor_recebido || 0)
-        const saldo = r.status === 'Recebida' ? 0 : Math.max(0, valTotal - valRec)
-
-        recebido += valRec
-
-        if (r.status === 'Recebimento Antecipado') {
-          antecipado += valTotal
-        } else if (r.status === 'Recebida') {
-          // Já quitada
-        } else {
-          const isAtrasado = (r.vencimento ? r.vencimento.slice(0, 10) : '') < nowISO
-          if (r.status === 'Vencida' || isAtrasado) {
-            vencido += saldo
-          } else {
-            aberto += saldo
-          }
-        }
-      }
-
-      setTotaisCards({ aberto, vencido, recebido, antecipado })
+      const totais = calcularTotaisRecebimentos(rows, nowISO)
+      setTotaisCards({
+        aberto: totais.aberto,
+        vencido: totais.vencido,
+        recebido: totais.recebido,
+        antecipado: totais.antecipado,
+      })
     } catch (err) {
       console.warn('Erro ao carregar totais leves dos cards contas a receber:', err)
     }
@@ -1091,19 +1076,6 @@ export default function ContasReceber() {
   const totalCreditoDisponivelCliente = useMemo(() => {
     return creditosDisponiveisCliente.reduce((sum, c) => sum + (c.saldo_restante || 0), 0)
   }, [creditosDisponiveisCliente])
-
-  const getValorRecebidoEfetivo = (c: ContaReceber) => {
-    if (c.status === 'Recebida') {
-      return c.valor_recebido && c.valor_recebido > 0 ? c.valor_recebido : c.valor
-    }
-    return c.valor_recebido || 0
-  }
-
-  const getSaldoRestante = (c: ContaReceber) => {
-    if (c.status === 'Recebida') return 0
-    const jaRecebido = getValorRecebidoEfetivo(c)
-    return Math.max(0, (c.valor || 0) - jaRecebido)
-  }
 
   const handleImprimirComprovante = (c: ContaReceber) => {
     const printWindow = window.open('', '_blank', 'width=850,height=900')
@@ -2025,10 +1997,7 @@ export default function ContasReceber() {
 
   // Totalizadores do rodapé do relatório
   const totalizadoresRelatorioReceber = useMemo<TotalizadorRelatorioImpressao[]>(() => {
-    const somaValor = itensParaImpressao.reduce((acc, c) => acc + (c.valor || 0), 0)
-    const somaDesc = itensParaImpressao.reduce((acc, c) => acc + (c.valor_desconto || 0), 0)
-    const somaRecebido = itensParaImpressao.reduce((acc, c) => acc + getValorRecebidoEfetivo(c), 0)
-    const somaSaldo = itensParaImpressao.reduce((acc, c) => acc + getSaldoRestante(c), 0)
+    const totais = calcularTotaisRecebimentos(itensParaImpressao, nowISO)
 
     return [
       {
@@ -2039,28 +2008,28 @@ export default function ContasReceber() {
       },
       {
         label: '',
-        value: formatCurrency(somaValor),
+        value: formatCurrency(totais.totalNominal),
         colSpan: 1,
         align: 'right',
         className: 'text-gray-900',
       },
       {
         label: '',
-        value: somaDesc > 0 ? formatCurrency(somaDesc) : '—',
+        value: totais.totalDesconto > 0 ? formatCurrency(totais.totalDesconto) : '—',
         colSpan: 1,
         align: 'right',
         className: 'text-amber-800',
       },
       {
         label: '',
-        value: formatCurrency(somaRecebido),
+        value: formatCurrency(totais.recebido),
         colSpan: 1,
         align: 'right',
         className: 'text-emerald-800',
       },
       {
         label: '',
-        value: formatCurrency(somaSaldo),
+        value: formatCurrency(totais.saldoRestante),
         colSpan: 1,
         align: 'right',
         className: 'text-teal-950 font-extrabold',
@@ -2072,7 +2041,7 @@ export default function ContasReceber() {
         align: 'center',
       },
     ]
-  }, [itensParaImpressao])
+  }, [itensParaImpressao, nowISO])
 
   return (
     <div className="space-y-6">
@@ -2711,6 +2680,37 @@ export default function ContasReceber() {
                 })
               )}
             </tbody>
+            {filteredContas.length > 0 &&
+              (() => {
+                const subtotaisPagina = calcularTotaisRecebimentos(filteredContas, nowISO)
+                return (
+                  <tfoot className="bg-[#FAF9F7] border-t-2 border-[#ECEAE4] font-semibold text-xs text-gray-800">
+                    <tr>
+                      <td
+                        colSpan={7}
+                        className="py-2.5 px-2.5 text-left text-gray-600 font-bold uppercase tracking-wider text-[11px]"
+                      >
+                        Subtotal da página ({filteredContas.length}{' '}
+                        {filteredContas.length === 1 ? 'título' : 'títulos'}):
+                      </td>
+                      <td className="py-2.5 px-2.5 text-right font-mono text-gray-900 whitespace-nowrap">
+                        {formatCurrency(subtotaisPagina.totalNominal)}
+                      </td>
+                      <td className="py-2.5 px-2 text-right font-mono text-emerald-800 whitespace-nowrap">
+                        {subtotaisPagina.recebido > 0
+                          ? formatCurrency(subtotaisPagina.recebido)
+                          : '—'}
+                      </td>
+                      <td className="py-2.5 px-2.5 text-right font-mono text-teal-950 font-extrabold whitespace-nowrap">
+                        {subtotaisPagina.saldoRestante > 0
+                          ? formatCurrency(subtotaisPagina.saldoRestante)
+                          : 'R$ 0,00'}
+                      </td>
+                      <td colSpan={3} className="py-2.5 px-2"></td>
+                    </tr>
+                  </tfoot>
+                )
+              })()}
           </table>
         </div>
 
