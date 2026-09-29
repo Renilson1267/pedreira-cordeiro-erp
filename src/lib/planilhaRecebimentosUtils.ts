@@ -1672,7 +1672,17 @@ export function normalizarFormaRecebimento(
     normDesc.includes('BOLETO') ||
     normDesc.includes('BOL')
   ) {
-    return 'Transferência Bancária'
+    return 'Boleto'
+  }
+
+  // 8.1 Dividido (múltiplas frações / parcelas / formas combinadas)
+  if (
+    normForma.includes('DIVIDIDO') ||
+    normForma.includes('DIVID') ||
+    normDesc.includes('DIVIDIDO') ||
+    normDesc.includes('DIVID')
+  ) {
+    return 'Dividido'
   }
 
   // 9. Menção a bancos na forma ou descrição (Santander, Bradesco, etc.) sem outra classificação

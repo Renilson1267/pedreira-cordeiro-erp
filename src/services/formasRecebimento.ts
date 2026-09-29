@@ -3,6 +3,8 @@ import type { FormaRecebimento, ChequePredatado } from '@/types/erp'
 
 export const FORMAS_RECEBIMENTO_PADRAO = [
   'Pix',
+  'Boleto',
+  'Dividido',
   'Cheque Pré-datado',
   'Depósito',
   'Dinheiro',
