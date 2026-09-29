@@ -175,6 +175,8 @@ export default function ContasPagar() {
   // Form State
   const [fornecedorId, setFornecedorId] = useState('')
   const [centroCustoId, setCentroCustoId] = useState('')
+  const [setorForm, setSetorForm] = useState<string>('')
+  const [veiculoIdForm, setVeiculoIdForm] = useState<string>('')
   const [descricao, setDescricao] = useState('')
   const [categoriaId, setCategoriaId] = useState('')
   const [valor, setValor] = useState<number>(0)
@@ -233,7 +235,7 @@ export default function ContasPagar() {
     if (!currentEmpresa || auxiliaresLoaded || loadingAuxiliares) return
     try {
       setLoadingAuxiliares(true)
-      const [fList, pcList, ccList, formasList] = await Promise.all([
+      const [fList, pcList, ccList, formasList, veicRes] = await Promise.all([
         pb.collection('fornecedores').getFullList<Fornecedor>({
           filter: `empresa_id = '${currentEmpresa.id}'`,
           sort: 'nome',
@@ -247,10 +249,13 @@ export default function ContasPagar() {
           sort: 'codigo',
         }),
         formasRecebimentoService.listar(currentEmpresa.id, true),
-        pb.collection('veiculos').getFullList<Veiculo>({
-          filter: `empresa_id = '${currentEmpresa.id}' && status = 'ativo'`,
-          sort: 'codigo',
-        }).catch(() => [] as Veiculo[]),
+        pb
+          .collection('veiculos')
+          .getFullList<Veiculo>({
+            filter: `empresa_id = '${currentEmpresa.id}' && status = 'ativo'`,
+            sort: 'codigo',
+          })
+          .catch(() => [] as Veiculo[]),
       ])
       setFornecedores(fList)
       setCategorias(pcList)
@@ -483,6 +488,8 @@ export default function ContasPagar() {
     setEditingId(null)
     setFornecedorId('')
     setCentroCustoId('')
+    setSetorForm('')
+    setVeiculoIdForm('')
     setDescricao('')
     setCategoriaId(categorias[0]?.id || '')
     setValor(0)
@@ -507,6 +514,17 @@ export default function ContasPagar() {
     setEditingId(c.id)
     setFornecedorId(c.fornecedor_id || '')
     setCentroCustoId(c.centro_custo_id || '')
+    setVeiculoIdForm(c.veiculo_id || '')
+    // Tenta derivar o setor do veículo vinculado ou da origem_frota
+    const veicVinculado = (c.veiculo_id && veiculos.find((v) => v.id === c.veiculo_id)) || null
+    if (veicVinculado && veicVinculado.setor) {
+      setSetorForm(veicVinculado.setor)
+    } else if (c.origem_frota && c.origem_frota.includes('—')) {
+      const parteSetor = c.origem_frota.split('—')[1]?.trim()
+      setSetorForm(parteSetor || '')
+    } else {
+      setSetorForm('')
+    }
     setDescricao(c.descricao)
     setCategoriaId(c.categoria_id || '')
     setValor(c.valor)
@@ -687,6 +705,8 @@ export default function ContasPagar() {
               fornecedor_id: finalFornecedorId,
               categoria_id: categoriaId === 'none' || !categoriaId ? null : categoriaId,
               centro_custo_id: centroCustoId === 'none' || !centroCustoId ? null : centroCustoId,
+              veiculo_id: veiculoIdForm === 'none' || !veiculoIdForm ? null : veiculoIdForm,
+              ...(setorForm ? { origem_frota: `Setor — ${setorForm}` } : {}),
               valor: valorTituloTotal,
               vencimento: new Date(vencimento).toISOString(),
               data_emissao: dataEmissaoIso,
@@ -696,11 +716,10 @@ export default function ContasPagar() {
               observacoes: observacoes.trim(),
               ...(isStatusPaga
                 ? {
-                    valor_pago: valorPagoAtualizado,
-                    data_pagamento: dataPagamentoAtualizada,
+                    data_pagamento: new Date(vencimento).toISOString(),
+                    valor_pago: valorTituloTotal,
                   }
-                : {}),
-            }
+                : {}),            }
 
             const updatedRecord = await pb
               .collection('contas_pagar')
@@ -1478,21 +1497,19 @@ export default function ContasPagar() {
       ...fornecedores.map((f) => ({
         id: f.id,
         label: f.nome,
-        sublabel: f.cnpj_cpf || f.cidade || undefined,
+        sublabel: f.cnpj_cpf || undefined,
       })),
     ]
   }, [fornecedores, descricao])
-
   const centrosCustoOptions = useMemo(() => {
     return [
       { id: 'none', label: 'Nenhum / Não alocado' },
-      ...centrosCusto.map((cc) => ({
-        id: cc.id,
-        label: `${cc.codigo} - ${cc.nome}`,
+      ...centrosCusto.map((c) => ({
+        id: c.id,
+        label: `${c.codigo} - ${c.nome}`,
       })),
     ]
   }, [centrosCusto])
-
   const centrosCustoFiltroOptions = useMemo(() => {
     return [
       { id: 'todos', label: 'Todos os Centros de Custo' },
