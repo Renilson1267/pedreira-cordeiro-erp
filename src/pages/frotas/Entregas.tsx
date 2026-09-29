@@ -726,8 +726,217 @@ export default function Entregas() {
   }
 
   // Prepara criação de nova entrega
+  // Ação individual: Gerar Conta a Receber para entrega avulsa ou sem vínculo financeiro
+  const handleGerarContaReceberIndividual = async (ent: Entrega) => {
+    if (!currentEmpresa) return
+    if (ent.conta_receber_id) {
+      toast({ title: 'Esta entrega já possui título em Contas a Receber.' })
+      return
+    }
+
+    const valorVendaNum = Number(ent.valor_venda) || 0
+    if (valorVendaNum <= 0) {
+      toast({
+        title: 'Valor de venda zerado',
+        description:
+          'Informe um valor de venda válido na entrega antes de gerar o título a receber.',
+        variant: 'destructive',
+      })
+      return
+    }
+
+    try {
+      const v = ent.expand?.veiculo_id || veiculos.find((ve) => ve.id === ent.veiculo_id)
+      const veicCod = v ? `[${v.codigo_interno}${v.placa ? ` ${v.placa}` : ''}]` : '[Veículo]'
+      const clienteNomeFinal =
+        ent.cliente_nome ||
+        ent.expand?.cliente_id?.nome ||
+        ent.expand?.venda_id?.expand?.cliente_id?.nome ||
+        ent.destino
+      const produtoTxt = ent.produto_nome
+        ? ` — Carga: ${ent.produto_nome}${ent.quantidade ? ` (${ent.quantidade} ${ent.unidade_medida || 'ton'})` : ''}`
+        : ''
+      const romaneioTxt = ent.sequencial_romaneio ? ` (Romaneio: ${ent.sequencial_romaneio})` : ''
+      const dataFormatada = ent.data ? formatDate(ent.data) : ''
+      const dataTxt = dataFormatada ? ` — Entrega em ${dataFormatada}` : ''
+      const descRica = `Entrega — ${clienteNomeFinal} — ${veicCod}${produtoTxt}${romaneioTxt}${dataTxt}`
+
+      const catReceita =
+        planoContas.find(
+          (pc) => pc.tipo === 'Receita' && pc.nome.toLowerCase().includes('venda'),
+        ) ||
+        planoContas.find((pc) => pc.tipo === 'Receita') ||
+        null
+
+      const ccTransporte =
+        centrosCusto.find((cc) => cc.codigo === 'CC-02') ||
+        centrosCusto.find((cc) => cc.nome.toLowerCase().includes('transporte')) ||
+        null
+
+      const payloadConta = {
+        empresa_id: currentEmpresa.id,
+        cliente_id: ent.cliente_id || ent.expand?.venda_id?.cliente_id || null,
+        venda_id: ent.venda_id || null,
+        descricao: descRica,
+        categoria_id: catReceita?.id || null,
+        centro_custo_id: ccTransporte?.id || null,
+        valor: valorVendaNum,
+        valor_bruto: valorVendaNum,
+        vencimento: new Date(ent.data || new Date()).toISOString(),
+        data_emissao: new Date(ent.data || new Date()).toISOString(),
+        parcelas: 1,
+        status: 'Aberta',
+        forma_recebimento: 'Boleto',
+        observacoes: `Gerado a partir do Módulo de Entregas & Rotas. Rota: ${ent.origem} ➔ ${ent.destino} (${ent.km_rodado || 0} km). Motorista: ${ent.motorista || 'Não informado'}.`,
+      }
+
+      const cr = await pb.collection('contas_receber').create(payloadConta)
+      await entregasService.atualizar(ent.id, { conta_receber_id: cr.id })
+
+      toast({
+        title: 'Conta a Receber gerada!',
+        description: `Título de ${formatCurrency(valorVendaNum)} vinculado com sucesso à entrega.`,
+      })
+      await loadData()
+    } catch (err: any) {
+      toast({
+        title: 'Erro ao gerar Conta a Receber',
+        description: err.message,
+        variant: 'destructive',
+      })
+    }
+  }
+
+  // Ação: Desvincular Conta a Receber
+  const handleDesvincularContaReceber = async (ent: Entrega) => {
+    if (
+      !confirm(
+        'Deseja desvincular esta entrega do Contas a Receber? O título financeiro existente não será apagado, apenas desvinculado.',
+      )
+    ) {
+      return
+    }
+    try {
+      await entregasService.atualizar(ent.id, { conta_receber_id: null })
+      toast({ title: 'Vínculo com Contas a Receber removido com sucesso.' })
+      await loadData()
+    } catch (err: any) {
+      toast({
+        title: 'Erro ao desvincular',
+        description: err.message,
+        variant: 'destructive',
+      })
+    }
+  }
+
+  // Ação em Lote: Gerar Contas a Receber para entregas selecionadas sem vínculo
+  const handleGerarLoteContasReceber = async () => {
+    if (selectedIds.length === 0) return
+    const elegiveis = entregas.filter(
+      (e) => selectedIds.includes(e.id) && !e.conta_receber_id && Number(e.valor_venda) > 0,
+    )
+
+    if (elegiveis.length === 0) {
+      toast({
+        title: 'Nenhuma entrega elegível',
+        description:
+          'Todas as entregas selecionadas já possuem vínculo com o Contas a Receber ou têm valor de venda zerado.',
+      })
+      return
+    }
+
+    const valorTotalLote = elegiveis.reduce((acc, e) => acc + (Number(e.valor_venda) || 0), 0)
+
+    if (
+      !confirm(
+        `Gerar ${elegiveis.length} título(s) em Contas a Receber para as entregas selecionadas? (Total: ${formatCurrency(valorTotalLote)})`,
+      )
+    ) {
+      return
+    }
+
+    try {
+      setIsProcessandoLote(true)
+      let sucessos = 0
+      const catReceita =
+        planoContas.find(
+          (pc) => pc.tipo === 'Receita' && pc.nome.toLowerCase().includes('venda'),
+        ) ||
+        planoContas.find((pc) => pc.tipo === 'Receita') ||
+        null
+
+      const ccTransporte =
+        centrosCusto.find((cc) => cc.codigo === 'CC-02') ||
+        centrosCusto.find((cc) => cc.nome.toLowerCase().includes('transporte')) ||
+        null
+
+      for (const ent of elegiveis) {
+        try {
+          const v = ent.expand?.veiculo_id || veiculos.find((ve) => ve.id === ent.veiculo_id)
+          const veicCod = v ? `[${v.codigo_interno}${v.placa ? ` ${v.placa}` : ''}]` : '[Veículo]'
+          const clienteNomeFinal =
+            ent.cliente_nome ||
+            ent.expand?.cliente_id?.nome ||
+            ent.expand?.venda_id?.expand?.cliente_id?.nome ||
+            ent.destino
+          const produtoTxt = ent.produto_nome
+            ? ` — Carga: ${ent.produto_nome}${ent.quantidade ? ` (${ent.quantidade} ${ent.unidade_medida || 'ton'})` : ''}`
+            : ''
+          const romaneioTxt = ent.sequencial_romaneio
+            ? ` (Romaneio: ${ent.sequencial_romaneio})`
+            : ''
+          const dataFormatada = ent.data ? formatDate(ent.data) : ''
+          const dataTxt = dataFormatada ? ` — Entrega em ${dataFormatada}` : ''
+          const descRica = `Entrega — ${clienteNomeFinal} — ${veicCod}${produtoTxt}${romaneioTxt}${dataTxt}`
+          const vVendaNum = Number(ent.valor_venda) || 0
+
+          const payloadConta = {
+            empresa_id: currentEmpresa!.id,
+            cliente_id: ent.cliente_id || ent.expand?.venda_id?.cliente_id || null,
+            venda_id: ent.venda_id || null,
+            descricao: descRica,
+            categoria_id: catReceita?.id || null,
+            centro_custo_id: ccTransporte?.id || null,
+            valor: vVendaNum,
+            valor_bruto: vVendaNum,
+            vencimento: new Date(ent.data || new Date()).toISOString(),
+            data_emissao: new Date(ent.data || new Date()).toISOString(),
+            parcelas: 1,
+            status: 'Aberta',
+            forma_recebimento: 'Boleto',
+            observacoes: `Gerado em lote a partir do Módulo de Entregas & Rotas. Rota: ${ent.origem} ➔ ${ent.destino} (${ent.km_rodado || 0} km). Motorista: ${ent.motorista || 'Não informado'}.`,
+          }
+
+          const cr = await pb.collection('contas_receber').create(payloadConta)
+          await entregasService.atualizar(ent.id, { conta_receber_id: cr.id })
+          sucessos++
+        } catch (itemErr) {
+          console.error(`Erro ao gerar título para entrega ${ent.id}:`, itemErr)
+        }
+      }
+
+      toast({
+        title: 'Geração em lote concluída!',
+        description: `${sucessos} de ${elegiveis.length} título(s) gerado(s) em Contas a Receber.`,
+      })
+      setSelectedIds([])
+      await loadData()
+    } catch (err: any) {
+      toast({
+        title: 'Erro na geração em lote',
+        description: err.message,
+        variant: 'destructive',
+      })
+    } finally {
+      setIsProcessandoLote(false)
+    }
+  }
+
+  // Prepara criação de nova entrega
   const openCreateModal = () => {
     setEditingEntregaId(null)
+    setExistingContaReceberId(null)
+    setGerarContaReceber(true)
     setVendaId('nenhuma')
     setClienteId('')
     setClienteNome('')
@@ -781,6 +990,8 @@ export default function Entregas() {
 
   const openEditModal = (ent: Entrega) => {
     setEditingEntregaId(ent.id)
+    setExistingContaReceberId(ent.conta_receber_id || null)
+    setGerarContaReceber(Boolean(ent.conta_receber_id))
     setVendaId(ent.venda_id || 'nenhuma')
     setClienteId(ent.cliente_id || '')
     setClienteNome(ent.cliente_nome || ent.expand?.cliente_id?.nome || '')
@@ -943,6 +1154,67 @@ export default function Entregas() {
       const vSelected =
         vendaId && vendaId !== 'nenhuma' ? vendas.find((item) => item.id === vendaId) : null
 
+      // 2. Gerar ou sincronizar Conta a Receber (anti-duplicação)
+      let contaReceberIdFinal: string | null = existingContaReceberId
+
+      const valorVendaFinal = calculoVenda.valorTotal > 0 ? calculoVenda.valorTotal : 0
+
+      if (gerarContaReceber && valorVendaFinal > 0) {
+        const veicCod = `[${v.codigo_interno}${v.placa ? ` ${v.placa}` : ''}]`
+        const cliNomeFinal =
+          clienteNome.trim() || vSelected?.expand?.cliente_id?.nome || destino.trim()
+        const prodTxt = produtoNome.trim()
+          ? ` — Carga: ${produtoNome.trim()}${quantidade ? ` (${quantidade} ${unidadeMedida || 'ton'})` : ''}`
+          : ''
+        const dataFormatada = dataEntrega ? formatDate(dataEntrega) : ''
+        const dataTxt = dataFormatada ? ` — Entrega em ${dataFormatada}` : ''
+        const descRica = `Entrega — ${cliNomeFinal} — ${veicCod}${prodTxt}${dataTxt}`
+
+        const catReceita =
+          planoContas.find(
+            (pc) => pc.tipo === 'Receita' && pc.nome.toLowerCase().includes('venda'),
+          ) ||
+          planoContas.find((pc) => pc.tipo === 'Receita') ||
+          null
+
+        const ccTransporte =
+          centrosCusto.find((cc) => cc.codigo === 'CC-02') ||
+          centrosCusto.find((cc) => cc.nome.toLowerCase().includes('transporte')) ||
+          null
+
+        const payloadCR = {
+          empresa_id: currentEmpresa.id,
+          cliente_id: vSelected?.cliente_id || clienteId || null,
+          venda_id: vSelected ? vSelected.id : null,
+          descricao: descRica,
+          categoria_id: catReceita?.id || null,
+          centro_custo_id: ccTransporte?.id || null,
+          valor: valorVendaFinal,
+          valor_bruto: valorVendaFinal,
+          vencimento: new Date(dataEntrega).toISOString(),
+          data_emissao: new Date(dataEntrega).toISOString(),
+          parcelas: 1,
+          status: 'Aberta',
+          forma_recebimento: 'Boleto',
+          observacoes: `Gerado/Sincronizado a partir do Módulo de Entregas & Rotas. Rota: ${origem.trim()} ➔ ${destino.trim()} (${kmEfetivo} km). Motorista: ${motoristaNome.trim() || 'Não informado'}.`,
+        }
+
+        if (existingContaReceberId) {
+          // Anti-duplicação: atualiza o título existente em vez de criar um novo
+          try {
+            await pb.collection('contas_receber').update(existingContaReceberId, payloadCR)
+            contaReceberIdFinal = existingContaReceberId
+          } catch (syncErr) {
+            console.warn('Falha ao atualizar conta a receber existente, criando novo:', syncErr)
+            const cr = await pb.collection('contas_receber').create(payloadCR)
+            contaReceberIdFinal = cr.id
+          }
+        } else {
+          const cr = await pb.collection('contas_receber').create(payloadCR)
+          contaReceberIdFinal = cr.id
+        }
+      }
+
       const payload = {
         empresa_id: currentEmpresa.id,
         veiculo_id: veiculoId,
@@ -971,12 +1243,16 @@ export default function Entregas() {
         preco_unitario_venda: calculoVenda.precoUnitario > 0 ? calculoVenda.precoUnitario : null,
         status,
         conta_pagar_id: contaPagarId,
+        conta_receber_id: contaReceberIdFinal,
         observacoes: observacoes.trim() || null,
       }
 
       if (editingEntregaId) {
         await entregasService.atualizar(editingEntregaId, payload)
-        toast({ title: 'Entrega atualizada com sucesso!' })
+        toast({
+          title: 'Entrega atualizada com sucesso!',
+          description: contaReceberIdFinal ? 'Título em Contas a Receber sincronizado.' : undefined,
+        })
       } else {
         await entregasService.criar(payload)
 
@@ -991,11 +1267,15 @@ export default function Entregas() {
           }
         }
 
+        const msgs = []
+        if (contaPagarId) msgs.push('Conta a pagar gerada.')
+        if (contaReceberIdFinal) msgs.push('Conta a receber gerada.')
+        if (msgs.length === 0)
+          msgs.push(`${kmEfetivo} km registrados para o veículo ${v.codigo_interno}.`)
+
         toast({
           title: 'Entrega registrada com sucesso!',
-          description: contaPagarId
-            ? 'Conta a pagar gerada no módulo financeiro.'
-            : `${kmEfetivo} km registrados para o veículo ${v.codigo_interno}.`,
+          description: msgs.join(' '),
         })
       }
 
@@ -1325,6 +1605,13 @@ export default function Entregas() {
       .slice(0, 5)
   }, [filteredEntregas])
 
+  // Contagem de selecionados sem conta a receber para botão em lote
+  const selecionadosSemContaCount = useMemo(() => {
+    return entregas.filter(
+      (e) => selectedIds.includes(e.id) && !e.conta_receber_id && Number(e.valor_venda) > 0,
+    ).length
+  }, [entregas, selectedIds])
+
   // Itens para impressão
   const itensParaImpressao = useMemo(() => {
     if (selectedIds.length > 0) {
@@ -1458,6 +1745,19 @@ export default function Entregas() {
           e.custo_estimado && e.custo_estimado > 0 ? formatCurrency(e.custo_estimado) : '—',
       },
       {
+        key: 'financeiro',
+        header: 'Financeiro',
+        align: 'center',
+        render: (e) =>
+          e.conta_receber_id ? (
+            <span className="text-[10px] font-semibold text-emerald-800 bg-emerald-50 border border-emerald-300 px-1.5 py-0.5 rounded">
+              ✓ Vinculado
+            </span>
+          ) : (
+            <span className="text-gray-400 text-[10px]">Sem vínculo</span>
+          ),
+      },
+      {
         key: 'status',
         header: 'Status',
         align: 'center',
@@ -1518,7 +1818,7 @@ export default function Entregas() {
       {
         label: '',
         value: '',
-        colSpan: 1,
+        colSpan: 2,
         align: 'center',
       },
     ]
@@ -1545,6 +1845,21 @@ export default function Entregas() {
 
         {canEdit && (
           <div className="flex flex-wrap items-center gap-2">
+            {selecionadosSemContaCount > 0 && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleGerarLoteContasReceber}
+                disabled={isProcessandoLote}
+                className="border-emerald-300 text-emerald-800 bg-emerald-50 hover:bg-emerald-100 text-xs rounded-xl h-9 font-semibold"
+              >
+                <FileCheck2 className="w-3.5 h-3.5 mr-1.5 text-emerald-700" />
+                {isProcessandoLote
+                  ? 'Gerando...'
+                  : `Gerar Contas a Receber em Lote (${selecionadosSemContaCount})`}
+              </Button>
+            )}
+
             <Button
               type="button"
               variant="outline"
@@ -1940,6 +2255,7 @@ export default function Entregas() {
                 <th className="py-3 px-4 text-right">Valor Venda</th>
                 <th className="py-3 px-4 text-right">Custo Viagem</th>
                 <th className="py-3 px-4 text-right">Margem</th>
+                <th className="py-3 px-4 text-center">Financeiro</th>
                 <th className="py-3 px-4 text-center">Status</th>
                 <th className="py-3 px-4 text-right">Ações</th>
               </tr>
@@ -1947,7 +2263,7 @@ export default function Entregas() {
             <tbody className="divide-y divide-[#ECEAE4]">
               {filteredEntregas.length === 0 ? (
                 <tr>
-                  <td colSpan={13} className="py-12 text-center text-gray-400">
+                  <td colSpan={14} className="py-12 text-center text-gray-400">
                     <div className="flex flex-col items-center justify-center gap-2">
                       <Truck className="w-8 h-8 text-gray-300" />
                       <p>Nenhuma entrega encontrada para os critérios selecionados.</p>
@@ -2162,6 +2478,44 @@ export default function Entregas() {
                           </span>
                         ) : (
                           <span className="text-gray-300">—</span>
+                        )}
+                      </td>
+                      <td className="py-3 px-4 text-center whitespace-nowrap">
+                        {ent.conta_receber_id ? (
+                          <div className="inline-flex items-center gap-1">
+                            <Badge
+                              className="bg-emerald-50 text-emerald-800 border-emerald-200 text-[10px] font-normal"
+                              title={
+                                ent.expand?.conta_receber_id
+                                  ? `Conta a Receber: ${ent.expand.conta_receber_id.descricao} (${formatCurrency(ent.expand.conta_receber_id.valor)})`
+                                  : `Título #${ent.conta_receber_id.slice(0, 8)}`
+                              }
+                            >
+                              ✓ Vinculado
+                            </Badge>
+                            {canEdit && (
+                              <button
+                                type="button"
+                                onClick={() => handleDesvincularContaReceber(ent)}
+                                className="text-gray-400 hover:text-red-600 p-0.5 rounded transition-colors"
+                                title="Desvincular do Contas a Receber"
+                              >
+                                <Unlink className="w-3 h-3" />
+                              </button>
+                            )}
+                          </div>
+                        ) : canEdit && vVenda > 0 ? (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => handleGerarContaReceberIndividual(ent)}
+                            className="h-6 px-2 text-[10px] border-emerald-300 text-emerald-800 bg-emerald-50 hover:bg-emerald-100 font-medium"
+                            title="Gerar título no Contas a Receber"
+                          >
+                            + Gerar Título
+                          </Button>
+                        ) : (
+                          <span className="text-gray-400 text-[10px]">Sem vínculo</span>
                         )}
                       </td>
                       <td className="py-3 px-4 text-center">
@@ -2868,7 +3222,7 @@ export default function Entregas() {
                 </label>
               </div>
 
-              {/* Financeiro */}
+              {/* Financeiro - Conta a Pagar (Custo da Viagem) */}
               <div className="p-3 bg-teal-50/70 rounded-xl border border-teal-200 flex items-start space-x-3">
                 <input
                   type="checkbox"
@@ -2879,11 +3233,34 @@ export default function Entregas() {
                 />
                 <label htmlFor="gerarContaPagar" className="cursor-pointer text-xs">
                   <span className="font-semibold text-teal-900 block">
-                    Lançar Conta a Pagar correspondente no Financeiro
+                    Lançar Conta a Pagar correspondente no Financeiro (Custo da Viagem)
                   </span>
                   <span className="text-teal-700 text-[11px] block mt-0.5">
                     Gera um título de {formatCurrency(custoCalculado)} no Centro de Custo
                     "Transporte e Frota" e categoria "Combustíveis - Frota".
+                  </span>
+                </label>
+              </div>
+
+              {/* Financeiro - Conta a Receber (Receita da Carga / Venda) */}
+              <div className="p-3 bg-emerald-50/80 rounded-xl border border-emerald-200 flex items-start space-x-3">
+                <input
+                  type="checkbox"
+                  id="gerarContaReceber"
+                  checked={gerarContaReceber}
+                  onChange={(e) => setGerarContaReceber(e.target.checked)}
+                  className="mt-1 rounded text-emerald-700 focus:ring-emerald-600 h-4 w-4"
+                />
+                <label htmlFor="gerarContaReceber" className="cursor-pointer text-xs flex-1">
+                  <span className="font-semibold text-emerald-950 block">
+                    {existingContaReceberId
+                      ? `Sincronizar título correspondente em Contas a Receber (#${existingContaReceberId.slice(0, 8)})`
+                      : 'Gerar Conta a Receber automaticamente no Financeiro'}
+                  </span>
+                  <span className="text-emerald-800 text-[11px] block mt-0.5">
+                    {existingContaReceberId
+                      ? `Mantém atualizados o valor (${formatCurrency(calculoVenda.valorTotal)}), vencimento, descrição e cliente do título #${existingContaReceberId.slice(0, 8)} sem criar duplicidade.`
+                      : `Gera um título de ${formatCurrency(calculoVenda.valorTotal)} em Contas a Receber (Receita de Venda de Materiais/Frete) com descrição rica e anti-duplicação.`}
                   </span>
                 </label>
               </div>
@@ -3219,7 +3596,7 @@ export default function Entregas() {
                 </div>
               </div>
 
-              {/* Valores Financeiros: Valor da Venda, Custo da Viagem e Margem */}
+              {/* Valores Financeiros: Valor da Venda, Custo da Viagem, Margem e Vínculo */}
               <div className="p-3 bg-white rounded-xl border border-[#ECEAE4] space-y-2">
                 <div className="flex items-center justify-between text-xs pb-2 border-b border-gray-100">
                   <span className="text-gray-500">Valor da Venda da Carga:</span>
@@ -3228,6 +3605,19 @@ export default function Entregas() {
                       ? formatCurrency(selectedEntregaDetalhe.valor_venda)
                       : 'Não informado'}
                   </span>
+                </div>
+
+                <div className="flex items-center justify-between text-xs pb-2 border-b border-gray-100">
+                  <span className="text-gray-500">Contas a Receber (Financeiro):</span>
+                  {selectedEntregaDetalhe.conta_receber_id ? (
+                    <div className="inline-flex items-center gap-1.5">
+                      <span className="font-mono font-semibold text-emerald-800 text-[11px] bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded">
+                        ✓ Vinculado #{selectedEntregaDetalhe.conta_receber_id.slice(0, 8)}
+                      </span>
+                    </div>
+                  ) : (
+                    <span className="text-gray-400 text-[11px]">Sem título gerado</span>
+                  )}
                 </div>
 
                 <div className="flex items-center justify-between text-xs pb-2 border-b border-gray-100">
