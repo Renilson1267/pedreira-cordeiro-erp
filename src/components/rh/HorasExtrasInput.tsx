@@ -49,18 +49,26 @@ export const HorasExtrasInput: React.FC<HorasExtrasInputProps> = ({
     return formatarHoraMinuto(Number(value))
   })
 
-  // Sincroniza se o valor externo mudar sem ser por digitação local (ex: reset do formulário ou carga de edição)
+  // Rastreia o último valor numérico emitido pelo componente para não sobrescrever o que o usuário está digitando
+  const lastEmittedValueRef = React.useRef<number | ''>(value)
+
+  // Sincroniza apenas quando o valor externo mudar de fora (ex: reset do formulário ou abertura de edição)
   useEffect(() => {
+    if (value === lastEmittedValueRef.current) {
+      return
+    }
+    lastEmittedValueRef.current = value
+
     if (value === '' || value === undefined || value === null) {
       setText('')
       return
     }
     const currentParsed = parseHorasExtrasInput(text)
-    // Se o valor numérico externo diferir do que o texto atual produz, sincroniza com hora:minuto
+    // Se o texto atual já corresponder ao valor numérico recebido, mantém o texto do usuário
     if (!currentParsed.valido || currentParsed.decimal !== Number(value)) {
       setText(formatarHoraMinuto(Number(value)))
     }
-  }, [value])
+  }, [value, text])
 
   const parsed = parseHorasExtrasInput(text)
 
@@ -71,14 +79,37 @@ export const HorasExtrasInput: React.FC<HorasExtrasInputProps> = ({
     const res = parseHorasExtrasInput(rawValue)
     if (res.valido) {
       if (res.decimal === null) {
+        lastEmittedValueRef.current = ''
         onChange('')
       } else {
+        lastEmittedValueRef.current = res.decimal
         onChange(res.decimal)
       }
     } else {
-      // Valor inválido: não quebra o form, passa 0 ou mantém valor anterior se preenchido
-      // Para garantir que o formulário não envie valor truncado, passamos '' quando inválido
+      // Valor temporariamente inválido (ou digitação incompleta não parseável):
+      // passa '' para o estado pai, mas lastEmittedValueRef garante que o useEffect
+      // não sobrescreverá a digitação do usuário se o pai re-renderizar com ''
+      lastEmittedValueRef.current = ''
       onChange('')
+    }
+  }
+
+  // Ao perder o foco (blur), se houver um valor decimal válido e terminado em separador ou formato simplificado,
+  // podemos normalizar o texto se desejado, mas preservando o padrão amigável
+  const handleBlur = () => {
+    if (text.trim() === '') {
+      return
+    }
+    const res = parseHorasExtrasInput(text)
+    if (res.valido && res.decimal !== null) {
+      // Se terminou com ":" ou "," ou "." no blur, normaliza para visualização limpa
+      if (text.endsWith(':') || text.endsWith(',') || text.endsWith('.')) {
+        if (text.endsWith(':')) {
+          setText(`${text}00`)
+        } else {
+          setText(res.horaMinutoFormatado)
+        }
+      }
     }
   }
 
@@ -136,6 +167,7 @@ export const HorasExtrasInput: React.FC<HorasExtrasInputProps> = ({
           type="text"
           value={text}
           onChange={handleChange}
+          onBlur={handleBlur}
           disabled={disabled}
           placeholder={placeholder}
           className={`font-mono font-bold text-sm bg-white pr-20 ${

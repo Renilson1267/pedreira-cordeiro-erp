@@ -169,15 +169,29 @@ export function parseHorasExtrasInput(input: string | number | undefined | null)
   // Limpeza de sufixos de texto informativos (ex: "h", "min", "m", "hs", "hrs", "horas")
   const cleaned = raw.toLowerCase().replace(/\s+/g, ' ')
 
-  // 1. Caso com ":" (ex: "07:30", "7:30", "7:5", "00:45")
-  const matchDoisPontos = cleaned.match(/^(\d{1,3}):(\d{1,2})$/)
+  // 1. Caso com ":" (ex: "07:30", "7:30", "7:5", "00:45" ou digitação em andamento "7:" / "07:")
+  const matchDoisPontos = cleaned.match(/^(\d{1,3}):(\d{0,2})$/)
   if (matchDoisPontos) {
     const horas = parseInt(matchDoisPontos[1], 10)
-    let minStr = matchDoisPontos[2]
-    // se digitou "7:3" interpreta como 30 min se só tem 1 digito? Ou 3 min?
-    // Em digitação de relógio, geralmente "7:5" ou "7:30". Se 1 dígito no final, se for 0..5 pode ser dezena (30),
-    // mas o padrão estrito é padStart: se 1 digito '5' => 5 minutos ou se o usuário digitou "7:3" esperava 7:30?
-    // Regra amigável: se 1 dígito (ex: "7:5"), 5 min. Para 30 min ele digita 30 ou 3. Tratamos 1 dígito como minutos (05).
+    const minStr = matchDoisPontos[2]
+
+    // Usuário acabou de digitar o separador ":" (ex: "7:" ou "07:")
+    if (minStr === '') {
+      const dec = Number(horas.toFixed(4))
+      const hmStr = `${String(horas).padStart(2, '0')}:00`
+      const decStr = `${dec.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}h`
+      return {
+        valido: true,
+        decimal: dec,
+        horas,
+        minutos: 0,
+        tipoDetectado: 'hora_minuto',
+        horaMinutoFormatado: hmStr,
+        decimalFormatado: decStr,
+        equivalenciaRealTime: `${String(horas).padStart(2, '0')}:.. = ${decStr}`,
+      }
+    }
+
     const minutos = parseInt(minStr.length === 1 ? minStr.padEnd(2, '0') : minStr, 10)
     if (minutos >= 60) {
       return {
@@ -246,11 +260,29 @@ export function parseHorasExtrasInput(input: string | number | undefined | null)
     }
   }
 
-  // 3. Caso decimal com vírgula ou ponto (ex: "7,5", "7.5", "7,50", "7.5h", "12,25", "0,5")
-  const matchDecimal = cleaned.match(/^(\d{1,3})[,.](\d{1,4})(?:\s*h(?:oras?)?)?$/)
+  // 3. Caso decimal com vírgula ou ponto (ex: "7,5", "7.5", "7,50", "7.5h", "12,25", "0,5" ou digitação em andamento "7," / "7.")
+  const matchDecimal = cleaned.match(/^(\d{1,3})[,.](\d{0,4})(?:\s*h(?:oras?)?)?$/)
   if (matchDecimal) {
     const inteira = parseInt(matchDecimal[1], 10)
     const fracionaria = matchDecimal[2]
+
+    // Usuário acabou de digitar o separador "," ou "." (ex: "7," ou "7.")
+    if (fracionaria === '') {
+      const dec = Number(inteira.toFixed(4))
+      const hmStr = `${String(inteira).padStart(2, '0')}:00`
+      const decStr = `${dec.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}h`
+      return {
+        valido: true,
+        decimal: dec,
+        horas: inteira,
+        minutos: 0,
+        tipoDetectado: 'decimal',
+        horaMinutoFormatado: hmStr,
+        decimalFormatado: decStr,
+        equivalenciaRealTime: `${inteira},..h = ${hmStr}`,
+      }
+    }
+
     const dec = parseFloat(`${inteira}.${fracionaria}`)
     if (isNaN(dec)) {
       return {

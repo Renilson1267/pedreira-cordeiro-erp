@@ -191,4 +191,81 @@ assert(
   'formatarHorasCombinado(7.5) deve ser "7,50h (07:30)"',
 )
 
-console.log('🎉 Todos os testes de conversão e parsing de horas extras passaram com perfeição!')
+// Teste 7: Digitação fluida intermediária relatada pelo usuário
+// O usuário digita o número inteiro e em seguida digita ":" ou ","
+// O parser deve considerar válido sem reverter o estado
+const pIntermediarioDoisPontos = parseHorasExtrasInput('7:')
+assert(
+  pIntermediarioDoisPontos.valido && pIntermediarioDoisPontos.decimal === 7,
+  '"7:" deve ser considerado válido como 7h durante a digitação',
+)
+
+const pIntermediarioDoisPontosZero = parseHorasExtrasInput('07:')
+assert(
+  pIntermediarioDoisPontosZero.valido && pIntermediarioDoisPontosZero.decimal === 7,
+  '"07:" deve ser considerado válido como 7h durante a digitação',
+)
+
+const pIntermediarioVirgula = parseHorasExtrasInput('7,')
+assert(
+  pIntermediarioVirgula.valido && pIntermediarioVirgula.decimal === 7,
+  '"7," deve ser considerado válido como 7h durante a digitação',
+)
+
+const pIntermediarioPonto = parseHorasExtrasInput('7.')
+assert(
+  pIntermediarioPonto.valido && pIntermediarioPonto.decimal === 7,
+  '"7." deve ser considerado válido como 7h durante a digitação',
+)
+
+// Digitação completa após a vírgula / dois pontos
+const pDigitoAposDoisPontos = parseHorasExtrasInput('7:30')
+assert(
+  pDigitoAposDoisPontos.valido && pDigitoAposDoisPontos.decimal === 7.5,
+  '"7:30" deve converter com precisão decimal para 7.5',
+)
+
+const pDigitoAposVirgula = parseHorasExtrasInput('7,5')
+assert(
+  pDigitoAposVirgula.valido && pDigitoAposVirgula.decimal === 7.5,
+  '"7,5" deve converter com precisão decimal para 7.5',
+)
+
+// Cálculo da folha com as horas (ex: salário 2.200, 7.5 horas)
+// Salário R$ 2.200 -> hora normal = 2200 / 220 = 10,00
+// Hora 50% = 15,00
+// 7,5 horas a 50% = 7,5 * 15,00 = 112,50
+import { folhaHorasExtrasService } from './src/services/folhaHorasExtras'
+const calc50 = folhaHorasExtrasService.calcular({
+  salario: 2200,
+  modo: 'padrao_50',
+  horasTotais50: 7.5,
+  horasUteis50: 0,
+  horasDomingos100: 0,
+  gratificacao: 0,
+  adiantamento: 0,
+})
+assert(calc50.valorHoraNormal === 10, 'Valor hora normal deve ser 10,00')
+assert(calc50.valorHoraExtra50 === 15, 'Valor hora extra 50% deve ser 15,00')
+assert(calc50.totalHoras === 7.5, 'Total de horas deve ser 7.5')
+assert(calc50.totalValor === 112.5, 'Total a receber bruto 50% deve ser 112.50')
+assert(calc50.valorLiquido === 112.5, 'Valor líquido deve ser 112.50')
+
+// Modo CLT com 7.5h úteis e 4.0h domingos
+const calcClt = folhaHorasExtrasService.calcular({
+  salario: 2200,
+  modo: 'clt_vigente',
+  horasTotais50: 0,
+  horasUteis50: 7.5,
+  horasDomingos100: 4.0,
+  gratificacao: 50,
+  adiantamento: 20,
+})
+// 7.5 * 15 = 112.50; 4 * 20 = 80.00; total bruto = 192.50; líq = 192.50 + 50 - 20 = 222.50
+assert(calcClt.totalHoras === 11.5, 'Total de horas CLT deve ser 11.5')
+assert(calcClt.totalValor === 192.5, 'Total bruto CLT deve ser 192.50')
+assert(calcClt.valorLiquido === 222.5, 'Valor líquido CLT deve ser 222.50')
+
+console.log(
+  '🎉 Todos os testes de conversão, parsing e cálculo de horas extras passaram com perfeição!',
+)
