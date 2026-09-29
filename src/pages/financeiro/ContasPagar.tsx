@@ -13,7 +13,9 @@ import type {
   StatusContaPagar,
   FormaRecebimento,
   ChequePredatado,
+  Veiculo,
 } from '@/types/erp'
+import { SETORES_FROTA } from '@/lib/frota'
 import {
   formasRecebimentoService,
   chequesPredatadosService,
@@ -117,6 +119,7 @@ export default function ContasPagar() {
   const [fornecedores, setFornecedores] = useState<Fornecedor[]>([])
   const [categorias, setCategorias] = useState<PlanoConta[]>([])
   const [centrosCusto, setCentrosCusto] = useState<CentroCusto[]>([])
+  const [veiculos, setVeiculos] = useState<Veiculo[]>([])
   const [formasCadastradas, setFormasCadastradas] = useState<FormaRecebimento[]>([])
   const [loading, setLoading] = useState(true)
 
@@ -244,10 +247,15 @@ export default function ContasPagar() {
           sort: 'codigo',
         }),
         formasRecebimentoService.listar(currentEmpresa.id, true),
+        pb.collection('veiculos').getFullList<Veiculo>({
+          filter: `empresa_id = '${currentEmpresa.id}' && status = 'ativo'`,
+          sort: 'codigo',
+        }).catch(() => [] as Veiculo[]),
       ])
       setFornecedores(fList)
       setCategorias(pcList)
       setCentrosCusto(ccList)
+      setVeiculos(veicRes)
       setFormasCadastradas(formasList)
       setAuxiliaresLoaded(true)
     } catch (err) {
