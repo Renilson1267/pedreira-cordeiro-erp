@@ -47,8 +47,8 @@ import {
   Sparkles,
 } from 'lucide-react'
 
-// Limite: 200 MB
-const MAX_FILE_SIZE_BYTES = 200 * 1024 * 1024
+// Limite: 300 MB
+const MAX_FILE_SIZE_BYTES = 300 * 1024 * 1024
 
 function formatBytes(bytes?: number): string {
   if (!bytes || bytes === 0) return '0 B'
@@ -90,9 +90,6 @@ export default function VideoInstitucional() {
     totalBytes: number
     porcentagem: number
     etapa: 'preparando' | 'enviando' | 'processando' | 'concluido'
-    chunkAtual?: number
-    totalChunks?: number
-    tentativa?: number
   } | null>(null)
 
   // Modal de confirmação de exclusão
@@ -165,7 +162,7 @@ export default function VideoInstitucional() {
     if (file.size > MAX_FILE_SIZE_BYTES) {
       toast({
         title: 'Arquivo muito grande',
-        description: `O vídeo não pode ultrapassar 200 MB (tamanho atual: ${formatBytes(file.size)}). Otimize o arquivo antes de enviar.`,
+        description: `O vídeo não pode ultrapassar 300 MB (tamanho atual: ${formatBytes(file.size)}). Otimize o arquivo antes de enviar.`,
         variant: 'destructive',
       })
       e.target.value = ''
@@ -311,29 +308,18 @@ export default function VideoInstitucional() {
           totalBytes: number
           porcentagem: number
           etapa: 'preparando' | 'enviando' | 'processando' | 'concluido'
-          chunkAtual?: number
-          totalChunks?: number
-          tentativa?: number
         }) => {
           setProgressoUpload(info)
           if (info.etapa === 'preparando') {
-            setProgressoTexto('Preparando arquivo e iniciando conexão segura...')
+            setProgressoTexto('Preparando arquivo...')
           } else if (info.etapa === 'enviando') {
             const mbEnviados = (info.carregadoBytes / (1024 * 1024)).toFixed(1)
             const mbTotal = (info.totalBytes / (1024 * 1024)).toFixed(1)
-            const blocoInfo =
-              info.chunkAtual && info.totalChunks
-                ? `Enviando bloco ${info.chunkAtual} de ${info.totalChunks}`
-                : 'Enviando arquivo'
-            const tentativaInfo =
-              info.tentativa && info.tentativa > 1 ? ` (tentativa ${info.tentativa})` : ''
             setProgressoTexto(
-              `${blocoInfo}${tentativaInfo}... ${mbEnviados} MB de ${mbTotal} MB (${info.porcentagem}%)`,
+              `Enviando vídeo... ${mbEnviados} MB de ${mbTotal} MB (${info.porcentagem}%)`,
             )
           } else if (info.etapa === 'processando') {
-            setProgressoTexto(
-              'Todos os blocos enviados! Montando e salvando arquivo final no servidor...',
-            )
+            setProgressoTexto('Arquivo enviado! O servidor está finalizando o registro...')
           } else if (info.etapa === 'concluido') {
             setProgressoTexto('Upload e processamento finalizados com sucesso!')
           }
@@ -360,41 +346,26 @@ export default function VideoInstitucional() {
     } catch (err: any) {
       console.error('Erro ao enviar vídeo institucional:', err)
       const rawMsg = err?.message || ''
+      const status = err?.status || 0
+
       let tituloErro = 'Falha no envio do vídeo'
       let descErro = rawMsg || 'Ocorreu um erro durante o upload do vídeo.'
 
       if (
-        rawMsg.includes('ultrapassa o limite') ||
+        status === 413 ||
+        rawMsg.includes('300 MB') ||
         rawMsg.includes('200 MB') ||
-        rawMsg.includes('413') ||
-        rawMsg.includes('Payload Too Large')
+        rawMsg.includes('Arquivo muito grande')
       ) {
-        tituloErro = 'Arquivo excede o limite máximo'
-        descErro = `O vídeo selecionado excede o limite de 200 MB (${formatBytes(arquivoSelecionado?.size)}). Por favor, reduza ou recomprima o vídeo.`
-      } else if (
-        rawMsg.includes('timeout') ||
-        rawMsg.includes('Tempo limite') ||
-        rawMsg.includes('AbortError')
-      ) {
-        tituloErro = 'Tempo limite de envio excedido'
+        tituloErro = 'Arquivo muito grande para o limite do servidor'
+        descErro = 'O vídeo selecionado excede o limite máximo de 300 MB permitido pelo servidor.'
+      } else if (status === 401 || status === 403 || rawMsg.includes('sessão expirou')) {
+        tituloErro = 'Sessão expirada'
+        descErro = 'Sua sessão expirou ou você não possui permissão. Faça login novamente.'
+      } else if (status === 0 || rawMsg.includes('Conexão interrompida')) {
+        tituloErro = 'Conexão interrompida'
         descErro =
-          'O servidor demorou mais que o esperado para responder. Verifique sua conexão e tente novamente.'
-      } else if (
-        rawMsg.includes('Failed to fetch') ||
-        rawMsg.includes('NetworkError') ||
-        rawMsg.includes('ERR_CONNECTION') ||
-        rawMsg.includes('conexão')
-      ) {
-        tituloErro = 'Erro de Conexão com o Servidor'
-        descErro =
-          'A conexão com o servidor foi interrompida ou bloqueada pelo navegador. O envio fracionado tentou reenviar os blocos, mas a conexão caiu. Verifique sua rede e tente novamente.'
-      } else if (rawMsg.includes('500') || rawMsg.includes('montar arquivo final')) {
-        tituloErro = 'Erro no processamento do servidor'
-        descErro =
-          'O servidor encontrou um problema ao montar as partes do vídeo ou gravar na base de dados. Tente reenviar.'
-      } else if (rawMsg.includes('401') || rawMsg.includes('Não autorizado')) {
-        tituloErro = 'Sessão Expirada'
-        descErro = 'Sua autenticação expirou. Faça login novamente para prosseguir.'
+          'A conexão com o servidor foi interrompida durante a transferência. Verifique sua rede e tente novamente.'
       }
 
       toast({
@@ -570,8 +541,11 @@ export default function VideoInstitucional() {
                     playsInline
                     preload="metadata"
                     poster={
-                      videoAtivo.poster
-                        ? videoInstitucionalService.obterUrlArquivo(videoAtivo, videoAtivo.poster)
+                      videoAtivo.capa || videoAtivo.poster
+                        ? videoInstitucionalService.obterUrlArquivo(
+                            videoAtivo,
+                            videoAtivo.capa || videoAtivo.poster || '',
+                          )
                         : undefined
                     }
                     className="w-full h-full object-cover"
@@ -688,7 +662,7 @@ export default function VideoInstitucional() {
             <div className="flex items-start gap-2">
               <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0 mt-0.5" />
               <div>
-                <strong>Tamanho máximo:</strong> 200 MB por upload.
+                <strong>Tamanho máximo:</strong> 300 MB por upload (envio nativo direto).
               </div>
             </div>
             <div className="flex items-start gap-2">
@@ -748,9 +722,12 @@ export default function VideoInstitucional() {
                         onClick={() => setVideoParaPreview(vid)}
                         className="w-20 h-14 bg-slate-900 rounded-lg overflow-hidden relative shrink-0 cursor-pointer group flex items-center justify-center border border-slate-200 shadow-2xs"
                       >
-                        {urlPoster ? (
+                        {vid.capa || vid.poster ? (
                           <img
-                            src={urlPoster}
+                            src={videoInstitucionalService.obterUrlArquivo(
+                              vid,
+                              vid.capa || vid.poster || '',
+                            )}
                             alt={vid.titulo}
                             className="w-full h-full object-cover group-hover:scale-105 transition-transform"
                           />
@@ -918,7 +895,7 @@ export default function VideoInstitucional() {
                     Clique para selecionar o vídeo MP4 do seu computador
                   </p>
                   <p className="text-[11px] text-gray-500 mt-1">
-                    Formatos suportados: MP4, WebM • Até 200 MB
+                    Formatos suportados: MP4, WebM • Até 300 MB
                   </p>
                 </div>
               ) : (
@@ -1017,14 +994,10 @@ export default function VideoInstitucional() {
                 <div className="flex items-center justify-between text-xs text-teal-950 font-semibold">
                   <span className="flex items-center gap-1.5">
                     <RefreshCw className="w-3.5 h-3.5 animate-spin text-teal-700" />
-                    {progressoUpload.etapa === 'preparando' && 'Iniciando sessão de upload...'}
-                    {progressoUpload.etapa === 'enviando' &&
-                      (progressoUpload.chunkAtual && progressoUpload.totalChunks
-                        ? `Enviando bloco ${progressoUpload.chunkAtual} de ${progressoUpload.totalChunks}...`
-                        : 'Enviando arquivo...')}
-                    {progressoUpload.etapa === 'processando' &&
-                      'Processando e montando no servidor...'}
-                    {progressoUpload.etapa === 'concluido' && 'Vídeo gravado com sucesso!'}
+                    {progressoUpload.etapa === 'preparando' && 'Preparando envio nativo...'}
+                    {progressoUpload.etapa === 'enviando' && 'Enviando arquivo ao servidor...'}
+                    {progressoUpload.etapa === 'processando' && 'Gravando no servidor...'}
+                    {progressoUpload.etapa === 'concluido' && 'Vídeo salvo com sucesso!'}
                   </span>
                   <span className="text-teal-900 font-bold text-sm">
                     {progressoUpload.porcentagem}%
@@ -1034,7 +1007,7 @@ export default function VideoInstitucional() {
                 {/* Barra de Progresso visual com animação suave */}
                 <div className="w-full bg-teal-200/70 rounded-full h-3 overflow-hidden shadow-inner">
                   <div
-                    className="bg-teal-700 h-3 rounded-full transition-all duration-300 ease-out"
+                    className="bg-teal-700 h-3 rounded-full transition-all duration-200 ease-out"
                     style={{ width: `${Math.min(100, Math.max(0, progressoUpload.porcentagem))}%` }}
                   />
                 </div>
@@ -1044,14 +1017,9 @@ export default function VideoInstitucional() {
                     {(progressoUpload.carregadoBytes / (1024 * 1024)).toFixed(1)} MB de{' '}
                     {(progressoUpload.totalBytes / (1024 * 1024)).toFixed(1)} MB enviados
                   </span>
-                  {progressoUpload.chunkAtual && progressoUpload.totalChunks ? (
-                    <span className="bg-teal-100 text-teal-800 px-2 py-0.5 rounded-md border border-teal-200/60">
-                      Bloco {progressoUpload.chunkAtual} de {progressoUpload.totalChunks}
-                      {progressoUpload.tentativa && progressoUpload.tentativa > 1
-                        ? ` • Tentativa ${progressoUpload.tentativa}`
-                        : ''}
-                    </span>
-                  ) : null}
+                  <span className="bg-teal-100 text-teal-800 px-2 py-0.5 rounded-md border border-teal-200/60">
+                    Upload Nativo Direto
+                  </span>
                 </div>
               </div>
             )}
@@ -1121,10 +1089,10 @@ export default function VideoInstitucional() {
                 playsInline
                 preload="auto"
                 poster={
-                  videoParaPreview.poster
+                  videoParaPreview.capa || videoParaPreview.poster
                     ? videoInstitucionalService.obterUrlArquivo(
                         videoParaPreview,
-                        videoParaPreview.poster,
+                        videoParaPreview.capa || videoParaPreview.poster || '',
                       )
                     : undefined
                 }

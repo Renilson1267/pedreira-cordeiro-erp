@@ -1393,10 +1393,10 @@ export default function HomePublica() {
                         playsInline
                         preload="metadata"
                         poster={
-                          videoAtivo.poster
+                          videoAtivo.capa || videoAtivo.poster
                             ? videoInstitucionalService.obterUrlArquivo(
                                 videoAtivo,
-                                videoAtivo.poster,
+                                videoAtivo.capa || videoAtivo.poster || '',
                               )
                             : INSTITUCIONAL_CONFIG.fotosReais.heroAerea
                         }
@@ -1417,10 +1417,10 @@ export default function HomePublica() {
                     <div className="relative aspect-video w-full overflow-hidden group">
                       <img
                         src={
-                          videoAtivo.poster
+                          videoAtivo.capa || videoAtivo.poster
                             ? videoInstitucionalService.obterUrlArquivo(
                                 videoAtivo,
-                                videoAtivo.poster,
+                                videoAtivo.capa || videoAtivo.poster || '',
                               )
                             : INSTITUCIONAL_CONFIG.fotosReais.heroAerea
                         }

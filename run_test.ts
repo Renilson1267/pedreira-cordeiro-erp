@@ -258,74 +258,38 @@ async function run() {
     '✓ Teste 5 (Dump semanal real de 27 coleções e 16.625 registros em ambos formatos): OK',
   )
 
-  // 5. Teste de Upload Fracionado de Vídeo Institucional (arquivo sintético de 25 MB)
-  console.log('--- Teste 6: Fatiamento e Validação de Chunks de Vídeo Sintético (25 MB) ---')
-  const {
-    MAX_VIDEO_SIZE_BYTES,
-    DIRECT_UPLOAD_THRESHOLD_BYTES,
-    CHUNK_SIZE_BYTES,
-    MAX_CHUNK_RETRIES,
-  } = await import('./src/services/videoInstitucional.js')
+  // 5. Teste de Constantes e Limites do Vídeo Institucional
+  console.log('--- Teste 6: Constantes e Formatação de Erros do Upload Nativo ---')
+  const { MAX_VIDEO_SIZE_BYTES, formatarMensagemErroUpload } =
+    await import('./src/services/videoInstitucional.js')
 
-  if (MAX_VIDEO_SIZE_BYTES !== 200 * 1024 * 1024) {
-    throw new Error(`Limite máximo de vídeo inválido: ${MAX_VIDEO_SIZE_BYTES}`)
-  }
-  if (DIRECT_UPLOAD_THRESHOLD_BYTES !== 20 * 1024 * 1024) {
-    throw new Error(`Limite de corte direto inválido: ${DIRECT_UPLOAD_THRESHOLD_BYTES}`)
-  }
-  if (CHUNK_SIZE_BYTES < 10 * 1024 * 1024 || CHUNK_SIZE_BYTES > 15 * 1024 * 1024) {
-    throw new Error(`Tamanho de chunk fora da faixa permitida (10-15 MB): ${CHUNK_SIZE_BYTES}`)
-  }
-  if (MAX_CHUNK_RETRIES !== 2) {
-    throw new Error(`MAX_CHUNK_RETRIES esperado 2, obtido: ${MAX_CHUNK_RETRIES}`)
+  if (MAX_VIDEO_SIZE_BYTES !== 300 * 1024 * 1024) {
+    throw new Error(`Limite máximo de vídeo esperado 300 MB, obtido: ${MAX_VIDEO_SIZE_BYTES}`)
   }
 
-  // Criar buffer sintético de 25 MB (26.214.400 bytes)
-  const tamanhoSinteticoBytes = 25 * 1024 * 1024
-  const totalChunksEsperados = Math.ceil(tamanhoSinteticoBytes / CHUNK_SIZE_BYTES)
-
-  if (totalChunksEsperados !== 3) {
-    throw new Error(
-      `Para 25 MB com blocos de ${CHUNK_SIZE_BYTES / (1024 * 1024)} MB, esperava-se 3 chunks, obtido: ${totalChunksEsperados}`,
-    )
+  const msg413 = formatarMensagemErroUpload(413)
+  if (!msg413.includes('Arquivo muito grande')) {
+    throw new Error(`Mensagem 413 incorreta: ${msg413}`)
   }
 
-  // Simular divisão em fatias e verificação de integridade dos offsets
-  let bytesProcessados = 0
-  const fatias: { index: number; start: number; end: number; size: number }[] = []
-
-  for (let i = 0; i < totalChunksEsperados; i++) {
-    const start = i * CHUNK_SIZE_BYTES
-    const end = Math.min(start + CHUNK_SIZE_BYTES, tamanhoSinteticoBytes)
-    const fatiaSize = end - start
-    bytesProcessados += fatiaSize
-    fatias.push({ index: i, start, end, size: fatiaSize })
+  const msg401 = formatarMensagemErroUpload(401)
+  if (!msg401.includes('sessão expirou')) {
+    throw new Error(`Mensagem 401 incorreta: ${msg401}`)
   }
 
-  if (bytesProcessados !== tamanhoSinteticoBytes) {
-    throw new Error(
-      `Soma das partes (${bytesProcessados}) não confere com o total original (${tamanhoSinteticoBytes})`,
-    )
+  const msg0 = formatarMensagemErroUpload(0)
+  if (!msg0.includes('Conexão interrompida')) {
+    throw new Error(`Mensagem status 0 incorreta: ${msg0}`)
   }
+  console.log('✓ Teste 6 (Mensagens amigáveis de erro nativo): OK')
 
-  // Checar tamanhos: chunk 0 e 1 devem ter 12 MB (12.582.912 bytes), chunk 2 deve ter 1 MB (1.048.576 bytes)
-  if (fatias[0].size !== 12 * 1024 * 1024 || fatias[1].size !== 12 * 1024 * 1024) {
-    throw new Error(
-      `Fatias iniciais não têm o tamanho do bloco esperado: ${JSON.stringify(fatias)}`,
-    )
-  }
-  if (fatias[2].size !== 1 * 1024 * 1024) {
-    throw new Error(`Fatia final com tamanho incorreto: ${fatias[2].size}`)
-  }
-
-  console.log('✓ Teste 6 (Fatiamento sintético de 25 MB em 3 chunks): OK')
-
-  // 6. Teste de Fluxo Completo de Upload Fracionado: Sem Capa (JSON) e Com Capa (Multipart)
-  console.log('--- Teste 7: Teste do Fluxo Fracionado End-to-End contra o Backend ---')
+  // 6. Teste Ponta a Ponta: Upload Nativo de Vídeo Real (12 MB) via API Nativa de Registros
+  console.log(
+    '--- Teste 7: Upload Nativo Real via /api/collections/config_video_institucional/records ---',
+  )
   const pbModule = await import('./src/lib/pocketbase/client.js')
   const pbInstance = pbModule.default || pbModule.pb
 
-  // Autenticar com o usuário admin
   try {
     await pbInstance.collection('users').authWithPassword('gcmixsje@gmail.com', 'Skip@Pass')
     console.log('✓ Autenticado com sucesso como admin!')
@@ -337,360 +301,180 @@ async function run() {
 
     const baseUrl = pbInstance.baseUrl.replace(/\/$/, '')
 
-    // CASO A: Upload fracionado sem capa (envio como JSON)
-    console.log('Testando Caso A: Init de sessão fracionada sem capa (JSON)...')
-    const totalBytesVideoA = 1024 * 1024 // 1 MB
-    const totalChunksA = 2
-    const initJsonA = {
-      file_name: 'teste_sem_capa.mp4',
-      file_size: totalBytesVideoA,
-      total_chunks: totalChunksA,
-      titulo: 'Vídeo Teste Sem Capa Automático',
-      descricao: 'Teste automatizado de sessão sem capa via JSON',
-      ativo: false,
-      duracao_segundos: 10,
+    // Criar um arquivo MP4 binário realista de 12 MB (12 * 1024 * 1024 bytes)
+    // Usando header de container MP4 (ftypisom)
+    const tamanhoVideoRealBytes = 12 * 1024 * 1024 // 12 MB
+    const videoBuffer = new Uint8Array(tamanhoVideoRealBytes)
+    // Assinatura MP4 mínima válida: ftyp box
+    // bytes 4-7: "ftyp", bytes 8-11: "isom"
+    videoBuffer[3] = 0x20
+    videoBuffer[4] = 0x66 // f
+    videoBuffer[5] = 0x74 // t
+    videoBuffer[6] = 0x79 // y
+    videoBuffer[7] = 0x70 // p
+    videoBuffer[8] = 0x69 // i
+    videoBuffer[9] = 0x73 // s
+    videoBuffer[10] = 0x6f // o
+    videoBuffer[11] = 0x6d // m
+    for (let b = 12; b < tamanhoVideoRealBytes; b++) {
+      videoBuffer[b] = (b % 250) + 1
     }
 
-    const resInitA = await fetch(`${baseUrl}/backend/v1/video-institucional/chunk/init`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: token,
-      },
-      body: JSON.stringify(initJsonA),
-    })
+    const videoBlob = new Blob([videoBuffer], { type: 'video/mp4' })
 
-    if (!resInitA.ok) {
-      const errText = await resInitA.text()
-      throw new Error(`Falha no init sem capa (JSON): HTTP ${resInitA.status} - ${errText}`)
-    }
+    // Criar imagem de capa JPEG simulada
+    const capaBuffer = new Uint8Array(1024)
+    capaBuffer[0] = 0xff
+    capaBuffer[1] = 0xd8
+    capaBuffer[1022] = 0xff
+    capaBuffer[1023] = 0xd9
+    const capaBlob = new Blob([capaBuffer], { type: 'image/jpeg' })
 
-    const dataInitA = (await resInitA.json()) as { session_id: string; total_chunks: number }
-    if (!dataInitA.session_id) {
-      throw new Error('session_id não retornado no init sem capa!')
-    }
-    const sessionIdA = dataInitA.session_id
-    console.log(`✓ Sessão A criada com sucesso via JSON! Session ID: ${sessionIdA}`)
+    // 1. Enviar via POST nativo multipart
+    const formNativo = new FormData()
+    formNativo.append('titulo', 'Vídeo Institucional Teste Nativo 12MB')
+    formNativo.append('descricao', 'Upload realizado via endpoint nativo do PocketBase em Go')
+    formNativo.append('arquivo', videoBlob, 'video_institucional_real_12mb.mp4')
+    formNativo.append('capa', capaBlob, 'capa_institucional.jpg')
+    formNativo.append('poster', capaBlob, 'capa_institucional.jpg')
+    formNativo.append('ativo', 'true')
+    formNativo.append('tamanho_bytes', String(tamanhoVideoRealBytes))
+    formNativo.append('duracao_segundos', '45')
+    formNativo.append('enviado_por_nome', 'Admin Teste')
 
-    // Enviar bloco 0 (com session_id e chunk_index na query string)
-    const chunk0DataA = new Uint8Array(512 * 1024)
-    chunk0DataA.fill(65) // 'A'
-    const formChunk0A = new FormData()
-    formChunk0A.append('session_id', sessionIdA)
-    formChunk0A.append('chunk_index', '0')
-    formChunk0A.append('chunk', new Blob([chunk0DataA]), 'part_0.bin')
-
-    const resPart0A = await fetch(
-      `${baseUrl}/backend/v1/video-institucional/chunk/part?session_id=${encodeURIComponent(
-        sessionIdA,
-      )}&chunk_index=0`,
+    const tInicioUpload = Date.now()
+    const resUploadNativo = await fetch(
+      `${baseUrl}/api/collections/config_video_institucional/records`,
       {
         method: 'POST',
-        headers: { Authorization: token },
-        body: formChunk0A,
+        headers: {
+          Authorization: token,
+        },
+        body: formNativo,
       },
     )
-    if (!resPart0A.ok) {
-      const err0Text = await resPart0A.text()
-      throw new Error(`Falha ao enviar bloco 0: HTTP ${resPart0A.status} - ${err0Text}`)
+
+    const tFimUpload = Date.now()
+    if (!resUploadNativo.ok) {
+      const errTexto = await resUploadNativo.text()
+      throw new Error(`Falha no upload nativo (status ${resUploadNativo.status}): ${errTexto}`)
     }
 
-    // Enviar bloco 1 (com session_id e chunk_index na query string)
-    const chunk1DataA = new Uint8Array(512 * 1024)
-    chunk1DataA.fill(66) // 'B'
-    const formChunk1A = new FormData()
-    formChunk1A.append('session_id', sessionIdA)
-    formChunk1A.append('chunk_index', '1')
-    formChunk1A.append('chunk', new Blob([chunk1DataA]), 'part_1.bin')
+    const recordCriado = (await resUploadNativo.json()) as {
+      id: string
+      titulo: string
+      arquivo: string
+      capa?: string
+      poster?: string
+      tamanho_bytes: number
+      ativo: boolean
+    }
 
-    const resPart1A = await fetch(
-      `${baseUrl}/backend/v1/video-institucional/chunk/part?session_id=${encodeURIComponent(
-        sessionIdA,
-      )}&chunk_index=1`,
-      {
-        method: 'POST',
-        headers: { Authorization: token },
-        body: formChunk1A,
-      },
+    if (!recordCriado.id || !recordCriado.arquivo) {
+      throw new Error(
+        `Registro nativo criado sem id ou sem arquivo: ${JSON.stringify(recordCriado)}`,
+      )
+    }
+
+    console.log(
+      `✓ Registro criado via API nativa com sucesso em ${((tFimUpload - tInicioUpload) / 1000).toFixed(2)}s! ID: ${recordCriado.id}, Arquivo: ${recordCriado.arquivo}`,
     )
-    if (!resPart1A.ok) {
-      const err1Text = await resPart1A.text()
-      throw new Error(`Falha ao enviar bloco 1: HTTP ${resPart1A.status} - ${err1Text}`)
-    }
-    console.log('✓ Blocos 0 e 1 enviados com sucesso!')
 
-    // Finalizar sessão A (montar e salvar registro)
-    const formCompleteA = new FormData()
-    formCompleteA.append('session_id', sessionIdA)
-    const resCompleteA = await fetch(`${baseUrl}/backend/v1/video-institucional/chunk/complete`, {
-      method: 'POST',
-      headers: { Authorization: token },
-      body: formCompleteA,
+    // 2. Verificar que a URL pública do arquivo responde com HTTP 200 e aceita streaming
+    const urlArquivoVideo = `${baseUrl}/api/files/config_video_institucional/${recordCriado.id}/${recordCriado.arquivo}`
+    console.log(`Verificando download/streaming da URL do vídeo: ${urlArquivoVideo}...`)
+    const resGetVideo = await fetch(urlArquivoVideo, {
+      method: 'HEAD',
     })
 
-    if (!resCompleteA.ok) {
-      const errComplete = await resCompleteA.text()
-      throw new Error(`Falha ao finalizar sessão A: HTTP ${resCompleteA.status} - ${errComplete}`)
+    if (!resGetVideo.ok && resGetVideo.status !== 206) {
+      throw new Error(
+        `URL do arquivo de vídeo respondeu com status inválido: ${resGetVideo.status}`,
+      )
     }
-    const recordA = (await resCompleteA.json()) as {
+    console.log(
+      `✓ Arquivo de vídeo gravado no storage respondeu perfeitamente com status ${resGetVideo.status}!`,
+    )
+
+    // 3. Teste de PATCH multipart (substituição do vídeo no mesmo registro)
+    console.log('Testando substituição (PATCH) via API nativa...')
+    const videoPatchBuffer = new Uint8Array(2 * 1024 * 1024) // 2 MB
+    videoPatchBuffer[3] = 0x20
+    videoPatchBuffer[4] = 0x66
+    videoPatchBuffer[5] = 0x74
+    videoPatchBuffer[6] = 0x79
+    videoPatchBuffer[7] = 0x70
+    videoPatchBuffer[8] = 0x69
+    videoPatchBuffer[9] = 0x73
+    videoPatchBuffer[10] = 0x6f
+    videoPatchBuffer[11] = 0x6d
+
+    const formPatch = new FormData()
+    formPatch.append('titulo', 'Vídeo Institucional Atualizado via PATCH')
+    formPatch.append(
+      'arquivo',
+      new Blob([videoPatchBuffer], { type: 'video/mp4' }),
+      'video_atualizado.mp4',
+    )
+    formPatch.append('tamanho_bytes', String(videoPatchBuffer.length))
+
+    const resPatch = await fetch(
+      `${baseUrl}/api/collections/config_video_institucional/records/${recordCriado.id}`,
+      {
+        method: 'PATCH',
+        headers: {
+          Authorization: token,
+        },
+        body: formPatch,
+      },
+    )
+
+    if (!resPatch.ok) {
+      const errPatch = await resPatch.text()
+      throw new Error(`Falha no PATCH de substituição: status ${resPatch.status} - ${errPatch}`)
+    }
+
+    const recordAtualizado = (await resPatch.json()) as {
       id: string
       titulo: string
       arquivo: string
       tamanho_bytes: number
     }
-    if (!recordA.id || !recordA.arquivo) {
-      throw new Error('Registro criado não possui id ou arquivo válido!')
+
+    if (recordAtualizado.titulo !== 'Vídeo Institucional Atualizado via PATCH') {
+      throw new Error(`Título não foi atualizado no PATCH: ${JSON.stringify(recordAtualizado)}`)
     }
     console.log(
-      `✓ Vídeo A finalizado e montado no banco! ID: ${recordA.id}, Arquivo: ${recordA.arquivo}`,
+      `✓ PATCH de substituição executado com sucesso! Arquivo novo: ${recordAtualizado.arquivo}`,
     )
 
-    // Excluir registro de teste A
-    await pbInstance.collection('config_video_institucional').delete(recordA.id)
-    console.log('✓ Registro A de teste excluído com sucesso!')
-
-    // CASO B: Upload fracionado com capa (multipart com arquivo de poster)
-    console.log('Testando Caso B: Init de sessão fracionada com capa (Multipart)...')
-    const formInitB = new FormData()
-    formInitB.append('file_name', 'teste_com_capa.mp4')
-    formInitB.append('file_size', String(1024 * 512))
-    formInitB.append('total_chunks', '1')
-    formInitB.append('titulo', 'Vídeo Teste Com Capa Automático')
-    formInitB.append('ativo', 'false')
-
-    // Gerar um fake poster JPG de 100 bytes
-    const fakePosterBytes = new Uint8Array(100)
-    fakePosterBytes.fill(99)
-    formInitB.append(
-      'poster',
-      new Blob([fakePosterBytes], { type: 'image/jpeg' }),
-      'poster_teste.jpg',
+    // 4. Teste de listagem anônima (Home pública obtendo o vídeo ativo sem token)
+    console.log('Testando leitura anônima da Home pública (obter vídeo ativo)...')
+    const resHomePublica = await fetch(
+      `${baseUrl}/api/collections/config_video_institucional/records?filter=ativo=true&sort=-created`,
     )
-
-    const resInitB = await fetch(`${baseUrl}/backend/v1/video-institucional/chunk/init`, {
-      method: 'POST',
-      headers: { Authorization: token },
-      body: formInitB,
-    })
-
-    if (!resInitB.ok) {
-      const errTextB = await resInitB.text()
-      throw new Error(`Falha no init com capa (Multipart): HTTP ${resInitB.status} - ${errTextB}`)
-    }
-
-    const dataInitB = (await resInitB.json()) as { session_id: string }
-    const sessionIdB = dataInitB.session_id
-    console.log(
-      `✓ Sessão B (com poster) criada com sucesso via Multipart! Session ID: ${sessionIdB}`,
-    )
-
-    // Enviar bloco único (com query string)
-    const chunk0DataB = new Uint8Array(1024 * 512)
-    chunk0DataB.fill(70)
-    const formChunk0B = new FormData()
-    formChunk0B.append('session_id', sessionIdB)
-    formChunk0B.append('chunk_index', '0')
-    formChunk0B.append('chunk', new Blob([chunk0DataB]), 'part_0.bin')
-
-    const resPart0B = await fetch(
-      `${baseUrl}/backend/v1/video-institucional/chunk/part?session_id=${encodeURIComponent(
-        sessionIdB,
-      )}&chunk_index=0`,
-      {
-        method: 'POST',
-        headers: { Authorization: token },
-        body: formChunk0B,
-      },
-    )
-    if (!resPart0B.ok) {
-      const errBText = await resPart0B.text()
-      throw new Error(`Falha ao enviar bloco da sessão B: HTTP ${resPart0B.status} - ${errBText}`)
-    }
-
-    // Finalizar sessão B
-    const formCompleteB = new FormData()
-    formCompleteB.append('session_id', sessionIdB)
-    const resCompleteB = await fetch(`${baseUrl}/backend/v1/video-institucional/chunk/complete`, {
-      method: 'POST',
-      headers: { Authorization: token },
-      body: formCompleteB,
-    })
-    if (!resCompleteB.ok) {
-      const errCompleteB = await resCompleteB.text()
-      throw new Error(`Falha ao finalizar sessão B: HTTP ${resCompleteB.status} - ${errCompleteB}`)
-    }
-    const recordB = (await resCompleteB.json()) as { id: string; poster: string }
-    if (!recordB.id || !recordB.poster) {
-      throw new Error('Registro B criado não possui id ou poster válido!')
-    }
-    console.log(
-      `✓ Vídeo B finalizado com poster gravado! ID: ${recordB.id}, Poster: ${recordB.poster}`,
-    )
-
-    // Excluir registro de teste B
-    await pbInstance.collection('config_video_institucional').delete(recordB.id)
-    console.log('✓ Registro B de teste excluído com sucesso!')
-
-    console.log('✓ Teste 7 (Fluxo Completo de Upload Fracionado: JSON e Multipart): OK')
-
-    // CASO C: Teste ponta a ponta com arquivo sintético de ~25 MB fatiado em 3 blocos (12 MB + 12 MB + 1 MB)
-    console.log('Testando Caso C: Upload Fracionado de arquivo sintético de 25 MB em 3 partes...')
-    const tamanho25MB = 25 * 1024 * 1024
-    const totalChunks25MB = Math.ceil(tamanho25MB / CHUNK_SIZE_BYTES)
-    const initJsonC = {
-      file_name: 'video_sintetico_25mb.mp4',
-      file_size: tamanho25MB,
-      total_chunks: totalChunks25MB,
-      titulo: 'Vídeo Sintético 25MB Validação E2E',
-      descricao: 'Teste E2E de integridade com blocos de 12 MB e persistência via $os.rename',
-      ativo: false,
-      duracao_segundos: 60,
-    }
-
-    const resInitC = await fetch(`${baseUrl}/backend/v1/video-institucional/chunk/init`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: token,
-      },
-      body: JSON.stringify(initJsonC),
-    })
-
-    if (!resInitC.ok) {
-      const errC = await resInitC.text()
-      throw new Error(`Falha no init do arquivo de 25 MB: HTTP ${resInitC.status} - ${errC}`)
-    }
-
-    const dataInitC = (await resInitC.json()) as { session_id: string }
-    const sessionIdC = dataInitC.session_id
-    console.log(`✓ Sessão C (25 MB) iniciada com sucesso! Session ID: ${sessionIdC}`)
-
-    // Enviar os 3 blocos
-    // Criamos buffers determinísticos:
-    // Bloco 0 (12 MB): preenchido com byte 100
-    // Bloco 1 (12 MB): preenchido com byte 101
-    // Bloco 2 (1 MB): preenchido com byte 102
-    for (let cIdx = 0; cIdx < totalChunks25MB; cIdx++) {
-      const start = cIdx * CHUNK_SIZE_BYTES
-      const end = Math.min(start + CHUNK_SIZE_BYTES, tamanho25MB)
-      const fatiaBytes = end - start
-      const chunkBuf = new Uint8Array(fatiaBytes)
-      chunkBuf.fill(100 + cIdx)
-
-      const formPartC = new FormData()
-      formPartC.append('session_id', sessionIdC)
-      formPartC.append('chunk_index', String(cIdx))
-      formPartC.append('chunk', new Blob([chunkBuf]), `part_${cIdx}.bin`)
-
-      const partUrlC = `${baseUrl}/backend/v1/video-institucional/chunk/part?session_id=${encodeURIComponent(
-        sessionIdC,
-      )}&chunk_index=${cIdx}`
-
-      const tInicioBloco = Date.now()
-      const resPartC = await fetch(partUrlC, {
-        method: 'POST',
-        headers: { Authorization: token },
-        body: formPartC,
-      })
-
-      const tFimBloco = Date.now()
-      if (!resPartC.ok) {
-        const errPartC = await resPartC.text()
-        throw new Error(
-          `Falha ao enviar bloco ${cIdx} de 25 MB: HTTP ${resPartC.status} - ${errPartC}`,
-        )
-      }
-      console.log(
-        `✓ Bloco ${cIdx + 1}/${totalChunks25MB} (${(fatiaBytes / (1024 * 1024)).toFixed(1)} MB) enviado em ${((tFimBloco - tInicioBloco) / 1000).toFixed(2)}s!`,
-      )
-    }
-
-    // Finalizar sessão C
-    const formCompleteC = new FormData()
-    formCompleteC.append('session_id', sessionIdC)
-    const resCompleteC = await fetch(`${baseUrl}/backend/v1/video-institucional/chunk/complete`, {
-      method: 'POST',
-      headers: { Authorization: token },
-      body: formCompleteC,
-    })
-
-    if (!resCompleteC.ok) {
-      const errCompleteC = await resCompleteC.text()
-      throw new Error(`Falha ao finalizar sessão C: HTTP ${resCompleteC.status} - ${errCompleteC}`)
-    }
-
-    const recordC = (await resCompleteC.json()) as {
-      id: string
-      tamanho_bytes: number
-      arquivo: string
-    }
-    if (!recordC.id || !recordC.arquivo || recordC.tamanho_bytes !== tamanho25MB) {
+    if (!resHomePublica.ok) {
       throw new Error(
-        `Registro de 25 MB montado com inconsistência: tamanho retornado ${recordC.tamanho_bytes} !== esperado ${tamanho25MB}`,
+        `Home pública não conseguiu ler registro ativo: status ${resHomePublica.status}`,
       )
     }
-
-    console.log(
-      `✓ Vídeo C (25 MB) finalizado e verificado! ID: ${recordC.id}, Tamanho: ${recordC.tamanho_bytes} bytes`,
-    )
-
-    // Excluir registro e arquivos de teste C
-    await pbInstance.collection('config_video_institucional').delete(recordC.id)
-    console.log('✓ Registro C (25 MB) e arquivo limpos com sucesso!')
-
-    console.log('✓ Teste 8 (Upload Fracionado E2E de 25 MB com verificação e limpeza): OK')
-
-    // CASO D: Teste ponta a ponta do UPLOAD DIRETO via rota /backend/v1/video-institucional/upload
-    console.log('Testando Caso D: Upload Direto via /backend/v1/video-institucional/upload...')
-    const tamanhoDiretoBytes = 2 * 1024 * 1024 // 2 MB
-    const videoDiretoBytes = new Uint8Array(tamanhoDiretoBytes)
-    videoDiretoBytes.fill(88) // 'X'
-
-    const formDireto = new FormData()
-    formDireto.append('titulo', 'Vídeo Teste Upload Direto E2E')
-    formDireto.append('descricao', 'Validação do caminho monolítico direto com findUploadedFiles')
-    formDireto.append('ativo', 'false')
-    formDireto.append('tamanho_bytes', String(tamanhoDiretoBytes))
-    formDireto.append('duracao_segundos', '15')
-    formDireto.append(
-      'arquivo',
-      new Blob([videoDiretoBytes], { type: 'video/mp4' }),
-      'video_direto_teste.mp4',
-    )
-
-    const resDireto = await fetch(`${baseUrl}/backend/v1/video-institucional/upload`, {
-      method: 'POST',
-      headers: { Authorization: token },
-      body: formDireto,
-    })
-
-    if (!resDireto.ok) {
-      const errDireto = await resDireto.text()
-      throw new Error(`Falha no upload direto: HTTP ${resDireto.status} - ${errDireto}`)
-    }
-
-    const recordDireto = (await resDireto.json()) as {
-      id: string
-      arquivo: string
-      tamanho_bytes: number
+    const dataHome = (await resHomePublica.json()) as {
+      items: Array<{ id: string; arquivo: string }>
     }
     if (
-      !recordDireto.id ||
-      !recordDireto.arquivo ||
-      recordDireto.tamanho_bytes !== tamanhoDiretoBytes
+      !dataHome.items ||
+      dataHome.items.length === 0 ||
+      dataHome.items[0].id !== recordCriado.id
     ) {
       throw new Error(
-        `Registro de upload direto montado com inconsistência: ${JSON.stringify(recordDireto)}`,
+        `Vídeo ativo não apareceu na consulta pública da Home: ${JSON.stringify(dataHome)}`,
       )
     }
-    console.log(
-      `✓ Vídeo Direto finalizado e verificado! ID: ${recordDireto.id}, Arquivo: ${recordDireto.arquivo}, Tamanho: ${recordDireto.tamanho_bytes} bytes`,
-    )
+    console.log(`✓ Home pública leu com sucesso o vídeo ativo ${dataHome.items[0].id}!`)
 
-    // Excluir registro de teste direto
-    await pbInstance.collection('config_video_institucional').delete(recordDireto.id)
-    console.log('✓ Registro Direto de teste excluído com sucesso!')
-    console.log('✓ Teste 9 (Upload Direto E2E com verificação e limpeza): OK')
+    // Limpeza: excluir o registro de teste
+    await pbInstance.collection('config_video_institucional').delete(recordCriado.id)
+    console.log('✓ Registro de teste excluído e storage limpo!')
   } catch (errAuth: any) {
     console.warn('Aviso ao executar teste E2E com PocketBase:', errAuth)
     throw errAuth

@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-09-29T00:11:49.315Z",
+  "generatedAt": "2026-09-29T00:21:52.958Z",
   "collections": [
     {
       "name": "users",
@@ -3552,6 +3552,12 @@
           "required": false,
           "system": false,
           "autodateTriggers": ["onCreate", "onUpdate"]
+        },
+        {
+          "name": "capa",
+          "type": "file",
+          "required": false,
+          "system": false
         }
       ],
       "indexes": [

@@ -5,6 +5,7 @@ export interface VideoInstitucionalRecord {
   titulo: string
   descricao?: string
   arquivo: string
+  capa?: string
   poster?: string
   ativo: boolean
   tamanho_bytes?: number
@@ -22,16 +23,14 @@ export interface UploadProgressInfo {
   totalBytes: number
   porcentagem: number
   etapa: 'preparando' | 'enviando' | 'processando' | 'concluido'
-  chunkAtual?: number
-  totalChunks?: number
-  tentativa?: number
 }
 
 export interface UploadVideoInstitucionalParams {
   titulo: string
   descricao?: string
   arquivo: File
-  poster?: File | null
+  capa?: File | null
+  poster?: File | null // compatibilidade
   ativo?: boolean
   duracaoSegundos?: number
   enviadoPorNome?: string
@@ -40,144 +39,161 @@ export interface UploadVideoInstitucionalParams {
 }
 
 // Limites e constantes
-export const MAX_VIDEO_SIZE_BYTES = 200 * 1024 * 1024 // 200 MB
-// Limite para tentar rota direta primeiro (ex: vídeos <= 20 MB tentam envio direto)
-export const DIRECT_UPLOAD_THRESHOLD_BYTES = 20 * 1024 * 1024 // 20 MB
-// Tamanho de cada bloco/chunk (12 MB por bloco, dentro da faixa de 10–15 MB)
-export const CHUNK_SIZE_BYTES = 12 * 1024 * 1024 // 12 MB
-// Número máximo de retries por bloco (2 tentativas de repetição adicionais)
+export const MAX_VIDEO_SIZE_BYTES = 300 * 1024 * 1024 // 300 MB
+export const DIRECT_UPLOAD_THRESHOLD_BYTES = 300 * 1024 * 1024
+export const CHUNK_SIZE_BYTES = 12 * 1024 * 1024
 export const MAX_CHUNK_RETRIES = 2
 
 // Formatos aceitos
 export const FORMATOS_VIDEO_ACEITOS = ['.mp4', '.webm', '.quicktime', '.mov', '.ogg']
 export const MIMES_VIDEO_ACEITOS = ['video/mp4', 'video/webm', 'video/quicktime', 'video/ogg']
 
-function sleep(ms: number) {
-  return new Promise((resolve) => setTimeout(resolve, ms))
-}
-
-function obterMensagemErroAmigavel(err: any): string {
-  if (!err) return 'Erro desconhecido ao processar o vídeo institucional.'
-  const msg = err.message || (typeof err === 'string' ? err : '')
-
-  if (
-    msg.includes('AbortError') ||
-    msg.includes('abortado') ||
-    msg.includes('timeout') ||
-    msg.includes('Tempo limite excedido')
-  ) {
-    return 'Tempo limite de envio excedido (timeout). A requisição demorou muito para responder no navegador.'
-  }
+export function formatarMensagemErroUpload(
+  status: number,
+  responseData?: any,
+  statusText?: string,
+): string {
+  // 1. Verificar mensagens específicas enviadas pelo PocketBase
+  const dataMsg =
+    responseData?.message ||
+    responseData?.error ||
+    (responseData?.data
+      ? Object.values(responseData.data)
+          .map((v: any) => v?.message || v)
+          .join('; ')
+      : '')
 
   if (
-    msg.includes('Failed to fetch') ||
-    msg.includes('NetworkError') ||
-    msg.includes('ERR_CONNECTION') ||
-    msg.includes('ECONNRESET') ||
-    msg.includes('conexão')
+    status === 413 ||
+    (status === 400 && /too large|file too large|excede o limite|maxSize|max size/i.test(dataMsg))
   ) {
-    return 'Falha de conexão com o servidor ou requisição interrompida pelo navegador.'
+    return 'Arquivo muito grande para o limite do servidor. O limite máximo é de 300 MB.'
   }
 
-  if (
-    msg.includes('413') ||
-    msg.includes('too large') ||
-    msg.includes('excede o limite') ||
-    msg.includes('Payload Too Large') ||
-    msg.includes('maior que 200 MB')
-  ) {
-    return 'O arquivo ultrapassa o limite máximo permitido de 200 MB. Comprima ou reexporte o vídeo antes de enviar.'
+  if (status === 401) {
+    return 'Sua sessão expirou. Faça login novamente para prosseguir.'
   }
 
-  if (msg.includes('401') || msg.includes('Não autorizado') || msg.includes('requireAuth')) {
-    return 'Sua sessão de usuário expirou ou você não está autenticado. Faça login novamente para prosseguir.'
-  }
-
-  if (msg.includes('403') || msg.includes('proibido')) {
+  if (status === 403) {
     return 'Acesso negado: apenas administradores autorizados podem gerenciar o vídeo institucional.'
   }
 
-  if (msg.includes('500') || msg.includes('Internal Server Error')) {
-    return 'Erro interno do servidor ao processar o arquivo de vídeo. Tente novamente mais tarde.'
+  if (status === 400) {
+    if (dataMsg) {
+      if (/mime/i.test(dataMsg)) {
+        return 'Formato de arquivo não suportado. Por favor, envie um vídeo MP4 ou WebM.'
+      }
+      return `Não foi possível processar o envio: ${dataMsg}`
+    }
+    return 'Dados inválidos enviados na requisição (erro 400).'
   }
 
-  return msg || 'Ocorreu um erro ao salvar o vídeo institucional no servidor.'
+  if (status === 0) {
+    return 'Conexão interrompida. Verifique sua rede e tente novamente.'
+  }
+
+  if (status >= 500) {
+    return 'Erro interno do servidor ao gravar o arquivo de vídeo. Tente novamente mais tarde.'
+  }
+
+  return dataMsg || statusText || `Falha no envio do vídeo (status ${status}).`
 }
 
 /**
- * Utilitário de requisição HTTP autenticada via fetch com suporte a timeout.
- * Usa o token atual do PocketBase (pb.authStore.token) no header Authorization.
+ * Envio multipart nativo direto para /api/collections/config_video_institucional/records
+ * usando XMLHttpRequest para rastrear xhr.upload.onprogress real (bytes transmitidos pelo browser).
  */
-async function fetchAutenticadoComTimeout<T = any>(
-  path: string,
-  options: {
-    method?: string
-    body?: BodyInit | null
-    headers?: Record<string, string>
-    timeoutMs?: number
-  } = {},
-): Promise<T> {
-  const baseUrl = pb.baseUrl.replace(/\/$/, '')
-  const url = `${baseUrl}${path.startsWith('/') ? path : `/${path}`}`
-  const token = pb.authStore.token
-  const timeoutMs = options.timeoutMs ?? 120000 // 2 minutos padrão por requisição
+function uploadMultipartNativo<T = VideoInstitucionalRecord>(options: {
+  url: string
+  method: 'POST' | 'PATCH'
+  formData: FormData
+  token: string
+  totalBytesEstimado: number
+  onProgress?: (info: UploadProgressInfo) => void
+}): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest()
 
-  const controller = new AbortController()
-  const timeoutId = setTimeout(() => {
-    controller.abort(
-      new Error(`Tempo limite de ${Math.round(timeoutMs / 1000)}s excedido na requisição.`),
-    )
-  }, timeoutMs)
+    xhr.open(options.method, options.url, true)
 
-  try {
-    const headers: Record<string, string> = {
-      ...(options.headers || {}),
-    }
-    if (token) {
-      headers['Authorization'] = token
+    if (options.token) {
+      xhr.setRequestHeader('Authorization', options.token)
     }
 
-    const response = await fetch(url, {
-      method: options.method || 'GET',
-      body: options.body,
-      headers: headers,
-      signal: controller.signal,
-    })
-
-    clearTimeout(timeoutId)
-
-    const contentType = response.headers.get('content-type') || ''
-    let data: any = null
-    if (contentType.includes('application/json')) {
-      data = await response.json().catch(() => null)
-    } else {
-      const text = await response.text().catch(() => '')
-      try {
-        data = JSON.parse(text)
-      } catch {
-        data = { error: text }
+    // Progresso real do upload via xhr.upload
+    xhr.upload.onprogress = (event) => {
+      if (event.lengthComputable && event.total > 0) {
+        const pct = Math.min(99, Math.round((event.loaded / event.total) * 100))
+        options.onProgress?.({
+          carregadoBytes: event.loaded,
+          totalBytes: event.total,
+          porcentagem: pct,
+          etapa: pct >= 99 ? 'processando' : 'enviando',
+        })
+      } else {
+        const carregado = event.loaded || 0
+        const total = options.totalBytesEstimado || carregado
+        const pct = total > 0 ? Math.min(99, Math.round((carregado / total) * 100)) : 50
+        options.onProgress?.({
+          carregadoBytes: carregado,
+          totalBytes: total,
+          porcentagem: pct,
+          etapa: 'enviando',
+        })
       }
     }
 
-    if (!response.ok) {
-      const errorMsg =
-        data?.error ||
-        data?.message ||
-        `Erro ${response.status} (${response.statusText || 'Falha no servidor'})`
-      const err = new Error(errorMsg)
-      ;(err as any).status = response.status
-      ;(err as any).data = data
-      throw err
+    xhr.onload = () => {
+      const status = xhr.status
+      let responseData: any = null
+      try {
+        responseData = xhr.responseText ? JSON.parse(xhr.responseText) : null
+      } catch {
+        responseData = { error: xhr.responseText }
+      }
+
+      if (status >= 200 && status < 300) {
+        options.onProgress?.({
+          carregadoBytes: options.totalBytesEstimado,
+          totalBytes: options.totalBytesEstimado,
+          porcentagem: 100,
+          etapa: 'concluido',
+        })
+        resolve(responseData as T)
+      } else {
+        const mensagem = formatarMensagemErroUpload(status, responseData, xhr.statusText)
+        const err = new Error(mensagem)
+        ;(err as any).status = status
+        ;(err as any).data = responseData
+        reject(err)
+      }
     }
 
-    return data as T
-  } catch (error: any) {
-    clearTimeout(timeoutId)
-    if (error?.name === 'AbortError' || error?.message?.includes('Tempo limite')) {
-      throw new Error('Tempo limite da requisição excedido (timeout). A conexão pode estar lenta.')
+    xhr.onerror = () => {
+      const err = new Error('Conexão interrompida. Verifique sua rede e tente novamente.')
+      ;(err as any).status = xhr.status || 0
+      reject(err)
     }
-    throw error
-  }
+
+    xhr.ontimeout = () => {
+      const err = new Error(
+        'Tempo limite de envio excedido (timeout). A requisição demorou muito para responder.',
+      )
+      ;(err as any).status = 408
+      reject(err)
+    }
+
+    xhr.onabort = () => {
+      const err = new Error('Envio cancelado.')
+      ;(err as any).status = 0
+      reject(err)
+    }
+
+    // Timeout generoso de 10 minutos para uploads de até 300 MB em conexões comuns
+    xhr.timeout = 10 * 60 * 1000
+
+    xhr.send(options.formData)
+  })
 }
 
 export const videoInstitucionalService = {
@@ -217,7 +233,7 @@ export const videoInstitucionalService = {
   },
 
   /**
-   * Constrói a URL pública do arquivo (vídeo ou poster) no PocketBase.
+   * Constrói a URL pública do arquivo (vídeo ou capa) no PocketBase.
    */
   obterUrlArquivo(
     record: { id: string; collectionId?: string; collectionName?: string },
@@ -228,88 +244,77 @@ export const videoInstitucionalService = {
   },
 
   /**
-   * Envia um novo vídeo institucional.
-   * Usa automaticamente upload fracionado (chunks) para arquivos grandes (> DIRECT_UPLOAD_THRESHOLD_BYTES)
-   * ou fallback se o envio direto falhar.
+   * Envia um novo vídeo institucional usando o endpoint NATIVO de registros do PocketBase.
+   * POST /api/collections/config_video_institucional/records
    */
   async criar(
     params: UploadVideoInstitucionalParams,
     desativarOutros: boolean = true,
   ): Promise<VideoInstitucionalRecord> {
-    return await this.uploadComChunksEFallback(params, null, desativarOutros)
+    return await this.salvarRegistroNativo(params, null, desativarOutros)
   },
 
   /**
-   * Substitui um vídeo existente por um novo arquivo.
+   * Substitui um vídeo existente (PATCH /api/collections/config_video_institucional/records/:id).
    */
   async substituir(
     id: string,
     params: UploadVideoInstitucionalParams,
   ): Promise<VideoInstitucionalRecord> {
-    return await this.uploadComChunksEFallback(params, id, true)
+    return await this.salvarRegistroNativo(params, id, true)
   },
 
   /**
-   * Upload inteligente: se o arquivo for menor que o limite de corte (15 MB), tenta primeiro
-   * a rota direta do PocketBase/Hook. Se for maior ou se o envio direto falhar (ex: por aborto de conexão),
-   * recorre imediatamente ao envio fracionado (chunks).
+   * Executa o upload multipart nativo (POST para criar novo, PATCH para atualizar existente).
+   * Sem passar pelo goja/JSVM.
    */
-  async uploadComChunksEFallback(
+  async salvarRegistroNativo(
     params: UploadVideoInstitucionalParams,
-    substituindoId: string | null = null,
+    idExistente: string | null = null,
     desativarOutros: boolean = true,
   ): Promise<VideoInstitucionalRecord> {
     const file = params.arquivo
+    if (!file) {
+      throw new Error('Nenhum arquivo de vídeo foi informado.')
+    }
 
     if (file.size > MAX_VIDEO_SIZE_BYTES) {
       throw new Error(
-        `O arquivo (${(file.size / (1024 * 1024)).toFixed(1)} MB) ultrapassa o limite máximo de 200 MB permitido.`,
+        `O arquivo (${(file.size / (1024 * 1024)).toFixed(1)} MB) ultrapassa o limite máximo de 300 MB permitido.`,
       )
     }
 
-    // Se o arquivo for pequeno o suficiente, tenta o upload direto primeiro
-    if (file.size <= DIRECT_UPLOAD_THRESHOLD_BYTES) {
-      try {
-        params.onProgress?.({
-          carregadoBytes: 0,
-          totalBytes: file.size,
-          porcentagem: 5,
-          etapa: 'preparando',
-        })
-        return await this.uploadDireto(params, substituindoId, desativarOutros)
-      } catch (directErr: any) {
-        console.warn(
-          'Upload direto não pôde ser completado. Recorrendo ao envio em partes (chunks)...',
-          directErr,
-        )
-        // Fallback imediato para chunks
-      }
+    const tornarAtivo = params.ativo ?? true
+
+    // Se estiver ativando, desativa os outros antes
+    if (tornarAtivo && desativarOutros) {
+      await this.desativarTodos(idExistente || undefined)
     }
 
-    // Envio fracionado em blocos (chunks)
-    return await this.uploadEmChunks(params, substituindoId)
-  },
+    params.onProgress?.({
+      carregadoBytes: 0,
+      totalBytes: file.size,
+      porcentagem: 0,
+      etapa: 'preparando',
+    })
 
-  /**
-   * Upload direto via rota personalizada do hook (suporta até 200 MB com bodyLimit estendido)
-   * ou via SDK nativo do PocketBase como contingência.
-   */
-  async uploadDireto(
-    params: UploadVideoInstitucionalParams,
-    substituindoId: string | null,
-    desativarOutros: boolean = true,
-  ): Promise<VideoInstitucionalRecord> {
     const formData = new FormData()
     formData.append('titulo', params.titulo.trim())
     if (params.descricao) {
       formData.append('descricao', params.descricao.trim())
     }
-    formData.append('arquivo', params.arquivo)
-    if (params.poster) {
-      formData.append('poster', params.poster)
+    // Campo nativo de arquivo obrigatório
+    formData.append('arquivo', file)
+
+    // Imagem de capa (preenche tanto 'capa' quanto 'poster' para compatibilidade total)
+    const arquivoCapa = params.capa || params.poster
+    if (arquivoCapa) {
+      formData.append('capa', arquivoCapa)
+      formData.append('poster', arquivoCapa)
     }
-    formData.append('ativo', String(params.ativo ?? true))
-    formData.append('tamanho_bytes', String(params.arquivo.size))
+
+    formData.append('ativo', String(tornarAtivo))
+    formData.append('tamanho_bytes', String(file.size))
     if (params.duracaoSegundos) {
       formData.append('duracao_segundos', String(Math.round(params.duracaoSegundos)))
     }
@@ -319,284 +324,24 @@ export const videoInstitucionalService = {
     if (params.enviadoPorId) {
       formData.append('enviado_por_id', params.enviadoPorId)
     }
-    if (substituindoId) {
-      formData.append('substituindo_id', substituindoId)
-    }
 
-    params.onProgress?.({
-      carregadoBytes: Math.round(params.arquivo.size * 0.2),
-      totalBytes: params.arquivo.size,
-      porcentagem: 20,
-      etapa: 'enviando',
+    const baseUrl = pb.baseUrl.replace(/\/$/, '')
+    const token = pb.authStore.token
+    const method = idExistente ? 'PATCH' : 'POST'
+    const endpoint = idExistente
+      ? `${baseUrl}/api/collections/config_video_institucional/records/${encodeURIComponent(idExistente)}`
+      : `${baseUrl}/api/collections/config_video_institucional/records`
+
+    const record = await uploadMultipartNativo<VideoInstitucionalRecord>({
+      url: endpoint,
+      method,
+      formData,
+      token,
+      totalBytesEstimado: file.size + (arquivoCapa?.size || 0),
+      onProgress: params.onProgress,
     })
 
-    // Tentar via endpoint /backend/v1/video-institucional/upload usando fetchAutenticadoComTimeout
-    try {
-      const res = await fetchAutenticadoComTimeout<VideoInstitucionalRecord>(
-        '/backend/v1/video-institucional/upload',
-        {
-          method: 'POST',
-          body: formData,
-          timeoutMs: 180000, // 3 minutos para upload direto
-        },
-      )
-
-      params.onProgress?.({
-        carregadoBytes: params.arquivo.size,
-        totalBytes: params.arquivo.size,
-        porcentagem: 100,
-        etapa: 'concluido',
-      })
-
-      return res
-    } catch (hookErr: any) {
-      console.warn('Falha na rota direta do hook /backend/v1/video-institucional/upload:', hookErr)
-      // Se a rota custom falhar, tentar via SDK padrão como fallback
-      if (substituindoId) {
-        if (params.ativo ?? true) {
-          await this.desativarTodos(substituindoId)
-        }
-        const updated = await pb
-          .collection('config_video_institucional')
-          .update<VideoInstitucionalRecord>(substituindoId, formData)
-        params.onProgress?.({
-          carregadoBytes: params.arquivo.size,
-          totalBytes: params.arquivo.size,
-          porcentagem: 100,
-          etapa: 'concluido',
-        })
-        return updated
-      } else {
-        if ((params.ativo ?? true) && desativarOutros) {
-          await this.desativarTodos()
-        }
-        const created = await pb
-          .collection('config_video_institucional')
-          .create<VideoInstitucionalRecord>(formData)
-        params.onProgress?.({
-          carregadoBytes: params.arquivo.size,
-          totalBytes: params.arquivo.size,
-          porcentagem: 100,
-          etapa: 'concluido',
-        })
-        return created
-      }
-    }
-  },
-
-  /**
-   * Upload fracionado em blocos (chunks) sequenciais com FormData, retries por bloco e progresso real em bytes.
-   */
-  async uploadEmChunks(
-    params: UploadVideoInstitucionalParams,
-    substituindoId: string | null = null,
-  ): Promise<VideoInstitucionalRecord> {
-    const file = params.arquivo
-    const totalBytes = file.size
-    const totalChunks = Math.ceil(totalBytes / CHUNK_SIZE_BYTES)
-
-    params.onProgress?.({
-      carregadoBytes: 0,
-      totalBytes: totalBytes,
-      porcentagem: 0,
-      etapa: 'preparando',
-      chunkAtual: 0,
-      totalChunks: totalChunks,
-    })
-
-    // 1. Iniciar sessão de chunks
-    // Se NÃO houver capa/poster, enviar como JSON puro (evita erro "http: no such file" do PocketBase multipart parser)
-    // Se HOUVER capa/poster, enviar como FormData (multipart) contendo o arquivo real
-    let initBody: BodyInit
-    let initHeaders: Record<string, string> | undefined
-
-    if (params.poster) {
-      const initForm = new FormData()
-      initForm.append('file_name', file.name)
-      initForm.append('file_size', String(totalBytes))
-      initForm.append('total_chunks', String(totalChunks))
-      initForm.append('titulo', params.titulo.trim())
-      if (params.descricao) {
-        initForm.append('descricao', params.descricao.trim())
-      }
-      if (substituindoId) {
-        initForm.append('substituindo_id', substituindoId)
-      }
-      initForm.append('ativo', String(params.ativo ?? true))
-      if (params.duracaoSegundos) {
-        initForm.append('duracao_segundos', String(Math.round(params.duracaoSegundos)))
-      }
-      if (params.enviadoPorNome) {
-        initForm.append('enviado_por_nome', params.enviadoPorNome)
-      }
-      if (params.enviadoPorId) {
-        initForm.append('enviado_por_id', params.enviadoPorId)
-      }
-      initForm.append('poster', params.poster)
-      initBody = initForm
-      // Browser preenche automaticamente Content-Type multipart/form-data com o boundary
-    } else {
-      const initJson = {
-        file_name: file.name,
-        file_size: totalBytes,
-        total_chunks: totalChunks,
-        titulo: params.titulo.trim(),
-        descricao: params.descricao ? params.descricao.trim() : '',
-        substituindo_id: substituindoId || '',
-        ativo: params.ativo ?? true,
-        duracao_segundos: params.duracaoSegundos ? Math.round(params.duracaoSegundos) : 0,
-        enviado_por_nome: params.enviadoPorNome || '',
-        enviado_por_id: params.enviadoPorId || '',
-      }
-      initBody = JSON.stringify(initJson)
-      initHeaders = {
-        'Content-Type': 'application/json',
-      }
-    }
-
-    let sessionId = ''
-    try {
-      const initRes = await fetchAutenticadoComTimeout<{
-        success: boolean
-        session_id: string
-        total_chunks: number
-      }>('/backend/v1/video-institucional/chunk/init', {
-        method: 'POST',
-        body: initBody,
-        headers: initHeaders,
-        timeoutMs: 60000,
-      })
-      sessionId = initRes.session_id
-    } catch (initErr: any) {
-      throw new Error(
-        `Falha ao iniciar sessão de upload fracionado: ${obterMensagemErroAmigavel(initErr)}`,
-      )
-    }
-
-    let bytesEnviadosTotal = 0
-    // Total de tentativas: 1 inicial + MAX_CHUNK_RETRIES retentativas
-    const totalTentativasPermitidas = 1 + MAX_CHUNK_RETRIES
-
-    // 2. Enviar blocos sequencialmente
-    for (let chunkIndex = 0; chunkIndex < totalChunks; chunkIndex++) {
-      const start = chunkIndex * CHUNK_SIZE_BYTES
-      const end = Math.min(start + CHUNK_SIZE_BYTES, totalBytes)
-      const chunkBlob = file.slice(start, end)
-      const chunkSize = chunkBlob.size
-
-      let sucessoBloco = false
-      let ultimoErro: any = null
-
-      for (let tentativa = 1; tentativa <= totalTentativasPermitidas; tentativa++) {
-        try {
-          const chunkForm = new FormData()
-          chunkForm.append('session_id', sessionId)
-          chunkForm.append('chunk_index', String(chunkIndex))
-          chunkForm.append('chunk', chunkBlob, `part_${chunkIndex}.bin`)
-
-          params.onProgress?.({
-            carregadoBytes: bytesEnviadosTotal,
-            totalBytes: totalBytes,
-            porcentagem: Math.min(98, Math.round((bytesEnviadosTotal / totalBytes) * 100)),
-            etapa: 'enviando',
-            chunkAtual: chunkIndex + 1,
-            totalChunks: totalChunks,
-            tentativa: tentativa > 1 ? tentativa : undefined,
-          })
-
-          const partUrl = `/backend/v1/video-institucional/chunk/part?session_id=${encodeURIComponent(
-            sessionId,
-          )}&chunk_index=${chunkIndex}`
-
-          await fetchAutenticadoComTimeout(partUrl, {
-            method: 'POST',
-            body: chunkForm,
-            timeoutMs: 180000, // 180 segundos por bloco para conexões residenciais
-          })
-          sucessoBloco = true
-          bytesEnviadosTotal += chunkSize
-
-          params.onProgress?.({
-            carregadoBytes: bytesEnviadosTotal,
-            totalBytes: totalBytes,
-            porcentagem: Math.min(98, Math.round((bytesEnviadosTotal / totalBytes) * 100)),
-            etapa: 'enviando',
-            chunkAtual: chunkIndex + 1,
-            totalChunks: totalChunks,
-          })
-
-          break
-        } catch (errPart: any) {
-          ultimoErro = errPart
-          console.warn(
-            `Erro no bloco ${chunkIndex + 1}/${totalChunks} (tentativa ${tentativa}/${totalTentativasPermitidas}):`,
-            errPart,
-          )
-          if (tentativa < totalTentativasPermitidas) {
-            await sleep(1000 * tentativa)
-          }
-        }
-      }
-
-      if (!sucessoBloco) {
-        // Aborta a sessão no servidor para liberar espaço temporário
-        try {
-          const abortForm = new FormData()
-          abortForm.append('session_id', sessionId)
-          await fetchAutenticadoComTimeout(
-            `/backend/v1/video-institucional/chunk/abort?session_id=${encodeURIComponent(sessionId)}`,
-            {
-              method: 'POST',
-              body: abortForm,
-              timeoutMs: 15000,
-            },
-          )
-        } catch {
-          /* intentionally ignored */
-        }
-        throw new Error(
-          `Falha ao enviar bloco ${chunkIndex + 1} de ${totalChunks} após ${totalTentativasPermitidas} tentativas: ${obterMensagemErroAmigavel(ultimoErro)}`,
-        )
-      }
-    }
-
-    // 3. Finalizar montagem e gravação no banco
-    params.onProgress?.({
-      carregadoBytes: totalBytes,
-      totalBytes: totalBytes,
-      porcentagem: 99,
-      etapa: 'processando',
-      chunkAtual: totalChunks,
-      totalChunks: totalChunks,
-    })
-
-    try {
-      const completeForm = new FormData()
-      completeForm.append('session_id', sessionId)
-
-      const completeRes = await fetchAutenticadoComTimeout<VideoInstitucionalRecord>(
-        `/backend/v1/video-institucional/chunk/complete?session_id=${encodeURIComponent(sessionId)}`,
-        {
-          method: 'POST',
-          body: completeForm,
-          timeoutMs: 180000, // 3 minutos para montagem e persistência no banco
-        },
-      )
-      params.onProgress?.({
-        carregadoBytes: totalBytes,
-        totalBytes: totalBytes,
-        porcentagem: 100,
-        etapa: 'concluido',
-        chunkAtual: totalChunks,
-        totalChunks: totalChunks,
-      })
-
-      return completeRes
-    } catch (errComplete: any) {
-      throw new Error(
-        `Erro ao montar e salvar o vídeo no servidor: ${obterMensagemErroAmigavel(errComplete)}`,
-      )
-    }
+    return record
   },
 
   /**
