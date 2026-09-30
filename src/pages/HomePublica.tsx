@@ -47,7 +47,7 @@ import {
   Cpu,
 } from 'lucide-react'
 
-// As 3 fotos reais autênticas salvas no app
+// As 6 fotos reais autênticas salvas no app da Pedreira Cordeiro
 const FOTOS_REAIS = {
   aereaJazida: {
     src: INSTITUCIONAL_CONFIG.fotosReais.heroAerea,
@@ -57,6 +57,14 @@ const FOTOS_REAIS = {
       'Maciço rochoso granítico próprio de alta tenacidade, base de extração com licenciamento pleno e capacidade para atender obras civis de grande porte no sertão.',
     etiqueta: 'Jazida Própria',
   },
+  aereaTopoPlanta: {
+    src: INSTITUCIONAL_CONFIG.fotosReais.aereaTopoPlanta,
+    titulo: 'Vista de Topo da Jazida & Usina Solar',
+    local: 'Planta Industrial • Patos — PB',
+    descricao:
+      'Registro aéreo vertical completo da jazida: área de britagem com pilhas e correias, pátio de maquinários pesados, galpão operacional, frota de caminhões e grande conjunto de energia solar fotovoltaica.',
+    etiqueta: 'Infraestrutura & Energia Solar',
+  },
   patioBrita: {
     src: INSTITUCIONAL_CONFIG.fotosReais.patioBrita,
     titulo: 'Pátio de Agregados e Peneira Vibratória',
@@ -65,6 +73,14 @@ const FOTOS_REAIS = {
       'Pátio de classificação com sistema de peneiramento e expedição simultânea para carretas, caçambas e centrais de concreto usinado.',
     etiqueta: 'Pátio de Classificação',
   },
+  patioBritaPilhas: {
+    src: INSTITUCIONAL_CONFIG.fotosReais.patioBritaPilhas,
+    titulo: 'Grandes Pilhas de Brita 1 e Brita 2',
+    local: 'Pátio de Britas • Patos — PB',
+    descricao:
+      'Estoque calibrado de Brita 1 e Brita 2 sob céu do sertão, com caminhão basculante basculando rocha na peneira vibrolimpeza ao fundo e expedição contínua.',
+    etiqueta: 'Estoque de Brita 1 e 2',
+  },
   correiaProducao: {
     src: INSTITUCIONAL_CONFIG.fotosReais.correiaPoDePedra,
     titulo: 'Correia Transportadora e Pilha de Pó de Pedra',
@@ -72,6 +88,14 @@ const FOTOS_REAIS = {
     descricao:
       'Produção contínua de pó de pedra e agregados finos com controle rigoroso de curva granulométrica para argamassas e concreto usinado.',
     etiqueta: 'Britagem Contínua',
+  },
+  pilhaPoDePedra: {
+    src: INSTITUCIONAL_CONFIG.fotosReais.pilhaPoDePedra,
+    titulo: 'Pilha de Pó de Pedra e Linha de Correia',
+    local: 'Setor de Agregados Miúdos • Patos — PB',
+    descricao:
+      'Grande volume de pó de pedra claro pronto para carregamento em primeiro plano, com correia transportadora empilhando brita ao fundo, cerca de contenção e vegetação nativa da caatinga.',
+    etiqueta: 'Pó de Pedra Selecionado',
   },
 }
 
@@ -84,12 +108,13 @@ export default function HomePublica() {
   const [quantidade, setQuantidade] = useState('')
   const [mensagem, setMensagem] = useState('')
 
-  // Modalidade de foto expandida (apenas as 3 fotos reais)
+  // Modalidade de foto expandida (lightbox para as 6 fotos reais)
   const [fotoAtiva, setFotoAtiva] = useState<{
     src: string
     titulo: string
     local: string
     descricao: string
+    etiqueta?: string
   } | null>(null)
 
   // Feedback e erros
@@ -382,7 +407,7 @@ export default function HomePublica() {
                 </div>
               </div>
 
-              {/* Coluna Visual: Foto Real 1 (Aérea da Jazida) em destaque */}
+              {/* Coluna Visual: Foto Real no Hero com alternador entre Vista Aérea e Vista de Topo da Jazida */}
               <div className="lg:col-span-5">
                 <div className="relative rounded-3xl overflow-hidden border border-blue-300/20 bg-white/10 backdrop-blur-md shadow-2xl p-4 sm:p-5 space-y-4">
                   <div
@@ -418,6 +443,32 @@ export default function HomePublica() {
                         </p>
                       </div>
                     </div>
+                  </div>
+
+                  {/* Atalho interativo para a foto de topo / usina solar */}
+                  <div
+                    onClick={() => setFotoAtiva(FOTOS_REAIS.aereaTopoPlanta)}
+                    className="p-2.5 rounded-xl bg-white/5 border border-white/10 hover:border-amber-400/40 hover:bg-white/10 transition-colors flex items-center justify-between gap-3 cursor-pointer"
+                  >
+                    <div className="flex items-center gap-2.5">
+                      <img
+                        src={FOTOS_REAIS.aereaTopoPlanta.src}
+                        alt="Miniatura planta completa e usina solar"
+                        className="w-11 h-9 rounded-lg object-cover border border-white/20 shrink-0"
+                      />
+                      <div className="text-left">
+                        <div className="text-xs font-bold text-white flex items-center gap-1">
+                          <span>Ver vista de topo completa</span>
+                          <span className="text-[9px] bg-amber-400 text-slate-950 font-black px-1.5 py-0.2 rounded">
+                            NOVA
+                          </span>
+                        </div>
+                        <div className="text-[10px] text-blue-200">
+                          Planta industrial, pátios e parque solar
+                        </div>
+                      </div>
+                    </div>
+                    <Maximize2 className="w-3.5 h-3.5 text-amber-300 shrink-0 mr-1" />
                   </div>
 
                   <div className="grid grid-cols-2 gap-3 text-xs">
@@ -888,16 +939,16 @@ export default function HomePublica() {
                 </div>
               </div>
 
-              {/* Foto Real 3: Linha de Britagem e Correia com Pó de Pedra */}
-              <div className="lg:col-span-6">
+              {/* Foto Real: Linha de Britagem, Pilhas e Correia de Pó de Pedra */}
+              <div className="lg:col-span-6 space-y-4">
                 <div className="relative rounded-3xl overflow-hidden border border-blue-100 shadow-2xl bg-white">
                   <div
-                    className="relative h-80 sm:h-96 overflow-hidden group cursor-pointer"
-                    onClick={() => setFotoAtiva(FOTOS_REAIS.correiaProducao)}
+                    className="relative h-72 sm:h-80 overflow-hidden group cursor-pointer"
+                    onClick={() => setFotoAtiva(FOTOS_REAIS.pilhaPoDePedra)}
                   >
                     <img
-                      src={FOTOS_REAIS.correiaProducao.src}
-                      alt="Linha de britagem e correia transportadora da Pedreira Cordeiro em Patos PB — Foto real"
+                      src={FOTOS_REAIS.pilhaPoDePedra.src}
+                      alt="Pilha de pó de pedra e correia ao fundo na Pedreira Cordeiro — Foto real"
                       className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700"
                       loading="lazy"
                     />
@@ -910,11 +961,16 @@ export default function HomePublica() {
                         <Maximize2 className="w-3.5 h-3.5" />
                       </span>
                     </div>
+                    <div className="absolute bottom-3 left-3">
+                      <span className="bg-[#0A2540]/85 text-amber-300 text-[10px] font-bold px-2.5 py-1 rounded-md border border-amber-400/30">
+                        Pó de Pedra em Primeiro Plano • Correia ao Fundo
+                      </span>
+                    </div>
                   </div>
-                  <div className="p-6 bg-gradient-to-r from-blue-50 to-white border-t border-blue-100 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+                  <div className="p-5 bg-gradient-to-r from-blue-50 to-white border-t border-blue-100 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
                     <div>
                       <div className="text-sm font-black text-[#0A2540]">
-                        Linha de Britagem & Correia de Agregados
+                        Estoque de Pó de Pedra & Correia Transportadora
                       </div>
                       <div className="text-xs text-slate-600">
                         Fazenda Várzea da Jurema, S/N — Patos — PB
@@ -924,6 +980,29 @@ export default function HomePublica() {
                       Pedreira Cordeiro
                     </Badge>
                   </div>
+                </div>
+
+                {/* Mini-card de suporte com a foto de detalhe da correia */}
+                <div
+                  onClick={() => setFotoAtiva(FOTOS_REAIS.correiaProducao)}
+                  className="p-3.5 rounded-2xl bg-blue-50/60 border border-blue-200/70 flex items-center justify-between gap-3 cursor-pointer hover:bg-blue-100/60 transition-colors group"
+                >
+                  <div className="flex items-center gap-3">
+                    <img
+                      src={FOTOS_REAIS.correiaProducao.src}
+                      alt="Detalhe da correia transportadora"
+                      className="w-14 h-12 rounded-xl object-cover border border-blue-200 shrink-0"
+                    />
+                    <div>
+                      <div className="text-xs font-bold text-[#0A2540] group-hover:text-[#1D4ED8] transition-colors">
+                        Ver detalhe: Correia transportadora e empilhamento contínuo
+                      </div>
+                      <div className="text-[11px] text-slate-500">
+                        Linha de britagem em operação contínua • Clique para ampliar
+                      </div>
+                    </div>
+                  </div>
+                  <Maximize2 className="w-4 h-4 text-[#1D4ED8] shrink-0 mr-1" />
                 </div>
               </div>
             </div>
@@ -951,16 +1030,16 @@ export default function HomePublica() {
               </p>
             </div>
 
-            {/* Banner Destaque com Foto Real 2: Pátio de Brita e Peneiramento */}
+            {/* Banner Destaque com Fotos Reais dos Pátios de Brita */}
             <div className="mb-12 rounded-3xl overflow-hidden border border-blue-200 bg-white shadow-xl">
               <div className="grid grid-cols-1 lg:grid-cols-12 items-center">
                 <div
                   className="lg:col-span-7 relative h-72 sm:h-96 overflow-hidden group cursor-pointer"
-                  onClick={() => setFotoAtiva(FOTOS_REAIS.patioBrita)}
+                  onClick={() => setFotoAtiva(FOTOS_REAIS.patioBritaPilhas)}
                 >
                   <img
-                    src={FOTOS_REAIS.patioBrita.src}
-                    alt="Pátio de brita e peneira vibratória da Pedreira Cordeiro — Foto real"
+                    src={FOTOS_REAIS.patioBritaPilhas.src}
+                    alt="Pátio de brita 1 e brita 2 com caminhão e peneira ao fundo — Foto real"
                     className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700"
                     loading="lazy"
                   />
@@ -969,7 +1048,12 @@ export default function HomePublica() {
                       Foto Real da Operação
                     </span>
                     <span className="bg-emerald-600/90 text-white text-xs font-bold px-2.5 py-1 rounded-lg">
-                      Pátio de Agregados
+                      Pilhas de Brita 1 e 2
+                    </span>
+                  </div>
+                  <div className="absolute bottom-4 left-4">
+                    <span className="bg-[#0A2540]/85 text-white text-[11px] font-semibold px-2.5 py-1 rounded-md border border-white/20">
+                      Caminhão basculante despejando pedra na peneira vibrolimpeza
                     </span>
                   </div>
                   <div className="absolute bottom-4 right-4 bg-black/60 text-white p-2 rounded-full hover:bg-black/80 transition-colors">
@@ -1002,13 +1086,21 @@ export default function HomePublica() {
                       ✓ Pesagem em balança
                     </span>
                   </div>
-                  <div className="pt-4">
+
+                  <div className="pt-3 flex items-center gap-3">
                     <Button
                       onClick={() => rolarParaSecao('orcamento', 'Mix de Agregados')}
                       className="bg-[#1D4ED8] hover:bg-[#1E40AF] text-white font-bold rounded-xl px-5 py-2.5 cursor-pointer text-xs"
                     >
                       Cotar Carga de Agregados
                     </Button>
+                    <button
+                      onClick={() => setFotoAtiva(FOTOS_REAIS.patioBrita)}
+                      className="text-xs font-bold text-[#1D4ED8] hover:underline flex items-center gap-1 cursor-pointer"
+                    >
+                      <span>Ver outro pátio</span>
+                      <Maximize2 className="w-3.5 h-3.5" />
+                    </button>
                   </div>
                 </div>
               </div>
@@ -1138,9 +1230,50 @@ export default function HomePublica() {
               </p>
             </div>
 
-            {/* Grid com os 3 Registros Fotográficos Autênticos */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-              {/* Foto 1: Jazida Aérea */}
+            {/* Grid Completo com os 6 Registros Fotográficos Autênticos */}
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+              {/* Card 1: Vista de Topo da Jazida & Usina Solar (Nova) */}
+              <div
+                onClick={() => setFotoAtiva(FOTOS_REAIS.aereaTopoPlanta)}
+                className="group rounded-3xl overflow-hidden border border-blue-200/80 bg-white shadow-md hover:shadow-2xl transition-all duration-300 cursor-pointer flex flex-col justify-between"
+              >
+                <div>
+                  <div className="relative h-64 overflow-hidden bg-slate-900">
+                    <img
+                      src={FOTOS_REAIS.aereaTopoPlanta.src}
+                      alt={FOTOS_REAIS.aereaTopoPlanta.titulo}
+                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700"
+                      loading="lazy"
+                    />
+                    <div className="absolute top-3 left-3">
+                      <span className="bg-[#0A2540]/90 text-amber-300 text-[10px] font-bold px-2.5 py-1 rounded-md border border-amber-400/30">
+                        {FOTOS_REAIS.aereaTopoPlanta.etiqueta}
+                      </span>
+                    </div>
+                    <div className="absolute bottom-3 right-3 bg-black/60 text-white p-2 rounded-full group-hover:bg-[#1D4ED8] transition-colors">
+                      <Maximize2 className="w-3.5 h-3.5" />
+                    </div>
+                  </div>
+                  <div className="p-6 space-y-2">
+                    <div className="text-xs font-bold text-[#1D4ED8] flex items-center gap-1">
+                      <MapPin className="w-3.5 h-3.5" />
+                      {FOTOS_REAIS.aereaTopoPlanta.local}
+                    </div>
+                    <h3 className="text-xl font-black text-[#0A2540]">
+                      {FOTOS_REAIS.aereaTopoPlanta.titulo}
+                    </h3>
+                    <p className="text-xs text-slate-600 leading-relaxed">
+                      {FOTOS_REAIS.aereaTopoPlanta.descricao}
+                    </p>
+                  </div>
+                </div>
+                <div className="p-6 pt-0 border-t border-slate-100 flex items-center justify-between text-xs font-bold text-[#1D4ED8]">
+                  <span>Clique para ampliar foto</span>
+                  <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
+                </div>
+              </div>
+
+              {/* Card 2: Vista Aérea em Ângulo da Jazida Própria */}
               <div
                 onClick={() => setFotoAtiva(FOTOS_REAIS.aereaJazida)}
                 className="group rounded-3xl overflow-hidden border border-slate-200 bg-white shadow-md hover:shadow-2xl transition-all duration-300 cursor-pointer flex flex-col justify-between"
@@ -1181,7 +1314,48 @@ export default function HomePublica() {
                 </div>
               </div>
 
-              {/* Foto 2: Pátio de Brita */}
+              {/* Card 3: Pátio de Brita 1 e 2 com Caminhão Despejando (Nova) */}
+              <div
+                onClick={() => setFotoAtiva(FOTOS_REAIS.patioBritaPilhas)}
+                className="group rounded-3xl overflow-hidden border border-blue-200/80 bg-white shadow-md hover:shadow-2xl transition-all duration-300 cursor-pointer flex flex-col justify-between"
+              >
+                <div>
+                  <div className="relative h-64 overflow-hidden bg-slate-900">
+                    <img
+                      src={FOTOS_REAIS.patioBritaPilhas.src}
+                      alt={FOTOS_REAIS.patioBritaPilhas.titulo}
+                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700"
+                      loading="lazy"
+                    />
+                    <div className="absolute top-3 left-3">
+                      <span className="bg-[#0A2540]/90 text-amber-300 text-[10px] font-bold px-2.5 py-1 rounded-md border border-amber-400/30">
+                        {FOTOS_REAIS.patioBritaPilhas.etiqueta}
+                      </span>
+                    </div>
+                    <div className="absolute bottom-3 right-3 bg-black/60 text-white p-2 rounded-full group-hover:bg-[#1D4ED8] transition-colors">
+                      <Maximize2 className="w-3.5 h-3.5" />
+                    </div>
+                  </div>
+                  <div className="p-6 space-y-2">
+                    <div className="text-xs font-bold text-[#1D4ED8] flex items-center gap-1">
+                      <MapPin className="w-3.5 h-3.5" />
+                      {FOTOS_REAIS.patioBritaPilhas.local}
+                    </div>
+                    <h3 className="text-xl font-black text-[#0A2540]">
+                      {FOTOS_REAIS.patioBritaPilhas.titulo}
+                    </h3>
+                    <p className="text-xs text-slate-600 leading-relaxed">
+                      {FOTOS_REAIS.patioBritaPilhas.descricao}
+                    </p>
+                  </div>
+                </div>
+                <div className="p-6 pt-0 border-t border-slate-100 flex items-center justify-between text-xs font-bold text-[#1D4ED8]">
+                  <span>Clique para ampliar foto</span>
+                  <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
+                </div>
+              </div>
+
+              {/* Card 4: Pátio de Brita e Peneira Vibratória */}
               <div
                 onClick={() => setFotoAtiva(FOTOS_REAIS.patioBrita)}
                 className="group rounded-3xl overflow-hidden border border-slate-200 bg-white shadow-md hover:shadow-2xl transition-all duration-300 cursor-pointer flex flex-col justify-between"
@@ -1195,7 +1369,7 @@ export default function HomePublica() {
                       loading="lazy"
                     />
                     <div className="absolute top-3 left-3">
-                      <span className="bg-[#0A2540]/90 text-amber-300 text-[10px] font-bold px-2.5 py-1 rounded-md border border-amber-400/30">
+                      <span className="bg-[#0A2540]/90 text-white text-[10px] font-bold px-2.5 py-1 rounded-md border border-white/20">
                         {FOTOS_REAIS.patioBrita.etiqueta}
                       </span>
                     </div>
@@ -1222,7 +1396,48 @@ export default function HomePublica() {
                 </div>
               </div>
 
-              {/* Foto 3: Correia e Pó de Pedra */}
+              {/* Card 5: Pilha de Pó de Pedra em Primeiro Plano (Nova) */}
+              <div
+                onClick={() => setFotoAtiva(FOTOS_REAIS.pilhaPoDePedra)}
+                className="group rounded-3xl overflow-hidden border border-blue-200/80 bg-white shadow-md hover:shadow-2xl transition-all duration-300 cursor-pointer flex flex-col justify-between"
+              >
+                <div>
+                  <div className="relative h-64 overflow-hidden bg-slate-900">
+                    <img
+                      src={FOTOS_REAIS.pilhaPoDePedra.src}
+                      alt={FOTOS_REAIS.pilhaPoDePedra.titulo}
+                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700"
+                      loading="lazy"
+                    />
+                    <div className="absolute top-3 left-3">
+                      <span className="bg-[#0A2540]/90 text-amber-300 text-[10px] font-bold px-2.5 py-1 rounded-md border border-amber-400/30">
+                        {FOTOS_REAIS.pilhaPoDePedra.etiqueta}
+                      </span>
+                    </div>
+                    <div className="absolute bottom-3 right-3 bg-black/60 text-white p-2 rounded-full group-hover:bg-[#1D4ED8] transition-colors">
+                      <Maximize2 className="w-3.5 h-3.5" />
+                    </div>
+                  </div>
+                  <div className="p-6 space-y-2">
+                    <div className="text-xs font-bold text-[#1D4ED8] flex items-center gap-1">
+                      <MapPin className="w-3.5 h-3.5" />
+                      {FOTOS_REAIS.pilhaPoDePedra.local}
+                    </div>
+                    <h3 className="text-xl font-black text-[#0A2540]">
+                      {FOTOS_REAIS.pilhaPoDePedra.titulo}
+                    </h3>
+                    <p className="text-xs text-slate-600 leading-relaxed">
+                      {FOTOS_REAIS.pilhaPoDePedra.descricao}
+                    </p>
+                  </div>
+                </div>
+                <div className="p-6 pt-0 border-t border-slate-100 flex items-center justify-between text-xs font-bold text-[#1D4ED8]">
+                  <span>Clique para ampliar foto</span>
+                  <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
+                </div>
+              </div>
+
+              {/* Card 6: Correia Transportadora e Britagem Contínua */}
               <div
                 onClick={() => setFotoAtiva(FOTOS_REAIS.correiaProducao)}
                 className="group rounded-3xl overflow-hidden border border-slate-200 bg-white shadow-md hover:shadow-2xl transition-all duration-300 cursor-pointer flex flex-col justify-between"
@@ -1506,11 +1721,18 @@ export default function HomePublica() {
 
               <div className="p-6 bg-[#0A1A3B] border-t border-blue-900 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
                 <div>
-                  <div className="text-xs font-bold text-[#38BDF8] flex items-center gap-1.5">
-                    <MapPin className="w-3.5 h-3.5" />
-                    {fotoAtiva.local}
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <div className="text-xs font-bold text-[#38BDF8] flex items-center gap-1.5">
+                      <MapPin className="w-3.5 h-3.5" />
+                      {fotoAtiva.local}
+                    </div>
+                    {fotoAtiva.etiqueta && (
+                      <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-blue-900/80 text-amber-300 border border-amber-400/30">
+                        {fotoAtiva.etiqueta}
+                      </span>
+                    )}
                   </div>
-                  <h3 className="text-lg font-black text-white mt-0.5">{fotoAtiva.titulo}</h3>
+                  <h3 className="text-lg font-black text-white mt-1">{fotoAtiva.titulo}</h3>
                   <p className="text-xs text-blue-200 mt-1 max-w-2xl leading-relaxed">
                     {fotoAtiva.descricao}
                   </p>

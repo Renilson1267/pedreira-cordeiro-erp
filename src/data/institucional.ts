@@ -90,16 +90,20 @@ export const INSTITUCIONAL_CONFIG = {
   // Imagens locais do projeto (100% autossuficiente — sem dependência do domínio externo pedreiracordeiro.com.br)
   // Fotos reais da jazida própria, pátio de brita e correia transportadora instaladas em /site-img/
   fotosReais: {
-    // 1. Aérea da jazida da Pedreira Cordeiro (foto real)
-    heroAerea: '/api/files/pbc_3973264007/on2lc9wt1m5d2bm/vista_de_cima_25461_342l6kmtsw.jpeg',
-    // 2. Pátio de brita com caminhão e peneira (foto real)
-    patioBrita: '/api/files/pbc_3973264007/y4872wsu9e6qmx7/patio_de_brita_2aa99_szpz936snj.jpeg',
-    // 3. Correia transportadora com pó de pedra (foto real)
-    correiaPoDePedra:
-      '/api/files/pbc_3973264007/sivayu6qjcjq3f9/po_de_pedra_britador_997e5_6dgyj8eh6j.jpeg',
-    pedreiraAerea2: '/api/files/pbc_3973264007/on2lc9wt1m5d2bm/vista_de_cima_25461_342l6kmtsw.jpeg',
-    pedreiraBritador:
-      '/api/files/pbc_3973264007/sivayu6qjcjq3f9/po_de_pedra_britador_997e5_6dgyj8eh6j.jpeg',
+    // 1. Aérea da jazida da Pedreira Cordeiro em ângulo (foto real 1)
+    heroAerea: '/site-img/vista-de-cima-25461.jpeg',
+    // 2. Vista aérea de topo/drone vertical completa com usina solar (foto real 4 - nova)
+    aereaTopoPlanta: '/site-img/vista-de-cima-1f04f.jpeg',
+    // 3. Pátio de brita com caminhão e peneira (foto real 2)
+    patioBrita: '/site-img/patio-de-brita-2aa99.jpeg',
+    // 4. Pátio de brita ampliado com caminhão basculante e peneira vibratória (foto real 5 - nova)
+    patioBritaPilhas: '/site-img/patio-de-brita-0a7f9.jpeg',
+    // 5. Correia transportadora com pó de pedra (foto real 3)
+    correiaPoDePedra: '/site-img/po-de-pedra-britador-997e5.jpeg',
+    // 6. Pilha de pó de pedra em primeiro plano e correia ao fundo (foto real 6 - nova)
+    pilhaPoDePedra: '/site-img/po-de-pedra-britador-e5885.jpeg',
+    pedreiraAerea2: '/site-img/vista-de-cima-1f04f.jpeg',
+    pedreiraBritador: '/site-img/po-de-pedra-britador-e5885.jpeg',
   },
 } as const
 
@@ -207,7 +211,7 @@ export const PRODUTOS_PEDREIRA: ProdutoPedreiraItem[] = [
     aplicacao: 'Concreto usinado GC Mix, lajes, vigas, pilares e fundações estruturais',
     descricao:
       'Agregado graúdo de excelente adesão e granulometria uniforme, essencial para concreto de alta resistência estrutural e pisos industriais.',
-    imagem: '/api/files/pbc_3973264007/y4872wsu9e6qmx7/patio_de_brita_2aa99_szpz936snj.jpeg',
+    imagem: '/site-img/patio-de-brita-0a7f9.jpeg',
     densidadeMedia: '~1,45 t/m³',
   },
   {
@@ -218,7 +222,7 @@ export const PRODUTOS_PEDREIRA: ProdutoPedreiraItem[] = [
     aplicacao: 'Concreto pesado, drenagens profundas, lastros e pavimentação',
     descricao:
       'Ideal para obras de infraestrutura pesada, bases de pavimentação asfáltica, drenagens profundas e concretos estruturais de grande porte.',
-    imagem: '/api/files/pbc_3973264007/y4872wsu9e6qmx7/patio_de_brita_2aa99_szpz936snj.jpeg',
+    imagem: '/site-img/patio-de-brita-2aa99.jpeg',
     densidadeMedia: '~1,47 t/m³',
   },
   {
@@ -229,7 +233,7 @@ export const PRODUTOS_PEDREIRA: ProdutoPedreiraItem[] = [
     aplicacao: 'Muros de arrimo, contenções, gabiões, calçamentos e fundações de pedra',
     descricao:
       'Pedra de grande porte selecionada com alta tenacidade, ideal para contenção de encostas, muros de gravidade, enrocamentos e drenagens rústicas.',
-    imagem: '/api/files/pbc_3973264007/on2lc9wt1m5d2bm/vista_de_cima_25461_342l6kmtsw.jpeg',
+    imagem: '/site-img/vista-de-cima-1f04f.jpeg',
     densidadeMedia: '~1,50 t/m³',
   },
   {
@@ -240,7 +244,7 @@ export const PRODUTOS_PEDREIRA: ProdutoPedreiraItem[] = [
     aplicacao: 'Argamassas, assentamento de paralelepípedos e intertravados, misturas asfálticas',
     descricao:
       'Substitui com alta eficiência a areia em várias etapas construtivas, proporcionando excelente compactação, acabamento homogêneo e economia.',
-    imagem: '/api/files/pbc_3973264007/sivayu6qjcjq3f9/po_de_pedra_britador_997e5_6dgyj8eh6j.jpeg',
+    imagem: '/site-img/po-de-pedra-britador-e5885.jpeg',
     densidadeMedia: '~1,56 t/m³',
   },
   {
@@ -251,7 +255,7 @@ export const PRODUTOS_PEDREIRA: ProdutoPedreiraItem[] = [
     aplicacao: 'Blocos de concreto, pré-moldados, paisagismo, tubos e vigotas',
     descricao:
       'Pedrisco fino e limpo de alta rigidez, amplamente requisitado em fábricas de artefatos de cimento, lajotas e projetos de drenagem superficial.',
-    imagem: '/api/files/pbc_3973264007/y4872wsu9e6qmx7/patio_de_brita_2aa99_szpz936snj.jpeg',
+    imagem: '/site-img/patio-de-brita-0a7f9.jpeg',
     densidadeMedia: '~1,50 t/m³',
   },
 ]

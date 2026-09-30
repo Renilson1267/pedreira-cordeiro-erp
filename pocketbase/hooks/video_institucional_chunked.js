@@ -466,3 +466,48 @@ routerAdd('GET', '/site-img/po-de-pedra-britador-997e5.jpeg', (e) => {
     return e.json(404, { error: 'Foto não encontrada' })
   }
 })
+
+routerAdd('GET', '/site-img/vista-de-cima-1f04f.jpeg', (e) => {
+  try {
+    const rec = $app.findFirstRecordByFilter('fotos_pedreira_reais', "chave = 'aerea-topo-planta'")
+    const fileName = rec.getString('foto')
+    const filePath = `${rec.collection().id}/${rec.id}/${fileName}`
+    const fs = $app.newFilesystem()
+    const reader = fs.newReader(filePath)
+    e.response.header().set('Content-Type', 'image/jpeg')
+    e.response.header().set('Cache-Control', 'public, max-age=86400')
+    return e.stream(200, 'image/jpeg', reader)
+  } catch (err) {
+    return e.json(404, { error: 'Foto não encontrada' })
+  }
+})
+
+routerAdd('GET', '/site-img/patio-de-brita-0a7f9.jpeg', (e) => {
+  try {
+    const rec = $app.findFirstRecordByFilter('fotos_pedreira_reais', "chave = 'patio-brita-pilhas'")
+    const fileName = rec.getString('foto')
+    const filePath = `${rec.collection().id}/${rec.id}/${fileName}`
+    const fs = $app.newFilesystem()
+    const reader = fs.newReader(filePath)
+    e.response.header().set('Content-Type', 'image/jpeg')
+    e.response.header().set('Cache-Control', 'public, max-age=86400')
+    return e.stream(200, 'image/jpeg', reader)
+  } catch (err) {
+    return e.json(404, { error: 'Foto não encontrada' })
+  }
+})
+
+routerAdd('GET', '/site-img/po-de-pedra-britador-e5885.jpeg', (e) => {
+  try {
+    const rec = $app.findFirstRecordByFilter('fotos_pedreira_reais', "chave = 'pilha-po-de-pedra'")
+    const fileName = rec.getString('foto')
+    const filePath = `${rec.collection().id}/${rec.id}/${fileName}`
+    const fs = $app.newFilesystem()
+    const reader = fs.newReader(filePath)
+    e.response.header().set('Content-Type', 'image/jpeg')
+    e.response.header().set('Cache-Control', 'public, max-age=86400')
+    return e.stream(200, 'image/jpeg', reader)
+  } catch (err) {
+    return e.json(404, { error: 'Foto não encontrada' })
+  }
+})
