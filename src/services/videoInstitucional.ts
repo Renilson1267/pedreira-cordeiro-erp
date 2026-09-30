@@ -127,7 +127,10 @@ function uploadMultipartNativo<T = VideoInstitucionalRecord>(options: {
     xhr.open(options.method, options.url, true)
 
     if (options.token) {
-      xhr.setRequestHeader('Authorization', options.token)
+      const authHeader = options.token.startsWith('Bearer ')
+        ? options.token
+        : `Bearer ${options.token}`
+      xhr.setRequestHeader('Authorization', authHeader)
     }
 
     // Progresso real do upload via xhr.upload
@@ -245,7 +248,10 @@ function enviarChunkXHR(options: {
     xhr.open('POST', url, true)
 
     if (options.token) {
-      xhr.setRequestHeader('Authorization', options.token)
+      const authHeader = options.token.startsWith('Bearer ')
+        ? options.token
+        : `Bearer ${options.token}`
+      xhr.setRequestHeader('Authorization', authHeader)
     }
 
     if (xhr.upload && options.onProgress) {
@@ -315,19 +321,19 @@ function enviarChunkXHR(options: {
     xhr.timeout = 2 * 60 * 1000
 
     const formData = new FormData()
-    formData.append('upload_id', options.uploadId)
-    formData.append('chunk_index', String(options.chunkIndex))
-    formData.append('total_chunks', String(options.totalChunks))
-    formData.append('chunk_size', String(options.chunkBlob.size))
+    formData.append('upload_id', String(options.uploadId).trim())
+    formData.append('chunk_index', String(Math.floor(options.chunkIndex)))
+    formData.append('total_chunks', String(Math.floor(options.totalChunks)))
+    formData.append('chunk_size', String(Math.floor(options.chunkBlob.size)))
 
     // Nome do arquivo da fatia binária
     const videoExtMatch = (options.fileName || '').match(/\.([a-zA-Z0-9]+)$/)
     const videoExt = videoExtMatch ? videoExtMatch[1].toLowerCase() : 'mp4'
     const chunkFileName = `${options.uploadId}_part_${options.chunkIndex}.${videoExt}`
 
-    let chunkFileParaEnvio: any = options.chunkBlob
+    let chunkFileParaEnvio: any = null
     try {
-      // Enviar como File binário
+      // Enviar como File binário com MIME explícito 'application/octet-stream'
       chunkFileParaEnvio = new File([options.chunkBlob], chunkFileName, {
         type: options.chunkBlob.type || 'application/octet-stream',
       })
@@ -556,19 +562,34 @@ export const videoInstitucionalService = {
       throw authErr
     }
 
-    // 2. Etapa de init: consulta se já existem blocos enviados para este upload
+    // 2. Etapa de init:
+    // Se for um NOVO upload (sem uploadIdExistente), limpar preventivamente chunks de sessões antigas
+    // (incluindo sessões travadas conhecidas e chunks antigos do mesmo usuário)
+    if (!uploadIdExistente) {
+      try {
+        await this.limparChunksOrfaos()
+      } catch (limpezaErr) {
+        console.warn('Aviso ao executar limpeza de chunks órfãos preventiva:', limpezaErr)
+      }
+    }
+
+    // Consulta se já existem blocos enviados para este upload (retomada)
     let chunksJaEnviados: number[] = []
-    try {
-      const statusRes = await pb.send<{ uploaded_chunks: number[] }>(
-        `/backend/v1/video-institucional/chunked-status?upload_id=${encodeURIComponent(uploadId)}`,
-        { method: 'GET' },
-      )
-      chunksJaEnviados = statusRes.uploaded_chunks || []
-    } catch (statusErr: any) {
-      console.warn(
-        'Aviso ao consultar status de chunks anteriores (iniciando novo upload):',
-        statusErr,
-      )
+    if (uploadIdExistente) {
+      try {
+        const statusRes = await pb.send<{ uploaded_chunks: number[] }>(
+          `/backend/v1/video-institucional/chunked-status?upload_id=${encodeURIComponent(uploadId)}`,
+          { method: 'GET' },
+        )
+        chunksJaEnviados = statusRes.uploaded_chunks || []
+      } catch (statusErr: any) {
+        console.warn(
+          'Aviso ao consultar status de chunks anteriores (iniciando novo upload):',
+          statusErr,
+        )
+        chunksJaEnviados = []
+      }
+    } else {
       chunksJaEnviados = []
     }
 
@@ -582,7 +603,9 @@ export const videoInstitucionalService = {
 
       const start = index * chunkSize
       const end = Math.min(file.size, start + chunkSize)
-      const chunkBlob = file.slice(start, end)
+      // Tipo MIME explícito na fatia: fatias sem contentType geram Blob com MIME vazio
+      // e o validador de arquivo do PocketBase rejeita o registro do chunk
+      const chunkBlob = file.slice(start, end, 'application/octet-stream')
 
       // Atualiza progresso antes do envio do bloco
       params.onProgress?.({
@@ -814,5 +837,58 @@ export const videoInstitucionalService = {
     } catch (err) {
       console.warn('Erro ao desativar vídeos anteriores:', err)
     }
+  },
+
+  /**
+   * Limpa chunks órfãos de sessões de upload antigas ou abandonadas
+   * para não acumular lixo no banco e no storage de arquivos.
+   */
+  async limparChunksOrfaos(): Promise<number> {
+    let deletados = 0
+    try {
+      // 1. Tentar abortar as sessões antigas conhecidas via endpoint hook
+      const sessoesConhecidas = [
+        'upl_1790736546520_c0mytph',
+        'upl_1790777892253_rwpc4im',
+        'upl_1790779177686_bpdtjv6',
+      ]
+
+      for (const oldId of sessoesConhecidas) {
+        try {
+          await pb.send('/backend/v1/video-institucional/chunked-abort', {
+            method: 'POST',
+            body: { upload_id: oldId },
+          })
+        } catch (_) {
+          // Segue adiante caso o hook não encontre registros
+        }
+      }
+
+      // 2. Buscar registros órfãos diretamente na coleção video_upload_chunks via SDK
+      const chunksOrfaos = await pb.collection('video_upload_chunks').getFullList({
+        sort: '-created',
+      })
+
+      // Considerar órfãos os das sessões conhecidas ou com mais de 2 horas
+      const limiteTempoMs = Date.now() - 2 * 60 * 60 * 1000
+      for (const chunk of chunksOrfaos) {
+        const criadoEm = new Date(chunk.created).getTime()
+        const uploadIdChunk = (chunk as any).upload_id || ''
+        const ehConhecidaTravada = sessoesConhecidas.includes(uploadIdChunk)
+        const ehAntigo = !isNaN(criadoEm) && criadoEm < limiteTempoMs
+
+        if (ehConhecidaTravada || ehAntigo) {
+          try {
+            await pb.collection('video_upload_chunks').delete(chunk.id)
+            deletados++
+          } catch (delErr) {
+            console.warn(`Erro ao deletar chunk órfão ${chunk.id}:`, delErr)
+          }
+        }
+      }
+    } catch (err) {
+      console.warn('Aviso na limpeza geral de chunks órfãos:', err)
+    }
+    return deletados
   },
 }

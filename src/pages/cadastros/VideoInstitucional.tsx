@@ -82,6 +82,9 @@ export default function VideoInstitucional() {
   const [previewVideoUrl, setPreviewVideoUrl] = useState<string | null>(null)
   const [previewPosterUrl, setPreviewPosterUrl] = useState<string | null>(null)
   const [duracaoDetectada, setDuracaoDetectada] = useState<number | undefined>(undefined)
+  const [videoAtivoErro, setVideoAtivoErro] = useState(false)
+  const [previewVideoErro, setPreviewVideoErro] = useState(false)
+  const [previewModalErro, setPreviewModalErro] = useState(false)
   const [tornarAtivo, setTornarAtivo] = useState(true)
   const [salvando, setSalvando] = useState(false)
   const [progressoTexto, setProgressoTexto] = useState('')
@@ -180,27 +183,65 @@ export default function VideoInstitucional() {
       return
     }
 
+    // Validação profunda para recusar arquivos de áudio disfarçados (.mp3, .m4a, .wav renomeados para .mp4)
+    // 1. Checagem de MIME de áudio
+    if (file.type.startsWith('audio/')) {
+      toast({
+        title: 'Arquivo de áudio não permitido',
+        description:
+          'Este arquivo é um áudio, não um vídeo. Converta para MP4 H.264 e tente novamente.',
+        variant: 'destructive',
+      })
+      e.target.value = ''
+      return
+    }
+
     if (previewVideoUrl) {
       URL.revokeObjectURL(previewVideoUrl)
     }
 
+    setPreviewVideoErro(false)
     const objectUrl = URL.createObjectURL(file)
-    setPreviewVideoUrl(objectUrl)
-    setArquivoSelecionado(file)
 
-    // Tentar extrair a duração via elemento de vídeo temporário
+    // 2. Validação via elemento <video> temporário para checar se há trilha de vídeo real (videoWidth / videoHeight)
     try {
       const tempVideo = document.createElement('video')
       tempVideo.preload = 'metadata'
       tempVideo.src = objectUrl
+
       tempVideo.onloadedmetadata = () => {
+        // Se a duração carregou mas não possui largura/altura de vídeo, é um áudio sem trilha de vídeo!
+        if (tempVideo.videoWidth === 0 && tempVideo.videoHeight === 0) {
+          URL.revokeObjectURL(objectUrl)
+          setArquivoSelecionado(null)
+          setPreviewVideoUrl(null)
+          toast({
+            title: 'Arquivo sem imagem de vídeo',
+            description:
+              'Este arquivo é um áudio, não um vídeo. Converta para MP4 H.264 e tente novamente.',
+            variant: 'destructive',
+          })
+          if (fileInputRef.current) {
+            fileInputRef.current.value = ''
+          }
+          return
+        }
+
         if (tempVideo.duration && !isNaN(tempVideo.duration)) {
           setDuracaoDetectada(tempVideo.duration)
         }
       }
+
+      tempVideo.onerror = () => {
+        // Se não conseguir decodificar metadados, avisa usuário
+        console.warn('Aviso: elemento de teste não conseguiu decodificar metadados do vídeo.')
+      }
     } catch {
       /* intentionally ignored */
     }
+
+    setPreviewVideoUrl(objectUrl)
+    setArquivoSelecionado(file)
   }
 
   // Tratamento da seleção do poster/capa opcional
@@ -253,6 +294,7 @@ export default function VideoInstitucional() {
     setPreviewVideoUrl(null)
     setPreviewPosterUrl(null)
     setDuracaoDetectada(undefined)
+    setPreviewVideoErro(false)
     setUltimoUploadId(null)
     setErroDetalhado(null)
     setTornarAtivo(true)
@@ -271,6 +313,7 @@ export default function VideoInstitucional() {
     setPreviewVideoUrl(null)
     setPreviewPosterUrl(null)
     setDuracaoDetectada(undefined)
+    setPreviewVideoErro(false)
     setUltimoUploadId(null)
     setErroDetalhado(null)
     setTornarAtivo(true)
@@ -569,31 +612,42 @@ export default function VideoInstitucional() {
           <CardContent>
             {videoAtivo ? (
               <div className="flex flex-col lg:flex-row gap-4 items-start bg-slate-50 p-4 rounded-xl border border-slate-200">
-                <div className="w-full lg:w-64 aspect-video bg-black rounded-lg overflow-hidden relative group shrink-0">
-                  <video
-                    controls
-                    playsInline
-                    preload="metadata"
-                    poster={
-                      videoAtivo.capa || videoAtivo.poster
-                        ? videoInstitucionalService.obterUrlArquivo(
-                            videoAtivo,
-                            videoAtivo.capa || videoAtivo.poster || '',
-                          )
-                        : undefined
-                    }
-                    className="w-full h-full object-cover"
-                  >
-                    <source
-                      src={videoInstitucionalService.obterUrlArquivo(
-                        videoAtivo,
-                        videoAtivo.arquivo,
-                      )}
-                      type="video/mp4"
-                    />
-                    Seu navegador não suporta este vídeo.
-                  </video>
-                </div>
+                <div className="w-full lg:w-64 aspect-video bg-black rounded-lg overflow-hidden relative group shrink-0 flex items-center justify-center">
+                  {videoAtivoErro ? (
+                    <div className="p-3 text-center text-xs text-amber-200 bg-slate-900/95 w-full h-full flex flex-col items-center justify-center space-y-1">
+                      <AlertTriangle className="w-5 h-5 text-amber-400 shrink-0" />
+                      <p className="font-semibold text-amber-300 text-[11px]">
+                        Formato de vídeo não suportado pelo navegador.
+                      </p>
+                      <p className="text-[10px] text-slate-300">Envie um MP4 (H.264).</p>
+                    </div>
+                  ) : (
+                    <video
+                      controls
+                      playsInline
+                      preload="metadata"
+                      poster={
+                        videoAtivo.capa || videoAtivo.poster
+                          ? videoInstitucionalService.obterUrlArquivo(
+                              videoAtivo,
+                              videoAtivo.capa || videoAtivo.poster || '',
+                            )
+                          : undefined
+                      }
+                      className="w-full h-full object-cover"
+                      onError={() => setVideoAtivoErro(true)}
+                    >
+                      <source
+                        src={videoInstitucionalService.obterUrlArquivo(
+                          videoAtivo,
+                          videoAtivo.arquivo,
+                        )}
+                        type="video/mp4"
+                      />
+                      Seu navegador não suporta este vídeo.
+                    </video>
+                  )}
+                </div>{' '}
                 <div className="flex-1 min-w-0 space-y-2">
                   <div className="flex items-start justify-between gap-2">
                     <h3 className="font-bold text-sm text-gray-900 truncate">
@@ -964,14 +1018,25 @@ export default function VideoInstitucional() {
 
                   {/* Player de Preview do Arquivo Selecionado */}
                   {previewVideoUrl && (
-                    <div className="aspect-video w-full bg-black rounded-lg overflow-hidden">
-                      <video
-                        controls
-                        playsInline
-                        preload="metadata"
-                        src={previewVideoUrl}
-                        className="w-full h-full object-contain"
-                      />
+                    <div className="aspect-video w-full bg-black rounded-lg overflow-hidden flex items-center justify-center">
+                      {previewVideoErro ? (
+                        <div className="p-4 text-center text-xs text-amber-200 bg-slate-900 w-full h-full flex flex-col items-center justify-center space-y-1">
+                          <AlertTriangle className="w-6 h-6 text-amber-400 shrink-0" />
+                          <p className="font-semibold text-amber-300">
+                            Formato de vídeo não suportado pelo navegador.
+                          </p>
+                          <p className="text-[11px] text-slate-300">Envie um MP4 (H.264).</p>
+                        </div>
+                      ) : (
+                        <video
+                          controls
+                          playsInline
+                          preload="metadata"
+                          src={previewVideoUrl}
+                          className="w-full h-full object-contain"
+                          onError={() => setPreviewVideoErro(true)}
+                        />
+                      )}
                     </div>
                   )}
                 </div>
@@ -1161,31 +1226,42 @@ export default function VideoInstitucional() {
               )}
             </DialogHeader>
 
-            <div className="aspect-video w-full bg-black rounded-xl overflow-hidden my-3 border border-slate-800">
-              <video
-                controls
-                autoPlay
-                playsInline
-                preload="auto"
-                poster={
-                  videoParaPreview.capa || videoParaPreview.poster
-                    ? videoInstitucionalService.obterUrlArquivo(
-                        videoParaPreview,
-                        videoParaPreview.capa || videoParaPreview.poster || '',
-                      )
-                    : undefined
-                }
-                className="w-full h-full object-contain"
-              >
-                <source
-                  src={videoInstitucionalService.obterUrlArquivo(
-                    videoParaPreview,
-                    videoParaPreview.arquivo,
-                  )}
-                  type="video/mp4"
-                />
-                Seu navegador não suporta a tag de vídeo.
-              </video>
+            <div className="aspect-video w-full bg-black rounded-xl overflow-hidden my-3 border border-slate-800 flex items-center justify-center">
+              {previewModalErro ? (
+                <div className="p-6 text-center text-xs text-amber-200 bg-slate-900 w-full h-full flex flex-col items-center justify-center space-y-2">
+                  <AlertTriangle className="w-8 h-8 text-amber-400 shrink-0" />
+                  <p className="text-sm font-semibold text-amber-300">
+                    Formato de vídeo não suportado pelo navegador.
+                  </p>
+                  <p className="text-xs text-slate-300">Envie um MP4 (H.264).</p>
+                </div>
+              ) : (
+                <video
+                  controls
+                  autoPlay
+                  playsInline
+                  preload="auto"
+                  poster={
+                    videoParaPreview.capa || videoParaPreview.poster
+                      ? videoInstitucionalService.obterUrlArquivo(
+                          videoParaPreview,
+                          videoParaPreview.capa || videoParaPreview.poster || '',
+                        )
+                      : undefined
+                  }
+                  className="w-full h-full object-contain"
+                  onError={() => setPreviewModalErro(true)}
+                >
+                  <source
+                    src={videoInstitucionalService.obterUrlArquivo(
+                      videoParaPreview,
+                      videoParaPreview.arquivo,
+                    )}
+                    type="video/mp4"
+                  />
+                  Seu navegador não suporta a tag de vídeo.
+                </video>
+              )}
             </div>
 
             <DialogFooter className="flex sm:justify-between items-center gap-2">

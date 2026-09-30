@@ -1414,30 +1414,28 @@ export default function HomePublica() {
                       </video>
                     </div>
                   ) : (
-                    <div className="relative aspect-video w-full overflow-hidden group">
-                      <img
-                        src={
-                          videoAtivo.capa || videoAtivo.poster
-                            ? videoInstitucionalService.obterUrlArquivo(
-                                videoAtivo,
-                                videoAtivo.capa || videoAtivo.poster || '',
-                              )
-                            : INSTITUCIONAL_CONFIG.fotosReais.heroAerea
-                        }
-                        alt="Capa do Vídeo Institucional — Pedreira Cordeiro"
-                        className="w-full h-full object-cover filter brightness-75"
-                      />
-                      <div className="absolute inset-0 bg-gradient-to-t from-[#0A1A3B] via-slate-950/60 to-transparent flex flex-col items-center justify-center p-6 text-center">
-                        <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-full bg-amber-400 text-slate-950 flex items-center justify-center shadow-2xl shadow-amber-400/40 mb-4">
-                          <Play className="w-8 h-8 fill-slate-950 ml-1" />
-                        </div>
-                        <h3 className="text-xl sm:text-2xl font-black text-white max-w-lg mb-2">
-                          {videoAtivo.titulo}
-                        </h3>
-                        <p className="text-xs sm:text-sm text-blue-100 max-w-md mb-4 leading-relaxed">
-                          Vídeo institucional oficial da Pedreira Cordeiro e GC Mix.
-                        </p>
+                    <div className="relative aspect-video w-full overflow-hidden group bg-slate-900 flex flex-col items-center justify-center p-6 text-center">
+                      <div className="w-16 h-16 rounded-full bg-amber-500/20 border border-amber-400/40 text-amber-400 flex items-center justify-center mb-4">
+                        <AlertTriangle className="w-8 h-8 text-amber-400" />
                       </div>
+                      <h3 className="text-lg sm:text-xl font-bold text-white max-w-md mb-2">
+                        Formato de vídeo não suportado pelo navegador.
+                      </h3>
+                      <p className="text-xs sm:text-sm text-amber-200/90 max-w-md mb-4 leading-relaxed">
+                        Envie um MP4 (H.264).
+                      </p>
+                      <a
+                        href={videoInstitucionalService.obterUrlArquivo(
+                          videoAtivo,
+                          videoAtivo.arquivo,
+                        )}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        download
+                        className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-white text-xs font-semibold border border-slate-700 transition-colors"
+                      >
+                        Baixar arquivo diretamente
+                      </a>
                     </div>
                   )}
 
