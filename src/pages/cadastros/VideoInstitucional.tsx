@@ -334,7 +334,7 @@ export default function VideoInstitucional() {
             const fracionado = info.totalBytes > 45 * 1024 * 1024 || !!ultimoUploadId
             setProgressoTexto(
               fracionado
-                ? `Enviando blocos fracionados (8 MB)... ${mbEnviados} MB de ${mbTotal} MB (${info.porcentagem}%)`
+                ? `Enviando blocos fracionados (4 MB)... ${mbEnviados} MB de ${mbTotal} MB (${info.porcentagem}%)`
                 : `Enviando vídeo... ${mbEnviados} MB de ${mbTotal} MB (${info.porcentagem}%)`,
             )
           } else if (info.etapa === 'processando') {
@@ -1057,7 +1057,7 @@ export default function VideoInstitucional() {
                   </span>
                   <span className="bg-teal-100 text-teal-800 px-2 py-0.5 rounded-md border border-teal-200/60">
                     {progressoUpload.totalBytes > 45 * 1024 * 1024 || !!ultimoUploadId
-                      ? 'Upload Fracionado (Blocos 8 MB)'
+                      ? 'Upload Fracionado (Blocos 4 MB)'
                       : 'Upload Direto'}
                   </span>
                 </div>

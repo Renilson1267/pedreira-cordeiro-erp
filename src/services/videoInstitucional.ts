@@ -213,7 +213,7 @@ function uploadMultipartNativo<T = VideoInstitucionalRecord>(options: {
 // Em caso de falha de conexão num bloco, o envio retenta ou retoma daquele bloco,
 // evitando que timeouts e limites de proxy reverso derrubem arquivos grandes.
 // ---------------------------------------------------------------------------
-export const DEFAULT_CHUNK_SIZE_BYTES = 8 * 1024 * 1024 // 8 MB por bloco (garante passagem por proxies e firewalls)
+export const DEFAULT_CHUNK_SIZE_BYTES = 4 * 1024 * 1024 // 4 MB por bloco (alta velocidade, passa liso em proxies e conexões residenciais)
 
 function fileToBase64(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -311,7 +311,7 @@ function enviarChunkXHR(options: {
       reject(err)
     }
 
-    // Timeout de 2 minutos por bloco de 8 MB
+    // Timeout de 2 minutos por bloco
     xhr.timeout = 2 * 60 * 1000
 
     const formData = new FormData()
@@ -320,22 +320,18 @@ function enviarChunkXHR(options: {
     formData.append('total_chunks', String(options.totalChunks))
     formData.append('chunk_size', String(options.chunkBlob.size))
 
-    // Formatar nome de arquivo com a extensão original do vídeo (ex: .mp4) e tipo MIME explícito
+    // Garantir extensão de vídeo reconhecida pelo PocketBase
     const videoExtMatch = (options.fileName || '').match(/\.([a-zA-Z0-9]+)$/)
     const videoExt = videoExtMatch ? videoExtMatch[1].toLowerCase() : 'mp4'
     const chunkFileName = `${options.uploadId}_part_${options.chunkIndex}.${videoExt}`
-    const mimeType =
-      options.chunkBlob.type && options.chunkBlob.type !== 'application/octet-stream'
-        ? options.chunkBlob.type
-        : videoExt === 'webm'
-          ? 'video/webm'
-          : 'video/mp4'
 
     let chunkFileParaEnvio: any = options.chunkBlob
     try {
-      chunkFileParaEnvio = new File([options.chunkBlob], chunkFileName, { type: mimeType })
+      // Enviar explicitamente como video/mp4 ou video/webm para casar com a extensão
+      chunkFileParaEnvio = new File([options.chunkBlob], chunkFileName, {
+        type: videoExt === 'webm' ? 'video/webm' : 'video/mp4',
+      })
     } catch (_) {
-      // Fallback para ambientes sem construtor File
       chunkFileParaEnvio = options.chunkBlob
     }
 
@@ -380,13 +376,14 @@ async function enviarChunkComRetry(
         `Falha ao enviar bloco ${chunkIndex + 1}/${totalChunks} (tentativa ${tentativa}/${tentativasMaximas}):`,
         err,
       )
-      // Se for erro definitivo de autorização (401/403) ou dados inválidos (400), não retenta cegamente
-      if (err?.status === 401 || err?.status === 403) {
+      // Se for erro definitivo de autorização (401/403) ou dados de validação 400 rejeitados pelo servidor,
+      // interrompe imediatamente e lança o erro detalhado em vez de ficar martelando tentativas infrutíferas.
+      if (err?.status === 400 || err?.status === 401 || err?.status === 403) {
         throw err
       }
       if (tentativa < tentativasMaximas) {
-        // Espera com backoff: 1.5s, 3s...
-        await new Promise((res) => setTimeout(res, 1500 * tentativa))
+        // Espera com backoff: 1s, 2s...
+        await new Promise((res) => setTimeout(res, 1000 * tentativa))
       }
     }
   }
