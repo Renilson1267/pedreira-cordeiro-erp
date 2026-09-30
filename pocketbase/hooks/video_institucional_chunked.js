@@ -469,7 +469,7 @@ routerAdd('GET', '/site-img/po-de-pedra-britador-997e5.jpeg', (e) => {
 
 routerAdd('GET', '/site-img/vista-de-cima-1f04f.jpeg', (e) => {
   try {
-    const rec = $app.findFirstRecordByFilter('fotos_pedreira_reais', "chave = 'aerea-topo-planta'")
+    const rec = $app.findFirstRecordByFilter('fotos_pedreira_reais', "chave = 'hero-jazida-aerea'")
     const fileName = rec.getString('foto')
     const filePath = `${rec.collection().id}/${rec.id}/${fileName}`
     const fs = $app.newFilesystem()
@@ -484,7 +484,7 @@ routerAdd('GET', '/site-img/vista-de-cima-1f04f.jpeg', (e) => {
 
 routerAdd('GET', '/site-img/patio-de-brita-0a7f9.jpeg', (e) => {
   try {
-    const rec = $app.findFirstRecordByFilter('fotos_pedreira_reais', "chave = 'patio-brita-pilhas'")
+    const rec = $app.findFirstRecordByFilter('fotos_pedreira_reais', "chave = 'patio-brita'")
     const fileName = rec.getString('foto')
     const filePath = `${rec.collection().id}/${rec.id}/${fileName}`
     const fs = $app.newFilesystem()
@@ -499,7 +499,10 @@ routerAdd('GET', '/site-img/patio-de-brita-0a7f9.jpeg', (e) => {
 
 routerAdd('GET', '/site-img/po-de-pedra-britador-e5885.jpeg', (e) => {
   try {
-    const rec = $app.findFirstRecordByFilter('fotos_pedreira_reais', "chave = 'pilha-po-de-pedra'")
+    const rec = $app.findFirstRecordByFilter(
+      'fotos_pedreira_reais',
+      "chave = 'correia-po-de-pedra'",
+    )
     const fileName = rec.getString('foto')
     const filePath = `${rec.collection().id}/${rec.id}/${fileName}`
     const fs = $app.newFilesystem()
