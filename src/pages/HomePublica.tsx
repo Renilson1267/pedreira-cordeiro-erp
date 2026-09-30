@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState } from 'react'
 import { Link } from 'react-router-dom'
 import {
   INSTITUCIONAL_CONFIG,
@@ -7,8 +7,7 @@ import {
   UNIDADES_GC,
   SERVICOS_GC,
 } from '@/data/institucional'
-import { videoInstitucionalService, VideoInstitucionalRecord } from '@/services/videoInstitucional'
-import { LogoGcMix, LogoGcMixVector, ASSET_LOGO_BANNER } from '@/components/institucional/LogoGcMix'
+import { LogoGcMix, ASSET_LOGO_BANNER } from '@/components/institucional/LogoGcMix'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -27,30 +26,54 @@ import {
   Mail,
   ShieldCheck,
   Truck,
-  Award,
   Layers,
   ArrowRight,
   CheckCircle2,
   Clock,
   MapPin,
-  ExternalLink,
-  ChevronDown,
-  Building2,
-  Sparkles,
   LogIn,
   MessageCircle,
   Target,
   Eye,
   TrendingUp,
-  Play,
-  Image as ImageIcon,
   Check,
   Wrench,
-  Flame,
   Boxes,
   Compass,
-  AlertTriangle,
+  Building2,
+  Sparkles,
+  Maximize2,
+  X,
+  Cpu,
 } from 'lucide-react'
+
+// As 3 fotos reais autênticas salvas no app
+const FOTOS_REAIS = {
+  aereaJazida: {
+    src: INSTITUCIONAL_CONFIG.fotosReais.heroAerea,
+    titulo: 'Vista Aérea da Jazida Própria',
+    local: 'Pedreira Cordeiro • Patos — PB',
+    descricao:
+      'Maciço rochoso granítico próprio de alta tenacidade, base de extração com licenciamento pleno e capacidade para atender obras civis de grande porte no sertão.',
+    etiqueta: 'Jazida Própria',
+  },
+  patioBrita: {
+    src: INSTITUCIONAL_CONFIG.fotosReais.patioBrita,
+    titulo: 'Pátio de Agregados e Peneira Vibratória',
+    local: 'Central de Britagem • Patos — PB',
+    descricao:
+      'Pátio de classificação com sistema de peneiramento e expedição simultânea para carretas, caçambas e centrais de concreto usinado.',
+    etiqueta: 'Pátio de Classificação',
+  },
+  correiaProducao: {
+    src: INSTITUCIONAL_CONFIG.fotosReais.correiaPoDePedra,
+    titulo: 'Correia Transportadora e Pilha de Pó de Pedra',
+    local: 'Linha de Britagem • Patos — PB',
+    descricao:
+      'Produção contínua de pó de pedra e agregados finos com controle rigoroso de curva granulométrica para argamassas e concreto usinado.',
+    etiqueta: 'Britagem Contínua',
+  },
+}
 
 export default function HomePublica() {
   // Estado do formulário de orçamento
@@ -61,38 +84,13 @@ export default function HomePublica() {
   const [quantidade, setQuantidade] = useState('')
   const [mensagem, setMensagem] = useState('')
 
-  // Modalidade de foto expandida na galeria
-  const [fotoAtiva, setFotoAtiva] = useState<string | null>(null)
-
-  // Vídeo institucional ativo gerenciado via ERP (PocketBase)
-  const [videoAtivo, setVideoAtivo] = useState<VideoInstitucionalRecord | null>(null)
-  const [carregandoVideo, setCarregandoVideo] = useState(true)
-
-  // Estado de reprodução/erro do vídeo institucional
-  const [videoErro, setVideoErro] = useState(false)
-
-  // Buscar vídeo institucional ativo no PocketBase ao carregar
-  useEffect(() => {
-    let ativo = true
-    async function carregarVideoInstitucional() {
-      try {
-        const video = await videoInstitucionalService.obterAtivo()
-        if (ativo) {
-          setVideoAtivo(video)
-        }
-      } catch (err) {
-        console.warn('Erro ao carregar vídeo institucional ativo na Home:', err)
-      } finally {
-        if (ativo) {
-          setCarregandoVideo(false)
-        }
-      }
-    }
-    carregarVideoInstitucional()
-    return () => {
-      ativo = false
-    }
-  }, [])
+  // Modalidade de foto expandida (apenas as 3 fotos reais)
+  const [fotoAtiva, setFotoAtiva] = useState<{
+    src: string
+    titulo: string
+    local: string
+    descricao: string
+  } | null>(null)
 
   // Feedback e erros
   const [erros, setErros] = useState<{ nome?: string; telefone?: string }>({})
@@ -235,7 +233,7 @@ export default function HomePublica() {
                 GC do Amaral
               </span>
               <span className="text-[10px] text-[#1D4ED8] font-bold uppercase tracking-wider block">
-                Pedreira Cordeiro • C M Lokotrack
+                Pedreira Cordeiro • C M Construções
               </span>
             </div>
           </a>
@@ -258,14 +256,14 @@ export default function HomePublica() {
             <a href="#produtos" className="hover:text-[#1D4ED8] transition-colors">
               Agregados
             </a>
+            <a href="#operacao-real" className="hover:text-[#1D4ED8] transition-colors">
+              Nossa Operação
+            </a>
             <a href="#unidades" className="hover:text-[#1D4ED8] transition-colors">
               Unidades
             </a>
             <a href="#sobre" className="hover:text-[#1D4ED8] transition-colors">
               Quem somos
-            </a>
-            <a href="#galeria" className="hover:text-[#1D4ED8] transition-colors">
-              Fotos
             </a>
             <a href="#contato" className="hover:text-[#1D4ED8] transition-colors">
               Contato
@@ -284,7 +282,7 @@ export default function HomePublica() {
 
             <Button
               onClick={() => rolarParaSecao('orcamento')}
-              className="bg-gradient-to-r from-[#1E3A8A] via-[#1D4ED8] to-[#2563EB] hover:from-[#172554] hover:to-[#1E40AF] text-white shadow-md shadow-blue-800/25 rounded-xl px-5 py-2.5 font-bold text-sm transition-all hover:scale-[1.02]"
+              className="bg-gradient-to-r from-[#1E3A8A] via-[#1D4ED8] to-[#2563EB] hover:from-[#172554] hover:to-[#1E40AF] text-white shadow-md shadow-blue-800/25 rounded-xl px-5 py-2.5 font-bold text-sm transition-all hover:scale-[1.02] cursor-pointer"
             >
               Pedir Orçamento
             </Button>
@@ -293,7 +291,9 @@ export default function HomePublica() {
       </header>
 
       <main>
-        {/* HERO SECTION EM AZUL MUNIQUE DOMINANTE COM LOGO GC MIX EM DESTAQUE NO TOPO */}
+        {/* =========================================================
+            DOBRA 1: HERO COM FOTO REAL 1 (AÉREA DA JAZIDA)
+            ========================================================= */}
         <section className="relative overflow-hidden pt-8 pb-16 lg:pt-14 lg:pb-24 bg-gradient-to-br from-[#0A2540] via-[#113264] to-[#1E3A8A] text-white border-b border-[#1E3A8A]">
           {/* Efeitos de iluminação azul profunda */}
           <div className="absolute top-0 right-0 -mr-24 -mt-24 w-[36rem] h-[36rem] rounded-full bg-[#2563EB]/25 blur-3xl pointer-events-none" />
@@ -301,7 +301,7 @@ export default function HomePublica() {
           <div className="absolute inset-0 bg-[radial-gradient(#60A5FA_1px,transparent_1px)] [background-size:24px_24px] opacity-10 pointer-events-none" />
 
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
-            {/* 1. LOGO GC MIX EM DESTAQUE NA PARTE SUPERIOR DO SITE */}
+            {/* Logo GC MIX em destaque no topo */}
             <div className="mb-8 lg:mb-10 flex flex-col items-center lg:items-start">
               <div className="p-2 sm:p-2.5 rounded-2xl bg-white/10 backdrop-blur-md border border-white/20 shadow-2xl hover:border-white/40 transition-all max-w-full">
                 <LogoGcMix variant="banner" className="max-w-md sm:max-w-lg md:max-w-xl w-full" />
@@ -355,16 +355,16 @@ export default function HomePublica() {
                     Chamar no WhatsApp
                   </a>
 
-                  <a
-                    href="#galeria"
-                    className="w-full sm:w-auto inline-flex items-center justify-center gap-1.5 text-sm font-semibold text-blue-200 hover:text-white px-4 py-3 rounded-xl border border-blue-400/20 hover:border-blue-300/40 hover:bg-white/5 transition-colors"
+                  <button
+                    onClick={() => rolarParaSecao('produtos')}
+                    className="w-full sm:w-auto inline-flex items-center justify-center gap-1.5 text-sm font-semibold text-blue-200 hover:text-white px-4 py-3 rounded-xl border border-blue-400/20 hover:border-blue-300/40 hover:bg-white/5 transition-colors cursor-pointer"
                   >
-                    Ver nossas fotos
+                    Ver agregados
                     <ArrowRight className="w-4 h-4 text-blue-300" />
-                  </a>
+                  </button>
                 </div>
 
-                {/* Stats do Hero do site antigo */}
+                {/* Stats do Hero */}
                 <div className="pt-8 border-t border-blue-400/20 grid grid-cols-2 sm:grid-cols-4 gap-4 max-w-xl mx-auto lg:mx-0 text-center lg:text-left">
                   {INSTITUCIONAL_CONFIG.statsHero.map((stat, i) => (
                     <div
@@ -382,29 +382,36 @@ export default function HomePublica() {
                 </div>
               </div>
 
-              {/* Card visual Hero com foto da pedreira / usina */}
+              {/* Coluna Visual: Foto Real 1 (Aérea da Jazida) em destaque */}
               <div className="lg:col-span-5">
                 <div className="relative rounded-3xl overflow-hidden border border-blue-300/20 bg-white/10 backdrop-blur-md shadow-2xl p-4 sm:p-5 space-y-4">
-                  <div className="relative h-64 sm:h-80 rounded-2xl overflow-hidden group">
+                  <div
+                    className="relative h-64 sm:h-84 rounded-2xl overflow-hidden group cursor-pointer"
+                    onClick={() => setFotoAtiva(FOTOS_REAIS.aereaJazida)}
+                  >
                     <img
-                      src={INSTITUCIONAL_CONFIG.fotosReais.heroAerea}
-                      alt="Vista aérea da Pedreira Cordeiro — Foto real"
+                      src={FOTOS_REAIS.aereaJazida.src}
+                      alt="Vista aérea da Pedreira Cordeiro em Patos PB — Foto real"
                       className="w-full h-full object-cover transform group-hover:scale-105 transition-transform duration-700"
                       loading="eager"
                     />
-                    <div className="absolute top-3 right-3">
-                      <span className="bg-[#0A2540]/85 backdrop-blur-xs text-white text-[10px] font-semibold px-2.5 py-1 rounded-full border border-blue-400/30 shadow-xs flex items-center gap-1.5">
+                    <div className="absolute top-3 right-3 flex items-center gap-2">
+                      <span className="bg-[#0A2540]/90 backdrop-blur-xs text-white text-[10px] font-semibold px-2.5 py-1 rounded-full border border-blue-400/30 shadow-xs flex items-center gap-1.5">
                         <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
                         Foto Real da Jazida
                       </span>
+                      <span className="bg-black/60 text-white p-1.5 rounded-full hover:bg-black/80 transition-colors">
+                        <Maximize2 className="w-3.5 h-3.5" />
+                      </span>
                     </div>
-                    <div className="absolute inset-0 bg-gradient-to-t from-[#0A2540]/90 via-[#0A2540]/30 to-transparent flex items-end p-5">
+
+                    <div className="absolute inset-0 bg-gradient-to-t from-[#0A2540]/95 via-[#0A2540]/30 to-transparent flex items-end p-5">
                       <div>
                         <span className="text-[11px] font-black uppercase tracking-wider text-amber-300 bg-[#0A2540]/80 px-2 py-0.5 rounded border border-amber-400/30">
-                          Patos — PB • Matriz
+                          Patos — PB • Jazida Própria
                         </span>
                         <h3 className="text-lg font-extrabold text-white mt-1 leading-snug">
-                          Pedreira Cordeiro & Usina GC Mix
+                          Pedreira Cordeiro & Central GC Mix
                         </h3>
                         <p className="text-xs text-blue-200 mt-0.5">
                           Agregados e concreto usinado com controle de qualidade e pontualidade
@@ -417,12 +424,12 @@ export default function HomePublica() {
                     <div className="bg-[#0A2540]/70 p-3 rounded-xl border border-blue-400/20">
                       <div className="text-blue-300 font-medium text-[11px]">Concreto Usinado</div>
                       <div className="text-white font-bold text-sm mt-0.5">GC Mix Sertão</div>
-                      <div className="text-[10px] text-blue-200">Traços e laudos técnicos</div>
+                      <div className="text-[10px] text-blue-200">5 Centrais integradas</div>
                     </div>
                     <div className="bg-[#0A2540]/70 p-3 rounded-xl border border-blue-400/20">
                       <div className="text-blue-300 font-medium text-[11px]">Britador Móvel</div>
                       <div className="text-amber-300 font-bold text-sm mt-0.5">Lokotrack C M</div>
-                      <div className="text-[10px] text-blue-200">Esmagamento na obra</div>
+                      <div className="text-[10px] text-blue-200">Locação para obras</div>
                     </div>
                   </div>
 
@@ -439,7 +446,7 @@ export default function HomePublica() {
           </div>
         </section>
 
-        {/* CALLOUT DESTAQUE: C M CONSTRUÇÕES / LOKOTRACK NO TOPO (Como no site antigo) */}
+        {/* CALLOUT DESTAQUE: C M CONSTRUÇÕES / LOKOTRACK NO TOPO */}
         <section className="bg-gradient-to-r from-[#172554] via-[#1E3A8A] to-[#1E40AF] text-white py-6 px-4 border-b border-blue-700/50">
           <div className="max-w-7xl mx-auto flex flex-col md:flex-row items-center justify-between gap-4">
             <div className="flex items-center gap-3">
@@ -454,7 +461,7 @@ export default function HomePublica() {
                   C M Construções — Britador Móvel Lokotrack
                 </span>
                 <span className="text-xs text-blue-200 hidden sm:inline">
-                  Locação de britador de mandíbula móvel: esmagamos a pedra direto na sua obra, com
+                  Locação de britador de mandíbula móvel: esmagamos a rocha direto na sua obra, com
                   alta produção e sem custo de transporte.
                 </span>
               </div>
@@ -479,7 +486,7 @@ export default function HomePublica() {
           </div>
         </section>
 
-        {/* SEÇÃO O QUE FAZEMOS / SERVIÇOS (Conteúdo real do site antigo) */}
+        {/* SEÇÃO O QUE FAZEMOS / SERVIÇOS (Baseada em tipografia, cartões e ícones) */}
         <section id="servicos" className="py-20 bg-white border-b border-blue-100">
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
             <div className="text-center max-w-3xl mx-auto mb-16">
@@ -595,133 +602,23 @@ export default function HomePublica() {
           </div>
         </section>
 
-        {/* SEÇÃO EXCLUSIVA DE DESTAQUE: LOCAÇÃO DO BRITADOR MÓVEL LOKOTRACK */}
-        <section
-          id="lokotrack-patos"
-          className="py-16 bg-gradient-to-r from-[#0F172A] via-[#1E293B] to-[#0A2540] text-white border-y border-amber-500/30 relative overflow-hidden"
-        >
-          <div className="absolute top-0 right-1/4 w-96 h-96 rounded-full bg-amber-500/10 blur-3xl pointer-events-none" />
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
-            <div className="bg-slate-900/80 border border-amber-400/40 rounded-3xl p-6 sm:p-8 lg:p-10 shadow-2xl backdrop-blur-md">
-              <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-center">
-                {/* Painel Gráfico / Destaque de Serviço do Lokotrack */}
-                <div className="lg:col-span-6">
-                  <div className="relative rounded-2xl overflow-hidden border-2 border-amber-400/40 bg-gradient-to-br from-slate-900 via-blue-950 to-slate-950 p-8 shadow-2xl flex flex-col justify-between min-h-[300px] sm:min-h-[360px]">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <span className="bg-amber-500 text-slate-950 font-black text-xs px-3 py-1.5 rounded-lg shadow-md uppercase tracking-wider flex items-center gap-1.5">
-                          <MapPin className="w-3.5 h-3.5" />
-                          Patos — PB e Região
-                        </span>
-                        <span className="bg-[#0A2540]/90 text-white font-bold text-xs px-3 py-1.5 rounded-lg border border-blue-400/30">
-                          C M Construções
-                        </span>
-                      </div>
-                      <div className="w-12 h-12 rounded-2xl bg-amber-400/10 border border-amber-400/30 flex items-center justify-center text-amber-400">
-                        <Wrench className="w-6 h-6" />
-                      </div>
-                    </div>
-
-                    <div className="my-6 space-y-3">
-                      <div className="text-2xl sm:text-3xl font-black text-white leading-tight">
-                        Britador Móvel de Mandíbula sobre Esteiras
-                      </div>
-                      <p className="text-xs sm:text-sm text-slate-300 leading-relaxed">
-                        Solução móvel de alta performance para britagem primária e secundária.
-                        Mobilidade total para operar diretamente na jazida da sua pedreira ou na
-                        frente de serviço da sua obra.
-                      </p>
-                    </div>
-
-                    <div className="grid grid-cols-3 gap-2 pt-4 border-t border-white/10 text-center">
-                      <div className="bg-white/5 rounded-xl p-2.5 border border-white/5">
-                        <div className="text-base sm:text-lg font-black text-amber-400">100%</div>
-                        <div className="text-[10px] text-slate-300">Móvel sobre esteiras</div>
-                      </div>
-                      <div className="bg-white/5 rounded-xl p-2.5 border border-white/5">
-                        <div className="text-base sm:text-lg font-black text-emerald-400">Zero</div>
-                        <div className="text-[10px] text-slate-300">Frete de rocha bruta</div>
-                      </div>
-                      <div className="bg-white/5 rounded-xl p-2.5 border border-white/5">
-                        <div className="text-base sm:text-lg font-black text-blue-400">Alta</div>
-                        <div className="text-[10px] text-slate-300">Produção horária</div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Texto explicativo e cotação */}
-                <div className="lg:col-span-6 space-y-5">
-                  <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-amber-400/20 border border-amber-400/40 text-amber-300 text-xs font-bold uppercase tracking-wider">
-                    <Sparkles className="w-3.5 h-3.5 text-amber-400" />
-                    Equipamento para Locação
-                  </div>
-
-                  <h3 className="text-2xl sm:text-3xl lg:text-4xl font-black text-white leading-tight">
-                    Locação do Britador Móvel <span className="text-amber-400">Lokotrack</span>
-                  </h3>
-
-                  <p className="text-sm sm:text-base text-slate-300 leading-relaxed">
-                    O <strong>britador móvel Lokotrack</strong> disponibilizado pela C M Construções
-                    oferece tecnologia avançada para esmagamento contínuo de rochas. Com capacidade
-                    para atuar na britagem primária e secundária no próprio canteiro, viabiliza o
-                    aproveitamento imediato de rocha in loco.
-                  </p>
-
-                  <div className="space-y-2 text-xs sm:text-sm text-slate-200 pt-1">
-                    <div className="flex items-center gap-2">
-                      <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
-                      <span>Produção de britas e agregados com máxima granulometria</span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
-                      <span>Locação para obras de infraestrutura, estradas e pedreiras</span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
-                      <span>Elimina custo de transporte de rocha bruta pesada</span>
-                    </div>
-                  </div>
-
-                  <div className="pt-3 flex flex-col sm:flex-row gap-3">
-                    <a
-                      href={INSTITUCIONAL_CONFIG.whatsappUrlLokotrack}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="inline-flex items-center justify-center gap-2 bg-gradient-to-r from-amber-400 to-amber-500 hover:from-amber-300 hover:to-amber-400 text-slate-950 font-black text-xs px-5 py-3.5 rounded-xl shadow-lg shadow-amber-500/25 transition-all"
-                    >
-                      <MessageCircle className="w-4 h-4" />
-                      Alugar Britador Lokotrack
-                    </a>
-
-                    <button
-                      onClick={() =>
-                        rolarParaSecao('orcamento', 'Britador Móvel Lokotrack — C M Construções')
-                      }
-                      className="inline-flex items-center justify-center gap-2 bg-white/10 hover:bg-white/20 text-white font-bold text-xs px-5 py-3.5 rounded-xl border border-white/20 transition-colors cursor-pointer"
-                    >
-                      Solicitar cotação
-                    </button>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </section>
-
-        {/* SEÇÃO DEDICADA: C M CONSTRUÇÕES — BRITADOR MÓVEL LOKOTRACK */}
+        {/* =========================================================
+            SEÇÃO C M CONSTRUÇÕES — BRITADOR MÓVEL LOKOTRACK
+            (Design editorial de alto padrão, puramente tipográfico/stats/ícones — SEM ilustrações SVG nem fotos indevidas)
+            ========================================================= */}
         <section
           id="cm-lokotrack"
-          className="py-20 bg-gradient-to-b from-[#0A2540] to-[#0F172A] text-white relative overflow-hidden"
+          className="py-20 bg-gradient-to-b from-[#0A2540] via-[#0F1D36] to-[#0A2540] text-white relative overflow-hidden border-b border-[#1E3A8A]"
         >
           <div className="absolute top-0 right-0 -mr-20 -mt-20 w-96 h-96 rounded-full bg-[#1D4ED8]/20 blur-3xl pointer-events-none" />
           <div className="absolute bottom-0 left-0 -ml-20 -mb-20 w-80 h-80 rounded-full bg-amber-500/10 blur-3xl pointer-events-none" />
 
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
+            {/* Header da Seção Lokotrack */}
             <div className="text-center max-w-3xl mx-auto mb-14">
               <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-amber-400/20 border border-amber-400/40 text-amber-300 text-xs font-bold uppercase tracking-wider mb-3">
                 <Wrench className="w-3.5 h-3.5 text-amber-400" />
-                Outra empresa do grupo
+                Empresa do Grupo GC do Amaral
               </div>
               <h2 className="text-3xl sm:text-5xl font-black text-white tracking-tight">
                 C M Construções — Britador Móvel Lokotrack
@@ -730,205 +627,211 @@ export default function HomePublica() {
                 Locação de britador de mandíbula móvel <strong>Lokotrack</strong> — esmagamento de
                 pedra direto na sua obra, pedreira ou serviço, com produção alta e mobilidade total.
               </p>
+            </div>
 
-              <div className="mt-6 flex flex-wrap items-center justify-center gap-4">
+            {/* Painel Central Lokotrack: Destaques Técnicos e Operacionais */}
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-stretch mb-12">
+              {/* Card Esquerdo: Apresentação Técnica */}
+              <div className="lg:col-span-7 bg-slate-900/90 border border-amber-400/40 rounded-3xl p-8 sm:p-10 shadow-2xl backdrop-blur-md flex flex-col justify-between">
+                <div className="space-y-6">
+                  <div className="flex items-center justify-between flex-wrap gap-2">
+                    <span className="bg-amber-400 text-slate-950 font-black text-xs px-3 py-1.5 rounded-lg shadow-md uppercase tracking-wider flex items-center gap-1.5">
+                      <Cpu className="w-3.5 h-3.5" />
+                      Britador de Mandíbula sobre Esteiras
+                    </span>
+                    <span className="bg-blue-950/80 border border-blue-400/30 text-blue-200 text-xs font-semibold px-3 py-1 rounded-lg">
+                      Disponível para Locação
+                    </span>
+                  </div>
+
+                  <div>
+                    <h3 className="text-2xl sm:text-3xl font-black text-white leading-tight">
+                      Britagem Primária e Secundária no Próprio Canteiro
+                    </h3>
+                    <p className="mt-3 text-sm text-slate-300 leading-relaxed">
+                      O conjunto móvel <strong>Lokotrack</strong> opera diretamente na frente de
+                      lavra ou no canteiro de obras, eliminando a etapa mais custosa da
+                      infraestrutura: o transporte rodoviário de rocha bruta pesada até um britador
+                      convencional.
+                    </p>
+                  </div>
+
+                  {/* 4 Diferenciais em destaque */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2">
+                    <div className="p-3.5 rounded-xl bg-white/5 border border-white/10 flex items-start gap-3">
+                      <div className="w-8 h-8 rounded-lg bg-amber-400/20 text-amber-300 flex items-center justify-center shrink-0 mt-0.5">
+                        <CheckCircle2 className="w-4 h-4" />
+                      </div>
+                      <div>
+                        <div className="text-xs font-bold text-white">Mobilidade Total</div>
+                        <div className="text-[11px] text-slate-300 leading-snug">
+                          Desloca-se sobre esteiras dentro do canteiro sem necessidade de
+                          desmontagem.
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="p-3.5 rounded-xl bg-white/5 border border-white/10 flex items-start gap-3">
+                      <div className="w-8 h-8 rounded-lg bg-emerald-400/20 text-emerald-300 flex items-center justify-center shrink-0 mt-0.5">
+                        <CheckCircle2 className="w-4 h-4" />
+                      </div>
+                      <div>
+                        <div className="text-xs font-bold text-white">Economia com Frete</div>
+                        <div className="text-[11px] text-slate-300 leading-snug">
+                          Transforma o matacão e rocha bruta em agregado pronto no local da
+                          aplicação.
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="p-3.5 rounded-xl bg-white/5 border border-white/10 flex items-start gap-3">
+                      <div className="w-8 h-8 rounded-lg bg-blue-400/20 text-blue-300 flex items-center justify-center shrink-0 mt-0.5">
+                        <CheckCircle2 className="w-4 h-4" />
+                      </div>
+                      <div>
+                        <div className="text-xs font-bold text-white">Alta Produção Contínua</div>
+                        <div className="text-[11px] text-slate-300 leading-snug">
+                          Capacidade horária para atender cronogramas exigentes de rodovias e
+                          barragens.
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="p-3.5 rounded-xl bg-white/5 border border-white/10 flex items-start gap-3">
+                      <div className="w-8 h-8 rounded-lg bg-amber-400/20 text-amber-300 flex items-center justify-center shrink-0 mt-0.5">
+                        <CheckCircle2 className="w-4 h-4" />
+                      </div>
+                      <div>
+                        <div className="text-xs font-bold text-white">Operação e Apoio</div>
+                        <div className="text-[11px] text-slate-300 leading-snug">
+                          Equipe técnica da C M Construções com know-how do Grupo GC do Amaral.
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="pt-6 mt-6 border-t border-white/10 flex flex-col sm:flex-row items-center justify-between gap-4">
+                  <div className="text-xs text-slate-400 text-center sm:text-left">
+                    Atendimento em toda a <strong>Paraíba, Pernambuco e Rio Grande do Norte</strong>
+                    .
+                  </div>
+                  <div className="flex items-center gap-3 w-full sm:w-auto">
+                    <a
+                      href={INSTITUCIONAL_CONFIG.whatsappUrlLokotrack}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="w-full sm:w-auto inline-flex items-center justify-center gap-2 bg-gradient-to-r from-amber-400 to-amber-500 hover:from-amber-300 hover:to-amber-400 text-slate-950 font-black text-xs px-5 py-3 rounded-xl shadow-md transition-all hover:scale-105"
+                    >
+                      <MessageCircle className="w-4 h-4" />
+                      WhatsApp Lokotrack
+                    </a>
+                  </div>
+                </div>
+              </div>
+
+              {/* Card Direito: Especificações Técnicas e Aplicações */}
+              <div className="lg:col-span-5 bg-[#0F2244] border border-blue-400/30 rounded-3xl p-8 sm:p-10 shadow-2xl flex flex-col justify-between">
+                <div className="space-y-6">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs uppercase font-bold text-amber-300 tracking-wider">
+                      Ficha de Aplicações
+                    </span>
+                    <Wrench className="w-5 h-5 text-amber-400" />
+                  </div>
+
+                  <div>
+                    <h4 className="text-xl font-bold text-white">
+                      Onde a Locação do Lokotrack Faz a Diferença
+                    </h4>
+                    <p className="mt-2 text-xs text-blue-200 leading-relaxed">
+                      Ideal para projetos onde o transporte de agregados até a obra inviabiliza o
+                      custo ou o prazo de execução:
+                    </p>
+                  </div>
+
+                  <div className="space-y-3">
+                    <div className="p-3 bg-[#0A1A3B] rounded-xl border border-blue-900/60">
+                      <div className="text-xs font-bold text-white flex items-center gap-2">
+                        <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />
+                        Obras Rodoviárias e Pavimentação
+                      </div>
+                      <p className="text-[11px] text-blue-200 mt-1 pl-3.5">
+                        Britagem de subleito, base e sub-base diretamente ao longo do traçado da
+                        rodovia.
+                      </p>
+                    </div>
+
+                    <div className="p-3 bg-[#0A1A3B] rounded-xl border border-blue-900/60">
+                      <div className="text-xs font-bold text-white flex items-center gap-2">
+                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+                        Pedreiras e Jazidas Temporárias
+                      </div>
+                      <p className="text-[11px] text-blue-200 mt-1 pl-3.5">
+                        Aproveitamento de jazidas licenciadas sem o custo de montar uma planta fixa.
+                      </p>
+                    </div>
+
+                    <div className="p-3 bg-[#0A1A3B] rounded-xl border border-blue-900/60">
+                      <div className="text-xs font-bold text-white flex items-center gap-2">
+                        <span className="w-1.5 h-1.5 rounded-full bg-[#38BDF8]" />
+                        Barragens, Canais e Grandes Contenções
+                      </div>
+                      <p className="text-[11px] text-blue-200 mt-1 pl-3.5">
+                        Esmagamento de rocha de desmonte de túneis e cortes para uso na própria
+                        estrutura.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="pt-6 mt-6 border-t border-blue-900/60">
+                  <button
+                    onClick={() =>
+                      rolarParaSecao('orcamento', 'Britador Móvel Lokotrack — C M Construções')
+                    }
+                    className="w-full inline-flex items-center justify-center gap-2 bg-[#1E3A8A] hover:bg-[#1D4ED8] text-white font-bold text-xs px-5 py-3 rounded-xl border border-blue-400/40 transition-colors cursor-pointer"
+                  >
+                    <span>Solicitar Cotação Formal por Formulário</span>
+                    <ArrowRight className="w-4 h-4" />
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {/* Banner de Atendimento Lokotrack */}
+            <div className="p-6 rounded-2xl bg-[#0F2244]/80 border border-blue-400/30 flex flex-col md:flex-row items-center justify-between gap-4">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-amber-400 text-slate-950 flex items-center justify-center font-black shrink-0">
+                  <Phone className="w-5 h-5" />
+                </div>
+                <div>
+                  <div className="text-sm font-bold text-white">
+                    Fale com o Engenheiro Responsável pela C M Construções
+                  </div>
+                  <div className="text-xs text-blue-200">
+                    Consulte cronogramas de disponibilidade, mobilização e condições de locação.
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-3 w-full md:w-auto">
                 <a
                   href={INSTITUCIONAL_CONFIG.whatsappUrlLokotrack}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="inline-flex items-center gap-2 bg-gradient-to-r from-amber-400 to-amber-500 hover:from-amber-300 hover:to-amber-400 text-slate-950 font-black text-sm px-6 py-3.5 rounded-xl shadow-lg shadow-amber-500/25 transition-all hover:scale-105"
+                  className="w-full md:w-auto text-center px-4 py-2.5 bg-amber-400 hover:bg-amber-300 text-slate-950 font-black text-xs rounded-xl shadow-xs transition-colors shrink-0"
                 >
-                  <MessageCircle className="w-4 h-4" />
-                  Pedir orçamento do Lokotrack
+                  Consultar Disponibilidade
                 </a>
-
-                <button
-                  onClick={() =>
-                    rolarParaSecao('orcamento', 'Britador Móvel Lokotrack — C M Construções')
-                  }
-                  className="inline-flex items-center gap-2 bg-[#1E3A8A] hover:bg-[#1D4ED8] text-white font-bold text-sm px-6 py-3.5 rounded-xl border border-blue-400/40 transition-colors cursor-pointer"
-                >
-                  Solicitar via formulário
-                </button>
               </div>
-            </div>
-
-            {/* Grid com Fotos Reais de Estoque e Produção de Brita — C M Construções */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 max-w-5xl mx-auto">
-              {/* Card 1: Pilhas de Brita Produzida */}
-              <div className="group rounded-2xl overflow-hidden border-2 border-amber-400/60 bg-gradient-to-b from-slate-900/90 to-blue-950/80 shadow-2xl backdrop-blur-xs relative ring-2 ring-amber-400/20">
-                <div className="relative h-72 overflow-hidden">
-                  <img
-                    src={INSTITUCIONAL_CONFIG.fotosReais.cmPilhas1}
-                    alt="Pilhas de brita produzida — C M Construções"
-                    className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500 cursor-pointer"
-                    loading="lazy"
-                    onClick={() => setFotoAtiva(INSTITUCIONAL_CONFIG.fotosReais.cmPilhas1)}
-                  />
-                  <div className="absolute top-3 left-3 flex items-center gap-2">
-                    <span className="bg-amber-500 text-slate-950 text-[10px] font-black px-2.5 py-1 rounded-md shadow-md uppercase tracking-wider">
-                      Produção Real
-                    </span>
-                    <span className="bg-[#0A2540]/90 text-amber-300 text-[10px] font-bold px-2 py-1 rounded-md border border-amber-400/30">
-                      Brita Produzida
-                    </span>
-                  </div>
-                  <div className="absolute bottom-2 right-2">
-                    <span className="bg-black/75 backdrop-blur-xs text-blue-200 text-[10px] px-2 py-0.5 rounded font-mono">
-                      Foto real da unidade
-                    </span>
-                  </div>
-                </div>
-                <div className="p-6 space-y-3">
-                  <div className="flex items-center justify-between">
-                    <h4 className="text-lg font-black text-amber-300">Brita Produzida</h4>
-                    <Badge className="bg-amber-400/20 text-amber-300 border border-amber-400/40 text-[10px]">
-                      C M Construções
-                    </Badge>
-                  </div>
-                  <p className="text-xs text-slate-200 leading-relaxed font-medium">
-                    Brita produzida com granulometria uniforme e alta qualidade. A locação do
-                    britador móvel permite produzir agregados diretamente na frente da obra ou na
-                    jazida, atendendo demandas de grande porte.
-                  </p>
-                  <div className="pt-2 border-t border-white/10 flex items-center justify-between text-[11px] text-blue-300">
-                    <span className="flex items-center gap-1">
-                      <MapPin className="w-3.5 h-3.5 text-amber-400" />
-                      Produção in loco
-                    </span>
-                    <button
-                      onClick={() => setFotoAtiva(INSTITUCIONAL_CONFIG.fotosReais.cmPilhas1)}
-                      className="text-amber-300 hover:underline font-bold cursor-pointer"
-                    >
-                      Ampliar foto ↗
-                    </button>
-                  </div>
-                </div>
-              </div>
-
-              {/* Card 2: Pátio de Estoque e Operação */}
-              <div className="group rounded-2xl overflow-hidden border border-blue-400/20 bg-slate-900/60 shadow-xl backdrop-blur-xs">
-                <div className="relative h-72 overflow-hidden">
-                  <img
-                    src={INSTITUCIONAL_CONFIG.fotosReais.cmPatio}
-                    alt="Pátio de estoque e expedição de brita"
-                    className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500 cursor-pointer"
-                    loading="lazy"
-                    onClick={() => setFotoAtiva(INSTITUCIONAL_CONFIG.fotosReais.cmPatio)}
-                  />
-                  <div className="absolute top-3 left-3">
-                    <span className="bg-[#0A2540]/90 text-amber-300 text-[10px] font-bold px-2.5 py-1 rounded-md border border-amber-400/30">
-                      Pátio de Estoque
-                    </span>
-                  </div>
-                  <div className="absolute bottom-2 right-2">
-                    <span className="bg-black/75 backdrop-blur-xs text-blue-200 text-[10px] px-2 py-0.5 rounded font-mono">
-                      Foto real da unidade
-                    </span>
-                  </div>
-                </div>
-                <div className="p-6 space-y-3">
-                  <div className="flex items-center justify-between">
-                    <h4 className="text-lg font-bold text-white">Pátio de Estoque</h4>
-                    <Badge className="bg-blue-900/60 text-blue-200 border border-blue-400/30 text-[10px]">
-                      Patos — PB
-                    </Badge>
-                  </div>
-                  <p className="text-xs text-blue-200 leading-relaxed">
-                    Pátio de estoque organizado com britas e agregados prontos para carregamento e
-                    distribuição para obras de infraestrutura, pavimentação e centrais dosadoras da
-                    região.
-                  </p>
-                  <div className="pt-2 border-t border-white/10 flex items-center justify-between text-[11px] text-blue-300">
-                    <span className="text-slate-400">Estoque pronto</span>
-                    <button
-                      onClick={() => setFotoAtiva(INSTITUCIONAL_CONFIG.fotosReais.cmPatio)}
-                      className="text-amber-300 hover:underline font-bold cursor-pointer"
-                    >
-                      Ampliar foto ↗
-                    </button>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* Linha adicional com pilhas de brita e capacidade */}
-            <div className="mt-8 grid grid-cols-1 sm:grid-cols-3 gap-6">
-              <div className="group rounded-2xl overflow-hidden border border-blue-400/20 bg-slate-900/60">
-                <div className="relative h-48 overflow-hidden">
-                  <img
-                    src={INSTITUCIONAL_CONFIG.fotosReais.cmPilhas1}
-                    alt="Brita produzida na pedreira"
-                    className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500 cursor-pointer"
-                    loading="lazy"
-                    onClick={() => setFotoAtiva(INSTITUCIONAL_CONFIG.fotosReais.cmPilhas1)}
-                  />
-                </div>
-                <div className="p-4">
-                  <div className="text-xs font-bold text-white">Brita Produzida na Obra</div>
-                  <div className="text-[11px] text-blue-200">Alta produtividade por hora</div>
-                </div>
-              </div>
-
-              <div className="group rounded-2xl overflow-hidden border border-blue-400/20 bg-slate-900/60">
-                <div className="relative h-48 overflow-hidden">
-                  <img
-                    src={INSTITUCIONAL_CONFIG.fotosReais.cmPilhas2}
-                    alt="Pilha de brita uniforme"
-                    className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500 cursor-pointer"
-                    loading="lazy"
-                    onClick={() => setFotoAtiva(INSTITUCIONAL_CONFIG.fotosReais.cmPilhas2)}
-                  />
-                </div>
-                <div className="p-4">
-                  <div className="text-xs font-bold text-white">Pilha de Brita Uniforme</div>
-                  <div className="text-[11px] text-blue-200">Controle rigoroso de qualidade</div>
-                </div>
-              </div>
-
-              <div className="group rounded-2xl overflow-hidden border border-blue-400/20 bg-slate-900/60">
-                <div className="relative h-48 overflow-hidden">
-                  <img
-                    src={INSTITUCIONAL_CONFIG.fotosReais.cmPatio}
-                    alt="Pátio de brita e pó de pedra"
-                    className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500 cursor-pointer"
-                    loading="lazy"
-                    onClick={() => setFotoAtiva(INSTITUCIONAL_CONFIG.fotosReais.cmPatio)}
-                  />
-                </div>
-                <div className="p-4">
-                  <div className="text-xs font-bold text-white">Pátio de Brita e Pó de Pedra</div>
-                  <div className="text-[11px] text-blue-200">Estoque pronto para carregamento</div>
-                </div>
-              </div>
-            </div>
-
-            {/* Banner de Vantagens da locação */}
-            <div className="mt-10 p-6 sm:p-8 rounded-2xl bg-gradient-to-r from-[#1E3A8A]/80 via-[#1D4ED8]/60 to-[#0A2540] border border-blue-400/30 flex flex-col md:flex-row items-center justify-between gap-6">
-              <div className="space-y-1 text-center md:text-left">
-                <h4 className="text-lg font-bold text-white">
-                  Por que alugar o Britador Móvel Lokotrack da C M Construções?
-                </h4>
-                <p className="text-xs text-blue-100">
-                  Zero frete de transporte de pedra bruta • Operação rápida no local • Capacidade
-                  para grandes volumes de britagem.
-                </p>
-              </div>
-
-              <a
-                href={INSTITUCIONAL_CONFIG.whatsappUrlLokotrack}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-flex items-center gap-2 bg-amber-400 hover:bg-amber-300 text-slate-950 font-black text-xs px-6 py-3 rounded-xl shadow-md shrink-0 transition-transform hover:scale-105"
-              >
-                <Phone className="w-3.5 h-3.5" />
-                Falar com consultor Lokotrack
-              </a>
             </div>
           </div>
         </section>
 
-        {/* SEÇÃO PEDREIRA CORDEIRO (PRODUÇÃO PRÓPRIA — CONTEÚDO REAL) */}
+        {/* =========================================================
+            DOBRA 2: PEDREIRA CORDEIRO COM FOTO REAL 3 (CORREIA / PÓ DE PEDRA)
+            ========================================================= */}
         <section id="pedreira" className="py-20 bg-white border-b border-blue-100">
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-12 items-center">
@@ -949,7 +852,7 @@ export default function HomePublica() {
                   qualidade e preço competitivo para as obras da região.
                 </p>
 
-                {/* Bullets reais do site antigo */}
+                {/* Bullets reais do site */}
                 <div className="space-y-3 pt-2">
                   {INSTITUCIONAL_CONFIG.pedreiraDestaques.map((item, idx) => (
                     <div
@@ -985,26 +888,33 @@ export default function HomePublica() {
                 </div>
               </div>
 
-              {/* Foto real aérea da Pedreira Cordeiro */}
+              {/* Foto Real 3: Linha de Britagem e Correia com Pó de Pedra */}
               <div className="lg:col-span-6">
                 <div className="relative rounded-3xl overflow-hidden border border-blue-100 shadow-2xl bg-white">
-                  <div className="relative h-80 sm:h-96 overflow-hidden group">
+                  <div
+                    className="relative h-80 sm:h-96 overflow-hidden group cursor-pointer"
+                    onClick={() => setFotoAtiva(FOTOS_REAIS.correiaProducao)}
+                  >
                     <img
-                      src={INSTITUCIONAL_CONFIG.fotosReais.pedreiraBritador}
-                      alt="Usina de britagem da Pedreira Cordeiro em Patos PB"
+                      src={FOTOS_REAIS.correiaProducao.src}
+                      alt="Linha de britagem e correia transportadora da Pedreira Cordeiro em Patos PB — Foto real"
                       className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700"
+                      loading="lazy"
                     />
-                    <div className="absolute top-3 right-3">
+                    <div className="absolute top-3 right-3 flex items-center gap-2">
                       <span className="bg-[#0A2540]/90 backdrop-blur-xs text-white text-[10px] font-bold px-3 py-1 rounded-full border border-blue-400/30 shadow-xs flex items-center gap-1.5">
                         <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-                        Patos — PB
+                        Foto Real da Produção
+                      </span>
+                      <span className="bg-black/60 text-white p-1.5 rounded-full hover:bg-black/80 transition-colors">
+                        <Maximize2 className="w-3.5 h-3.5" />
                       </span>
                     </div>
                   </div>
                   <div className="p-6 bg-gradient-to-r from-blue-50 to-white border-t border-blue-100 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
                     <div>
                       <div className="text-sm font-black text-[#0A2540]">
-                        Jazida Própria & Central de Britagem
+                        Linha de Britagem & Correia de Agregados
                       </div>
                       <div className="text-xs text-slate-600">
                         Fazenda Várzea da Jurema, S/N — Patos — PB
@@ -1020,8 +930,10 @@ export default function HomePublica() {
           </div>
         </section>
 
-        {/* SEÇÃO PRODUTOS / AGREGADOS DA PEDREIRA */}
-        <section id="produtos" className="py-20 bg-[#F8FAFC]">
+        {/* =========================================================
+            DOBRA 3: PRODUTOS / AGREGADOS COM FOTO REAL 2 (PÁTIO DE BRITA)
+            ========================================================= */}
+        <section id="produtos" className="py-20 bg-[#F8FAFC] border-b border-blue-100">
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
             <div className="text-center max-w-3xl mx-auto mb-16">
               <Badge
@@ -1034,80 +946,117 @@ export default function HomePublica() {
                 Produtos da Pedreira Cordeiro
               </h2>
               <p className="mt-3 text-base sm:text-lg text-slate-600 leading-relaxed">
-                Brita 12, Brita 19, Pedra rachão, Pó de pedra e Cascalhinho. Controle granulométrico
-                para concreto estrutural, pavimentação e drenagem.
+                Brita 12, Brita 19, Pedra rachão, Pó de pedra e Cascalhinho. Matéria-prima
+                selecionada com controle granulométrico rigoroso.
               </p>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+            {/* Banner Destaque com Foto Real 2: Pátio de Brita e Peneiramento */}
+            <div className="mb-12 rounded-3xl overflow-hidden border border-blue-200 bg-white shadow-xl">
+              <div className="grid grid-cols-1 lg:grid-cols-12 items-center">
+                <div
+                  className="lg:col-span-7 relative h-72 sm:h-96 overflow-hidden group cursor-pointer"
+                  onClick={() => setFotoAtiva(FOTOS_REAIS.patioBrita)}
+                >
+                  <img
+                    src={FOTOS_REAIS.patioBrita.src}
+                    alt="Pátio de brita e peneira vibratória da Pedreira Cordeiro — Foto real"
+                    className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700"
+                    loading="lazy"
+                  />
+                  <div className="absolute top-4 left-4 flex items-center gap-2">
+                    <span className="bg-[#0A2540]/90 backdrop-blur-xs text-amber-300 text-xs font-black px-3 py-1.5 rounded-lg border border-amber-400/40">
+                      Foto Real da Operação
+                    </span>
+                    <span className="bg-emerald-600/90 text-white text-xs font-bold px-2.5 py-1 rounded-lg">
+                      Pátio de Agregados
+                    </span>
+                  </div>
+                  <div className="absolute bottom-4 right-4 bg-black/60 text-white p-2 rounded-full hover:bg-black/80 transition-colors">
+                    <Maximize2 className="w-4 h-4" />
+                  </div>
+                </div>
+
+                <div className="lg:col-span-5 p-8 sm:p-10 space-y-4">
+                  <span className="text-xs font-bold uppercase tracking-wider text-[#1D4ED8] block">
+                    Controle Granulométrico Rigoroso
+                  </span>
+                  <h3 className="text-2xl font-black text-[#0A2540] leading-tight">
+                    Expedição Contínua e Pronta-Entrega de Agregados
+                  </h3>
+                  <p className="text-sm text-slate-600 leading-relaxed">
+                    Nosso pátio em Patos — PB mantém estoques calibrados de{' '}
+                    <strong>Brita 12</strong>, <strong>Brita 19</strong>,{' '}
+                    <strong>Pó de pedra</strong>, <strong>Pedra rachão</strong> e{' '}
+                    <strong>Cascalhinho</strong> prontos para carregamento rápido de caçambas ou
+                    abastecimento direto das concreteiras GC Mix.
+                  </p>
+                  <div className="pt-2 flex flex-wrap gap-2 text-xs font-semibold text-[#0A2540]">
+                    <span className="bg-blue-50 px-3 py-1.5 rounded-lg border border-blue-200">
+                      ✓ Carga à pronta
+                    </span>
+                    <span className="bg-blue-50 px-3 py-1.5 rounded-lg border border-blue-200">
+                      ✓ Laudo de densidade
+                    </span>
+                    <span className="bg-blue-50 px-3 py-1.5 rounded-lg border border-blue-200">
+                      ✓ Pesagem em balança
+                    </span>
+                  </div>
+                  <div className="pt-4">
+                    <Button
+                      onClick={() => rolarParaSecao('orcamento', 'Mix de Agregados')}
+                      className="bg-[#1D4ED8] hover:bg-[#1E40AF] text-white font-bold rounded-xl px-5 py-2.5 cursor-pointer text-xs"
+                    >
+                      Cotar Carga de Agregados
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Grid dos 5 Produtos Oficiais */}
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
               {PRODUTOS_PEDREIRA.map((item: ProdutoPedreiraItem) => (
                 <Card
                   key={item.id}
                   className="group bg-white hover:border-[#2563EB] border-slate-200 rounded-2xl overflow-hidden transition-all duration-300 hover:shadow-xl flex flex-col justify-between"
                 >
-                  <div>
-                    {/* Imagem do produto com fallback resiliente */}
-                    <div className="relative h-52 overflow-hidden bg-slate-900 group/img">
-                      <img
-                        src={item.imagem}
-                        alt={item.nome}
-                        className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
-                        loading="lazy"
-                        onError={(e) => {
-                          const target = e.currentTarget
-                          if (item.imagemSecundaria && target.src !== item.imagemSecundaria) {
-                            target.src = item.imagemSecundaria
-                          } else {
-                            // Imagem fallback padrão local de agregados da pedreira
-                            target.src = '/site-img/cm-patio.svg'
-                          }
-                        }}
-                      />
-                      <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-black/20 pointer-events-none" />
-                      <div className="absolute top-3 left-3 flex items-center gap-2">
-                        <span className="bg-[#0A2540]/90 backdrop-blur-xs text-white text-[10px] font-mono font-bold px-2.5 py-1 rounded-md border border-white/20">
-                          {item.codigoRef}
-                        </span>
-                        <span className="bg-emerald-600/90 text-white text-[10px] font-bold px-2 py-0.5 rounded shadow-xs">
-                          Foto da Usina
-                        </span>
+                  <CardContent className="p-7 space-y-4">
+                    <div className="flex items-center justify-between">
+                      <div className="w-12 h-12 rounded-xl bg-blue-50 border border-blue-200 text-[#1D4ED8] flex items-center justify-center font-black">
+                        <Layers className="w-6 h-6" />
                       </div>
-                      <div className="absolute bottom-3 right-3">
-                        <span className="bg-[#1D4ED8]/95 backdrop-blur-xs text-white text-[11px] font-semibold px-2.5 py-1 rounded-md shadow-md">
-                          Densidade {item.densidadeMedia}
-                        </span>
+                      <span className="bg-slate-100 text-slate-700 text-[11px] font-mono font-bold px-2.5 py-1 rounded-md border border-slate-200">
+                        {item.codigoRef}
+                      </span>
+                    </div>
+
+                    <div>
+                      <h3 className="text-2xl font-bold text-[#0A2540] group-hover:text-[#1D4ED8] transition-colors">
+                        {item.nome}
+                      </h3>
+                      <div className="text-xs font-bold text-[#1D4ED8] mt-1 flex items-center gap-1.5">
+                        <span className="w-2 h-2 rounded-full bg-[#1D4ED8]" />
+                        <span>{item.granulometria}</span>
                       </div>
                     </div>
 
-                    <CardContent className="p-6">
-                      <h3 className="text-2xl font-bold text-[#0A2540] mb-1 group-hover:text-[#1D4ED8] transition-colors">
-                        {item.nome}
-                      </h3>
+                    <p className="text-sm text-slate-600 leading-relaxed">{item.descricao}</p>
 
-                      <div className="text-xs font-bold text-[#1D4ED8] mb-3 flex items-center gap-1.5">
-                        <Layers className="w-3.5 h-3.5" />
-                        <span>{item.granulometria}</span>
-                      </div>
+                    <div className="p-3.5 bg-blue-50/60 rounded-xl border border-blue-100 text-xs space-y-1">
+                      <span className="font-bold text-[#0A2540] block">Principais Aplicações:</span>
+                      <span className="text-slate-600 leading-snug block">{item.aplicacao}</span>
+                    </div>
+                  </CardContent>
 
-                      <p className="text-sm text-slate-600 mb-4 leading-relaxed">
-                        {item.descricao}
-                      </p>
-
-                      <div className="p-3 bg-blue-50/50 rounded-xl border border-blue-100 text-xs space-y-1">
-                        <span className="font-bold text-[#0A2540] block">
-                          Principais Aplicações:
-                        </span>
-                        <span className="text-slate-600 leading-snug block">{item.aplicacao}</span>
-                      </div>
-                    </CardContent>
-                  </div>
-
-                  <div className="p-6 pt-0 border-t border-slate-100 mt-4 flex items-center justify-between">
+                  <div className="p-6 pt-0 border-t border-slate-100 mt-2 flex items-center justify-between">
                     <div>
-                      <span className="text-[11px] uppercase tracking-wider text-slate-400 font-bold block">
-                        Valores
+                      <span className="text-[10px] uppercase tracking-wider text-slate-400 font-bold block">
+                        Densidade Média
                       </span>
-                      <span className="text-xs font-bold text-[#0A2540]">Sob Consulta</span>
+                      <span className="text-xs font-bold text-[#0A2540]">
+                        {item.densidadeMedia}
+                      </span>
                     </div>
 
                     <Button
@@ -1122,7 +1071,7 @@ export default function HomePublica() {
               ))}
 
               {/* Card Concreto GC Mix Integrado */}
-              <Card className="bg-gradient-to-br from-[#0A2540] via-[#1E3A8A] to-[#1D4ED8] text-white rounded-2xl p-8 flex flex-col justify-between border-none shadow-xl">
+              <Card className="bg-gradient-to-br from-[#0A2540] via-[#1E3A8A] to-[#1D4ED8] text-white rounded-2xl p-7 flex flex-col justify-between border-none shadow-xl">
                 <div className="space-y-4">
                   <div className="w-12 h-12 rounded-xl bg-white/10 border border-white/20 flex items-center justify-center text-amber-300">
                     <Building2 className="w-6 h-6" />
@@ -1138,7 +1087,7 @@ export default function HomePublica() {
                     alto rigor de traço, resistência (FCK) e agilidade de entrega com caminhões
                     betoneira.
                   </p>
-                  <ul className="text-xs text-blue-100 space-y-2 pt-2">
+                  <ul className="text-xs text-blue-100 space-y-2 pt-1">
                     <li className="flex items-center gap-2">
                       <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
                       Dosagem computadorizada em central
@@ -1157,7 +1106,7 @@ export default function HomePublica() {
                 <div className="pt-6">
                   <Button
                     onClick={() => rolarParaSecao('orcamento', 'Concreto Usinado GC Mix')}
-                    className="w-full bg-amber-400 hover:bg-amber-300 text-slate-950 font-black rounded-xl cursor-pointer"
+                    className="w-full bg-amber-400 hover:bg-amber-300 text-slate-950 font-black rounded-xl cursor-pointer text-xs py-3"
                   >
                     Cotar Concreto Usinado
                   </Button>
@@ -1167,8 +1116,178 @@ export default function HomePublica() {
           </div>
         </section>
 
-        {/* SEÇÃO NOSSAS UNIDADES (Conteúdo real do site antigo) */}
-        <section id="unidades" className="py-20 bg-white border-b border-blue-100">
+        {/* =========================================================
+            SEÇÃO ESTRUTURA REAL EM FOCO (As 3 fotos reais em destaque)
+            Substitui a galeria de ilustrações falsas por foco exclusivo na infraestrutura autêntica
+            ========================================================= */}
+        <section id="operacao-real" className="py-20 bg-white border-b border-blue-100">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div className="text-center max-w-3xl mx-auto mb-14">
+              <Badge
+                variant="outline"
+                className="border-[#1D4ED8] text-[#1D4ED8] bg-blue-50 px-3 py-1 mb-3 text-xs uppercase tracking-wider font-bold"
+              >
+                Nossa Infraestrutura Real
+              </Badge>
+              <h2 className="text-3xl sm:text-4xl font-black text-[#0A2540] tracking-tight">
+                Operação e Jazida em Patos — PB
+              </h2>
+              <p className="mt-3 text-base sm:text-lg text-slate-600 leading-relaxed">
+                Fotos reais registradas na matriz: da extração na jazida de granito ao pátio de
+                classificação e esteiras de britagem contínua.
+              </p>
+            </div>
+
+            {/* Grid com os 3 Registros Fotográficos Autênticos */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+              {/* Foto 1: Jazida Aérea */}
+              <div
+                onClick={() => setFotoAtiva(FOTOS_REAIS.aereaJazida)}
+                className="group rounded-3xl overflow-hidden border border-slate-200 bg-white shadow-md hover:shadow-2xl transition-all duration-300 cursor-pointer flex flex-col justify-between"
+              >
+                <div>
+                  <div className="relative h-64 overflow-hidden bg-slate-900">
+                    <img
+                      src={FOTOS_REAIS.aereaJazida.src}
+                      alt={FOTOS_REAIS.aereaJazida.titulo}
+                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700"
+                      loading="lazy"
+                    />
+                    <div className="absolute top-3 left-3">
+                      <span className="bg-[#0A2540]/90 text-white text-[10px] font-bold px-2.5 py-1 rounded-md border border-white/20">
+                        {FOTOS_REAIS.aereaJazida.etiqueta}
+                      </span>
+                    </div>
+                    <div className="absolute bottom-3 right-3 bg-black/60 text-white p-2 rounded-full group-hover:bg-[#1D4ED8] transition-colors">
+                      <Maximize2 className="w-3.5 h-3.5" />
+                    </div>
+                  </div>
+                  <div className="p-6 space-y-2">
+                    <div className="text-xs font-bold text-[#1D4ED8] flex items-center gap-1">
+                      <MapPin className="w-3.5 h-3.5" />
+                      {FOTOS_REAIS.aereaJazida.local}
+                    </div>
+                    <h3 className="text-xl font-black text-[#0A2540]">
+                      {FOTOS_REAIS.aereaJazida.titulo}
+                    </h3>
+                    <p className="text-xs text-slate-600 leading-relaxed">
+                      {FOTOS_REAIS.aereaJazida.descricao}
+                    </p>
+                  </div>
+                </div>
+                <div className="p-6 pt-0 border-t border-slate-100 flex items-center justify-between text-xs font-bold text-[#1D4ED8]">
+                  <span>Clique para ampliar foto</span>
+                  <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
+                </div>
+              </div>
+
+              {/* Foto 2: Pátio de Brita */}
+              <div
+                onClick={() => setFotoAtiva(FOTOS_REAIS.patioBrita)}
+                className="group rounded-3xl overflow-hidden border border-slate-200 bg-white shadow-md hover:shadow-2xl transition-all duration-300 cursor-pointer flex flex-col justify-between"
+              >
+                <div>
+                  <div className="relative h-64 overflow-hidden bg-slate-900">
+                    <img
+                      src={FOTOS_REAIS.patioBrita.src}
+                      alt={FOTOS_REAIS.patioBrita.titulo}
+                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700"
+                      loading="lazy"
+                    />
+                    <div className="absolute top-3 left-3">
+                      <span className="bg-[#0A2540]/90 text-amber-300 text-[10px] font-bold px-2.5 py-1 rounded-md border border-amber-400/30">
+                        {FOTOS_REAIS.patioBrita.etiqueta}
+                      </span>
+                    </div>
+                    <div className="absolute bottom-3 right-3 bg-black/60 text-white p-2 rounded-full group-hover:bg-[#1D4ED8] transition-colors">
+                      <Maximize2 className="w-3.5 h-3.5" />
+                    </div>
+                  </div>
+                  <div className="p-6 space-y-2">
+                    <div className="text-xs font-bold text-[#1D4ED8] flex items-center gap-1">
+                      <MapPin className="w-3.5 h-3.5" />
+                      {FOTOS_REAIS.patioBrita.local}
+                    </div>
+                    <h3 className="text-xl font-black text-[#0A2540]">
+                      {FOTOS_REAIS.patioBrita.titulo}
+                    </h3>
+                    <p className="text-xs text-slate-600 leading-relaxed">
+                      {FOTOS_REAIS.patioBrita.descricao}
+                    </p>
+                  </div>
+                </div>
+                <div className="p-6 pt-0 border-t border-slate-100 flex items-center justify-between text-xs font-bold text-[#1D4ED8]">
+                  <span>Clique para ampliar foto</span>
+                  <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
+                </div>
+              </div>
+
+              {/* Foto 3: Correia e Pó de Pedra */}
+              <div
+                onClick={() => setFotoAtiva(FOTOS_REAIS.correiaProducao)}
+                className="group rounded-3xl overflow-hidden border border-slate-200 bg-white shadow-md hover:shadow-2xl transition-all duration-300 cursor-pointer flex flex-col justify-between"
+              >
+                <div>
+                  <div className="relative h-64 overflow-hidden bg-slate-900">
+                    <img
+                      src={FOTOS_REAIS.correiaProducao.src}
+                      alt={FOTOS_REAIS.correiaProducao.titulo}
+                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700"
+                      loading="lazy"
+                    />
+                    <div className="absolute top-3 left-3">
+                      <span className="bg-[#0A2540]/90 text-white text-[10px] font-bold px-2.5 py-1 rounded-md border border-white/20">
+                        {FOTOS_REAIS.correiaProducao.etiqueta}
+                      </span>
+                    </div>
+                    <div className="absolute bottom-3 right-3 bg-black/60 text-white p-2 rounded-full group-hover:bg-[#1D4ED8] transition-colors">
+                      <Maximize2 className="w-3.5 h-3.5" />
+                    </div>
+                  </div>
+                  <div className="p-6 space-y-2">
+                    <div className="text-xs font-bold text-[#1D4ED8] flex items-center gap-1">
+                      <MapPin className="w-3.5 h-3.5" />
+                      {FOTOS_REAIS.correiaProducao.local}
+                    </div>
+                    <h3 className="text-xl font-black text-[#0A2540]">
+                      {FOTOS_REAIS.correiaProducao.titulo}
+                    </h3>
+                    <p className="text-xs text-slate-600 leading-relaxed">
+                      {FOTOS_REAIS.correiaProducao.descricao}
+                    </p>
+                  </div>
+                </div>
+                <div className="p-6 pt-0 border-t border-slate-100 flex items-center justify-between text-xs font-bold text-[#1D4ED8]">
+                  <span>Clique para ampliar foto</span>
+                  <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
+                </div>
+              </div>
+            </div>
+
+            {/* Aviso informativo de transparência */}
+            <div className="mt-10 p-5 rounded-2xl bg-blue-50/70 border border-blue-200 flex flex-col sm:flex-row items-center justify-between text-xs text-slate-700 gap-3">
+              <div className="flex items-center gap-2">
+                <ShieldCheck className="w-4 h-4 text-[#1D4ED8] shrink-0" />
+                <span>
+                  Fotos 100% autênticas da matriz em Patos — PB. Operação integrada de britagem e
+                  concreto usinado para obras civis em todo o Sertão.
+                </span>
+              </div>
+              <button
+                onClick={() => rolarParaSecao('orcamento')}
+                className="inline-flex items-center gap-1 font-bold text-[#1D4ED8] hover:underline shrink-0 cursor-pointer"
+              >
+                <span>Solicitar cotação online</span>
+                <ArrowRight className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          </div>
+        </section>
+
+        {/* =========================================================
+            SEÇÃO NOSSAS UNIDADES (Conteúdo real — 5 unidades)
+            ========================================================= */}
+        <section id="unidades" className="py-20 bg-[#F8FAFC] border-b border-blue-100">
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
             <div className="text-center max-w-3xl mx-auto mb-16">
               <Badge
@@ -1193,7 +1312,7 @@ export default function HomePublica() {
                   className={`rounded-2xl p-6 text-center flex flex-col justify-between transition-all duration-300 hover:shadow-lg ${
                     unidade.destaque
                       ? 'bg-gradient-to-b from-[#1E3A8A] to-[#0A2540] text-white shadow-md ring-2 ring-[#2563EB]'
-                      : 'bg-[#F8FAFC] border border-blue-100 text-slate-800 hover:border-[#2563EB]'
+                      : 'bg-white border border-blue-100 text-slate-800 hover:border-[#2563EB]'
                   }`}
                 >
                   <div className="space-y-3">
@@ -1237,7 +1356,7 @@ export default function HomePublica() {
             </div>
 
             {/* Banner de Atendimento Regional */}
-            <div className="mt-12 p-6 sm:p-8 rounded-3xl bg-gradient-to-r from-blue-50 via-slate-50 to-blue-50 border border-blue-200 flex flex-col md:flex-row items-center justify-between gap-6">
+            <div className="mt-12 p-6 sm:p-8 rounded-3xl bg-white border border-blue-200 shadow-sm flex flex-col md:flex-row items-center justify-between gap-6">
               <div className="space-y-1 text-center md:text-left">
                 <span className="text-xs uppercase font-bold text-[#1D4ED8] tracking-wider block">
                   Logística Integrada no Sertão
@@ -1264,8 +1383,10 @@ export default function HomePublica() {
           </div>
         </section>
 
-        {/* SEÇÃO MISSÃO, VISÃO E OBJETIVOS (Conteúdo oficial do site antigo) */}
-        <section id="sobre" className="py-20 bg-[#F8FAFC] border-b border-blue-100">
+        {/* =========================================================
+            SEÇÃO MISSÃO, VISÃO E OBJETIVOS (Conteúdo oficial do Grupo)
+            ========================================================= */}
+        <section id="sobre" className="py-20 bg-white border-b border-blue-100">
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
             <div className="text-center max-w-3xl mx-auto mb-16">
               <Badge
@@ -1284,9 +1405,9 @@ export default function HomePublica() {
 
             <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
               {/* Card Missão */}
-              <Card className="bg-white border-blue-100 hover:border-[#2563EB] rounded-2xl overflow-hidden transition-all duration-300 hover:shadow-xl flex flex-col justify-between">
+              <Card className="bg-[#F8FAFC] border-blue-100 hover:border-[#2563EB] rounded-2xl overflow-hidden transition-all duration-300 hover:shadow-xl flex flex-col justify-between">
                 <CardContent className="p-8 space-y-4">
-                  <div className="w-13 h-13 rounded-2xl bg-blue-50 border border-blue-200 text-[#1D4ED8] flex items-center justify-center shadow-xs">
+                  <div className="w-13 h-13 rounded-2xl bg-blue-100 text-[#1D4ED8] flex items-center justify-center shadow-xs">
                     <Target className="w-7 h-7" />
                   </div>
                   <div>
@@ -1306,7 +1427,7 @@ export default function HomePublica() {
               </Card>
 
               {/* Card Visão */}
-              <Card className="bg-white border-blue-100 hover:border-[#2563EB] rounded-2xl overflow-hidden transition-all duration-300 hover:shadow-xl flex flex-col justify-between">
+              <Card className="bg-[#F8FAFC] border-blue-100 hover:border-[#2563EB] rounded-2xl overflow-hidden transition-all duration-300 hover:shadow-xl flex flex-col justify-between">
                 <CardContent className="p-8 space-y-4">
                   <div className="w-13 h-13 rounded-2xl bg-amber-50 border border-amber-200 text-amber-700 flex items-center justify-center shadow-xs">
                     <Eye className="w-7 h-7" />
@@ -1328,7 +1449,7 @@ export default function HomePublica() {
               </Card>
 
               {/* Card Objetivos */}
-              <Card className="bg-white border-blue-100 hover:border-[#2563EB] rounded-2xl overflow-hidden transition-all duration-300 hover:shadow-xl flex flex-col justify-between">
+              <Card className="bg-[#F8FAFC] border-blue-100 hover:border-[#2563EB] rounded-2xl overflow-hidden transition-all duration-300 hover:shadow-xl flex flex-col justify-between">
                 <CardContent className="p-8 space-y-4">
                   <div className="w-13 h-13 rounded-2xl bg-[#1E3A8A] text-white flex items-center justify-center shadow-xs">
                     <TrendingUp className="w-7 h-7 text-amber-300" />
@@ -1357,314 +1478,61 @@ export default function HomePublica() {
           </div>
         </section>
 
-        {/* SEÇÃO VÍDEO INSTITUCIONAL (Oficial — exibida apenas quando há vídeo ativo cadastrado pelo ERP) */}
-        {!carregandoVideo && videoAtivo && (
-          <section id="video" className="py-20 bg-[#0A2540] text-white relative overflow-hidden">
-            <div className="absolute -top-32 -left-32 w-96 h-96 rounded-full bg-[#1D4ED8]/20 blur-3xl pointer-events-none" />
-            <div className="absolute -bottom-32 -right-32 w-96 h-96 rounded-full bg-amber-500/10 blur-3xl pointer-events-none" />
-
-            <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
-              <div className="text-center max-w-3xl mx-auto mb-12">
-                <Badge
-                  variant="outline"
-                  className="border-blue-400 text-blue-300 bg-blue-950/60 px-3 py-1 mb-3 text-xs uppercase tracking-wider font-bold"
-                >
-                  Nossa História
-                </Badge>
-                <h2 className="text-3xl sm:text-4xl font-black text-white tracking-tight">
-                  {videoAtivo.titulo || 'A História da Empresa'}
-                </h2>
-                <p className="mt-3 text-base sm:text-lg text-blue-100 leading-relaxed">
-                  {videoAtivo.descricao || (
-                    <>
-                      Do primeiro caminhão à frota de hoje — a caminhada do{' '}
-                      <strong>Grupo GC do Amaral</strong>.
-                    </>
-                  )}
-                </p>
-              </div>
-
-              {/* Cartão Elegante do Vídeo Institucional */}
-              <div className="max-w-4xl mx-auto">
-                <div className="relative rounded-3xl overflow-hidden border border-blue-400/30 bg-slate-950 shadow-2xl">
-                  {!videoErro ? (
-                    <div className="aspect-video w-full bg-black relative flex items-center justify-center group">
-                      <video
-                        controls
-                        playsInline
-                        preload="metadata"
-                        poster={
-                          videoAtivo.capa || videoAtivo.poster
-                            ? videoInstitucionalService.obterUrlArquivo(
-                                videoAtivo,
-                                videoAtivo.capa || videoAtivo.poster || '',
-                              )
-                            : INSTITUCIONAL_CONFIG.fotosReais.heroAerea
-                        }
-                        className="w-full h-full object-cover"
-                        onError={() => setVideoErro(true)}
-                      >
-                        <source
-                          src={videoInstitucionalService.obterUrlArquivo(
-                            videoAtivo,
-                            videoAtivo.arquivo,
-                          )}
-                          type="video/mp4"
-                        />
-                        Formato de vídeo não suportado pelo navegador.
-                      </video>
-                    </div>
-                  ) : (
-                    <div className="relative aspect-video w-full overflow-hidden group bg-slate-900 flex flex-col items-center justify-center p-6 text-center">
-                      <div className="w-16 h-16 rounded-full bg-amber-500/20 border border-amber-400/40 text-amber-400 flex items-center justify-center mb-4">
-                        <AlertTriangle className="w-8 h-8 text-amber-400" />
-                      </div>
-                      <h3 className="text-lg sm:text-xl font-bold text-white max-w-md mb-2">
-                        Formato de vídeo não suportado pelo navegador
-                      </h3>
-                      <p className="text-xs sm:text-sm text-amber-200/90 max-w-md mb-4 leading-relaxed">
-                        O navegador não conseguiu decodificar esta faixa de vídeo (codec não
-                        suportado ou arquivo de áudio renomeado). Por favor, envie um arquivo em
-                        formato MP4 autêntico com codec de vídeo padrão H.264 (AVC).
-                      </p>
-                      <a
-                        href={videoInstitucionalService.obterUrlArquivo(
-                          videoAtivo,
-                          videoAtivo.arquivo,
-                        )}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        download
-                        className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-white text-xs font-semibold border border-slate-700 transition-colors"
-                      >
-                        Baixar arquivo diretamente
-                      </a>
-                    </div>
-                  )}
-
-                  <div className="p-5 sm:p-6 bg-[#0A1A3B] border-t border-blue-900 flex flex-col sm:flex-row items-center justify-between gap-4">
-                    <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 rounded-xl bg-[#1D4ED8]/30 border border-[#1D4ED8]/50 flex items-center justify-center text-amber-300 shrink-0">
-                        <Play className="w-5 h-5 fill-amber-300/20" />
-                      </div>
-                      <div>
-                        <h4 className="text-sm font-bold text-white">{videoAtivo.titulo}</h4>
-                        <p className="text-xs text-blue-200">
-                          {videoAtivo.descricao ||
-                            'Vídeo institucional oficial gravado nas instalações do grupo'}
-                        </p>
-                      </div>
-                    </div>
-
-                    <a
-                      href={videoInstitucionalService.obterUrlArquivo(
-                        videoAtivo,
-                        videoAtivo.arquivo,
-                      )}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-[#1E3A8A] hover:bg-[#1D4ED8] text-white text-xs font-bold border border-blue-400/30 transition-colors"
-                    >
-                      <span>Abrir em tela cheia</span>
-                      <ExternalLink className="w-3.5 h-3.5" />
-                    </a>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </section>
-        )}
-
-        {/* SEÇÃO GALERIA DE FOTOS REAIS (Enriquecida com fotos reais do site antigo) */}
-        <section id="galeria" className="py-20 bg-white border-b border-blue-100">
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-            <div className="text-center max-w-3xl mx-auto mb-14">
-              <Badge
-                variant="outline"
-                className="border-[#1D4ED8] text-[#1D4ED8] bg-blue-50 px-3 py-1 mb-3 text-xs uppercase tracking-wider font-bold"
-              >
-                Galeria
-              </Badge>
-              <h2 className="text-3xl sm:text-4xl font-black text-[#0A2540] tracking-tight">
-                Nossa Estrutura em Ação
-              </h2>
-              <p className="mt-3 text-base sm:text-lg text-slate-600 leading-relaxed">
-                Frota, equipamentos e obras atendidas pela GC do Amaral, GC Mix, Pedreira Cordeiro e
-                C M Construções.
-              </p>
-            </div>
-
-            {/* Grid de Fotos Reais */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
-              {[
-                {
-                  src: INSTITUCIONAL_CONFIG.fotosReais.betoneira1,
-                  titulo: 'Betoneira GC Mix em Entrega',
-                  legenda: 'Frota ativa atendendo obras na Paraíba',
-                  badge: 'Betoneira GC Mix',
-                },
-                {
-                  src: INSTITUCIONAL_CONFIG.fotosReais.betoneira2,
-                  titulo: 'Betoneira GC Mix & Pedreira',
-                  legenda: 'Carregamento no pátio de agregados',
-                  badge: 'Operação Integrada',
-                },
-                {
-                  src: INSTITUCIONAL_CONFIG.fotosReais.frotaGcMix,
-                  titulo: 'Frota de Betoneiras GC Mix',
-                  legenda: 'Caminhões traçados para entregas volumosas',
-                  badge: 'Frota Própria',
-                },
-                {
-                  src: INSTITUCIONAL_CONFIG.fotosReais.betoneiraRota,
-                  titulo: 'Betoneira em Rota',
-                  legenda: 'Logística ágil no interior',
-                  badge: 'Logística',
-                },
-                {
-                  src: INSTITUCIONAL_CONFIG.fotosReais.betoneira5,
-                  titulo: 'Caminhão Betoneira GC Mix',
-                  legenda: 'Equipamentos revisados e com lacre',
-                  badge: 'Qualidade',
-                },
-                {
-                  src: INSTITUCIONAL_CONFIG.fotosReais.betoneira7,
-                  titulo: 'Betoneira GC Mix em Canteiro',
-                  legenda: 'Descarga direta na bomba ou caçamba',
-                  badge: 'Canteiro de Obras',
-                },
-                {
-                  src: INSTITUCIONAL_CONFIG.fotosReais.silo2,
-                  titulo: 'Silo GC Mix',
-                  legenda: 'Central dosadora de alta capacidade',
-                  badge: 'Central Dosadora',
-                },
-                {
-                  src: INSTITUCIONAL_CONFIG.fotosReais.siloMonteiro,
-                  titulo: 'Silo GC Mix — Monteiro — PB',
-                  legenda: 'Central com atendimento 0800 083 1200',
-                  badge: 'Unidade Monteiro',
-                },
-                {
-                  src: INSTITUCIONAL_CONFIG.fotosReais.concretagemPatos,
-                  titulo: 'Concretagem em Patos — PB',
-                  legenda: 'Despejo contínuo em laje estrutural',
-                  badge: 'Patos — PB',
-                },
-                {
-                  src: INSTITUCIONAL_CONFIG.fotosReais.pisoIndustrial,
-                  titulo: 'Piso de Concreto Industrial',
-                  legenda: 'Resistência calculada e nivelamento',
-                  badge: 'Piso Industrial',
-                },
-                {
-                  src: INSTITUCIONAL_CONFIG.fotosReais.pisoAcabamento,
-                  titulo: 'Acabamento de Piso',
-                  legenda: 'Polimento e cura do concreto usinado',
-                  badge: 'Acabamento',
-                },
-                {
-                  src: INSTITUCIONAL_CONFIG.fotosReais.preparacaoObra,
-                  titulo: 'Preparação de Obra',
-                  legenda: 'Nivelamento com motoniveladora',
-                  badge: 'Terraplanagem',
-                },
-                {
-                  src: INSTITUCIONAL_CONFIG.fotosReais.pedreiraAerea2,
-                  titulo: 'GCA Pedreira Cordeiro',
-                  legenda: 'Vista aérea da jazida de extração',
-                  badge: 'Jazida Própria',
-                },
-                {
-                  src: INSTITUCIONAL_CONFIG.fotosReais.pedreiraBritador,
-                  titulo: 'Britador Visto do Alto',
-                  legenda: 'Peneiramento contínuo de rocha',
-                  badge: 'Central Britagem',
-                },
-                {
-                  src: INSTITUCIONAL_CONFIG.fotosReais.pedreiraRegiao,
-                  titulo: 'Pedreira Cordeiro e Região',
-                  legenda: 'Inserção estratégica no sertão',
-                  badge: 'Região Sertão',
-                },
-                {
-                  src: INSTITUCIONAL_CONFIG.fotosReais.britadorFixoCm3,
-                  titulo: 'Instalação de Britagem',
-                  legenda: 'Britador fixo em atividade na pedreira',
-                  badge: 'Central Britagem',
-                },
-              ].map((foto, idx) => (
-                <div
-                  key={idx}
-                  onClick={() => setFotoAtiva(foto.src)}
-                  className="group rounded-2xl overflow-hidden border border-slate-200 bg-[#F8FAFC] shadow-xs hover:shadow-xl transition-all duration-300 cursor-pointer"
-                >
-                  <div className="relative h-48 overflow-hidden bg-slate-100">
-                    <img
-                      src={foto.src}
-                      alt={foto.titulo}
-                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
-                      loading="lazy"
-                    />
-                    <div className="absolute top-2.5 left-2.5">
-                      <span className="bg-[#0A2540]/85 backdrop-blur-xs text-white text-[10px] font-bold px-2 py-0.5 rounded">
-                        {foto.badge}
-                      </span>
-                    </div>
-                  </div>
-                  <div className="p-3.5 bg-white">
-                    <h4 className="text-xs font-bold text-[#0A2540] group-hover:text-[#1D4ED8] transition-colors line-clamp-1">
-                      {foto.titulo}
-                    </h4>
-                    <p className="text-[11px] text-slate-500 mt-0.5 line-clamp-1">{foto.legenda}</p>
-                  </div>
-                </div>
-              ))}
-            </div>
-
-            {/* Aviso sobre fotos oficiais */}
-            <div className="mt-10 p-4 rounded-2xl bg-blue-50/70 border border-blue-200 flex flex-col sm:flex-row items-center justify-between text-xs text-slate-700 gap-3">
-              <div className="flex items-center gap-2">
-                <ImageIcon className="w-4 h-4 text-[#1D4ED8] shrink-0" />
-                <span>
-                  Fotos e identidade visual 100% integradas da empresa (GC Mix, Pedreira Cordeiro e
-                  C M Construções).
-                </span>
-              </div>
-              <button
-                onClick={() => rolarParaSecao('orcamento')}
-                className="inline-flex items-center gap-1 font-bold text-[#1D4ED8] hover:underline shrink-0 cursor-pointer"
-              >
-                <span>Solicitar cotação online</span>
-                <ArrowRight className="w-3.5 h-3.5" />
-              </button>
-            </div>
-          </div>
-        </section>
-
-        {/* MODAL / LIGHTBOX DE FOTO EXPANDIDA */}
+        {/* =========================================================
+            MODAL / LIGHTBOX DE FOTO EXPANDIDA (Apenas para as 3 fotos reais)
+            ========================================================= */}
         {fotoAtiva && (
           <div
-            className="fixed inset-0 z-50 bg-black/85 flex items-center justify-center p-4 backdrop-blur-xs"
+            className="fixed inset-0 z-50 bg-black/90 flex items-center justify-center p-4 backdrop-blur-sm"
             onClick={() => setFotoAtiva(null)}
           >
-            <div className="relative max-w-4xl max-h-[90vh] overflow-hidden rounded-2xl shadow-2xl">
-              <img
-                src={fotoAtiva}
-                alt="Foto ampliada da Pedreira Cordeiro"
-                className="w-full h-full max-h-[85vh] object-contain"
-              />
-              <button
-                onClick={() => setFotoAtiva(null)}
-                className="absolute top-4 right-4 bg-slate-900/80 hover:bg-slate-900 text-white rounded-full p-2 text-xs font-bold transition-colors cursor-pointer"
-              >
-                ✕ Fechar
-              </button>
+            <div
+              className="relative max-w-4xl w-full bg-slate-900 rounded-2xl overflow-hidden shadow-2xl border border-blue-500/30"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="relative max-h-[75vh] bg-black flex items-center justify-center overflow-hidden">
+                <img
+                  src={fotoAtiva.src}
+                  alt={fotoAtiva.titulo}
+                  className="w-full h-full max-h-[75vh] object-contain"
+                />
+                <button
+                  onClick={() => setFotoAtiva(null)}
+                  className="absolute top-4 right-4 bg-slate-900/90 hover:bg-slate-900 text-white rounded-full p-2.5 transition-colors cursor-pointer border border-white/20"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              <div className="p-6 bg-[#0A1A3B] border-t border-blue-900 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+                <div>
+                  <div className="text-xs font-bold text-[#38BDF8] flex items-center gap-1.5">
+                    <MapPin className="w-3.5 h-3.5" />
+                    {fotoAtiva.local}
+                  </div>
+                  <h3 className="text-lg font-black text-white mt-0.5">{fotoAtiva.titulo}</h3>
+                  <p className="text-xs text-blue-200 mt-1 max-w-2xl leading-relaxed">
+                    {fotoAtiva.descricao}
+                  </p>
+                </div>
+
+                <Button
+                  onClick={() => {
+                    setFotoAtiva(null)
+                    rolarParaSecao('orcamento')
+                  }}
+                  className="bg-[#1D4ED8] hover:bg-[#1E40AF] text-white text-xs font-bold px-4 py-2 rounded-xl shrink-0 cursor-pointer"
+                >
+                  Pedir Orçamento
+                </Button>
+              </div>
             </div>
           </div>
         )}
 
-        {/* SEÇÃO ORÇAMENTO (WhatsApp e E-mail — SEM GRAVAÇÃO NO ERP) */}
+        {/* =========================================================
+            SEÇÃO ORÇAMENTO (WhatsApp e E-mail — SEM GRAVAÇÃO NO ERP)
+            ========================================================= */}
         <section id="orcamento" className="py-20 bg-[#F8FAFC] relative">
           <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
             <div className="text-center mb-10">
@@ -1855,7 +1723,9 @@ export default function HomePublica() {
           </div>
         </section>
 
-        {/* SEÇÃO CONTATO DIRETO / FALE COM A GENTE (Com o endereço corrigido e telefones reais) */}
+        {/* =========================================================
+            SEÇÃO CONTATO DIRETO / FALE COM A GENTE
+            ========================================================= */}
         <section id="contato" className="py-16 bg-white border-t border-blue-100">
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
             <div className="text-center max-w-2xl mx-auto mb-12">
@@ -1904,7 +1774,6 @@ export default function HomePublica() {
                     className="inline-flex items-center gap-1.5 text-base font-black text-emerald-700 hover:underline"
                   >
                     {INSTITUCIONAL_CONFIG.whatsappNumeroFormatado}
-                    <ExternalLink className="w-3.5 h-3.5" />
                   </a>
                 </div>
               </div>
@@ -1942,7 +1811,9 @@ export default function HomePublica() {
         </section>
       </main>
 
-      {/* RODAPÉ INSTITUCIONAL EM AZUL PROFUNDO MUNIQUE */}
+      {/* =========================================================
+          RODAPÉ INSTITUCIONAL EM AZUL PROFUNDO MUNIQUE
+          ========================================================= */}
       <footer className="bg-[#0A1A3B] text-slate-300 border-t border-[#1E3A8A] pt-16 pb-12">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 space-y-12">
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-12 gap-8 items-start">
