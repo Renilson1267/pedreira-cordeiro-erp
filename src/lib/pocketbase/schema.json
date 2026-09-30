@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-09-30T14:41:37.187Z",
+  "generatedAt": "2026-09-30T14:50:37.303Z",
   "collections": [
     {
       "name": "users",
@@ -3841,6 +3841,38 @@
       "indexes": [
         "CREATE INDEX idx_chunks_upload_order ON video_upload_chunks (upload_id, chunk_index ASC)"
       ]
+    },
+    {
+      "name": "fotos_pedreira_reais",
+      "type": "base",
+      "apiRules": {
+        "list": "",
+        "view": "",
+        "create": "@request.auth.id != ''",
+        "update": "@request.auth.id != ''",
+        "delete": "@request.auth.id != ''"
+      },
+      "fields": [
+        {
+          "name": "chave",
+          "type": "text",
+          "required": true,
+          "system": false
+        },
+        {
+          "name": "foto",
+          "type": "file",
+          "required": true,
+          "system": false
+        },
+        {
+          "name": "url_original",
+          "type": "text",
+          "required": false,
+          "system": false
+        }
+      ],
+      "indexes": []
     }
   ]
 }
