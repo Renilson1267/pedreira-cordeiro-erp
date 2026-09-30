@@ -49,6 +49,7 @@ import {
   Flame,
   Boxes,
   Compass,
+  AlertTriangle,
 } from 'lucide-react'
 
 export default function HomePublica() {
