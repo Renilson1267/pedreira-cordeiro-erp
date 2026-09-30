@@ -100,22 +100,6 @@ export const INSTITUCIONAL_CONFIG = {
     pedreiraAerea2: '/api/files/pbc_3973264007/on2lc9wt1m5d2bm/vista_de_cima_25461_342l6kmtsw.jpeg',
     pedreiraBritador:
       '/api/files/pbc_3973264007/sivayu6qjcjq3f9/po_de_pedra_britador_997e5_6dgyj8eh6j.jpeg',
-    pedreiraRegiao: '/site-img/galeria-drone-4.svg',
-    betoneira1: '/site-img/galeria-betoneira-1.svg',
-    betoneira2: '/site-img/galeria-betoneira-2.svg',
-    frotaGcMix: '/site-img/galeria-betoneira-3.svg',
-    betoneiraRota: '/site-img/galeria-betoneira-4.svg',
-    betoneira5: '/site-img/galeria-betoneira-5.svg',
-    betoneira7: '/site-img/galeria-betoneira-7.svg',
-    silo2: '/site-img/galeria-silo-2.svg',
-    siloMonteiro: '/site-img/hero-silo.svg',
-    concretagemPatos: '/site-img/galeria-concretagem.svg',
-    pisoIndustrial: '/site-img/galeria-piso-1.svg',
-    pisoAcabamento: '/site-img/galeria-piso-2.svg',
-    preparacaoObra: '/site-img/galeria-obra-grad.svg',
-    // NOTA: As fotos cm-lokotrack-1/2/3 são do britador fixo da matriz em Patos-PB
-    // e nunca devem ser rotuladas como Lokotrack móvel (correção v0.0.187).
-    britadorFixoCm3: '/site-img/cm-lokotrack-3.svg',
     cmPilhas1: '/api/files/pbc_3973264007/y4872wsu9e6qmx7/patio_de_brita_2aa99_szpz936snj.jpeg',
     cmPilhas2: '/api/files/pbc_3973264007/y4872wsu9e6qmx7/patio_de_brita_2aa99_szpz936snj.jpeg',
     cmPatio: '/api/files/pbc_3973264007/y4872wsu9e6qmx7/patio_de_brita_2aa99_szpz936snj.jpeg',
@@ -227,7 +211,6 @@ export const PRODUTOS_PEDREIRA: ProdutoPedreiraItem[] = [
     descricao:
       'Agregado graúdo de excelente adesão e granulometria uniforme, essencial para concreto de alta resistência estrutural e pisos industriais.',
     imagem: '/api/files/pbc_3973264007/y4872wsu9e6qmx7/patio_de_brita_2aa99_szpz936snj.jpeg',
-    imagemSecundaria: '/site-img/cm-pilhas-2.svg',
     densidadeMedia: '~1,45 t/m³',
   },
   {
@@ -239,7 +222,6 @@ export const PRODUTOS_PEDREIRA: ProdutoPedreiraItem[] = [
     descricao:
       'Ideal para obras de infraestrutura pesada, bases de pavimentação asfáltica, drenagens profundas e concretos estruturais de grande porte.',
     imagem: '/api/files/pbc_3973264007/y4872wsu9e6qmx7/patio_de_brita_2aa99_szpz936snj.jpeg',
-    imagemSecundaria: '/site-img/cm-pilhas-1.svg',
     densidadeMedia: '~1,47 t/m³',
   },
   {
@@ -251,7 +233,6 @@ export const PRODUTOS_PEDREIRA: ProdutoPedreiraItem[] = [
     descricao:
       'Pedra de grande porte selecionada com alta tenacidade, ideal para contenção de encostas, muros de gravidade, enrocamentos e drenagens rústicas.',
     imagem: '/api/files/pbc_3973264007/on2lc9wt1m5d2bm/vista_de_cima_25461_342l6kmtsw.jpeg',
-    imagemSecundaria: '/site-img/galeria-drone-3.svg',
     densidadeMedia: '~1,50 t/m³',
   },
   {
@@ -263,8 +244,6 @@ export const PRODUTOS_PEDREIRA: ProdutoPedreiraItem[] = [
     descricao:
       'Substitui com alta eficiência a areia em várias etapas construtivas, proporcionando excelente compactação, acabamento homogêneo e economia.',
     imagem: '/api/files/pbc_3973264007/sivayu6qjcjq3f9/po_de_pedra_britador_997e5_6dgyj8eh6j.jpeg',
-    imagemSecundaria:
-      '/api/files/pbc_3973264007/y4872wsu9e6qmx7/patio_de_brita_2aa99_szpz936snj.jpeg',
     densidadeMedia: '~1,56 t/m³',
   },
   {
@@ -276,8 +255,6 @@ export const PRODUTOS_PEDREIRA: ProdutoPedreiraItem[] = [
     descricao:
       'Pedrisco fino e limpo de alta rigidez, amplamente requisitado em fábricas de artefatos de cimento, lajotas e projetos de drenagem superficial.',
     imagem: '/api/files/pbc_3973264007/y4872wsu9e6qmx7/patio_de_brita_2aa99_szpz936snj.jpeg',
-    imagemSecundaria:
-      'https://img.usecurling.com/p/600/400?q=fine%20gravel%20aggregate&color=neutral',
     densidadeMedia: '~1,50 t/m³',
   },
 ]
