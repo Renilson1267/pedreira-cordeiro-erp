@@ -88,6 +88,11 @@ export const INSTITUCIONAL_CONFIG = {
   videoInstitucionalUrl: 'https://pedreiracordeiro.com.br/video.mp4',
 
   // Imagens locais do projeto (100% autossuficiente — sem dependência do domínio pedreiracordeiro.com.br)
+  // Nota: Consulta ao acervo histórico do Wayback Machine (web.archive.org) em 2026 confirmou que os
+  // snapshots arquivados de pedreiracordeiro.com.br continham apenas a landing page WordPress antiga
+  // de 2021/2022 (com uma única imagem GCA-PEDREIRA-scaled.jpg, cujo arquivo não foi salvo pelos bots).
+  // As ilustrações técnicas SVG em /site-img/ foram mantidas intactas para máxima integridade visual,
+  // sem links quebrados nem dependência de rede externa.
   fotosReais: {
     heroAerea: '/site-img/galeria-drone-1.svg',
     pedreiraAerea2: '/site-img/galeria-drone-2.svg',
