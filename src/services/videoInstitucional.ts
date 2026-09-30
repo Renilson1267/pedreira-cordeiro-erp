@@ -268,14 +268,21 @@ function enviarChunkXHR(options: {
       if (status >= 200 && status < 300) {
         resolve()
       } else {
+        // Extração rica de mensagens de validação por campo retornadas pelo PocketBase (ex: data.chunk_file.message)
+        let detalheValidacao = ''
+        if (responseData?.data && typeof responseData.data === 'object') {
+          detalheValidacao = Object.entries(responseData.data)
+            .map(([campo, erroObj]: [string, any]) => {
+              const msg = erroObj?.message || erroObj || ''
+              return `${campo}: ${msg}`
+            })
+            .join(' | ')
+        }
+
         const detalheMsg =
+          detalheValidacao ||
           responseData?.message ||
           responseData?.error ||
-          (responseData?.data
-            ? Object.values(responseData.data)
-                .map((v: any) => v?.message || v)
-                .join('; ')
-            : '') ||
           xhr.statusText ||
           `Erro HTTP ${status}`
 
@@ -312,8 +319,27 @@ function enviarChunkXHR(options: {
     formData.append('chunk_index', String(options.chunkIndex))
     formData.append('total_chunks', String(options.totalChunks))
     formData.append('chunk_size', String(options.chunkBlob.size))
-    const chunkFileName = `${options.uploadId}_part_${options.chunkIndex}.part`
-    formData.append('chunk_file', options.chunkBlob, chunkFileName)
+
+    // Formatar nome de arquivo com a extensão original do vídeo (ex: .mp4) e tipo MIME explícito
+    const videoExtMatch = (options.fileName || '').match(/\.([a-zA-Z0-9]+)$/)
+    const videoExt = videoExtMatch ? videoExtMatch[1].toLowerCase() : 'mp4'
+    const chunkFileName = `${options.uploadId}_part_${options.chunkIndex}.${videoExt}`
+    const mimeType =
+      options.chunkBlob.type && options.chunkBlob.type !== 'application/octet-stream'
+        ? options.chunkBlob.type
+        : videoExt === 'webm'
+          ? 'video/webm'
+          : 'video/mp4'
+
+    let chunkFileParaEnvio: any = options.chunkBlob
+    try {
+      chunkFileParaEnvio = new File([options.chunkBlob], chunkFileName, { type: mimeType })
+    } catch (_) {
+      // Fallback para ambientes sem construtor File
+      chunkFileParaEnvio = options.chunkBlob
+    }
+
+    formData.append('chunk_file', chunkFileParaEnvio, chunkFileName)
 
     xhr.send(formData)
   })
