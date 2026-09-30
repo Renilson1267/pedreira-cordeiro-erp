@@ -213,7 +213,7 @@ function uploadMultipartNativo<T = VideoInstitucionalRecord>(options: {
 // Em caso de falha de conexão num bloco, o envio retenta ou retoma daquele bloco,
 // evitando que timeouts e limites de proxy reverso derrubem arquivos grandes.
 // ---------------------------------------------------------------------------
-export const DEFAULT_CHUNK_SIZE_BYTES = 20 * 1024 * 1024 // 20 MB por bloco
+export const DEFAULT_CHUNK_SIZE_BYTES = 8 * 1024 * 1024 // 8 MB por bloco (garante passagem por proxies e firewalls)
 
 function fileToBase64(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -221,6 +221,101 @@ function fileToBase64(file: File): Promise<string> {
     reader.onload = () => resolve(reader.result as string)
     reader.onerror = reject
     reader.readAsDataURL(file)
+  })
+}
+
+/**
+ * Envia um único chunk com XMLHttpRequest nativo para garantir envio multipart direto,
+ * headers corretos e captura precisa de status HTTP e erro da rede.
+ */
+function enviarChunkXHR(options: {
+  uploadId: string
+  chunkIndex: number
+  totalChunks: number
+  chunkBlob: Blob
+  fileName: string
+  token: string
+  onProgress?: (loadedBytes: number) => void
+}): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest()
+    const baseUrl = pb.baseUrl.replace(/\/$/, '')
+    const url = `${baseUrl}/api/collections/video_upload_chunks/records`
+
+    xhr.open('POST', url, true)
+
+    if (options.token) {
+      xhr.setRequestHeader('Authorization', options.token)
+    }
+
+    if (xhr.upload && options.onProgress) {
+      xhr.upload.onprogress = (evt) => {
+        if (evt.lengthComputable) {
+          options.onProgress?.(evt.loaded)
+        }
+      }
+    }
+
+    xhr.onload = () => {
+      const status = xhr.status
+      let responseData: any = null
+      try {
+        responseData = xhr.responseText ? JSON.parse(xhr.responseText) : null
+      } catch {
+        responseData = { raw: xhr.responseText }
+      }
+
+      if (status >= 200 && status < 300) {
+        resolve()
+      } else {
+        const detalheMsg =
+          responseData?.message ||
+          responseData?.error ||
+          (responseData?.data
+            ? Object.values(responseData.data)
+                .map((v: any) => v?.message || v)
+                .join('; ')
+            : '') ||
+          xhr.statusText ||
+          `Erro HTTP ${status}`
+
+        const err = new Error(
+          `Falha no bloco ${options.chunkIndex + 1}/${options.totalChunks} (HTTP ${status}): ${detalheMsg}`,
+        )
+        ;(err as any).status = status
+        ;(err as any).data = responseData
+        reject(err)
+      }
+    }
+
+    xhr.onerror = () => {
+      const err = new Error(
+        `Falha de conexão ao enviar o bloco ${options.chunkIndex + 1}/${options.totalChunks}. Verifique sua internet.`,
+      )
+      ;(err as any).status = xhr.status || 0
+      reject(err)
+    }
+
+    xhr.ontimeout = () => {
+      const err = new Error(
+        `Tempo limite excedido (timeout) no envio do bloco ${options.chunkIndex + 1}/${options.totalChunks}.`,
+      )
+      ;(err as any).status = 408
+      reject(err)
+    }
+
+    // Timeout de 2 minutos por bloco de 8 MB
+    xhr.timeout = 2 * 60 * 1000
+
+    const formData = new FormData()
+    formData.append('upload_id', options.uploadId)
+    formData.append('chunk_index', String(options.chunkIndex))
+    formData.append('total_chunks', String(options.totalChunks))
+    formData.append('chunk_size', String(options.chunkBlob.size))
+    const chunkFileName = `${options.uploadId}_part_${options.chunkIndex}.part`
+    formData.append('chunk_file', options.chunkBlob, chunkFileName)
+
+    xhr.send(formData)
   })
 }
 
@@ -233,7 +328,9 @@ async function enviarChunkComRetry(
   totalChunks: number,
   blob: Blob,
   fileName: string,
+  token: string,
   tentativasMaximas: number = 3,
+  onChunkProgress?: (loadedInChunk: number) => void,
 ): Promise<void> {
   let tentativa = 0
   let ultimoErro: any = null
@@ -241,18 +338,15 @@ async function enviarChunkComRetry(
   while (tentativa < tentativasMaximas) {
     tentativa++
     try {
-      const formData = new FormData()
-      formData.append('upload_id', uploadId)
-      formData.append('chunk_index', String(chunkIndex))
-      formData.append('total_chunks', String(totalChunks))
-      formData.append('chunk_size', String(blob.size))
-      // O PocketBase aceita o File/Blob nomeado
-      const chunkFile = new File([blob], `${uploadId}_chunk_${chunkIndex}.part`, {
-        type: 'application/octet-stream',
+      await enviarChunkXHR({
+        uploadId,
+        chunkIndex,
+        totalChunks,
+        chunkBlob: blob,
+        fileName,
+        token,
+        onProgress: onChunkProgress,
       })
-      formData.append('chunk_file', chunkFile)
-
-      await pb.collection('video_upload_chunks').create(formData)
       return // Sucesso!
     } catch (err: any) {
       ultimoErro = err
@@ -260,18 +354,24 @@ async function enviarChunkComRetry(
         `Falha ao enviar bloco ${chunkIndex + 1}/${totalChunks} (tentativa ${tentativa}/${tentativasMaximas}):`,
         err,
       )
+      // Se for erro definitivo de autorização (401/403) ou dados inválidos (400), não retenta cegamente
+      if (err?.status === 401 || err?.status === 403) {
+        throw err
+      }
       if (tentativa < tentativasMaximas) {
-        // Espera exponencial: 1.5s, 3s...
+        // Espera com backoff: 1.5s, 3s...
         await new Promise((res) => setTimeout(res, 1500 * tentativa))
       }
     }
   }
 
-  throw new Error(
-    `Falha ao enviar o bloco ${chunkIndex + 1} de ${totalChunks}: ${
-      ultimoErro?.message || 'Conexão interrompida com o servidor.'
-    }`,
+  const erroFinal = new Error(
+    ultimoErro?.message ||
+      `Falha persistente ao enviar o bloco ${chunkIndex + 1} de ${totalChunks}.`,
   )
+  ;(erroFinal as any).status = ultimoErro?.status || 0
+  ;(erroFinal as any).data = ultimoErro?.data
+  throw erroFinal
 }
 
 export const videoInstitucionalService = {
@@ -322,15 +422,16 @@ export const videoInstitucionalService = {
   },
 
   /**
-   * Envia um novo vídeo institucional. Para vídeos grandes (> 25 MB), utiliza upload fracionado
-   * (chunked em blocos de 20 MB com retentativas automáticas e remontagem limpa no servidor),
+   * Envia um novo vídeo institucional. Para vídeos grandes (> 45 MB), utiliza upload fracionado
+   * (chunked em blocos de 8 MB com retentativas automáticas e remontagem limpa no servidor),
    * garantindo que conexões instáveis e limites de proxy reverso não interrompam o envio.
    */
   async criar(
     params: UploadVideoInstitucionalParams,
     desativarOutros: boolean = true,
+    uploadIdExistente?: string,
   ): Promise<VideoInstitucionalRecord> {
-    return await this.salvarRegistroHibrido(params, null, desativarOutros)
+    return await this.salvarRegistroHibrido(params, null, desativarOutros, uploadIdExistente)
   },
 
   /**
@@ -339,19 +440,21 @@ export const videoInstitucionalService = {
   async substituir(
     id: string,
     params: UploadVideoInstitucionalParams,
+    uploadIdExistente?: string,
   ): Promise<VideoInstitucionalRecord> {
-    return await this.salvarRegistroHibrido(params, id, true)
+    return await this.salvarRegistroHibrido(params, id, true, uploadIdExistente)
   },
 
   /**
    * Seleciona inteligentemente o método de envio:
-   * - Arquivos <= 25 MB: Envio direto multipart nativo (rápido e simples)
-   * - Arquivos > 25 MB: Envio fracionado em blocos (chunked) com retomada e remontagem
+   * - Arquivos <= 45 MB: Envio direto multipart nativo (rápido e simples)
+   * - Arquivos > 45 MB: Envio fracionado em blocos de 8 MB com retomada e remontagem
    */
   async salvarRegistroHibrido(
     params: UploadVideoInstitucionalParams,
     idExistente: string | null = null,
     desativarOutros: boolean = true,
+    uploadIdExistente?: string,
   ): Promise<VideoInstitucionalRecord> {
     const file = params.arquivo
     if (!file) {
@@ -364,23 +467,29 @@ export const videoInstitucionalService = {
       )
     }
 
-    // Se o arquivo for maior que 25 MB, envia obrigatoriamente fracionado para garantir resiliência
-    const limiteDireto = 25 * 1024 * 1024
-    if (file.size > limiteDireto) {
-      return await this.salvarRegistroFracionado(params, idExistente, desativarOutros)
+    // Se já temos um uploadId para retomar, ou se o arquivo é maior que 45 MB, vai fracionado
+    const limiteDireto = 45 * 1024 * 1024
+    if (uploadIdExistente || file.size > limiteDireto) {
+      return await this.salvarRegistroFracionado(
+        params,
+        idExistente,
+        desativarOutros,
+        uploadIdExistente,
+      )
     }
 
-    // Para arquivos menores de 25 MB, tenta direto; se falhar por erro de rede (status 0), cai no fracionado
+    // Para arquivos de até 45 MB, tenta direto; se falhar por erro de rede (status 0 ou 413),
+    // cai no fracionado automaticamente.
     try {
       return await this.salvarRegistroNativo(params, idExistente, desativarOutros)
     } catch (err: any) {
       if (
         err?.status === 0 ||
         err?.status === 413 ||
-        /interrompida|timeout/i.test(err?.message || '')
+        /interrompida|timeout|network|conexão/i.test(err?.message || '')
       ) {
         console.warn(
-          'Upload direto falhou na rede, alternando automaticamente para upload fracionado:',
+          'Upload direto encontrou limitação de rede/proxy, alternando para upload fracionado resiliente:',
           err,
         )
         return await this.salvarRegistroFracionado(params, idExistente, desativarOutros)
@@ -390,18 +499,20 @@ export const videoInstitucionalService = {
   },
 
   /**
-   * Upload fracionado (chunked / resumable) em blocos de 20 MB.
-   * Supera timeouts de proxy e quedas temporárias de rede.
+   * Upload fracionado (chunked / resumable) em blocos de 8 MB.
+   * Supera timeouts de proxy e quedas temporárias de rede. Permite retomar de onde parou.
    */
   async salvarRegistroFracionado(
     params: UploadVideoInstitucionalParams,
     idExistente: string | null = null,
     desativarOutros: boolean = true,
+    uploadIdExistente?: string,
   ): Promise<VideoInstitucionalRecord> {
     const file = params.arquivo
     const chunkSize = DEFAULT_CHUNK_SIZE_BYTES
     const totalChunks = Math.ceil(file.size / chunkSize)
-    const uploadId = `upl_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`
+    const uploadId =
+      uploadIdExistente || `upl_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`
 
     const tornarAtivo = params.ativo ?? true
 
@@ -412,8 +523,17 @@ export const videoInstitucionalService = {
       etapa: 'preparando',
     })
 
-    // 1. Etapa de init: NÃO envia nenhum arquivo ou poster. Apenas gera o upload_id no frontend
-    // e consulta GET /backend/v1/video-institucional/chunked-status?upload_id=...
+    // 1. Token de autenticação obrigatório para as regras de API
+    const token = pb.authStore.token
+    if (!token) {
+      const authErr = new Error(
+        'Usuário não autenticado. Faça login no ERP antes de realizar o upload.',
+      )
+      ;(authErr as any).status = 401
+      throw authErr
+    }
+
+    // 2. Etapa de init: consulta se já existem blocos enviados para este upload
     let chunksJaEnviados: number[] = []
     try {
       const statusRes = await pb.send<{ uploaded_chunks: number[] }>(
@@ -421,13 +541,17 @@ export const videoInstitucionalService = {
         { method: 'GET' },
       )
       chunksJaEnviados = statusRes.uploaded_chunks || []
-    } catch (_) {
+    } catch (statusErr: any) {
+      console.warn(
+        'Aviso ao consultar status de chunks anteriores (iniciando novo upload):',
+        statusErr,
+      )
       chunksJaEnviados = []
     }
 
     let bytesTransmitidos = chunksJaEnviados.length * chunkSize
 
-    // 2. Enviar cada bloco pendente sequencialmente via FormData multipart nativo na coleção video_upload_chunks
+    // 3. Enviar cada bloco pendente sequencialmente via FormData multipart nativo na coleção video_upload_chunks
     for (let index = 0; index < totalChunks; index++) {
       if (chunksJaEnviados.includes(index)) {
         continue
@@ -445,9 +569,34 @@ export const videoInstitucionalService = {
         etapa: 'enviando',
       })
 
-      await enviarChunkComRetry(uploadId, index, totalChunks, chunkBlob, file.name, 3)
+      try {
+        await enviarChunkComRetry(
+          uploadId,
+          index,
+          totalChunks,
+          chunkBlob,
+          file.name,
+          token,
+          3,
+          (loadedInChunk) => {
+            const currentTotal = bytesTransmitidos + loadedInChunk
+            params.onProgress?.({
+              carregadoBytes: Math.min(file.size, currentTotal),
+              totalBytes: file.size,
+              porcentagem: Math.min(95, Math.round((currentTotal / file.size) * 100)),
+              etapa: 'enviando',
+            })
+          },
+        )
+      } catch (chunkErr: any) {
+        ;(chunkErr as any).uploadId = uploadId
+        ;(chunkErr as any).failedChunkIndex = index
+        ;(chunkErr as any).totalChunks = totalChunks
+        throw chunkErr
+      }
 
       bytesTransmitidos += chunkBlob.size
+      chunksJaEnviados.push(index)
       params.onProgress?.({
         carregadoBytes: Math.min(file.size, bytesTransmitidos),
         totalBytes: file.size,

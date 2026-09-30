@@ -91,6 +91,13 @@ export default function VideoInstitucional() {
     porcentagem: number
     etapa: 'preparando' | 'enviando' | 'processando' | 'concluido'
   } | null>(null)
+  const [ultimoUploadId, setUltimoUploadId] = useState<string | null>(null)
+  const [erroDetalhado, setErroDetalhado] = useState<{
+    titulo: string
+    mensagem: string
+    status?: number
+    podeRetentar: boolean
+  } | null>(null)
 
   // Modal de confirmação de exclusão
   const [itemParaExcluir, setItemParaExcluir] = useState<VideoInstitucionalRecord | null>(null)
@@ -246,6 +253,8 @@ export default function VideoInstitucional() {
     setPreviewVideoUrl(null)
     setPreviewPosterUrl(null)
     setDuracaoDetectada(undefined)
+    setUltimoUploadId(null)
+    setErroDetalhado(null)
     setTornarAtivo(true)
     setModalUploadOpen(true)
   }
@@ -262,13 +271,15 @@ export default function VideoInstitucional() {
     setPreviewVideoUrl(null)
     setPreviewPosterUrl(null)
     setDuracaoDetectada(undefined)
+    setUltimoUploadId(null)
+    setErroDetalhado(null)
     setTornarAtivo(true)
     setModalUploadOpen(true)
   }
 
   // Submissão do upload ou substituição
-  const handleSalvarUpload = async (e: React.FormEvent) => {
-    e.preventDefault()
+  const handleSalvarUpload = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault()
 
     if (!arquivoSelecionado) {
       toast({
@@ -290,13 +301,14 @@ export default function VideoInstitucional() {
 
     try {
       setSalvando(true)
+      setErroDetalhado(null)
       setProgressoTexto('Preparando conexão e arquivo...')
-      setProgressoUpload({
-        carregadoBytes: 0,
+      setProgressoUpload((prev) => ({
+        carregadoBytes: prev?.carregadoBytes || 0,
         totalBytes: arquivoSelecionado.size,
-        porcentagem: 0,
+        porcentagem: prev?.porcentagem || 0,
         etapa: 'preparando',
-      })
+      }))
 
       const params = {
         titulo: titulo.trim(),
@@ -319,10 +331,10 @@ export default function VideoInstitucional() {
           } else if (info.etapa === 'enviando') {
             const mbEnviados = (info.carregadoBytes / (1024 * 1024)).toFixed(1)
             const mbTotal = (info.totalBytes / (1024 * 1024)).toFixed(1)
-            const fracionado = info.totalBytes > 25 * 1024 * 1024
+            const fracionado = info.totalBytes > 45 * 1024 * 1024 || !!ultimoUploadId
             setProgressoTexto(
               fracionado
-                ? `Enviando blocos fracionados com segurança... ${mbEnviados} MB de ${mbTotal} MB (${info.porcentagem}%)`
+                ? `Enviando blocos fracionados (8 MB)... ${mbEnviados} MB de ${mbTotal} MB (${info.porcentagem}%)`
                 : `Enviando vídeo... ${mbEnviados} MB de ${mbTotal} MB (${info.porcentagem}%)`,
             )
           } else if (info.etapa === 'processando') {
@@ -336,13 +348,17 @@ export default function VideoInstitucional() {
       }
 
       if (substituindoId) {
-        await videoInstitucionalService.substituir(substituindoId, params)
+        await videoInstitucionalService.substituir(
+          substituindoId,
+          params,
+          ultimoUploadId || undefined,
+        )
         toast({
           title: 'Vídeo institucional substituído!',
           description: 'O novo vídeo foi salvo e publicado com sucesso na Home pública.',
         })
       } else {
-        await videoInstitucionalService.criar(params, tornarAtivo)
+        await videoInstitucionalService.criar(params, tornarAtivo, ultimoUploadId || undefined)
         toast({
           title: 'Vídeo institucional publicado!',
           description:
@@ -350,12 +366,17 @@ export default function VideoInstitucional() {
         })
       }
 
+      setUltimoUploadId(null)
       setModalUploadOpen(false)
       await carregarVideos()
     } catch (err: any) {
-      console.error('Erro ao enviar vídeo institucional:', err)
+      console.error('Erro detalhado no upload de vídeo institucional:', err)
       const rawMsg = err?.message || ''
       const status = err?.status || 0
+
+      if (err?.uploadId) {
+        setUltimoUploadId(err.uploadId)
+      }
 
       let tituloErro = 'Falha no envio do vídeo'
       let descErro = rawMsg || 'Ocorreu um erro durante o upload do vídeo.'
@@ -370,12 +391,18 @@ export default function VideoInstitucional() {
         descErro = 'O vídeo selecionado excede o limite máximo de 300 MB permitido pelo servidor.'
       } else if (status === 401 || status === 403 || rawMsg.includes('sessão expirou')) {
         tituloErro = 'Sessão expirada'
-        descErro = 'Sua sessão expirou ou você não possui permissão. Faça login novamente.'
-      } else if (status === 0 || rawMsg.includes('Conexão interrompida')) {
-        tituloErro = 'Conexão interrompida'
-        descErro =
-          'A conexão com o servidor foi interrompida durante a transferência. Verifique sua rede e tente novamente.'
+        descErro = 'Sua sessão expirou ou você não possui permissão. Faça login novamente no ERP.'
+      } else if (status === 0 || rawMsg.includes('Conexão') || rawMsg.includes('network')) {
+        tituloErro = 'Falha de conexão / proxy'
+        descErro = `A conexão foi interrompida ou cortada pelo proxy (Status: ${status || 'Sem resposta'}). O progresso dos blocos já enviados foi guardado.`
       }
+
+      setErroDetalhado({
+        titulo: tituloErro,
+        mensagem: descErro,
+        status: status || undefined,
+        podeRetentar: status !== 401 && status !== 403,
+      })
 
       toast({
         title: tituloErro,
@@ -384,8 +411,6 @@ export default function VideoInstitucional() {
       })
     } finally {
       setSalvando(false)
-      setProgressoTexto('')
-      setProgressoUpload(null)
     }
   }
 
@@ -907,8 +932,8 @@ export default function VideoInstitucional() {
                     Formatos suportados: MP4, WebM • Até 300 MB
                   </p>
                   <p className="text-[10px] text-teal-600 mt-0.5">
-                    Envios acima de 25 MB utilizam transmissão fracionada em blocos à prova de
-                    quedas de conexão.
+                    Envios acima de 45 MB utilizam transmissão fracionada em blocos de 8 MB à prova
+                    de quedas de conexão e limites de proxy.
                   </p>
                 </div>
               ) : (
@@ -1031,8 +1056,8 @@ export default function VideoInstitucional() {
                     {(progressoUpload.totalBytes / (1024 * 1024)).toFixed(1)} MB enviados
                   </span>
                   <span className="bg-teal-100 text-teal-800 px-2 py-0.5 rounded-md border border-teal-200/60">
-                    {progressoUpload.totalBytes > 25 * 1024 * 1024
-                      ? 'Upload Fracionado Resumível (Blocos)'
+                    {progressoUpload.totalBytes > 45 * 1024 * 1024 || !!ultimoUploadId
+                      ? 'Upload Fracionado (Blocos 8 MB)'
                       : 'Upload Direto'}
                   </span>
                 </div>
@@ -1043,6 +1068,45 @@ export default function VideoInstitucional() {
               <div className="p-3 bg-blue-50 border border-blue-200 rounded-xl text-xs text-blue-800 flex items-center gap-2">
                 <RefreshCw className="w-4 h-4 animate-spin text-blue-600 shrink-0" />
                 <span>{progressoTexto}</span>
+              </div>
+            )}
+
+            {/* Painel visível de erro em caso de falha com opção de retentar de onde parou */}
+            {erroDetalhado && !salvando && (
+              <div className="p-3.5 bg-red-50/90 border border-red-200 rounded-xl text-xs space-y-2">
+                <div className="flex items-start gap-2 text-red-800">
+                  <AlertTriangle className="w-4 h-4 text-red-600 shrink-0 mt-0.5" />
+                  <div className="space-y-0.5 flex-1 min-w-0">
+                    <strong className="block text-red-900 font-semibold">
+                      {erroDetalhado.titulo}
+                      {erroDetalhado.status ? ` (HTTP ${erroDetalhado.status})` : ''}
+                    </strong>
+                    <p className="text-red-700 leading-relaxed text-[11px] break-words">
+                      {erroDetalhado.mensagem}
+                    </p>
+                    {ultimoUploadId && (
+                      <p className="text-[10px] text-red-600/80 pt-0.5">
+                        ID da sessão salvo:{' '}
+                        <code className="bg-red-100 px-1 py-0.5 rounded">{ultimoUploadId}</code>.
+                        Você pode retentar sem perder os blocos já enviados.
+                      </p>
+                    )}
+                  </div>
+                </div>
+
+                {erroDetalhado.podeRetentar && (
+                  <div className="flex justify-end pt-1">
+                    <Button
+                      type="button"
+                      size="sm"
+                      onClick={() => handleSalvarUpload()}
+                      className="bg-red-600 hover:bg-red-700 text-white text-xs h-7 px-3 flex items-center gap-1.5"
+                    >
+                      <RefreshCw className="w-3 h-3" />
+                      Tentar Novamente de Onde Parou
+                    </Button>
+                  </div>
+                )}
               </div>
             )}
 
