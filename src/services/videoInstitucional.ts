@@ -320,16 +320,16 @@ function enviarChunkXHR(options: {
     formData.append('total_chunks', String(options.totalChunks))
     formData.append('chunk_size', String(options.chunkBlob.size))
 
-    // Garantir extensão de vídeo reconhecida pelo PocketBase
+    // Nome do arquivo da fatia binária
     const videoExtMatch = (options.fileName || '').match(/\.([a-zA-Z0-9]+)$/)
     const videoExt = videoExtMatch ? videoExtMatch[1].toLowerCase() : 'mp4'
     const chunkFileName = `${options.uploadId}_part_${options.chunkIndex}.${videoExt}`
 
     let chunkFileParaEnvio: any = options.chunkBlob
     try {
-      // Enviar explicitamente como video/mp4 ou video/webm para casar com a extensão
+      // Enviar como File binário
       chunkFileParaEnvio = new File([options.chunkBlob], chunkFileName, {
-        type: videoExt === 'webm' ? 'video/webm' : 'video/mp4',
+        type: options.chunkBlob.type || 'application/octet-stream',
       })
     } catch (_) {
       chunkFileParaEnvio = options.chunkBlob
@@ -446,7 +446,7 @@ export const videoInstitucionalService = {
 
   /**
    * Envia um novo vídeo institucional. Para vídeos grandes (> 45 MB), utiliza upload fracionado
-   * (chunked em blocos de 8 MB com retentativas automáticas e remontagem limpa no servidor),
+   * (chunked em blocos de 4 MB com retentativas automáticas e remontagem limpa no servidor),
    * garantindo que conexões instáveis e limites de proxy reverso não interrompam o envio.
    */
   async criar(
@@ -471,7 +471,7 @@ export const videoInstitucionalService = {
   /**
    * Seleciona inteligentemente o método de envio:
    * - Arquivos <= 45 MB: Envio direto multipart nativo (rápido e simples)
-   * - Arquivos > 45 MB: Envio fracionado em blocos de 8 MB com retomada e remontagem
+   * - Arquivos > 45 MB: Envio fracionado em blocos de 4 MB com retomada e remontagem
    */
   async salvarRegistroHibrido(
     params: UploadVideoInstitucionalParams,
@@ -522,7 +522,7 @@ export const videoInstitucionalService = {
   },
 
   /**
-   * Upload fracionado (chunked / resumable) em blocos de 8 MB.
+   * Upload fracionado (chunked / resumable) em blocos de 4 MB.
    * Supera timeouts de proxy e quedas temporárias de rede. Permite retomar de onde parou.
    */
   async salvarRegistroFracionado(

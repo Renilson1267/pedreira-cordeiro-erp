@@ -932,7 +932,7 @@ export default function VideoInstitucional() {
                     Formatos suportados: MP4, WebM • Até 300 MB
                   </p>
                   <p className="text-[10px] text-teal-600 mt-0.5">
-                    Envios acima de 45 MB utilizam transmissão fracionada em blocos de 8 MB à prova
+                    Envios acima de 45 MB utilizam transmissão fracionada em blocos de 4 MB à prova
                     de quedas de conexão e limites de proxy.
                   </p>
                 </div>

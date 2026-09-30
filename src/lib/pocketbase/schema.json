@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-09-30T03:00:05.600Z",
+  "generatedAt": "2026-09-30T13:54:01.080Z",
   "collections": [
     {
       "name": "users",
@@ -3786,11 +3786,11 @@
       "name": "video_upload_chunks",
       "type": "base",
       "apiRules": {
-        "list": "",
-        "view": "",
-        "create": "",
-        "update": "",
-        "delete": ""
+        "list": "@request.auth.id != ''",
+        "view": "@request.auth.id != ''",
+        "create": "@request.auth.id != ''",
+        "update": "@request.auth.id != ''",
+        "delete": "@request.auth.id != ''"
       },
       "fields": [
         {
