@@ -412,7 +412,8 @@ export const videoInstitucionalService = {
       etapa: 'preparando',
     })
 
-    // 1. Verificar chunks já enviados (em caso de retomada)
+    // 1. Etapa de init: NÃO envia nenhum arquivo ou poster. Apenas gera o upload_id no frontend
+    // e consulta GET /backend/v1/video-institucional/chunked-status?upload_id=...
     let chunksJaEnviados: number[] = []
     try {
       const statusRes = await pb.send<{ uploaded_chunks: number[] }>(
@@ -426,7 +427,7 @@ export const videoInstitucionalService = {
 
     let bytesTransmitidos = chunksJaEnviados.length * chunkSize
 
-    // 2. Enviar cada bloco pendente sequencialmente
+    // 2. Enviar cada bloco pendente sequencialmente via FormData multipart nativo na coleção video_upload_chunks
     for (let index = 0; index < totalChunks; index++) {
       if (chunksJaEnviados.includes(index)) {
         continue
@@ -463,7 +464,7 @@ export const videoInstitucionalService = {
       etapa: 'processando',
     })
 
-    // Preparar imagem de capa em base64 se presente
+    // A capa segue como antes: converter com fileToBase64(params.capa) e enviar APENAS no payload JSON do finalize
     const arquivoCapa = params.capa || params.poster
     let capaBase64 = ''
     if (arquivoCapa) {

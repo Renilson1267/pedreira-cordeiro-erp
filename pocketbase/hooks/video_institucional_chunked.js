@@ -54,7 +54,16 @@ routerAdd(
       return e.json(401, { error: 'Não autorizado' })
     }
 
-    const body = e.requestInfo().body || {}
+    // Guarda de Content-Type: nunca ler multipart sem antes validar o header
+    const contentType = (e.request.header.get('Content-Type') || '').toLowerCase()
+    let body = {}
+    try {
+      body = e.requestInfo().body || {}
+    } catch (parseErr) {
+      console.log('Aviso ao obter request body:', parseErr)
+      body = {}
+    }
+
     const uploadId = (body.upload_id || '').trim()
     const totalChunks = parseInt(body.total_chunks, 10)
     const fileName = (body.file_name || 'video.mp4').trim()
@@ -67,6 +76,18 @@ routerAdd(
     const idExistente = body.id_existente ? String(body.id_existente).trim() : null
     const capaFileName = body.capa_file_name ? String(body.capa_file_name).trim() : ''
     const capaBase64 = body.capa_base64 ? String(body.capa_base64).trim() : ''
+
+    // Se no futuro houver upload multipart, só tentar ler arquivos se o header incluir multipart/form-data
+    if (contentType.includes('multipart/form-data')) {
+      try {
+        if (typeof e.findUploadedFiles === 'function') {
+          // Checagem defensiva sem estourar GoError se não houver arquivo
+          e.findUploadedFiles()
+        }
+      } catch (mpErr) {
+        console.log('Aviso ao verificar arquivos multipart:', mpErr)
+      }
+    }
 
     if (!uploadId || !totalChunks || totalChunks <= 0) {
       return e.json(400, { error: 'upload_id e total_chunks válidos são obrigatórios' })
@@ -187,7 +208,15 @@ routerAdd(
       record.set('enviado_por_nome', enviadoPorNome)
       record.set('enviado_por_id', authRecord.id)
 
-      // Se foi enviada uma capa/poster opcional
+      if (!record.id) {
+        // Gera um ID antecipado de 15 caracteres alfanuméricos se for novo
+        record.set('id', $security.randomString(15).toLowerCase())
+      }
+
+      // Gerar sufixo aleatório para nomes de arquivos
+      const randomSuffix = $security.randomString(10).toLowerCase()
+
+      // Se foi enviada uma capa/poster opcional via JSON base64
       let targetCapaName = ''
       if (capaFileName && capaBase64) {
         try {
@@ -216,16 +245,10 @@ routerAdd(
 
       // Gerar nome de arquivo final PocketBase com sufixo aleatório
       // formato padrão do PocketBase: original_name_<random10>.mp4
-      const randomSuffix = $security.randomString(10).toLowerCase()
       const extMatch = fileName.match(/\.([a-zA-Z0-9]+)$/)
       const ext = extMatch ? extMatch[1] : 'mp4'
       const baseClean = fileName.replace(/\.[^/.]+$/, '').replace(/[^a-zA-Z0-9_-]/g, '_')
       const targetFileName = `${baseClean}_${randomSuffix}.${ext}`
-
-      if (!record.id) {
-        // Gera um ID antecipado de 15 caracteres alfanuméricos se for novo
-        record.set('id', $security.randomString(15).toLowerCase())
-      }
 
       // Copia os dados do arquivo temporário montado diretamente para o caminho oficial do storage do record
       const finalStoragePath = `${record.collection().id}/${record.id}/${targetFileName}`
