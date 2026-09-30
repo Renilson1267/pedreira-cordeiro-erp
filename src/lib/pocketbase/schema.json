@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-09-30T01:54:55.541Z",
+  "generatedAt": "2026-09-30T02:08:46.072Z",
   "collections": [
     {
       "name": "users",
@@ -3535,13 +3535,24 @@
           "name": "arquivo",
           "type": "file",
           "required": true,
-          "system": false
+          "system": false,
+          "maxSize": 314572800,
+          "mimeTypes": [
+            "video/mp4",
+            "video/webm",
+            "video/ogg",
+            "video/quicktime",
+            "video/x-matroska",
+            "video/x-msvideo"
+          ]
         },
         {
           "name": "poster",
           "type": "file",
           "required": false,
-          "system": false
+          "system": false,
+          "maxSize": 31457280,
+          "mimeTypes": ["image/jpeg", "image/png", "image/webp", "image/gif"]
         },
         {
           "name": "ativo",
@@ -3591,7 +3602,9 @@
           "name": "capa",
           "type": "file",
           "required": false,
-          "system": false
+          "system": false,
+          "maxSize": 31457280,
+          "mimeTypes": ["image/jpeg", "image/png", "image/webp", "image/gif"]
         }
       ],
       "indexes": [

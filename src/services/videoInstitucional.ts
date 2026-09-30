@@ -41,12 +41,16 @@ export interface UploadVideoInstitucionalParams {
 // Limites e constantes
 export const MAX_VIDEO_SIZE_BYTES = 300 * 1024 * 1024 // 300 MB
 export const DIRECT_UPLOAD_THRESHOLD_BYTES = 300 * 1024 * 1024
-export const CHUNK_SIZE_BYTES = 12 * 1024 * 1024
-export const MAX_CHUNK_RETRIES = 2
 
 // Formatos aceitos
-export const FORMATOS_VIDEO_ACEITOS = ['.mp4', '.webm', '.quicktime', '.mov', '.ogg']
-export const MIMES_VIDEO_ACEITOS = ['video/mp4', 'video/webm', 'video/quicktime', 'video/ogg']
+export const FORMATOS_VIDEO_ACEITOS = ['.mp4', '.webm', '.quicktime', '.mov', '.ogg', '.m4v']
+export const MIMES_VIDEO_ACEITOS = [
+  'video/mp4',
+  'video/webm',
+  'video/quicktime',
+  'video/ogg',
+  'video/x-m4v',
+]
 
 export function formatarMensagemErroUpload(
   status: number,
@@ -65,9 +69,12 @@ export function formatarMensagemErroUpload(
 
   if (
     status === 413 ||
-    (status === 400 && /too large|file too large|excede o limite|maxSize|max size/i.test(dataMsg))
+    (status === 400 &&
+      /too large|file too large|excede o limite|maxSize|max size|request entity too large/i.test(
+        dataMsg,
+      ))
   ) {
-    return 'Arquivo muito grande para o limite do servidor. O limite máximo é de 300 MB.'
+    return 'Arquivo muito grande para o limite do servidor. O tamanho máximo permitido para o vídeo é de 300 MB.'
   }
 
   if (status === 401) {
@@ -81,7 +88,10 @@ export function formatarMensagemErroUpload(
   if (status === 400) {
     if (dataMsg) {
       if (/mime/i.test(dataMsg)) {
-        return 'Formato de arquivo não suportado. Por favor, envie um vídeo MP4 ou WebM.'
+        return 'Formato de vídeo não suportado pelo servidor. Por favor, envie um vídeo no formato MP4 (H.264) ou WebM.'
+      }
+      if (/maxSize|max size|file size/i.test(dataMsg)) {
+        return 'O arquivo excede o limite máximo permitido de 300 MB.'
       }
       return `Não foi possível processar o envio: ${dataMsg}`
     }
@@ -89,11 +99,11 @@ export function formatarMensagemErroUpload(
   }
 
   if (status === 0) {
-    return 'Conexão interrompida. Verifique sua rede e tente novamente.'
+    return 'A conexão foi interrompida ou atingiu o tempo limite. Verifique sua conexão à internet e tente novamente.'
   }
 
   if (status >= 500) {
-    return 'Erro interno do servidor ao gravar o arquivo de vídeo. Tente novamente mais tarde.'
+    return 'Erro interno do servidor ao gravar o arquivo de vídeo. Verifique se o arquivo não está corrompido e tente novamente.'
   }
 
   return dataMsg || statusText || `Falha no envio do vídeo (status ${status}).`

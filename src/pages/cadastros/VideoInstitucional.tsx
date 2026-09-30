@@ -144,14 +144,18 @@ export default function VideoInstitucional() {
     if (!file) return
 
     // Valida extensão e mime type
-    const extensoesValidas = ['.mp4', '.webm', '.ogg', '.mov']
+    const extensoesValidas = ['.mp4', '.webm', '.ogg', '.mov', '.m4v']
     const ehExtensaoValida = extensoesValidas.some((ext) => file.name.toLowerCase().endsWith(ext))
     const ehMimeValido =
-      file.type.startsWith('video/') || file.type === 'video/mp4' || file.type === 'video/webm'
+      file.type.startsWith('video/') ||
+      file.type === 'video/mp4' ||
+      file.type === 'video/webm' ||
+      file.type === 'video/quicktime' ||
+      file.type === 'video/ogg'
 
     if (!ehExtensaoValida && !ehMimeValido) {
       toast({
-        title: 'Formato inválido',
+        title: 'Formato de vídeo inválido',
         description: 'Por favor, selecione um arquivo de vídeo no formato MP4 ou WebM.',
         variant: 'destructive',
       })
@@ -161,8 +165,8 @@ export default function VideoInstitucional() {
 
     if (file.size > MAX_FILE_SIZE_BYTES) {
       toast({
-        title: 'Arquivo muito grande',
-        description: `O vídeo não pode ultrapassar 300 MB (tamanho atual: ${formatBytes(file.size)}). Otimize o arquivo antes de enviar.`,
+        title: 'Arquivo muito grande (limite de 300 MB)',
+        description: `O arquivo selecionado tem ${formatBytes(file.size)}, que excede o limite máximo permitido de 300 MB. Por favor, comprima o vídeo ou selecione uma versão menor.`,
         variant: 'destructive',
       })
       e.target.value = ''
