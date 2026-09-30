@@ -183,13 +183,17 @@ export default function VideoInstitucional() {
       return
     }
 
-    // Validação profunda para recusar arquivos de áudio disfarçados (.mp3, .m4a, .wav renomeados para .mp4)
+    // Validação profunda para recusar arquivos de áudio disfarçados (.mp3, .m4a, .wav, .aac renomeados para .mp4)
     // 1. Checagem de MIME de áudio
-    if (file.type.startsWith('audio/')) {
+    if (
+      file.type.startsWith('audio/') ||
+      file.type === 'audio/x-m4a' ||
+      file.type === 'audio/mp4'
+    ) {
       toast({
-        title: 'Arquivo de áudio não permitido',
+        title: 'Arquivo de áudio renomeado não permitido',
         description:
-          'Este arquivo é um áudio, não um vídeo. Converta para MP4 H.264 e tente novamente.',
+          'O arquivo selecionado é um arquivo de áudio renomeado para .mp4. Por favor, envie um arquivo de vídeo autêntico em formato MP4 (codec H.264) com imagem e áudio.',
         variant: 'destructive',
       })
       e.target.value = ''
@@ -216,9 +220,9 @@ export default function VideoInstitucional() {
           setArquivoSelecionado(null)
           setPreviewVideoUrl(null)
           toast({
-            title: 'Arquivo sem imagem de vídeo',
+            title: 'Arquivo de áudio sem trilha de vídeo',
             description:
-              'Este arquivo é um áudio, não um vídeo. Converta para MP4 H.264 e tente novamente.',
+              'Este arquivo não contém faixa de vídeo (apenas áudio renomeado para .mp4). Por favor, forneça um vídeo com imagem em formato MP4.',
             variant: 'destructive',
           })
           if (fileInputRef.current) {
@@ -233,7 +237,6 @@ export default function VideoInstitucional() {
       }
 
       tempVideo.onerror = () => {
-        // Se não conseguir decodificar metadados, avisa usuário
         console.warn('Aviso: elemento de teste não conseguiu decodificar metadados do vídeo.')
       }
     } catch {

@@ -417,3 +417,52 @@ routerAdd(
   },
   $apis.requireAuth(),
 )
+
+// 4. Servir fotos reais locais sob /site-img/*.jpeg diretamente do PocketBase storage
+routerAdd('GET', '/site-img/vista-de-cima-25461.jpeg', (e) => {
+  try {
+    const rec = $app.findFirstRecordByFilter('fotos_pedreira_reais', "chave = 'hero-jazida-aerea'")
+    const fileName = rec.getString('foto')
+    const filePath = `${rec.collection().id}/${rec.id}/${fileName}`
+    const fs = $app.newFilesystem()
+    const reader = fs.newReader(filePath)
+    e.response.header().set('Content-Type', 'image/jpeg')
+    e.response.header().set('Cache-Control', 'public, max-age=86400')
+    return e.stream(200, 'image/jpeg', reader)
+  } catch (err) {
+    return e.json(404, { error: 'Foto não encontrada' })
+  }
+})
+
+routerAdd('GET', '/site-img/patio-de-brita-2aa99.jpeg', (e) => {
+  try {
+    const rec = $app.findFirstRecordByFilter('fotos_pedreira_reais', "chave = 'patio-brita'")
+    const fileName = rec.getString('foto')
+    const filePath = `${rec.collection().id}/${rec.id}/${fileName}`
+    const fs = $app.newFilesystem()
+    const reader = fs.newReader(filePath)
+    e.response.header().set('Content-Type', 'image/jpeg')
+    e.response.header().set('Cache-Control', 'public, max-age=86400')
+    return e.stream(200, 'image/jpeg', reader)
+  } catch (err) {
+    return e.json(404, { error: 'Foto não encontrada' })
+  }
+})
+
+routerAdd('GET', '/site-img/po-de-pedra-britador-997e5.jpeg', (e) => {
+  try {
+    const rec = $app.findFirstRecordByFilter(
+      'fotos_pedreira_reais',
+      "chave = 'correia-po-de-pedra'",
+    )
+    const fileName = rec.getString('foto')
+    const filePath = `${rec.collection().id}/${rec.id}/${fileName}`
+    const fs = $app.newFilesystem()
+    const reader = fs.newReader(filePath)
+    e.response.header().set('Content-Type', 'image/jpeg')
+    e.response.header().set('Cache-Control', 'public, max-age=86400')
+    return e.stream(200, 'image/jpeg', reader)
+  } catch (err) {
+    return e.json(404, { error: 'Foto não encontrada' })
+  }
+})

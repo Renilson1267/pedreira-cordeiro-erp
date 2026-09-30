@@ -87,16 +87,19 @@ export const INSTITUCIONAL_CONFIG = {
   // Vídeo institucional oficial do site
   videoInstitucionalUrl: 'https://pedreiracordeiro.com.br/video.mp4',
 
-  // Imagens locais do projeto (100% autossuficiente — sem dependência do domínio pedreiracordeiro.com.br)
-  // Nota: Consulta ao acervo histórico do Wayback Machine (web.archive.org) em 2026 confirmou que os
-  // snapshots arquivados de pedreiracordeiro.com.br continham apenas a landing page WordPress antiga
-  // de 2021/2022 (com uma única imagem GCA-PEDREIRA-scaled.jpg, cujo arquivo não foi salvo pelos bots).
-  // As ilustrações técnicas SVG em /site-img/ foram mantidas intactas para máxima integridade visual,
-  // sem links quebrados nem dependência de rede externa.
+  // Imagens locais do projeto (100% autossuficiente — sem dependência do domínio externo pedreiracordeiro.com.br)
+  // Fotos reais da jazida própria, pátio de brita e correia transportadora instaladas em /site-img/
   fotosReais: {
-    heroAerea: '/site-img/galeria-drone-1.svg',
-    pedreiraAerea2: '/site-img/galeria-drone-2.svg',
-    pedreiraBritador: '/site-img/galeria-drone-3.svg',
+    // 1. Aérea da jazida da Pedreira Cordeiro (foto real)
+    heroAerea: '/api/files/pbc_3973264007/on2lc9wt1m5d2bm/vista_de_cima_25461_342l6kmtsw.jpeg',
+    // 2. Pátio de brita com caminhão e peneira (foto real)
+    patioBrita: '/api/files/pbc_3973264007/y4872wsu9e6qmx7/patio_de_brita_2aa99_szpz936snj.jpeg',
+    // 3. Correia transportadora com pó de pedra (foto real)
+    correiaPoDePedra:
+      '/api/files/pbc_3973264007/sivayu6qjcjq3f9/po_de_pedra_britador_997e5_6dgyj8eh6j.jpeg',
+    pedreiraAerea2: '/api/files/pbc_3973264007/on2lc9wt1m5d2bm/vista_de_cima_25461_342l6kmtsw.jpeg',
+    pedreiraBritador:
+      '/api/files/pbc_3973264007/sivayu6qjcjq3f9/po_de_pedra_britador_997e5_6dgyj8eh6j.jpeg',
     pedreiraRegiao: '/site-img/galeria-drone-4.svg',
     betoneira1: '/site-img/galeria-betoneira-1.svg',
     betoneira2: '/site-img/galeria-betoneira-2.svg',
@@ -113,9 +116,9 @@ export const INSTITUCIONAL_CONFIG = {
     // NOTA: As fotos cm-lokotrack-1/2/3 são do britador fixo da matriz em Patos-PB
     // e nunca devem ser rotuladas como Lokotrack móvel (correção v0.0.187).
     britadorFixoCm3: '/site-img/cm-lokotrack-3.svg',
-    cmPilhas1: '/site-img/cm-pilhas-1.svg',
-    cmPilhas2: '/site-img/cm-pilhas-2.svg',
-    cmPatio: '/site-img/cm-patio.svg',
+    cmPilhas1: '/api/files/pbc_3973264007/y4872wsu9e6qmx7/patio_de_brita_2aa99_szpz936snj.jpeg',
+    cmPilhas2: '/api/files/pbc_3973264007/y4872wsu9e6qmx7/patio_de_brita_2aa99_szpz936snj.jpeg',
+    cmPatio: '/api/files/pbc_3973264007/y4872wsu9e6qmx7/patio_de_brita_2aa99_szpz936snj.jpeg',
   },
 } as const
 
@@ -223,8 +226,8 @@ export const PRODUTOS_PEDREIRA: ProdutoPedreiraItem[] = [
     aplicacao: 'Concreto usinado GC Mix, lajes, vigas, pilares e fundações estruturais',
     descricao:
       'Agregado graúdo de excelente adesão e granulometria uniforme, essencial para concreto de alta resistência estrutural e pisos industriais.',
-    imagem: '/site-img/cm-pilhas-2.svg',
-    imagemSecundaria: 'https://img.usecurling.com/p/600/400?q=crushed%20stone%20gravel&color=slate',
+    imagem: '/api/files/pbc_3973264007/y4872wsu9e6qmx7/patio_de_brita_2aa99_szpz936snj.jpeg',
+    imagemSecundaria: '/site-img/cm-pilhas-2.svg',
     densidadeMedia: '~1,45 t/m³',
   },
   {
@@ -235,8 +238,8 @@ export const PRODUTOS_PEDREIRA: ProdutoPedreiraItem[] = [
     aplicacao: 'Concreto pesado, drenagens profundas, lastros e pavimentação',
     descricao:
       'Ideal para obras de infraestrutura pesada, bases de pavimentação asfáltica, drenagens profundas e concretos estruturais de grande porte.',
-    imagem: '/site-img/cm-pilhas-1.svg',
-    imagemSecundaria: 'https://img.usecurling.com/p/600/400?q=coarse%20gravel%20stones&color=stone',
+    imagem: '/api/files/pbc_3973264007/y4872wsu9e6qmx7/patio_de_brita_2aa99_szpz936snj.jpeg',
+    imagemSecundaria: '/site-img/cm-pilhas-1.svg',
     densidadeMedia: '~1,47 t/m³',
   },
   {
@@ -247,8 +250,8 @@ export const PRODUTOS_PEDREIRA: ProdutoPedreiraItem[] = [
     aplicacao: 'Muros de arrimo, contenções, gabiões, calçamentos e fundações de pedra',
     descricao:
       'Pedra de grande porte selecionada com alta tenacidade, ideal para contenção de encostas, muros de gravidade, enrocamentos e drenagens rústicas.',
-    imagem: '/site-img/galeria-drone-3.svg',
-    imagemSecundaria: 'https://img.usecurling.com/p/600/400?q=quarry%20rocks%20boulders&color=gray',
+    imagem: '/api/files/pbc_3973264007/on2lc9wt1m5d2bm/vista_de_cima_25461_342l6kmtsw.jpeg',
+    imagemSecundaria: '/site-img/galeria-drone-3.svg',
     densidadeMedia: '~1,50 t/m³',
   },
   {
@@ -259,8 +262,9 @@ export const PRODUTOS_PEDREIRA: ProdutoPedreiraItem[] = [
     aplicacao: 'Argamassas, assentamento de paralelepípedos e intertravados, misturas asfálticas',
     descricao:
       'Substitui com alta eficiência a areia em várias etapas construtivas, proporcionando excelente compactação, acabamento homogêneo e economia.',
-    imagem: '/site-img/cm-patio.svg',
-    imagemSecundaria: 'https://img.usecurling.com/p/600/400?q=stone%20dust%20quarry&color=zinc',
+    imagem: '/api/files/pbc_3973264007/sivayu6qjcjq3f9/po_de_pedra_britador_997e5_6dgyj8eh6j.jpeg',
+    imagemSecundaria:
+      '/api/files/pbc_3973264007/y4872wsu9e6qmx7/patio_de_brita_2aa99_szpz936snj.jpeg',
     densidadeMedia: '~1,56 t/m³',
   },
   {
@@ -271,7 +275,7 @@ export const PRODUTOS_PEDREIRA: ProdutoPedreiraItem[] = [
     aplicacao: 'Blocos de concreto, pré-moldados, paisagismo, tubos e vigotas',
     descricao:
       'Pedrisco fino e limpo de alta rigidez, amplamente requisitado em fábricas de artefatos de cimento, lajotas e projetos de drenagem superficial.',
-    imagem: '/site-img/cm-lokotrack-3.svg',
+    imagem: '/api/files/pbc_3973264007/y4872wsu9e6qmx7/patio_de_brita_2aa99_szpz936snj.jpeg',
     imagemSecundaria:
       'https://img.usecurling.com/p/600/400?q=fine%20gravel%20aggregate&color=neutral',
     densidadeMedia: '~1,50 t/m³',

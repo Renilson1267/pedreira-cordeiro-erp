@@ -1410,7 +1410,7 @@ export default function HomePublica() {
                           )}
                           type="video/mp4"
                         />
-                        Seu navegador não suporta a reprodução deste vídeo.
+                        Formato de vídeo não suportado pelo navegador.
                       </video>
                     </div>
                   ) : (
@@ -1419,10 +1419,12 @@ export default function HomePublica() {
                         <AlertTriangle className="w-8 h-8 text-amber-400" />
                       </div>
                       <h3 className="text-lg sm:text-xl font-bold text-white max-w-md mb-2">
-                        Formato de vídeo não suportado pelo navegador.
+                        Formato de vídeo não suportado pelo navegador
                       </h3>
                       <p className="text-xs sm:text-sm text-amber-200/90 max-w-md mb-4 leading-relaxed">
-                        Envie um MP4 (H.264).
+                        O navegador não conseguiu decodificar esta faixa de vídeo (codec não
+                        suportado ou arquivo de áudio renomeado). Por favor, envie um arquivo em
+                        formato MP4 autêntico com codec de vídeo padrão H.264 (AVC).
                       </p>
                       <a
                         href={videoInstitucionalService.obterUrlArquivo(

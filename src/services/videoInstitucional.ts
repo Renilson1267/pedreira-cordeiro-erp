@@ -326,16 +326,14 @@ function enviarChunkXHR(options: {
     formData.append('total_chunks', String(Math.floor(options.totalChunks)))
     formData.append('chunk_size', String(Math.floor(options.chunkBlob.size)))
 
-    // Nome do arquivo da fatia binária
-    const videoExtMatch = (options.fileName || '').match(/\.([a-zA-Z0-9]+)$/)
-    const videoExt = videoExtMatch ? videoExtMatch[1].toLowerCase() : 'mp4'
-    const chunkFileName = `${options.uploadId}_part_${options.chunkIndex}.${videoExt}`
+    // Nome do bloco bruto no formato partN conforme especificação
+    const chunkFileName = `${options.uploadId}_part_${options.chunkIndex}.part`
 
     let chunkFileParaEnvio: any = null
     try {
-      // Enviar como File binário com MIME explícito 'application/octet-stream'
+      // Enviar como blob bruto sem validação de MIME rígido
       chunkFileParaEnvio = new File([options.chunkBlob], chunkFileName, {
-        type: options.chunkBlob.type || 'application/octet-stream',
+        type: 'application/octet-stream',
       })
     } catch (_) {
       chunkFileParaEnvio = options.chunkBlob
@@ -567,7 +565,7 @@ export const videoInstitucionalService = {
     // (incluindo sessões travadas conhecidas e chunks antigos do mesmo usuário)
     if (!uploadIdExistente) {
       try {
-        await this.limparChunksOrfaos()
+        await this.limparChunksOrfaos(uploadId)
       } catch (limpezaErr) {
         console.warn('Aviso ao executar limpeza de chunks órfãos preventiva:', limpezaErr)
       }
@@ -603,8 +601,7 @@ export const videoInstitucionalService = {
 
       const start = index * chunkSize
       const end = Math.min(file.size, start + chunkSize)
-      // Tipo MIME explícito na fatia: fatias sem contentType geram Blob com MIME vazio
-      // e o validador de arquivo do PocketBase rejeita o registro do chunk
+      // Fatia binária enviada como blob bruto sem exigência de validação MIME rígida
       const chunkBlob = file.slice(start, end, 'application/octet-stream')
 
       // Atualiza progresso antes do envio do bloco
@@ -843,17 +840,16 @@ export const videoInstitucionalService = {
    * Limpa chunks órfãos de sessões de upload antigas ou abandonadas
    * para não acumular lixo no banco e no storage de arquivos.
    */
-  async limparChunksOrfaos(): Promise<number> {
+  async limparChunksOrfaos(sessaoAtivaParaPreservar?: string): Promise<number> {
     let deletados = 0
     try {
-      // 1. Tentar abortar as sessões antigas conhecidas via endpoint hook
-      const sessoesConhecidas = [
-        'upl_1790736546520_c0mytph',
-        'upl_1790777892253_rwpc4im',
-        'upl_1790779177686_bpdtjv6',
-      ]
+      // Sessões travadas que devem ser limpas se não forem a sessão ativamente retomada
+      const sessoesConhecidas = ['upl_1790777892253_rwpc4im', 'upl_1790779177686_bpdtjv6']
 
       for (const oldId of sessoesConhecidas) {
+        if (sessaoAtivaParaPreservar && sessaoAtivaParaPreservar === oldId) {
+          continue
+        }
         try {
           await pb.send('/backend/v1/video-institucional/chunked-abort', {
             method: 'POST',
@@ -864,20 +860,25 @@ export const videoInstitucionalService = {
         }
       }
 
-      // 2. Buscar registros órfãos diretamente na coleção video_upload_chunks via SDK
+      // Buscar registros órfãos diretamente na coleção video_upload_chunks via SDK
       const chunksOrfaos = await pb.collection('video_upload_chunks').getFullList({
         sort: '-created',
       })
 
-      // Considerar órfãos os das sessões conhecidas ou com mais de 2 horas
-      const limiteTempoMs = Date.now() - 2 * 60 * 60 * 1000
+      // Considerar órfãos com mais de 24 horas, exceto a sessão ativa do usuário
+      const limiteTempoMs = Date.now() - 24 * 60 * 60 * 1000
       for (const chunk of chunksOrfaos) {
         const criadoEm = new Date(chunk.created).getTime()
         const uploadIdChunk = (chunk as any).upload_id || ''
+        if (sessaoAtivaParaPreservar && uploadIdChunk === sessaoAtivaParaPreservar) {
+          continue
+        }
+        // Preservar a sessão salva pelo usuário upl_1790736546520_c0mytph se estiver em retomada
+        const ehSessaoUsuarioPreservada = uploadIdChunk === 'upl_1790736546520_c0mytph'
         const ehConhecidaTravada = sessoesConhecidas.includes(uploadIdChunk)
         const ehAntigo = !isNaN(criadoEm) && criadoEm < limiteTempoMs
 
-        if (ehConhecidaTravada || ehAntigo) {
+        if ((ehConhecidaTravada || ehAntigo) && !ehSessaoUsuarioPreservada) {
           try {
             await pb.collection('video_upload_chunks').delete(chunk.id)
             deletados++
