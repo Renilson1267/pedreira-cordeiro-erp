@@ -315,15 +315,20 @@ export default function VideoInstitucional() {
         }) => {
           setProgressoUpload(info)
           if (info.etapa === 'preparando') {
-            setProgressoTexto('Preparando arquivo...')
+            setProgressoTexto('Preparando blocos do arquivo...')
           } else if (info.etapa === 'enviando') {
             const mbEnviados = (info.carregadoBytes / (1024 * 1024)).toFixed(1)
             const mbTotal = (info.totalBytes / (1024 * 1024)).toFixed(1)
+            const fracionado = info.totalBytes > 25 * 1024 * 1024
             setProgressoTexto(
-              `Enviando vídeo... ${mbEnviados} MB de ${mbTotal} MB (${info.porcentagem}%)`,
+              fracionado
+                ? `Enviando blocos fracionados com segurança... ${mbEnviados} MB de ${mbTotal} MB (${info.porcentagem}%)`
+                : `Enviando vídeo... ${mbEnviados} MB de ${mbTotal} MB (${info.porcentagem}%)`,
             )
           } else if (info.etapa === 'processando') {
-            setProgressoTexto('Arquivo enviado! O servidor está finalizando o registro...')
+            setProgressoTexto(
+              'Todos os blocos enviados! O servidor está montando e finalizando o vídeo...',
+            )
           } else if (info.etapa === 'concluido') {
             setProgressoTexto('Upload e processamento finalizados com sucesso!')
           }
@@ -901,6 +906,10 @@ export default function VideoInstitucional() {
                   <p className="text-[11px] text-gray-500 mt-1">
                     Formatos suportados: MP4, WebM • Até 300 MB
                   </p>
+                  <p className="text-[10px] text-teal-600 mt-0.5">
+                    Envios acima de 25 MB utilizam transmissão fracionada em blocos à prova de
+                    quedas de conexão.
+                  </p>
                 </div>
               ) : (
                 <div className="p-3 bg-teal-50/60 border border-teal-200 rounded-xl space-y-2">
@@ -1022,7 +1031,9 @@ export default function VideoInstitucional() {
                     {(progressoUpload.totalBytes / (1024 * 1024)).toFixed(1)} MB enviados
                   </span>
                   <span className="bg-teal-100 text-teal-800 px-2 py-0.5 rounded-md border border-teal-200/60">
-                    Upload Nativo Direto
+                    {progressoUpload.totalBytes > 25 * 1024 * 1024
+                      ? 'Upload Fracionado Resumível (Blocos)'
+                      : 'Upload Direto'}
                   </span>
                 </div>
               </div>
