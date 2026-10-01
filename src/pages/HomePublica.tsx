@@ -9,6 +9,7 @@ import {
 } from '@/data/institucional'
 import { FOTOS_ESTATICAS_PEDREIRA, getFotoRealUrl } from '@/lib/fotosReais'
 import { LogoGcMix, ASSET_LOGO_BANNER } from '@/components/institucional/LogoGcMix'
+import { SecaoGcMixConcreto } from '@/components/institucional/SecaoGcMixConcreto'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -143,11 +144,15 @@ export default function HomePublica() {
   const [erros, setErros] = useState<{ nome?: string; telefone?: string }>({})
   const [statusConfirmacao, setStatusConfirmacao] = useState<string | null>(null)
 
-  // Rolagem suave até o formulário
+  // Controle do menu mobile da Home pública
+  const [menuMobileAberto, setMenuMobileAberto] = useState(false)
+
+  // Rolagem suave até qualquer seção ou formulário
   const rolarParaSecao = (id: string, produtoPreSelecionado?: string) => {
     if (produtoPreSelecionado) {
       setProduto(produtoPreSelecionado)
     }
+    setMenuMobileAberto(false)
     const el = document.getElementById(id)
     if (el) {
       el.scrollIntoView({ behavior: 'smooth' })
@@ -286,7 +291,17 @@ export default function HomePublica() {
           </a>
 
           {/* Links desktop */}
-          <nav className="hidden lg:flex items-center gap-6 xl:gap-7 text-sm font-semibold text-slate-700">
+          <nav className="hidden lg:flex items-center gap-4 xl:gap-5 text-sm font-semibold text-slate-700">
+            {/* ITEM DESTAQUE: GC Mix Concreto (Opção 1 solicitada) */}
+            <a
+              href="#concreto-usinado"
+              className="relative inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-gradient-to-r from-[#1E3A8A] via-[#1D4ED8] to-[#2563EB] text-white font-extrabold text-xs shadow-md shadow-blue-800/25 hover:from-[#172554] hover:to-[#1E40AF] transition-all hover:scale-105"
+            >
+              <Truck className="w-3.5 h-3.5 text-amber-300" />
+              <span>GC Mix Concreto</span>
+              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+            </a>
+
             <a href="#servicos" className="hover:text-[#1D4ED8] transition-colors">
               O que fazemos
             </a>
@@ -325,7 +340,7 @@ export default function HomePublica() {
           </nav>
 
           {/* Ações do topo */}
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2 sm:gap-3">
             <Link
               to="/login"
               className="hidden sm:inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-2 rounded-xl text-slate-700 hover:text-[#1D4ED8] hover:bg-blue-50 transition-colors border border-transparent hover:border-blue-200"
@@ -336,12 +351,131 @@ export default function HomePublica() {
 
             <Button
               onClick={() => rolarParaSecao('orcamento')}
-              className="bg-gradient-to-r from-[#1E3A8A] via-[#1D4ED8] to-[#2563EB] hover:from-[#172554] hover:to-[#1E40AF] text-white shadow-md shadow-blue-800/25 rounded-xl px-5 py-2.5 font-bold text-sm transition-all hover:scale-[1.02] cursor-pointer"
+              className="bg-gradient-to-r from-[#1E3A8A] via-[#1D4ED8] to-[#2563EB] hover:from-[#172554] hover:to-[#1E40AF] text-white shadow-md shadow-blue-800/25 rounded-xl px-4 sm:px-5 py-2.5 font-bold text-xs sm:text-sm transition-all hover:scale-[1.02] cursor-pointer"
             >
               Pedir Orçamento
             </Button>
+
+            {/* Botão Hambúrguer Mobile */}
+            <button
+              onClick={() => setMenuMobileAberto(!menuMobileAberto)}
+              className="lg:hidden p-2.5 rounded-xl text-slate-700 hover:text-[#1D4ED8] hover:bg-blue-50 transition-colors border border-slate-200 cursor-pointer"
+              aria-label="Abrir ou fechar menu"
+            >
+              {menuMobileAberto ? (
+                <X className="w-5 h-5" />
+              ) : (
+                <div className="space-y-1 w-5">
+                  <span className="block h-0.5 w-full bg-slate-700" />
+                  <span className="block h-0.5 w-full bg-slate-700" />
+                  <span className="block h-0.5 w-full bg-slate-700" />
+                </div>
+              )}
+            </button>
           </div>
         </div>
+
+        {/* Menu Suspenso Mobile */}
+        {menuMobileAberto && (
+          <div className="lg:hidden border-t border-blue-100 bg-white/98 backdrop-blur-lg px-4 py-5 shadow-xl space-y-3">
+            {/* Item em DESTAQUE no topo do menu mobile */}
+            <a
+              href="#concreto-usinado"
+              onClick={() => setMenuMobileAberto(false)}
+              className="flex items-center justify-between p-3 rounded-xl bg-gradient-to-r from-[#1E3A8A] via-[#1D4ED8] to-[#2563EB] text-white font-extrabold text-sm shadow-md"
+            >
+              <div className="flex items-center gap-2">
+                <Truck className="w-4 h-4 text-amber-300" />
+                <span>GC Mix Concreto (DESTAQUE)</span>
+              </div>
+              <span className="text-[10px] bg-amber-400 text-slate-950 font-black px-2 py-0.5 rounded-full">
+                Opção 1
+              </span>
+            </a>
+
+            <div className="grid grid-cols-2 gap-2 text-xs font-semibold text-slate-700 pt-1">
+              <a
+                href="#servicos"
+                onClick={() => setMenuMobileAberto(false)}
+                className="p-2.5 rounded-lg hover:bg-blue-50 hover:text-[#1D4ED8] transition-colors"
+              >
+                O que fazemos
+              </a>
+              <a
+                href="#cm-lokotrack"
+                onClick={() => setMenuMobileAberto(false)}
+                className="p-2.5 rounded-lg hover:bg-amber-50 text-[#1D4ED8] font-bold flex items-center gap-1"
+              >
+                <Sparkles className="w-3 h-3 text-amber-500" />
+                Lokotrack
+              </a>
+              <a
+                href="#pedreira"
+                onClick={() => setMenuMobileAberto(false)}
+                className="p-2.5 rounded-lg hover:bg-blue-50 hover:text-[#1D4ED8] transition-colors"
+              >
+                Pedreira Cordeiro
+              </a>
+              <a
+                href="#produtos"
+                onClick={() => setMenuMobileAberto(false)}
+                className="p-2.5 rounded-lg hover:bg-blue-50 hover:text-[#1D4ED8] transition-colors"
+              >
+                Agregados
+              </a>
+              <a
+                href="#videos-operacao"
+                onClick={() => setMenuMobileAberto(false)}
+                className="p-2.5 rounded-lg hover:bg-blue-50 hover:text-[#1D4ED8] transition-colors flex items-center gap-1"
+              >
+                <Video className="w-3 h-3 text-[#1D4ED8]" />
+                Vídeos
+              </a>
+              <a
+                href="#operacao-real"
+                onClick={() => setMenuMobileAberto(false)}
+                className="p-2.5 rounded-lg hover:bg-blue-50 hover:text-[#1D4ED8] transition-colors"
+              >
+                Nossa Operação
+              </a>
+              <a
+                href="#unidades"
+                onClick={() => setMenuMobileAberto(false)}
+                className="p-2.5 rounded-lg hover:bg-blue-50 hover:text-[#1D4ED8] transition-colors"
+              >
+                5 Unidades
+              </a>
+              <a
+                href="#sobre"
+                onClick={() => setMenuMobileAberto(false)}
+                className="p-2.5 rounded-lg hover:bg-blue-50 hover:text-[#1D4ED8] transition-colors"
+              >
+                Quem somos
+              </a>
+            </div>
+
+            <div className="pt-2 border-t border-slate-100 flex items-center justify-between">
+              <Link
+                to="/login"
+                onClick={() => setMenuMobileAberto(false)}
+                className="inline-flex items-center gap-1.5 text-xs font-bold text-slate-700 hover:text-[#1D4ED8]"
+              >
+                <LogIn className="w-3.5 h-3.5 text-[#1D4ED8]" />
+                Área Restrita (ERP)
+              </Link>
+
+              <a
+                href={INSTITUCIONAL_CONFIG.whatsappUrlConcreto}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1.5 text-xs font-bold text-emerald-600"
+              >
+                <MessageCircle className="w-3.5 h-3.5" />
+                WhatsApp Comercial
+              </a>
+            </div>
+          </div>
+        )}
       </header>
 
       <main>
@@ -583,6 +717,14 @@ export default function HomePublica() {
             </div>
           </div>
         </section>
+
+        {/* =========================================================
+            SEÇÃO DEDICADA: GC MIX CONCRETO (OPÇÃO 1, DESTAQUE)
+            Central de concreto, frota de betoneiras e cobertura das 5 unidades
+            ========================================================= */}
+        <SecaoGcMixConcreto
+          onSolicitarOrcamento={(detalhe) => rolarParaSecao('orcamento', detalhe)}
+        />
 
         {/* SEÇÃO O QUE FAZEMOS / SERVIÇOS (Baseada em tipografia, cartões e ícones) */}
         <section id="servicos" className="py-20 bg-white border-b border-blue-100">
@@ -2601,7 +2743,7 @@ export default function HomePublica() {
             {/* Coluna 2: Unidades e Serviços */}
             <div className="lg:col-span-3 space-y-3">
               <span className="text-xs uppercase tracking-wider font-bold text-white block">
-                Nossas Unidades
+                Nossas 5 Unidades GC Mix
               </span>
               <ul className="text-xs space-y-2 text-slate-300">
                 {UNIDADES_GC.map((u) => (
@@ -2614,11 +2756,18 @@ export default function HomePublica() {
                 ))}
               </ul>
 
-              <div className="pt-2 space-y-1">
+              <div className="pt-2 space-y-1.5">
                 <span className="text-xs uppercase tracking-wider font-bold text-white block mb-1">
-                  C M Construções & Vídeos
+                  Atalhos Rápidos
                 </span>
-                <a href="#cm-lokotrack" className="text-xs text-amber-300 hover:underline block">
+                <a
+                  href="#concreto-usinado"
+                  className="text-xs text-amber-300 hover:underline font-bold flex items-center gap-1"
+                >
+                  <Truck className="w-3 h-3 text-amber-300" />
+                  GC Mix Concreto Usinado (Destaque) →
+                </a>
+                <a href="#cm-lokotrack" className="text-xs text-slate-300 hover:underline block">
                   Britador Móvel Lokotrack →
                 </a>
                 <a
