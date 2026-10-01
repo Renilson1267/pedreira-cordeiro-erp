@@ -46,6 +46,9 @@ import {
   Maximize2,
   X,
   Cpu,
+  Video,
+  Play,
+  Tv,
 } from 'lucide-react'
 
 // As fotos reais autênticas importadas diretamente como assets compilados
@@ -299,6 +302,13 @@ export default function HomePublica() {
             </a>
             <a href="#produtos" className="hover:text-[#1D4ED8] transition-colors">
               Agregados
+            </a>
+            <a
+              href="#videos-operacao"
+              className="hover:text-[#1D4ED8] transition-colors flex items-center gap-1 font-semibold text-[#1D4ED8]"
+            >
+              <Video className="w-3.5 h-3.5 text-[#1D4ED8]" />
+              Vídeos
             </a>
             <a href="#operacao-real" className="hover:text-[#1D4ED8] transition-colors">
               Nossa Operação
@@ -1028,6 +1038,205 @@ export default function HomePublica() {
                   Consultar Disponibilidade
                 </a>
               </div>
+            </div>
+          </div>
+        </section>
+
+        {/* =========================================================
+            SEÇÃO DE VÍDEOS OFICIAIS — CALDAS & AMARAL GC MIX CONCRETO
+            Operacional Lokotrack (18s) & Institucional (46s)
+            ========================================================= */}
+        <section
+          id="videos-operacao"
+          className="py-20 bg-gradient-to-b from-[#0F1D36] via-[#0A2540] to-[#0A1A3B] text-white relative overflow-hidden border-b border-[#1E3A8A]"
+        >
+          {/* Efeitos de iluminação sutil de fundo */}
+          <div className="absolute top-0 left-1/4 -mt-20 w-96 h-96 rounded-full bg-[#1D4ED8]/15 blur-3xl pointer-events-none" />
+          <div className="absolute bottom-0 right-1/4 -mb-20 w-96 h-96 rounded-full bg-amber-400/10 blur-3xl pointer-events-none" />
+
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
+            {/* Header da Seção de Vídeos */}
+            <div className="text-center max-w-3xl mx-auto mb-14">
+              <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-[#1E3A8A]/60 border border-blue-400/30 text-blue-200 text-xs font-bold uppercase tracking-wider mb-4 backdrop-blur-md">
+                <Video className="w-4 h-4 text-amber-400" />
+                Registros em Vídeo • Operação em Movimento
+              </div>
+              <h2 className="text-3xl sm:text-5xl font-black text-white tracking-tight">
+                Conheça Nossa Operação
+              </h2>
+              <p className="mt-4 text-base sm:text-lg text-blue-100 leading-relaxed font-normal">
+                Veja o britador móvel Lokotrack em plena atividade de britagem em campo e assista ao
+                vídeo institucional que sintetiza a força de nossa estrutura, frota e equipe no
+                Sertão.
+              </p>
+            </div>
+
+            {/* Grid dos Dois Vídeos em 2 Colunas no Desktop / Empilhado no Mobile */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 items-stretch">
+              {/* Card 1: Vídeo Operacional Lokotrack */}
+              <div className="rounded-3xl overflow-hidden border border-amber-400/40 bg-slate-900/90 shadow-2xl backdrop-blur-md flex flex-col justify-between group hover:border-amber-400 transition-colors">
+                <div>
+                  {/* Player Embed Responsivo 16:9 */}
+                  <div className="relative w-full aspect-video bg-black overflow-hidden">
+                    <iframe
+                      src="https://www.youtube.com/embed/a9J67SERlgI"
+                      title="Vídeo Operacional — Britador Móvel Lokotrack em Ação no Campo (C M Construções)"
+                      aria-label="Vídeo Operacional do Britador Móvel Lokotrack em Ação no Campo"
+                      loading="lazy"
+                      allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                      allowFullScreen
+                      className="absolute inset-0 w-full h-full border-0"
+                    />
+                  </div>
+
+                  {/* Detalhes do Vídeo 1 */}
+                  <div className="p-6 sm:p-8 space-y-4">
+                    <div className="flex items-center justify-between flex-wrap gap-2">
+                      <span className="bg-amber-400 text-slate-950 text-xs font-black px-3 py-1 rounded-lg shadow-md uppercase tracking-wider flex items-center gap-1.5">
+                        <Play className="w-3.5 h-3.5 fill-slate-950" />
+                        Operacional • Lokotrack (18s)
+                      </span>
+                      <span className="bg-blue-950/80 border border-blue-400/30 text-blue-200 text-xs font-semibold px-2.5 py-1 rounded-lg">
+                        C M Construções
+                      </span>
+                    </div>
+
+                    <div>
+                      <h3 className="text-xl sm:text-2xl font-black text-white">
+                        Vídeo Operacional — Lokotrack em Ação
+                      </h3>
+                      <p className="mt-2 text-xs sm:text-sm text-blue-100 leading-relaxed font-normal">
+                        Filmagem autêntica do conjunto móvel de britagem Lokotrack sobre esteiras
+                        processando rocha maciça em campo aberto: alimentação direta, peneiras
+                        vibratórias calibradas e esteiras de descarga contínua com alta vazão
+                        produtiva.
+                      </p>
+                    </div>
+
+                    <div className="p-3.5 rounded-xl bg-white/5 border border-white/10 space-y-1.5 text-xs text-slate-300">
+                      <div className="flex items-center justify-between">
+                        <span className="text-slate-400">Aplicação:</span>
+                        <strong className="text-white">
+                          Britagem primária e secundária na lavra
+                        </strong>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <span className="text-slate-400">Canal Oficial:</span>
+                        <strong className="text-amber-300">Caldas & Amaral GC Mix Concreto</strong>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="p-6 pt-0 sm:p-8 sm:pt-0">
+                  <div className="pt-4 border-t border-white/10 flex flex-col sm:flex-row items-center justify-between gap-3">
+                    <span className="text-xs text-slate-400 text-center sm:text-left">
+                      Disponível para locação em obras na PB, PE e RN.
+                    </span>
+                    <a
+                      href={INSTITUCIONAL_CONFIG.whatsappUrlLokotrack}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="w-full sm:w-auto inline-flex items-center justify-center gap-2 bg-gradient-to-r from-amber-400 to-amber-500 hover:from-amber-300 hover:to-amber-400 text-slate-950 font-black text-xs px-4 py-2.5 rounded-xl shadow-md transition-all shrink-0"
+                    >
+                      <MessageCircle className="w-4 h-4" />
+                      <span>Cotar Lokotrack</span>
+                    </a>
+                  </div>
+                </div>
+              </div>
+
+              {/* Card 2: Vídeo Institucional Telão do Evento */}
+              <div className="rounded-3xl overflow-hidden border border-blue-400/40 bg-slate-900/90 shadow-2xl backdrop-blur-md flex flex-col justify-between group hover:border-blue-400 transition-colors">
+                <div>
+                  {/* Player Embed Responsivo 16:9 */}
+                  <div className="relative w-full aspect-video bg-black overflow-hidden">
+                    <iframe
+                      src="https://www.youtube.com/embed/B2DUEa-9hjY"
+                      title="Vídeo Institucional — GC MIX Concreto Usinado e Pedreira Cordeiro"
+                      aria-label="Vídeo Institucional de Apresentação da GC MIX Concreto Usinado e Pedreira Cordeiro"
+                      loading="lazy"
+                      allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                      allowFullScreen
+                      className="absolute inset-0 w-full h-full border-0"
+                    />
+                  </div>
+
+                  {/* Detalhes do Vídeo 2 */}
+                  <div className="p-6 sm:p-8 space-y-4">
+                    <div className="flex items-center justify-between flex-wrap gap-2">
+                      <span className="bg-[#1D4ED8] text-white text-xs font-black px-3 py-1 rounded-lg shadow-md uppercase tracking-wider flex items-center gap-1.5">
+                        <Tv className="w-3.5 h-3.5" />
+                        Institucional • Grupo GC (46s)
+                      </span>
+                      <span className="bg-emerald-500/20 border border-emerald-400/40 text-emerald-300 text-xs font-bold px-2.5 py-1 rounded-lg">
+                        GC Mix & Pedreira Cordeiro
+                      </span>
+                    </div>
+
+                    <div>
+                      <h3 className="text-xl sm:text-2xl font-black text-white">
+                        Vídeo Institucional — Concreto & Pedreira
+                      </h3>
+                      <p className="mt-2 text-xs sm:text-sm text-blue-100 leading-relaxed font-normal">
+                        Apresentação oficial exibida no evento do Grupo GC do Amaral: infraestrutura
+                        integrada da usina de concreto usinado GC Mix, jazida própria da Pedreira
+                        Cordeiro, frotas de caminhões betoneira e atendimento dinâmico para as
+                        maiores construtoras regionais.
+                      </p>
+                    </div>
+
+                    <div className="p-3.5 rounded-xl bg-white/5 border border-white/10 space-y-1.5 text-xs text-slate-300">
+                      <div className="flex items-center justify-between">
+                        <span className="text-slate-400">Atuação:</span>
+                        <strong className="text-white">5 Unidades & Pedreira Própria</strong>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <span className="text-slate-400">Canal Oficial:</span>
+                        <strong className="text-blue-300">Caldas & Amaral GC Mix Concreto</strong>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="p-6 pt-0 sm:p-8 sm:pt-0">
+                  <div className="pt-4 border-t border-white/10 flex flex-col sm:flex-row items-center justify-between gap-3">
+                    <span className="text-xs text-slate-400 text-center sm:text-left">
+                      Traços especiais de concreto e agregados selecionados.
+                    </span>
+                    <button
+                      onClick={() => rolarParaSecao('orcamento', 'Concreto Usinado GC Mix')}
+                      className="w-full sm:w-auto inline-flex items-center justify-center gap-2 bg-[#1D4ED8] hover:bg-[#1E40AF] text-white font-bold text-xs px-4 py-2.5 rounded-xl shadow-md transition-all shrink-0 cursor-pointer"
+                    >
+                      <ArrowRight className="w-4 h-4" />
+                      <span>Pedir Orçamento</span>
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Banner de Rodapé da Seção com Canal do YouTube */}
+            <div className="mt-10 p-5 rounded-2xl bg-white/5 border border-white/10 backdrop-blur-xs flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-blue-200">
+              <div className="flex items-center gap-2.5 text-center sm:text-left">
+                <div className="w-8 h-8 rounded-lg bg-red-600 text-white flex items-center justify-center shrink-0 shadow-md">
+                  <Play className="w-4 h-4 fill-white" />
+                </div>
+                <span>
+                  Vídeos hospedados no canal oficial{' '}
+                  <strong>CALDAS & AMARAL GC MIX CONCRETO</strong> no YouTube com alta definição e
+                  reprodução ágil.
+                </span>
+              </div>
+              <a
+                href="https://youtu.be/B2DUEa-9hjY"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-amber-300 hover:text-amber-200 hover:underline font-bold shrink-0 flex items-center gap-1"
+              >
+                <span>Assistir no YouTube</span>
+                <ArrowRight className="w-3.5 h-3.5" />
+              </a>
             </div>
           </div>
         </section>
@@ -2405,12 +2614,19 @@ export default function HomePublica() {
                 ))}
               </ul>
 
-              <div className="pt-2">
+              <div className="pt-2 space-y-1">
                 <span className="text-xs uppercase tracking-wider font-bold text-white block mb-1">
-                  C M Construções
+                  C M Construções & Vídeos
                 </span>
                 <a href="#cm-lokotrack" className="text-xs text-amber-300 hover:underline block">
                   Britador Móvel Lokotrack →
+                </a>
+                <a
+                  href="#videos-operacao"
+                  className="text-xs text-blue-300 hover:underline block flex items-center gap-1"
+                >
+                  <Video className="w-3 h-3 text-amber-300" />
+                  Vídeos da Operação (YouTube) →
                 </a>
               </div>
             </div>
