@@ -1371,7 +1371,7 @@ export default function HomePublica() {
                 </span>
               </div>
               <a
-                href="https://youtu.be/B2DUEa-9hjY"
+                href="https://www.youtube.com/watch?v=B2DUEa-9hjY"
                 target="_blank"
                 rel="noopener noreferrer"
                 className="text-amber-300 hover:text-amber-200 hover:underline font-bold shrink-0 flex items-center gap-1"
