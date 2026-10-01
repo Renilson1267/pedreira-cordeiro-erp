@@ -106,6 +106,15 @@ const FOTOS_REAIS = {
       'Grande volume de pó de pedra claro pronto para carregamento em primeiro plano, com correia transportadora empilhando brita ao fundo, cerca de contenção e vegetação nativa da caatinga.',
     etiqueta: 'Pó de Pedra Selecionado',
   },
+  lokotrackMovel: {
+    src: FOTOS_ESTATICAS_PEDREIRA.lokotrackMovel,
+    fallback: INSTITUCIONAL_CONFIG.fotosReais.lokotrackMovel,
+    titulo: 'Britador Móvel Lokotrack em Operação',
+    local: 'C M Construções • Operação em Campo',
+    descricao:
+      'Conjunto móvel sobre esteiras com peneiras vibratórias e correias levantadas, pilhas de agregados britados e equipe técnica em campo. Alta produtividade direto na frente de lavra.',
+    etiqueta: 'C M Construções — Lokotrack',
+  },
 }
 
 export default function HomePublica() {
@@ -694,7 +703,7 @@ export default function HomePublica() {
 
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
             {/* Header da Seção Lokotrack */}
-            <div className="text-center max-w-3xl mx-auto mb-14">
+            <div className="text-center max-w-3xl mx-auto mb-12">
               <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-amber-400/20 border border-amber-400/40 text-amber-300 text-xs font-bold uppercase tracking-wider mb-3">
                 <Wrench className="w-3.5 h-3.5 text-amber-400" />
                 Empresa do Grupo GC do Amaral
@@ -706,6 +715,121 @@ export default function HomePublica() {
                 Locação de britador de mandíbula móvel <strong>Lokotrack</strong> — esmagamento de
                 pedra direto na sua obra, pedreira ou serviço, com produção alta e mobilidade total.
               </p>
+            </div>
+
+            {/* Banner com Foto Real do Lokotrack Móvel em Operação */}
+            <div className="mb-12 rounded-3xl overflow-hidden border border-amber-400/40 bg-slate-900/90 shadow-2xl backdrop-blur-md">
+              <div className="grid grid-cols-1 lg:grid-cols-12 items-stretch">
+                {/* Imagem Grande Clicável para Lightbox */}
+                <div
+                  className="lg:col-span-7 relative min-h-[300px] sm:min-h-[420px] overflow-hidden group cursor-pointer bg-slate-950"
+                  onClick={() => setFotoAtiva(FOTOS_REAIS.lokotrackMovel)}
+                >
+                  <img
+                    src={FOTOS_REAIS.lokotrackMovel.src}
+                    onError={(e) => {
+                      const target = e.currentTarget
+                      if (
+                        FOTOS_REAIS.lokotrackMovel.fallback &&
+                        target.src !== FOTOS_REAIS.lokotrackMovel.fallback
+                      ) {
+                        target.src = FOTOS_REAIS.lokotrackMovel.fallback
+                      }
+                    }}
+                    alt="Britador móvel Lokotrack em operação em campo — C M Construções"
+                    className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700"
+                    loading="lazy"
+                  />
+                  {/* Badges sobre a foto */}
+                  <div className="absolute top-4 left-4 flex items-center gap-2 flex-wrap">
+                    <span className="bg-amber-400 text-slate-950 text-xs font-black px-3 py-1.5 rounded-lg shadow-md uppercase tracking-wider flex items-center gap-1.5">
+                      <Sparkles className="w-3.5 h-3.5" />
+                      Foto Real da Operação
+                    </span>
+                    <span className="bg-[#0A2540]/90 backdrop-blur-md text-amber-300 text-xs font-bold px-3 py-1.5 rounded-lg border border-amber-400/30">
+                      Britador Móvel sobre Esteiras
+                    </span>
+                  </div>
+
+                  <div className="absolute bottom-4 right-4 bg-slate-950/80 hover:bg-slate-900 text-white p-2.5 rounded-full backdrop-blur-md border border-white/20 transition-all flex items-center gap-1.5 text-xs font-semibold shadow-lg">
+                    <Maximize2 className="w-4 h-4 text-amber-400" />
+                    <span className="hidden sm:inline">Ampliar Foto</span>
+                  </div>
+
+                  <div className="absolute bottom-4 left-4 hidden sm:block">
+                    <span className="bg-black/70 backdrop-blur-md text-white text-[11px] font-medium px-3 py-1.5 rounded-lg border border-white/10">
+                      Esteiras • Peneiras Vibratórias • Correias de Descarga
+                    </span>
+                  </div>
+                </div>
+
+                {/* Painel com Ficha Técnica da Foto Real */}
+                <div className="lg:col-span-5 p-8 sm:p-10 flex flex-col justify-between bg-gradient-to-br from-[#0F2244] to-[#0A1A3B] border-t lg:border-t-0 lg:border-l border-amber-400/20">
+                  <div className="space-y-6">
+                    <div className="flex items-center justify-between flex-wrap gap-2">
+                      <span className="text-xs uppercase font-bold text-amber-300 tracking-wider flex items-center gap-1.5">
+                        <Cpu className="w-4 h-4 text-amber-400" />
+                        Ficha do Equipamento em Campo
+                      </span>
+                      <span className="bg-emerald-500/20 border border-emerald-400/40 text-emerald-300 text-xs font-bold px-2.5 py-1 rounded-full">
+                        Equipamento Próprio
+                      </span>
+                    </div>
+
+                    <div>
+                      <h3 className="text-2xl font-black text-white leading-tight">
+                        Lokotrack em Operação Real
+                      </h3>
+                      <p className="mt-2 text-xs text-blue-200 leading-relaxed">
+                        Registro autêntico do caminhão britador móvel sobre esteiras em plena
+                        produção: correias transportadoras elevadas, pilhas de agregados graduados e
+                        equipe técnica especializada da C M Construções com apoio operacional
+                        completo.
+                      </p>
+                    </div>
+
+                    {/* Dados técnicos rápidos */}
+                    <div className="space-y-2.5">
+                      <div className="p-3 bg-white/5 rounded-xl border border-white/10 flex items-center justify-between text-xs">
+                        <span className="text-slate-400 font-medium">Equipamento:</span>
+                        <strong className="text-white">Britador de Mandíbula sobre Esteiras</strong>
+                      </div>
+                      <div className="p-3 bg-white/5 rounded-xl border border-white/10 flex items-center justify-between text-xs">
+                        <span className="text-slate-400 font-medium">Empresa Responsável:</span>
+                        <strong className="text-amber-300">C M Construções (Grupo GC)</strong>
+                      </div>
+                      <div className="p-3 bg-white/5 rounded-xl border border-white/10 flex items-center justify-between text-xs">
+                        <span className="text-slate-400 font-medium">Mobilização:</span>
+                        <strong className="text-white">Paraíba • Pernambuco • RN</strong>
+                      </div>
+                      <div className="p-3 bg-white/5 rounded-xl border border-white/10 flex items-center justify-between text-xs">
+                        <span className="text-slate-400 font-medium">Vantagem Direta:</span>
+                        <strong className="text-emerald-300">Elimina frete de rocha bruta</strong>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="pt-6 mt-6 border-t border-white/10 flex flex-col sm:flex-row items-center gap-3">
+                    <button
+                      onClick={() => setFotoAtiva(FOTOS_REAIS.lokotrackMovel)}
+                      className="w-full sm:w-auto flex-1 inline-flex items-center justify-center gap-2 bg-white/10 hover:bg-white/20 text-white font-bold text-xs px-4 py-3 rounded-xl border border-white/20 transition-all cursor-pointer"
+                    >
+                      <Maximize2 className="w-4 h-4 text-amber-300" />
+                      <span>Ver em Tela Cheia</span>
+                    </button>
+
+                    <a
+                      href={INSTITUCIONAL_CONFIG.whatsappUrlLokotrack}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="w-full sm:w-auto inline-flex items-center justify-center gap-2 bg-gradient-to-r from-amber-400 to-amber-500 hover:from-amber-300 hover:to-amber-400 text-slate-950 font-black text-xs px-5 py-3 rounded-xl shadow-md transition-all hover:scale-105"
+                    >
+                      <MessageCircle className="w-4 h-4" />
+                      <span>Cotar Locação</span>
+                    </a>
+                  </div>
+                </div>
+              </div>
             </div>
 
             {/* Painel Central Lokotrack: Destaques Técnicos e Operacionais */}
@@ -1298,16 +1422,72 @@ export default function HomePublica() {
                 Nossa Infraestrutura Real
               </Badge>
               <h2 className="text-3xl sm:text-4xl font-black text-[#0A2540] tracking-tight">
-                Operação e Jazida em Patos — PB
+                Operação, Jazida e Britagem em Campo
               </h2>
               <p className="mt-3 text-base sm:text-lg text-slate-600 leading-relaxed">
-                Fotos reais registradas na matriz: da extração na jazida de granito ao pátio de
-                classificação e esteiras de britagem contínua.
+                Registros autênticos do Grupo GC do Amaral: da extração na jazida de granito aos
+                pátios de classificação, esteiras de britagem contínua e o britador móvel Lokotrack
+                operando em campo.
               </p>
             </div>
 
-            {/* Grid Completo com os 6 Registros Fotográficos Autênticos */}
+            {/* Grid Completo com os 7 Registros Fotográficos Autênticos */}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+              {/* Card Destaque: Britador Móvel Lokotrack em Operação Real */}
+              <div
+                onClick={() => setFotoAtiva(FOTOS_REAIS.lokotrackMovel)}
+                className="group rounded-3xl overflow-hidden border-2 border-amber-400/70 bg-gradient-to-b from-slate-900 to-[#0A1A3B] text-white shadow-lg hover:shadow-2xl transition-all duration-300 cursor-pointer flex flex-col justify-between md:col-span-2 lg:col-span-3"
+              >
+                <div className="grid grid-cols-1 lg:grid-cols-12 items-center">
+                  <div className="lg:col-span-7 relative h-72 sm:h-96 overflow-hidden bg-slate-950">
+                    <img
+                      src={FOTOS_REAIS.lokotrackMovel.src}
+                      onError={(e) => {
+                        const target = e.currentTarget
+                        if (
+                          FOTOS_REAIS.lokotrackMovel.fallback &&
+                          target.src !== FOTOS_REAIS.lokotrackMovel.fallback
+                        ) {
+                          target.src = FOTOS_REAIS.lokotrackMovel.fallback
+                        }
+                      }}
+                      alt={FOTOS_REAIS.lokotrackMovel.titulo}
+                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700"
+                      loading="lazy"
+                    />
+                    <div className="absolute top-4 left-4 flex items-center gap-2">
+                      <span className="bg-amber-400 text-slate-950 text-xs font-black px-3 py-1 rounded-md shadow-md">
+                        {FOTOS_REAIS.lokotrackMovel.etiqueta}
+                      </span>
+                      <span className="bg-[#0A2540]/90 text-amber-300 text-xs font-bold px-2.5 py-1 rounded-md border border-amber-400/40">
+                        Britador Móvel sobre Esteiras
+                      </span>
+                    </div>
+                    <div className="absolute bottom-4 right-4 bg-black/70 text-white p-2.5 rounded-full group-hover:bg-amber-400 group-hover:text-slate-950 transition-colors shadow-md">
+                      <Maximize2 className="w-4 h-4" />
+                    </div>
+                  </div>
+                  <div className="lg:col-span-5 p-6 sm:p-8 space-y-4">
+                    <div className="text-xs font-bold text-amber-300 flex items-center gap-1.5">
+                      <MapPin className="w-4 h-4 text-amber-400" />
+                      {FOTOS_REAIS.lokotrackMovel.local}
+                    </div>
+                    <h3 className="text-2xl font-black text-white">
+                      {FOTOS_REAIS.lokotrackMovel.titulo}
+                    </h3>
+                    <p className="text-sm text-blue-100 leading-relaxed">
+                      {FOTOS_REAIS.lokotrackMovel.descricao}
+                    </p>
+                    <div className="pt-2 flex items-center justify-between text-xs font-bold text-amber-300 border-t border-white/10">
+                      <span className="flex items-center gap-1">
+                        <Sparkles className="w-3.5 h-3.5" />
+                        Clique para ampliar em tela cheia
+                      </span>
+                      <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
+                    </div>
+                  </div>
+                </div>
+              </div>
               {/* Card 1: Vista de Topo da Jazida & Usina Solar (Nova) */}
               <div
                 onClick={() => setFotoAtiva(FOTOS_REAIS.aereaTopoPlanta)}

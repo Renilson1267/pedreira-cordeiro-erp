@@ -110,6 +110,7 @@ export const INSTITUCIONAL_CONFIG = {
       '/api/files/pbc_3973264007/on2lc9wt1m5d2bm/vista_de_cima_25461_342l6kmtsw.jpeg?v=1',
     pedreiraBritador:
       '/api/files/pbc_3973264007/sivayu6qjcjq3f9/po_de_pedra_britador_997e5_6dgyj8eh6j.jpeg?v=1',
+    lokotrackMovel: '/site-img/lokotrack-movel-cm.jpeg',
   },
 } as const
 
