@@ -4,7 +4,7 @@
 // 2. NUNCA cachear chamadas de API do PocketBase (/api/*), rotas autenticadas ou dados mutáveis do banco
 // 3. Fallback gracioso para offline no app shell
 
-const CACHE_NAME = 'pedreira-cordeiro-v2-perf'
+const CACHE_NAME = 'pedreira-cordeiro-v3-fotos-reais'
 const STATIC_ASSETS = [
   '/',
   '/index.html',
@@ -110,6 +110,9 @@ self.addEventListener('fetch', (event) => {
     url.pathname.endsWith('.css') ||
     url.pathname.endsWith('.svg') ||
     url.pathname.endsWith('.png') ||
+    url.pathname.endsWith('.jpg') ||
+    url.pathname.endsWith('.jpeg') ||
+    url.pathname.endsWith('.webp') ||
     url.pathname.endsWith('.ico') ||
     url.pathname.endsWith('.woff2') ||
     url.pathname.endsWith('.woff') ||

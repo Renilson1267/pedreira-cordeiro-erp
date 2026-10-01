@@ -7,6 +7,7 @@ import {
   UNIDADES_GC,
   SERVICOS_GC,
 } from '@/data/institucional'
+import { FOTOS_ESTATICAS_PEDREIRA, getFotoRealUrl } from '@/lib/fotosReais'
 import { LogoGcMix, ASSET_LOGO_BANNER } from '@/components/institucional/LogoGcMix'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -47,10 +48,13 @@ import {
   Cpu,
 } from 'lucide-react'
 
-// As 6 fotos reais autênticas salvas no app da Pedreira Cordeiro
+// As fotos reais autênticas importadas diretamente como assets compilados
+// (100% à prova de falhas: se estiver sob domínio de redirecionamento ou CSP estrita,
+// os assets estáticos sempre são servidos pelo bundle com hash de produção e cache perfeito)
 const FOTOS_REAIS = {
   aereaJazida: {
-    src: INSTITUCIONAL_CONFIG.fotosReais.heroAerea,
+    src: FOTOS_ESTATICAS_PEDREIRA.vistaDeCima,
+    fallback: INSTITUCIONAL_CONFIG.fotosReais.heroAerea,
     titulo: 'Vista Aérea da Jazida Própria',
     local: 'Pedreira Cordeiro • Patos — PB',
     descricao:
@@ -58,7 +62,8 @@ const FOTOS_REAIS = {
     etiqueta: 'Jazida Própria',
   },
   aereaTopoPlanta: {
-    src: INSTITUCIONAL_CONFIG.fotosReais.aereaTopoPlanta,
+    src: FOTOS_ESTATICAS_PEDREIRA.vistaDeCima,
+    fallback: INSTITUCIONAL_CONFIG.fotosReais.aereaTopoPlanta,
     titulo: 'Vista de Topo da Jazida & Usina Solar',
     local: 'Planta Industrial • Patos — PB',
     descricao:
@@ -66,7 +71,8 @@ const FOTOS_REAIS = {
     etiqueta: 'Infraestrutura & Energia Solar',
   },
   patioBrita: {
-    src: INSTITUCIONAL_CONFIG.fotosReais.patioBrita,
+    src: FOTOS_ESTATICAS_PEDREIRA.patioDeBrita,
+    fallback: INSTITUCIONAL_CONFIG.fotosReais.patioBrita,
     titulo: 'Pátio de Agregados e Peneira Vibratória',
     local: 'Central de Britagem • Patos — PB',
     descricao:
@@ -74,7 +80,8 @@ const FOTOS_REAIS = {
     etiqueta: 'Pátio de Classificação',
   },
   patioBritaPilhas: {
-    src: INSTITUCIONAL_CONFIG.fotosReais.patioBritaPilhas,
+    src: FOTOS_ESTATICAS_PEDREIRA.patioDeBrita,
+    fallback: INSTITUCIONAL_CONFIG.fotosReais.patioBritaPilhas,
     titulo: 'Grandes Pilhas de Brita 1 e Brita 2',
     local: 'Pátio de Britas • Patos — PB',
     descricao:
@@ -82,7 +89,8 @@ const FOTOS_REAIS = {
     etiqueta: 'Estoque de Brita 1 e 2',
   },
   correiaProducao: {
-    src: INSTITUCIONAL_CONFIG.fotosReais.correiaPoDePedra,
+    src: FOTOS_ESTATICAS_PEDREIRA.poDePedra,
+    fallback: INSTITUCIONAL_CONFIG.fotosReais.correiaPoDePedra,
     titulo: 'Correia Transportadora e Pilha de Pó de Pedra',
     local: 'Linha de Britagem • Patos — PB',
     descricao:
@@ -90,7 +98,8 @@ const FOTOS_REAIS = {
     etiqueta: 'Britagem Contínua',
   },
   pilhaPoDePedra: {
-    src: INSTITUCIONAL_CONFIG.fotosReais.pilhaPoDePedra,
+    src: FOTOS_ESTATICAS_PEDREIRA.poDePedra,
+    fallback: INSTITUCIONAL_CONFIG.fotosReais.pilhaPoDePedra,
     titulo: 'Pilha de Pó de Pedra e Linha de Correia',
     local: 'Setor de Agregados Miúdos • Patos — PB',
     descricao:
@@ -111,6 +120,7 @@ export default function HomePublica() {
   // Modalidade de foto expandida (lightbox para as 6 fotos reais)
   const [fotoAtiva, setFotoAtiva] = useState<{
     src: string
+    fallback?: string
     titulo: string
     local: string
     descricao: string
@@ -416,6 +426,15 @@ export default function HomePublica() {
                   >
                     <img
                       src={FOTOS_REAIS.aereaJazida.src}
+                      onError={(e) => {
+                        const target = e.currentTarget
+                        if (
+                          FOTOS_REAIS.aereaJazida.fallback &&
+                          target.src !== FOTOS_REAIS.aereaJazida.fallback
+                        ) {
+                          target.src = FOTOS_REAIS.aereaJazida.fallback
+                        }
+                      }}
                       alt="Vista aérea da Pedreira Cordeiro em Patos PB — Foto real"
                       className="w-full h-full object-cover transform group-hover:scale-105 transition-transform duration-700"
                       loading="eager"
@@ -453,6 +472,15 @@ export default function HomePublica() {
                     <div className="flex items-center gap-2.5">
                       <img
                         src={FOTOS_REAIS.aereaTopoPlanta.src}
+                        onError={(e) => {
+                          const target = e.currentTarget
+                          if (
+                            FOTOS_REAIS.aereaTopoPlanta.fallback &&
+                            target.src !== FOTOS_REAIS.aereaTopoPlanta.fallback
+                          ) {
+                            target.src = FOTOS_REAIS.aereaTopoPlanta.fallback
+                          }
+                        }}
                         alt="Miniatura planta completa e usina solar"
                         className="w-11 h-9 rounded-lg object-cover border border-white/20 shrink-0"
                       />
@@ -948,6 +976,15 @@ export default function HomePublica() {
                   >
                     <img
                       src={FOTOS_REAIS.pilhaPoDePedra.src}
+                      onError={(e) => {
+                        const target = e.currentTarget
+                        if (
+                          FOTOS_REAIS.pilhaPoDePedra.fallback &&
+                          target.src !== FOTOS_REAIS.pilhaPoDePedra.fallback
+                        ) {
+                          target.src = FOTOS_REAIS.pilhaPoDePedra.fallback
+                        }
+                      }}
                       alt="Pilha de pó de pedra e correia ao fundo na Pedreira Cordeiro — Foto real"
                       className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700"
                       loading="lazy"
@@ -990,6 +1027,15 @@ export default function HomePublica() {
                   <div className="flex items-center gap-3">
                     <img
                       src={FOTOS_REAIS.correiaProducao.src}
+                      onError={(e) => {
+                        const target = e.currentTarget
+                        if (
+                          FOTOS_REAIS.correiaProducao.fallback &&
+                          target.src !== FOTOS_REAIS.correiaProducao.fallback
+                        ) {
+                          target.src = FOTOS_REAIS.correiaProducao.fallback
+                        }
+                      }}
                       alt="Detalhe da correia transportadora"
                       className="w-14 h-12 rounded-xl object-cover border border-blue-200 shrink-0"
                     />
@@ -1039,6 +1085,15 @@ export default function HomePublica() {
                 >
                   <img
                     src={FOTOS_REAIS.patioBritaPilhas.src}
+                    onError={(e) => {
+                      const target = e.currentTarget
+                      if (
+                        FOTOS_REAIS.patioBritaPilhas.fallback &&
+                        target.src !== FOTOS_REAIS.patioBritaPilhas.fallback
+                      ) {
+                        target.src = FOTOS_REAIS.patioBritaPilhas.fallback
+                      }
+                    }}
                     alt="Pátio de brita 1 e brita 2 com caminhão e peneira ao fundo — Foto real"
                     className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700"
                     loading="lazy"
@@ -1121,6 +1176,27 @@ export default function HomePublica() {
                       <span className="bg-slate-100 text-slate-700 text-[11px] font-mono font-bold px-2.5 py-1 rounded-md border border-slate-200">
                         {item.codigoRef}
                       </span>
+                    </div>
+
+                    {/* Imagem autêntica do produto/material */}
+                    <div className="relative h-44 rounded-xl overflow-hidden bg-slate-100 border border-slate-200">
+                      <img
+                        src={getFotoRealUrl(item.imagem)}
+                        alt={item.nome}
+                        className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                        loading="lazy"
+                        onError={(e) => {
+                          const target = e.currentTarget
+                          if (target.src !== item.imagem) {
+                            target.src = item.imagem
+                          }
+                        }}
+                      />
+                      <div className="absolute top-2 right-2">
+                        <span className="bg-[#0A2540]/80 backdrop-blur-xs text-white text-[10px] font-semibold px-2 py-0.5 rounded shadow-xs">
+                          Foto da Usina
+                        </span>
+                      </div>
                     </div>
 
                     <div>
@@ -1241,6 +1317,15 @@ export default function HomePublica() {
                   <div className="relative h-64 overflow-hidden bg-slate-900">
                     <img
                       src={FOTOS_REAIS.aereaTopoPlanta.src}
+                      onError={(e) => {
+                        const target = e.currentTarget
+                        if (
+                          FOTOS_REAIS.aereaTopoPlanta.fallback &&
+                          target.src !== FOTOS_REAIS.aereaTopoPlanta.fallback
+                        ) {
+                          target.src = FOTOS_REAIS.aereaTopoPlanta.fallback
+                        }
+                      }}
                       alt={FOTOS_REAIS.aereaTopoPlanta.titulo}
                       className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700"
                       loading="lazy"
@@ -1282,6 +1367,15 @@ export default function HomePublica() {
                   <div className="relative h-64 overflow-hidden bg-slate-900">
                     <img
                       src={FOTOS_REAIS.aereaJazida.src}
+                      onError={(e) => {
+                        const target = e.currentTarget
+                        if (
+                          FOTOS_REAIS.aereaJazida.fallback &&
+                          target.src !== FOTOS_REAIS.aereaJazida.fallback
+                        ) {
+                          target.src = FOTOS_REAIS.aereaJazida.fallback
+                        }
+                      }}
                       alt={FOTOS_REAIS.aereaJazida.titulo}
                       className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700"
                       loading="lazy"
@@ -1323,6 +1417,15 @@ export default function HomePublica() {
                   <div className="relative h-64 overflow-hidden bg-slate-900">
                     <img
                       src={FOTOS_REAIS.patioBritaPilhas.src}
+                      onError={(e) => {
+                        const target = e.currentTarget
+                        if (
+                          FOTOS_REAIS.patioBritaPilhas.fallback &&
+                          target.src !== FOTOS_REAIS.patioBritaPilhas.fallback
+                        ) {
+                          target.src = FOTOS_REAIS.patioBritaPilhas.fallback
+                        }
+                      }}
                       alt={FOTOS_REAIS.patioBritaPilhas.titulo}
                       className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700"
                       loading="lazy"
@@ -1364,6 +1467,15 @@ export default function HomePublica() {
                   <div className="relative h-64 overflow-hidden bg-slate-900">
                     <img
                       src={FOTOS_REAIS.patioBrita.src}
+                      onError={(e) => {
+                        const target = e.currentTarget
+                        if (
+                          FOTOS_REAIS.patioBrita.fallback &&
+                          target.src !== FOTOS_REAIS.patioBrita.fallback
+                        ) {
+                          target.src = FOTOS_REAIS.patioBrita.fallback
+                        }
+                      }}
                       alt={FOTOS_REAIS.patioBrita.titulo}
                       className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700"
                       loading="lazy"
@@ -1405,6 +1517,15 @@ export default function HomePublica() {
                   <div className="relative h-64 overflow-hidden bg-slate-900">
                     <img
                       src={FOTOS_REAIS.pilhaPoDePedra.src}
+                      onError={(e) => {
+                        const target = e.currentTarget
+                        if (
+                          FOTOS_REAIS.pilhaPoDePedra.fallback &&
+                          target.src !== FOTOS_REAIS.pilhaPoDePedra.fallback
+                        ) {
+                          target.src = FOTOS_REAIS.pilhaPoDePedra.fallback
+                        }
+                      }}
                       alt={FOTOS_REAIS.pilhaPoDePedra.titulo}
                       className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700"
                       loading="lazy"
@@ -1446,6 +1567,15 @@ export default function HomePublica() {
                   <div className="relative h-64 overflow-hidden bg-slate-900">
                     <img
                       src={FOTOS_REAIS.correiaProducao.src}
+                      onError={(e) => {
+                        const target = e.currentTarget
+                        if (
+                          FOTOS_REAIS.correiaProducao.fallback &&
+                          target.src !== FOTOS_REAIS.correiaProducao.fallback
+                        ) {
+                          target.src = FOTOS_REAIS.correiaProducao.fallback
+                        }
+                      }}
                       alt={FOTOS_REAIS.correiaProducao.titulo}
                       className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700"
                       loading="lazy"
@@ -1708,6 +1838,12 @@ export default function HomePublica() {
               <div className="relative max-h-[75vh] bg-black flex items-center justify-center overflow-hidden">
                 <img
                   src={fotoAtiva.src}
+                  onError={(e) => {
+                    const target = e.currentTarget
+                    if (fotoAtiva.fallback && target.src !== fotoAtiva.fallback) {
+                      target.src = fotoAtiva.fallback
+                    }
+                  }}
                   alt={fotoAtiva.titulo}
                   className="w-full h-full max-h-[75vh] object-contain"
                 />
