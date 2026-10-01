@@ -1044,7 +1044,7 @@ export default function HomePublica() {
 
         {/* =========================================================
             SEÇÃO DE VÍDEOS OFICIAIS — CALDAS & AMARAL GC MIX CONCRETO
-            Operacional Lokotrack (18s) & Institucional (46s)
+            Operacional Lokotrack (35s) & Institucional (46s)
             ========================================================= */}
         <section
           id="videos-operacao"
@@ -1079,7 +1079,7 @@ export default function HomePublica() {
                   {/* Player Embed Responsivo 16:9 */}
                   <div className="relative w-full aspect-video bg-black overflow-hidden">
                     <iframe
-                      src="https://www.youtube.com/embed/a9J67SERlgI"
+                      src="https://www.youtube.com/embed/exk-DtT6Rak"
                       title="Vídeo Operacional — Britador Móvel Lokotrack em Ação no Campo (C M Construções)"
                       aria-label="Vídeo Operacional do Britador Móvel Lokotrack em Ação no Campo"
                       loading="lazy"
@@ -1094,7 +1094,7 @@ export default function HomePublica() {
                     <div className="flex items-center justify-between flex-wrap gap-2">
                       <span className="bg-amber-400 text-slate-950 text-xs font-black px-3 py-1 rounded-lg shadow-md uppercase tracking-wider flex items-center gap-1.5">
                         <Play className="w-3.5 h-3.5 fill-slate-950" />
-                        Operacional • Lokotrack (18s)
+                        Operacional • Lokotrack (35s)
                       </span>
                       <span className="bg-blue-950/80 border border-blue-400/30 text-blue-200 text-xs font-semibold px-2.5 py-1 rounded-lg">
                         C M Construções
