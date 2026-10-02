@@ -27,6 +27,7 @@ import {
   Phone,
   Mail,
   ShieldCheck,
+  ExternalLink,
   Truck,
   Layers,
   ArrowRight,
@@ -257,6 +258,17 @@ export default function HomePublica() {
               WhatsApp: {INSTITUCIONAL_CONFIG.whatsappNumeroFormatado}
             </a>
             <span className="hidden sm:inline text-slate-700">|</span>
+            <a
+              href={INSTITUCIONAL_CONFIG.sistemaGestaoHeavyUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1.5 font-bold text-white bg-gradient-to-r from-[#2563EB] to-[#1D4ED8] hover:from-[#1D4ED8] hover:to-[#1E40AF] transition-all px-3 py-1 rounded-md border border-blue-400/50 shadow-xs hover:shadow-sm"
+              title="Acessar Sistema de Gestão (Gestão Heavy / GC Mix)"
+            >
+              <span>Acessar Sistema</span>
+              <ExternalLink className="w-3 h-3 text-amber-300" />
+            </a>
+            <span className="hidden sm:inline text-slate-700">|</span>
             <Link
               to="/login"
               className="inline-flex items-center gap-1.5 font-semibold text-[#60A5FA] hover:text-white transition-colors bg-[#1E3A8A]/50 hover:bg-[#1E3A8A] px-2.5 py-1 rounded-md border border-[#2563EB]/40"
@@ -341,6 +353,17 @@ export default function HomePublica() {
 
           {/* Ações do topo */}
           <div className="flex items-center gap-2 sm:gap-3">
+            <a
+              href={INSTITUCIONAL_CONFIG.sistemaGestaoHeavyUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="hidden md:inline-flex items-center gap-1.5 text-xs font-bold px-3.5 py-2 rounded-xl text-white bg-[#1E3A8A] hover:bg-[#1D4ED8] border border-blue-400/40 shadow-xs transition-colors"
+              title="Acessar Sistema de Gestão (Gestão Heavy / GC Mix)"
+            >
+              <span>Acessar Sistema</span>
+              <ExternalLink className="w-3.5 h-3.5 text-amber-300" />
+            </a>
+
             <Link
               to="/login"
               className="hidden sm:inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-2 rounded-xl text-slate-700 hover:text-[#1D4ED8] hover:bg-blue-50 transition-colors border border-transparent hover:border-blue-200"
@@ -454,25 +477,38 @@ export default function HomePublica() {
               </a>
             </div>
 
-            <div className="pt-2 border-t border-slate-100 flex items-center justify-between">
-              <Link
-                to="/login"
-                onClick={() => setMenuMobileAberto(false)}
-                className="inline-flex items-center gap-1.5 text-xs font-bold text-slate-700 hover:text-[#1D4ED8]"
-              >
-                <LogIn className="w-3.5 h-3.5 text-[#1D4ED8]" />
-                Área Restrita (ERP)
-              </Link>
-
+            <div className="pt-2 border-t border-slate-100 flex flex-col gap-2">
               <a
-                href={INSTITUCIONAL_CONFIG.whatsappUrlConcreto}
+                href={INSTITUCIONAL_CONFIG.sistemaGestaoHeavyUrl}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="inline-flex items-center gap-1.5 text-xs font-bold text-emerald-600"
+                onClick={() => setMenuMobileAberto(false)}
+                className="w-full flex items-center justify-center gap-2 p-2.5 rounded-xl bg-gradient-to-r from-[#1E3A8A] to-[#2563EB] text-white text-xs font-bold shadow-xs hover:bg-[#1D4ED8] transition-colors"
               >
-                <MessageCircle className="w-3.5 h-3.5" />
-                WhatsApp Comercial
+                <span>Acessar Sistema (Gestão Heavy)</span>
+                <ExternalLink className="w-3.5 h-3.5 text-amber-300" />
               </a>
+
+              <div className="flex items-center justify-between pt-1">
+                <Link
+                  to="/login"
+                  onClick={() => setMenuMobileAberto(false)}
+                  className="inline-flex items-center gap-1.5 text-xs font-bold text-slate-700 hover:text-[#1D4ED8]"
+                >
+                  <LogIn className="w-3.5 h-3.5 text-[#1D4ED8]" />
+                  Área Restrita (ERP)
+                </Link>
+
+                <a
+                  href={INSTITUCIONAL_CONFIG.whatsappUrlConcreto}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1.5 text-xs font-bold text-emerald-600"
+                >
+                  <MessageCircle className="w-3.5 h-3.5" />
+                  WhatsApp Comercial
+                </a>
+              </div>
             </div>
           </div>
         )}
@@ -2777,26 +2813,52 @@ export default function HomePublica() {
                   <Video className="w-3 h-3 text-amber-300" />
                   Vídeos da Operação (YouTube) →
                 </a>
+                <a
+                  href={INSTITUCIONAL_CONFIG.sistemaGestaoHeavyUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-xs text-[#60A5FA] hover:text-white hover:underline font-semibold flex items-center gap-1 pt-1"
+                >
+                  <ExternalLink className="w-3 h-3 text-amber-300" />
+                  Acessar Sistema (Gestão Heavy) ↗
+                </a>
               </div>
             </div>
 
             {/* Coluna 3: Acesso Restrito & Colaborador */}
             <div className="lg:col-span-4 space-y-4">
               <span className="text-xs uppercase tracking-wider font-bold text-white block">
-                Área Restrita do Colaborador
+                Acesso aos Sistemas & Colaborador
               </span>
               <p className="text-xs text-slate-300 leading-relaxed">
-                Acesso exclusivo para colaboradores e setor administrativo para romaneios, vendas,
-                frotas, contas a pagar/receber e exames.
+                Acesso ao painel externo Gestão Heavy (GC Mix) e acesso exclusivo para colaboradores
+                do ERP da Pedreira Cordeiro.
               </p>
 
-              <Link
-                to="/login"
-                className="inline-flex items-center gap-2 px-5 py-3 rounded-xl bg-gradient-to-r from-[#1E3A8A] to-[#1D4ED8] hover:from-[#172554] hover:to-[#1E40AF] text-white text-xs font-bold transition-all shadow-md border border-blue-400/30"
-              >
-                <LogIn className="w-4 h-4 text-amber-300" />
-                <span>Entrar no Sistema (ERP Pedreira Cordeiro)</span>
-              </Link>
+              <div className="flex flex-col sm:flex-row lg:flex-col gap-2.5">
+                <a
+                  href={INSTITUCIONAL_CONFIG.sistemaGestaoHeavyUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center justify-between gap-2 px-4 py-2.5 rounded-xl bg-[#2563EB] hover:bg-[#1D4ED8] text-white text-xs font-bold transition-all shadow-md border border-blue-400/40"
+                >
+                  <span className="flex items-center gap-2">
+                    <ExternalLink className="w-4 h-4 text-amber-300" />
+                    <span>Acessar Sistema (Gestão Heavy)</span>
+                  </span>
+                  <span className="text-[10px] bg-white/20 px-1.5 py-0.5 rounded font-mono">
+                    Externo ↗
+                  </span>
+                </a>
+
+                <Link
+                  to="/login"
+                  className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-gradient-to-r from-[#1E3A8A] to-[#172554] hover:from-[#172554] hover:to-[#0F172A] text-white text-xs font-bold transition-all shadow-md border border-blue-400/30"
+                >
+                  <LogIn className="w-4 h-4 text-amber-300" />
+                  <span>Entrar no Sistema (ERP Pedreira Cordeiro)</span>
+                </Link>
+              </div>
 
               <div className="pt-2 flex flex-col gap-1 text-xs text-slate-400">
                 <div>
@@ -2821,6 +2883,15 @@ export default function HomePublica() {
 
             <div className="flex items-center gap-6">
               <span className="text-slate-400 font-medium">{INSTITUCIONAL_CONFIG.site}</span>
+              <a
+                href={INSTITUCIONAL_CONFIG.sistemaGestaoHeavyUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="hover:text-[#60A5FA] transition-colors text-slate-300 font-semibold inline-flex items-center gap-1"
+              >
+                <span>Acessar Sistema (Gestão Heavy)</span>
+                <ExternalLink className="w-3 h-3 text-amber-300" />
+              </a>
               <Link
                 to="/login"
                 className="hover:text-[#60A5FA] transition-colors text-slate-300 font-semibold"

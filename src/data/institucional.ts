@@ -34,6 +34,9 @@ export const INSTITUCIONAL_CONFIG = {
   site: 'pedreiracordeiro.com.br',
   siteUrl: 'https://pedreiracordeiro.com.br',
 
+  // Sistema Externo de Gestão (Gestão Heavy / GC Mix)
+  sistemaGestaoHeavyUrl: 'https://gcmix.gestaoheavy.com.br/login.php',
+
   // Atendimento Comercial e Telefone / WhatsApp
   telefoneNumero: '08000831200',
   telefoneFormatado: '0800 083 1200',
