@@ -51,6 +51,7 @@ import {
   Video,
   Play,
   Tv,
+  Radio,
 } from 'lucide-react'
 
 // As fotos reais autênticas importadas diretamente como assets compilados
@@ -259,10 +260,22 @@ export default function HomePublica() {
             </a>
             <span className="hidden sm:inline text-slate-700">|</span>
             <a
+              href={INSTITUCIONAL_CONFIG.rastreadorBetoneirasUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1.5 font-bold text-white bg-gradient-to-r from-emerald-600 to-teal-700 hover:from-emerald-500 hover:to-teal-600 transition-all px-2.5 sm:px-3 py-1 rounded-md border border-emerald-400/50 shadow-xs hover:shadow-sm"
+              title="Rastrear Betoneiras em Tempo Real (SystemsAtx Tracking)"
+            >
+              <Radio className="w-3 h-3 text-emerald-300 animate-pulse" />
+              <span>Rastrear Betoneiras</span>
+              <ExternalLink className="w-3 h-3 text-emerald-200" />
+            </a>
+            <span className="hidden sm:inline text-slate-700">|</span>
+            <a
               href={INSTITUCIONAL_CONFIG.sistemaGestaoHeavyUrl}
               target="_blank"
               rel="noopener noreferrer"
-              className="inline-flex items-center gap-1.5 font-bold text-white bg-gradient-to-r from-[#2563EB] to-[#1D4ED8] hover:from-[#1D4ED8] hover:to-[#1E40AF] transition-all px-3 py-1 rounded-md border border-blue-400/50 shadow-xs hover:shadow-sm"
+              className="inline-flex items-center gap-1.5 font-bold text-white bg-gradient-to-r from-[#2563EB] to-[#1D4ED8] hover:from-[#1D4ED8] hover:to-[#1E40AF] transition-all px-2.5 sm:px-3 py-1 rounded-md border border-blue-400/50 shadow-xs hover:shadow-sm"
               title="Acessar Sistema de Gestão (Gestão Heavy / GC Mix)"
             >
               <span>Acessar Sistema</span>
@@ -353,6 +366,18 @@ export default function HomePublica() {
 
           {/* Ações do topo */}
           <div className="flex items-center gap-2 sm:gap-3">
+            <a
+              href={INSTITUCIONAL_CONFIG.rastreadorBetoneirasUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="hidden lg:inline-flex items-center gap-1.5 text-xs font-bold px-3 py-2 rounded-xl text-white bg-gradient-to-r from-emerald-600 to-teal-700 hover:from-emerald-500 hover:to-teal-600 border border-emerald-400/40 shadow-xs transition-all hover:shadow-sm"
+              title="Rastrear Betoneiras em Tempo Real (SystemsAtx Tracking)"
+            >
+              <Radio className="w-3.5 h-3.5 text-emerald-300 animate-pulse" />
+              <span>Rastrear Betoneiras</span>
+              <ExternalLink className="w-3 h-3 text-emerald-200" />
+            </a>
+
             <a
               href={INSTITUCIONAL_CONFIG.sistemaGestaoHeavyUrl}
               target="_blank"
@@ -478,6 +503,18 @@ export default function HomePublica() {
             </div>
 
             <div className="pt-2 border-t border-slate-100 flex flex-col gap-2">
+              <a
+                href={INSTITUCIONAL_CONFIG.rastreadorBetoneirasUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                onClick={() => setMenuMobileAberto(false)}
+                className="w-full flex items-center justify-center gap-2 p-2.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-700 hover:from-emerald-500 hover:to-teal-600 text-white text-xs font-bold shadow-xs transition-colors"
+              >
+                <Radio className="w-3.5 h-3.5 text-emerald-300 animate-pulse" />
+                <span>Rastrear Betoneiras (Tempo Real)</span>
+                <ExternalLink className="w-3.5 h-3.5 text-emerald-200" />
+              </a>
+
               <a
                 href={INSTITUCIONAL_CONFIG.sistemaGestaoHeavyUrl}
                 target="_blank"
@@ -2814,10 +2851,19 @@ export default function HomePublica() {
                   Vídeos da Operação (YouTube) →
                 </a>
                 <a
+                  href={INSTITUCIONAL_CONFIG.rastreadorBetoneirasUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-xs text-emerald-400 hover:text-emerald-300 hover:underline font-semibold flex items-center gap-1 pt-1"
+                >
+                  <Radio className="w-3 h-3 text-emerald-400 animate-pulse" />
+                  Rastrear Betoneiras (Tempo Real) ↗
+                </a>
+                <a
                   href={INSTITUCIONAL_CONFIG.sistemaGestaoHeavyUrl}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="text-xs text-[#60A5FA] hover:text-white hover:underline font-semibold flex items-center gap-1 pt-1"
+                  className="text-xs text-[#60A5FA] hover:text-white hover:underline font-semibold flex items-center gap-1"
                 >
                   <ExternalLink className="w-3 h-3 text-amber-300" />
                   Acessar Sistema (Gestão Heavy) ↗
@@ -2831,11 +2877,27 @@ export default function HomePublica() {
                 Acesso aos Sistemas & Colaborador
               </span>
               <p className="text-xs text-slate-300 leading-relaxed">
-                Acesso ao painel externo Gestão Heavy (GC Mix) e acesso exclusivo para colaboradores
-                do ERP da Pedreira Cordeiro.
+                Acesso ao rastreador em tempo real da frota de betoneiras, painel externo Gestão
+                Heavy (GC Mix) e acesso exclusivo para colaboradores do ERP da Pedreira Cordeiro.
               </p>
 
               <div className="flex flex-col sm:flex-row lg:flex-col gap-2.5">
+                <a
+                  href={INSTITUCIONAL_CONFIG.rastreadorBetoneirasUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center justify-between gap-2 px-4 py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-700 hover:from-emerald-500 hover:to-teal-600 text-white text-xs font-bold transition-all shadow-md border border-emerald-400/40"
+                  title="Rastrear Betoneiras em Tempo Real (SystemsAtx Tracking)"
+                >
+                  <span className="flex items-center gap-2">
+                    <Radio className="w-4 h-4 text-emerald-300 animate-pulse" />
+                    <span>Rastrear Betoneiras</span>
+                  </span>
+                  <span className="text-[10px] bg-white/20 px-1.5 py-0.5 rounded font-mono">
+                    GPS Ao Vivo ↗
+                  </span>
+                </a>
+
                 <a
                   href={INSTITUCIONAL_CONFIG.sistemaGestaoHeavyUrl}
                   target="_blank"
@@ -2881,8 +2943,19 @@ export default function HomePublica() {
               reservados.
             </div>
 
-            <div className="flex items-center gap-6">
+            <div className="flex flex-wrap items-center justify-center sm:justify-end gap-4 sm:gap-6">
               <span className="text-slate-400 font-medium">{INSTITUCIONAL_CONFIG.site}</span>
+              <a
+                href={INSTITUCIONAL_CONFIG.rastreadorBetoneirasUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="hover:text-emerald-300 transition-colors text-slate-300 font-semibold inline-flex items-center gap-1"
+                title="Rastrear frota de betoneiras em tempo real"
+              >
+                <Radio className="w-3 h-3 text-emerald-400" />
+                <span>Rastrear Betoneiras</span>
+                <ExternalLink className="w-3 h-3 text-emerald-300" />
+              </a>
               <a
                 href={INSTITUCIONAL_CONFIG.sistemaGestaoHeavyUrl}
                 target="_blank"

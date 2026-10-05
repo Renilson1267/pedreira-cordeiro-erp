@@ -15,6 +15,8 @@ import {
   Sparkles,
   Check,
   Zap,
+  Radio,
+  ExternalLink,
 } from 'lucide-react'
 import { INSTITUCIONAL_CONFIG, UNIDADES_GC } from '@/data/institucional'
 import { ASSET_LOGO_BANNER, LogoGcMixVector } from '@/components/institucional/LogoGcMix'
@@ -147,15 +149,27 @@ export function SecaoGcMixConcreto({ onSolicitarOrcamento }: SecaoGcMixConcretoP
           {/* Card 1: Frota de Caminhões Betoneira */}
           <Card className="bg-gradient-to-br from-[#0F284E] via-[#0A1F3B] to-[#0A1933] border-blue-400/30 text-white rounded-3xl overflow-hidden shadow-2xl hover:border-blue-400/60 transition-all group flex flex-col justify-between">
             <CardContent className="p-7 sm:p-8 space-y-5">
-              <div className="flex items-center justify-between">
+              <div className="flex items-center justify-between gap-2 flex-wrap">
                 <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-[#1D4ED8] to-[#2563EB] text-white flex items-center justify-center shadow-lg shadow-blue-900/40 group-hover:scale-105 transition-transform">
                   <Truck className="w-7 h-7 text-amber-300" />
                 </div>
-                <Badge className="bg-blue-500/20 text-[#60A5FA] border-blue-400/40 text-[11px] font-bold uppercase tracking-wider">
-                  Logística Ágil
-                </Badge>
+                <div className="flex flex-col items-end gap-1.5">
+                  <Badge className="bg-blue-500/20 text-[#60A5FA] border-blue-400/40 text-[11px] font-bold uppercase tracking-wider">
+                    Logística Ágil
+                  </Badge>
+                  <a
+                    href={INSTITUCIONAL_CONFIG.rastreadorBetoneirasUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-400/40 text-[11px] font-bold transition-all shadow-xs hover:shadow-sm group/badge"
+                    title="Rastrear frota de betoneiras em tempo real (SystemsAtx Tracking)"
+                  >
+                    <Radio className="w-3 h-3 text-emerald-400 animate-pulse" />
+                    <span>Frota monitorada em tempo real</span>
+                    <ExternalLink className="w-2.5 h-2.5 text-emerald-300/80 group-hover/badge:translate-x-0.5 transition-transform" />
+                  </a>
+                </div>
               </div>
-
               <div>
                 <h3 className="text-2xl font-black text-white group-hover:text-amber-300 transition-colors">
                   Frota de Betoneiras
@@ -174,6 +188,10 @@ export function SecaoGcMixConcreto({ onSolicitarOrcamento }: SecaoGcMixConcretoP
                 </div>
                 <div className="flex items-center gap-2">
                   <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                  <span>Rastreamento GPS via satélite em tempo real</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
                   <span>Agitação contínua durante todo o trajeto</span>
                 </div>
                 <div className="flex items-center gap-2">
@@ -183,10 +201,22 @@ export function SecaoGcMixConcreto({ onSolicitarOrcamento }: SecaoGcMixConcretoP
               </div>
             </CardContent>
 
-            <div className="p-6 pt-0">
+            <div className="p-6 pt-0 space-y-2">
+              <a
+                href={INSTITUCIONAL_CONFIG.rastreadorBetoneirasUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="w-full inline-flex items-center justify-center gap-2 bg-gradient-to-r from-[#1D4ED8] to-[#2563EB] hover:from-[#1E40AF] hover:to-[#1D4ED8] text-white font-bold text-xs py-2.5 rounded-xl border border-blue-400/40 shadow-xs transition-all"
+                title="Acompanhar localização das betoneiras em tempo real"
+              >
+                <Radio className="w-3.5 h-3.5 text-emerald-400 animate-pulse" />
+                <span>Rastrear Betoneiras em Tempo Real</span>
+                <ExternalLink className="w-3 h-3 text-amber-300" />
+              </a>
+
               <button
                 onClick={() => handlePedirOrcamento('Betoneira GC Mix — Programação de Entrega')}
-                className="w-full inline-flex items-center justify-center gap-2 bg-white/10 hover:bg-white/20 text-white font-bold text-xs py-3 rounded-xl border border-white/20 transition-all cursor-pointer"
+                className="w-full inline-flex items-center justify-center gap-2 bg-white/10 hover:bg-white/20 text-white font-bold text-xs py-2.5 rounded-xl border border-white/20 transition-all cursor-pointer"
               >
                 <span>Programar Entrega de Betoneira</span>
                 <ArrowRight className="w-3.5 h-3.5 text-amber-300" />
