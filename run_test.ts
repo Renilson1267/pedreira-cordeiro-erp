@@ -18,7 +18,6 @@ function assert(cond: boolean, msg: string) {
 }
 
 console.log('=== TESTES DO SISTEMA DE CONTAS A RECEBER E PARCELAMENTO ===')
-
 // 1. Caso do usuário: R$ 14.000,00 com recebimento parcial de R$ 7.000,00
 const tituloOriginal = {
   id: 'tit-1',
