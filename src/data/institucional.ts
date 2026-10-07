@@ -120,6 +120,7 @@ export const INSTITUCIONAL_CONFIG = {
     monteiroAerea: '/site-img/monteiro-aerea.jpeg',
     monteiroBetoneirasCarregando: '/site-img/monteiro-betoneiras-carregando.jpeg',
     monteiroFachadaSilo: '/site-img/monteiro-fachada-silo.jpeg',
+    saoJoseDoEgitoSiloPatio: '/site-img/sao-jose-do-egito-silo-patio.jpeg',
   },
 } as const
 

@@ -148,6 +148,15 @@ const FOTOS_REAIS = {
       'Vista aérea de drone mostrando a central completa de concreto: silo vertical GC Mix, prédios operacionais, pátio de agregados e duas betoneiras azul GC Mix na frente junto à rodovia asfaltada e vegetação de caatinga.',
     etiqueta: 'Vista Aérea • Filial Monteiro',
   },
+  saoJoseDoEgitoSiloPatio: {
+    src: FOTOS_ESTATICAS_PEDREIRA.saoJoseDoEgitoSiloPatio,
+    fallback: INSTITUCIONAL_CONFIG.fotosReais.saoJoseDoEgitoSiloPatio,
+    titulo: 'Silo e Pátio da Unidade — Filial São José do Egito-PE',
+    local: 'São José do Egito, PE',
+    descricao:
+      'Instalações autênticas da filial São José do Egito da Central GC Mix: silo metálico vertical de cimento à esquerda, pátio operacional com caminhonete prata, e muros perimetrais exibindo a marca oficial "GC MIX Concreto & Pedreira — Patos/S.ta Luzia-PB/S.J. do Egito-PE/Caicó-RN — 0800-083-1200" e o painel especializado "GC MIX PISO-LAJE POLIMENTO 0800-083-1200".',
+    etiqueta: 'Silo & Pátio • Filial S.J. do Egito',
+  },
 }
 
 export default function HomePublica() {
@@ -2395,6 +2404,56 @@ export default function HomePublica() {
                   <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
                 </div>
               </div>
+
+              {/* Card 9: Silo e Pátio da Unidade — Filial São José do Egito-PE (Nova foto real) */}
+              <div
+                onClick={() => setFotoAtiva(FOTOS_REAIS.saoJoseDoEgitoSiloPatio)}
+                className="group rounded-3xl overflow-hidden border-2 border-blue-400/80 bg-white shadow-md hover:shadow-2xl transition-all duration-300 cursor-pointer flex flex-col justify-between"
+              >
+                <div>
+                  <div className="relative h-64 overflow-hidden bg-slate-950">
+                    <img
+                      src={FOTOS_REAIS.saoJoseDoEgitoSiloPatio.src}
+                      onError={(e) => {
+                        const target = e.currentTarget
+                        if (
+                          FOTOS_REAIS.saoJoseDoEgitoSiloPatio.fallback &&
+                          target.src !== FOTOS_REAIS.saoJoseDoEgitoSiloPatio.fallback
+                        ) {
+                          target.src = FOTOS_REAIS.saoJoseDoEgitoSiloPatio.fallback
+                        }
+                      }}
+                      alt={FOTOS_REAIS.saoJoseDoEgitoSiloPatio.titulo}
+                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700"
+                      loading="lazy"
+                    />
+                    <div className="absolute top-3 left-3">
+                      <span className="bg-amber-400 text-slate-950 text-[10px] font-black px-2.5 py-1 rounded-md shadow-md">
+                        {FOTOS_REAIS.saoJoseDoEgitoSiloPatio.etiqueta}
+                      </span>
+                    </div>
+                    <div className="absolute bottom-3 right-3 bg-black/60 text-white p-2 rounded-full group-hover:bg-[#1D4ED8] transition-colors">
+                      <Maximize2 className="w-3.5 h-3.5" />
+                    </div>
+                  </div>
+                  <div className="p-6 space-y-2">
+                    <div className="text-xs font-bold text-[#1D4ED8] flex items-center gap-1">
+                      <Building2 className="w-3.5 h-3.5" />
+                      {FOTOS_REAIS.saoJoseDoEgitoSiloPatio.local}
+                    </div>
+                    <h3 className="text-xl font-black text-[#0A2540]">
+                      {FOTOS_REAIS.saoJoseDoEgitoSiloPatio.titulo}
+                    </h3>
+                    <p className="text-xs text-slate-600 leading-relaxed">
+                      {FOTOS_REAIS.saoJoseDoEgitoSiloPatio.descricao}
+                    </p>
+                  </div>
+                </div>
+                <div className="p-6 pt-0 border-t border-slate-100 flex items-center justify-between text-xs font-bold text-[#1D4ED8]">
+                  <span>Clique para ampliar foto</span>
+                  <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
+                </div>
+              </div>
             </div>
 
             {/* Aviso informativo de transparência */}
@@ -2403,8 +2462,8 @@ export default function HomePublica() {
                 <ShieldCheck className="w-4 h-4 text-[#1D4ED8] shrink-0" />
                 <span>
                   Fotos 100% autênticas das instalações do Grupo GC: matriz da Pedreira Cordeiro em
-                  Patos-PB, central de concreto GC Mix da Filial Monteiro-PB e britador Lokotrack em
-                  campo. Operação integrada para todo o Sertão.
+                  Patos-PB, centrais de concreto GC Mix das Filiais Monteiro-PB e São José do
+                  Egito-PE e britador Lokotrack em campo. Operação integrada para todo o Sertão.
                 </span>
               </div>
               <button
@@ -2440,53 +2499,97 @@ export default function HomePublica() {
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-5">
-              {UNIDADES_GC.map((unidade) => (
-                <div
-                  key={unidade.id}
-                  className={`rounded-2xl p-6 text-center flex flex-col justify-between transition-all duration-300 hover:shadow-lg ${
-                    unidade.destaque
-                      ? 'bg-gradient-to-b from-[#1E3A8A] to-[#0A2540] text-white shadow-md ring-2 ring-[#2563EB]'
-                      : 'bg-white border border-blue-100 text-slate-800 hover:border-[#2563EB]'
-                  }`}
-                >
-                  <div className="space-y-3">
-                    <div
-                      className={`w-12 h-12 mx-auto rounded-2xl flex items-center justify-center font-bold ${
-                        unidade.destaque
-                          ? 'bg-amber-400 text-slate-950 shadow-md'
-                          : 'bg-blue-100 text-[#1D4ED8]'
-                      }`}
-                    >
-                      <MapPin className="w-6 h-6" />
-                    </div>
+              {UNIDADES_GC.map((unidade) => {
+                const fotoUnidade =
+                  unidade.id === 'sao-jose-do-egito'
+                    ? FOTOS_REAIS.saoJoseDoEgitoSiloPatio
+                    : unidade.id === 'monteiro'
+                      ? FOTOS_REAIS.monteiroFachadaSilo
+                      : null
 
-                    <div>
-                      <h3 className="text-xl font-black">
-                        {unidade.cidade} — {unidade.uf}
-                      </h3>
-                      <p
-                        className={`text-xs mt-1 leading-relaxed ${
-                          unidade.destaque ? 'text-blue-200' : 'text-slate-600'
-                        }`}
+                return (
+                  <div
+                    key={unidade.id}
+                    className={`rounded-2xl text-center flex flex-col justify-between transition-all duration-300 hover:shadow-lg overflow-hidden ${
+                      unidade.destaque
+                        ? 'bg-gradient-to-b from-[#1E3A8A] to-[#0A2540] text-white shadow-md ring-2 ring-[#2563EB]'
+                        : 'bg-white border border-blue-100 text-slate-800 hover:border-[#2563EB]'
+                    }`}
+                  >
+                    {fotoUnidade && (
+                      <div
+                        className="relative h-32 w-full overflow-hidden bg-slate-950 group/foto cursor-pointer"
+                        onClick={() => setFotoAtiva(fotoUnidade)}
+                        title={`Clique para ampliar a foto real da filial ${unidade.cidade}`}
                       >
-                        {unidade.descricao}
-                      </p>
+                        <img
+                          src={fotoUnidade.src}
+                          alt={fotoUnidade.titulo}
+                          className="w-full h-full object-cover group-hover/foto:scale-105 transition-transform duration-500"
+                          loading="lazy"
+                        />
+                        <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent" />
+                        <div className="absolute top-2 left-2">
+                          <span className="bg-amber-400 text-slate-950 text-[10px] font-black px-2 py-0.5 rounded shadow-xs">
+                            Foto Real
+                          </span>
+                        </div>
+                        <div className="absolute bottom-2 right-2 bg-black/60 text-white p-1 rounded-full group-hover/foto:bg-amber-400 group-hover/foto:text-slate-950 transition-colors">
+                          <Maximize2 className="w-3.5 h-3.5" />
+                        </div>
+                      </div>
+                    )}
+
+                    <div className="p-6 flex-1 flex flex-col justify-between space-y-3">
+                      <div className="space-y-3">
+                        <div
+                          className={`w-12 h-12 mx-auto rounded-2xl flex items-center justify-center font-bold ${
+                            unidade.destaque
+                              ? 'bg-amber-400 text-slate-950 shadow-md'
+                              : 'bg-blue-100 text-[#1D4ED8]'
+                          }`}
+                        >
+                          <MapPin className="w-6 h-6" />
+                        </div>
+
+                        <div>
+                          <h3 className="text-xl font-black">
+                            {unidade.cidade} — {unidade.uf}
+                          </h3>
+                          <p
+                            className={`text-xs mt-1 leading-relaxed ${
+                              unidade.destaque ? 'text-blue-200' : 'text-slate-600'
+                            }`}
+                          >
+                            {unidade.descricao}
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="pt-4 border-t border-blue-200/40 flex flex-col gap-2 items-center">
+                        <span
+                          className={`text-[11px] font-bold px-2.5 py-1 rounded-full ${
+                            unidade.destaque
+                              ? 'bg-white/10 text-amber-300 border border-white/20'
+                              : 'bg-blue-50 text-[#1D4ED8] border border-blue-200'
+                          }`}
+                        >
+                          {unidade.tipo}
+                        </span>
+                        {fotoUnidade && (
+                          <button
+                            onClick={() => setFotoAtiva(fotoUnidade)}
+                            className="text-[10px] font-bold text-amber-500 hover:text-amber-600 inline-flex items-center gap-1 cursor-pointer"
+                          >
+                            <Sparkles className="w-3 h-3" />
+                            Ver foto real da filial
+                          </button>
+                        )}
+                      </div>
                     </div>
                   </div>
-
-                  <div className="pt-4 mt-4 border-t border-blue-200/40">
-                    <span
-                      className={`text-[11px] font-bold px-2.5 py-1 rounded-full ${
-                        unidade.destaque
-                          ? 'bg-white/10 text-amber-300 border border-white/20'
-                          : 'bg-blue-50 text-[#1D4ED8] border border-blue-200'
-                      }`}
-                    >
-                      {unidade.tipo}
-                    </span>
-                  </div>
-                </div>
-              ))}
+                )
+              })}
             </div>
 
             {/* Banner de Atendimento Regional */}

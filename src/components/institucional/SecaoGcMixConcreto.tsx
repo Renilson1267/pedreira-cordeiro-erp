@@ -619,68 +619,315 @@ export function SecaoGcMixConcreto({
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 pt-8">
             {UNIDADES_GC.map((unidade) => {
               const isSelected = unidadeAtiva === unidade.id
+              const fotoUnidade =
+                unidade.id === 'sao-jose-do-egito'
+                  ? FOTOS_ESTATICAS_PEDREIRA.saoJoseDoEgitoSiloPatio
+                  : unidade.id === 'monteiro'
+                    ? FOTOS_ESTATICAS_PEDREIRA.monteiroFachadaSilo
+                    : null
+              const fotoTitulo =
+                unidade.id === 'sao-jose-do-egito'
+                  ? 'Silo e Pátio da Unidade — Filial São José do Egito-PE'
+                  : 'Fachada e Silo da Central GC Mix — Filial Monteiro'
+              const fotoDescricao =
+                unidade.id === 'sao-jose-do-egito'
+                  ? 'Silo vertical de concreto à esquerda, pátio com caminhonete prata e dois muros com a marca GC MIX Concreto & Pedreira e 0800-083-1200.'
+                  : 'Fachada da filial Monteiro com silo vertical GC Mix identificado com 0800-083-1200.'
+              const fotoLocal =
+                unidade.id === 'sao-jose-do-egito'
+                  ? 'São José do Egito, PE'
+                  : 'Filial Monteiro — PB'
+
               return (
                 <div
                   key={unidade.id}
                   onClick={() => setUnidadeAtiva(unidade.id)}
-                  className={`p-5 rounded-2xl cursor-pointer transition-all duration-300 flex flex-col justify-between border ${
+                  className={`rounded-2xl cursor-pointer transition-all duration-300 flex flex-col justify-between border overflow-hidden ${
                     isSelected
                       ? 'bg-gradient-to-b from-[#1E3A8A] to-[#172554] border-amber-400 shadow-xl ring-2 ring-amber-400/50 scale-[1.02]'
                       : 'bg-white/5 border-white/10 hover:border-blue-300/50 hover:bg-white/10'
                   }`}
                 >
-                  <div className="space-y-3">
-                    <div className="flex items-center justify-between">
-                      <div
-                        className={`w-10 h-10 rounded-xl flex items-center justify-center font-black text-sm ${
-                          unidade.destaque
-                            ? 'bg-amber-400 text-slate-950 shadow-md'
-                            : isSelected
-                              ? 'bg-blue-500 text-white'
-                              : 'bg-white/10 text-blue-300'
-                        }`}
-                      >
-                        <MapPin className="w-5 h-5" />
-                      </div>
-
-                      {unidade.destaque && (
-                        <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded-full bg-amber-400 text-slate-950">
-                          Matriz
-                        </span>
-                      )}
-                    </div>
-
-                    <div>
-                      <h4 className="text-lg font-black text-white">
-                        {unidade.cidade}{' '}
-                        <span className="text-xs text-blue-300 font-bold">({unidade.uf})</span>
-                      </h4>
-                      <p className="text-xs text-blue-200 mt-1 line-clamp-2 leading-relaxed">
-                        {unidade.descricao}
-                      </p>
-                    </div>
-                  </div>
-
-                  <div className="pt-4 mt-3 border-t border-white/10">
-                    <span className="text-[11px] font-bold text-amber-300 block">
-                      {unidade.tipo}
-                    </span>
-                    <button
+                  {fotoUnidade && (
+                    <div
+                      className="relative h-28 w-full overflow-hidden bg-slate-950 group/foto cursor-pointer"
                       onClick={(e) => {
                         e.stopPropagation()
-                        handlePedirOrcamento(
-                          `Concreto GC Mix — Unidade ${unidade.cidade}-${unidade.uf}`,
-                        )
+                        if (onExpandirFoto) {
+                          onExpandirFoto({
+                            src: fotoUnidade,
+                            titulo: fotoTitulo,
+                            local: fotoLocal,
+                            descricao: fotoDescricao,
+                            etiqueta: `Foto Real • ${unidade.cidade}`,
+                          })
+                        }
                       }}
-                      className="mt-2 w-full text-center text-[11px] font-bold text-white bg-blue-600/60 hover:bg-blue-600 py-1.5 px-2 rounded-lg transition-colors cursor-pointer"
+                      title="Clique para ver a foto real desta unidade"
                     >
-                      Cotar nesta unidade
-                    </button>
+                      <img
+                        src={fotoUnidade}
+                        alt={`Instalações reais da unidade ${unidade.cidade}`}
+                        className="w-full h-full object-cover group-hover/foto:scale-105 transition-transform duration-500"
+                        loading="lazy"
+                      />
+                      <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent" />
+                      <div className="absolute top-2 left-2">
+                        <span className="bg-amber-400 text-slate-950 text-[9px] font-black px-1.5 py-0.5 rounded shadow-xs">
+                          Foto Real
+                        </span>
+                      </div>
+                      <div className="absolute bottom-2 right-2 bg-black/60 text-white p-1 rounded-full group-hover/foto:bg-amber-400 group-hover/foto:text-slate-950 transition-colors">
+                        <Maximize2 className="w-3 h-3" />
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="p-5 flex-1 flex flex-col justify-between">
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between">
+                        <div
+                          className={`w-9 h-9 rounded-xl flex items-center justify-center font-black text-sm ${
+                            unidade.destaque
+                              ? 'bg-amber-400 text-slate-950 shadow-md'
+                              : isSelected
+                                ? 'bg-blue-500 text-white'
+                                : 'bg-white/10 text-blue-300'
+                          }`}
+                        >
+                          <MapPin className="w-4 h-4" />
+                        </div>
+
+                        {unidade.destaque ? (
+                          <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded-full bg-amber-400 text-slate-950">
+                            Matriz
+                          </span>
+                        ) : fotoUnidade ? (
+                          <span className="text-[10px] font-bold text-amber-300 bg-amber-400/20 px-2 py-0.5 rounded-full border border-amber-400/30">
+                            Unidade com Foto
+                          </span>
+                        ) : null}
+                      </div>
+
+                      <div>
+                        <h4 className="text-base font-black text-white">
+                          {unidade.cidade}{' '}
+                          <span className="text-xs text-blue-300 font-bold">({unidade.uf})</span>
+                        </h4>
+                        <p className="text-xs text-blue-200 mt-1 line-clamp-2 leading-relaxed">
+                          {unidade.descricao}
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="pt-4 mt-3 border-t border-white/10">
+                      <span className="text-[11px] font-bold text-amber-300 block">
+                        {unidade.tipo}
+                      </span>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          handlePedirOrcamento(
+                            `Concreto GC Mix — Unidade ${unidade.cidade}-${unidade.uf}`,
+                          )
+                        }}
+                        className="mt-2 w-full text-center text-[11px] font-bold text-white bg-blue-600/60 hover:bg-blue-600 py-1.5 px-2 rounded-lg transition-colors cursor-pointer"
+                      >
+                        Cotar nesta unidade
+                      </button>
+                    </div>
                   </div>
                 </div>
               )
             })}
           </div>
+
+          {/* Destaque Interativo da Unidade Selecionada (São José do Egito ou Monteiro com Foto Real) */}
+          {unidadeAtiva === 'sao-jose-do-egito' && (
+            <div className="mt-8 p-6 rounded-3xl bg-gradient-to-r from-[#172554] via-[#1E3A8A] to-[#0A2540] border-2 border-amber-400/60 shadow-xl text-white">
+              <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-center">
+                <div
+                  className="lg:col-span-5 relative h-56 sm:h-64 rounded-2xl overflow-hidden bg-slate-950 cursor-pointer group/card"
+                  onClick={() => {
+                    if (onExpandirFoto) {
+                      onExpandirFoto({
+                        src: FOTOS_ESTATICAS_PEDREIRA.saoJoseDoEgitoSiloPatio,
+                        titulo: 'Silo e Pátio da Unidade — Filial São José do Egito-PE',
+                        local: 'São José do Egito, PE',
+                        descricao:
+                          'Registro autêntico da filial de São José do Egito (PE) da Central GC Mix: silo de concreto à esquerda, pátio operacional com caminhonete prata, e muros perimetrais identificados com a marca "GC MIX Concreto & Pedreira — Patos/S.ta Luzia-PB/S.J. do Egito-PE/Caicó-RN — 0800-083-1200" e painel "GC MIX PISO-LAJE POLIMENTO 0800-083-1200".',
+                        etiqueta: 'Foto Real • São José do Egito-PE',
+                      })
+                    }
+                  }}
+                >
+                  <img
+                    src={FOTOS_ESTATICAS_PEDREIRA.saoJoseDoEgitoSiloPatio}
+                    alt="Silo, pátio e identificação visual da unidade São José do Egito da GC Mix"
+                    className="w-full h-full object-cover group-hover/card:scale-105 transition-transform duration-700"
+                    loading="lazy"
+                  />
+                  <div className="absolute top-3 left-3 flex items-center gap-2">
+                    <span className="bg-amber-400 text-slate-950 text-xs font-black px-2.5 py-1 rounded-md shadow-md">
+                      Foto Real da Unidade
+                    </span>
+                    <span className="bg-[#0A2540]/90 text-white text-[11px] font-bold px-2 py-0.5 rounded border border-white/20">
+                      São José do Egito — PE
+                    </span>
+                  </div>
+                  <div className="absolute bottom-3 right-3 bg-black/70 text-white p-2 rounded-full group-hover/card:bg-amber-400 group-hover/card:text-slate-950 transition-colors shadow-md">
+                    <Maximize2 className="w-4 h-4" />
+                  </div>
+                </div>
+
+                <div className="lg:col-span-7 space-y-4">
+                  <div className="inline-flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-amber-300">
+                    <Building2 className="w-4 h-4 text-amber-400" />
+                    <span>Unidade Operacional Ativa • Pajeú Pernambucano</span>
+                  </div>
+                  <h4 className="text-2xl sm:text-3xl font-black text-white">
+                    Filial São José do Egito — Concreto GC Mix
+                  </h4>
+                  <p className="text-sm text-blue-100 leading-relaxed">
+                    Unidade equipada com <strong>silo vertical de cimento</strong>, central dosadora
+                    e pátio operacional para abastecimento rápido de São José do Egito, Tuparetama,
+                    Itapetim, Ouro Velho e todo o Alto Pajeú e Cariri paraibano vizinho.
+                  </p>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs text-blue-200">
+                    <div className="flex items-center gap-2">
+                      <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                      <span>Silo vertical próprio e pátio de manobras</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                      <span>Piso, Laje e Polimento com traço certificado</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                      <span>Atendimento gratuito pelo 0800 083 1200</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                      <span>Integrada às filiais de Patos, Santa Luzia e Monteiro</span>
+                    </div>
+                  </div>
+                  <div className="pt-2 flex flex-wrap items-center gap-3">
+                    <a
+                      href={INSTITUCIONAL_CONFIG.whatsappUrlConcreto}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-2 bg-emerald-500 hover:bg-emerald-600 text-white font-bold px-4 py-2.5 rounded-xl transition-all shadow-md text-xs cursor-pointer"
+                    >
+                      <MessageCircle className="w-4 h-4" />
+                      <span>Cotar Concreto em São José do Egito</span>
+                    </a>
+                    <button
+                      onClick={() =>
+                        handlePedirOrcamento('Concreto GC Mix — Filial São José do Egito (PE)')
+                      }
+                      className="inline-flex items-center gap-1.5 bg-white/10 hover:bg-white/20 text-white font-bold px-4 py-2.5 rounded-xl border border-white/20 text-xs transition-all cursor-pointer"
+                    >
+                      <span>Formulário de Cotação</span>
+                      <ArrowRight className="w-3.5 h-3.5 text-amber-300" />
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {unidadeAtiva === 'monteiro' && (
+            <div className="mt-8 p-6 rounded-3xl bg-gradient-to-r from-[#172554] via-[#1E3A8A] to-[#0A2540] border-2 border-blue-400/60 shadow-xl text-white">
+              <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-center">
+                <div
+                  className="lg:col-span-5 relative h-56 sm:h-64 rounded-2xl overflow-hidden bg-slate-950 cursor-pointer group/card"
+                  onClick={() => {
+                    if (onExpandirFoto) {
+                      onExpandirFoto({
+                        src: FOTOS_ESTATICAS_PEDREIRA.monteiroFachadaSilo,
+                        titulo: 'Fachada e Silo da Central GC Mix — Filial Monteiro',
+                        local: 'Entrada da Filial Monteiro — PB',
+                        descricao:
+                          'Fachada da filial Monteiro com muro e silo vertical identificados com o telefone 0800-083-1200, prédio administrativo branco com faixa azul, portão metálico e árvores no acesso.',
+                        etiqueta: 'Foto Real • Filial Monteiro',
+                      })
+                    }
+                  }}
+                >
+                  <img
+                    src={FOTOS_ESTATICAS_PEDREIRA.monteiroFachadaSilo}
+                    alt="Fachada e silo da filial Monteiro da GC Mix"
+                    className="w-full h-full object-cover group-hover/card:scale-105 transition-transform duration-700"
+                    loading="lazy"
+                  />
+                  <div className="absolute top-3 left-3 flex items-center gap-2">
+                    <span className="bg-amber-400 text-slate-950 text-xs font-black px-2.5 py-1 rounded-md shadow-md">
+                      Foto Real da Unidade
+                    </span>
+                    <span className="bg-[#0A2540]/90 text-white text-[11px] font-bold px-2 py-0.5 rounded border border-white/20">
+                      Monteiro — PB
+                    </span>
+                  </div>
+                  <div className="absolute bottom-3 right-3 bg-black/70 text-white p-2 rounded-full group-hover/card:bg-amber-400 group-hover/card:text-slate-950 transition-colors shadow-md">
+                    <Maximize2 className="w-4 h-4" />
+                  </div>
+                </div>
+
+                <div className="lg:col-span-7 space-y-4">
+                  <div className="inline-flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-amber-300">
+                    <Building2 className="w-4 h-4 text-amber-400" />
+                    <span>Unidade Operacional Ativa • Cariri Ocidental</span>
+                  </div>
+                  <h4 className="text-2xl sm:text-3xl font-black text-white">
+                    Filial Monteiro — Central GC Mix Concreto
+                  </h4>
+                  <p className="text-sm text-blue-100 leading-relaxed">
+                    Unidade estratégica com silo vertical, dosador computadorizado e frota de
+                    betoneiras Liebherr/VW Constellation para atendimento em Monteiro, Sertânia,
+                    Zabelê, São Sebastião do Umbuzeiro e região.
+                  </p>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs text-blue-200">
+                    <div className="flex items-center gap-2">
+                      <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                      <span>Silo vertical e prédio administrativo próprio</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                      <span>Caminhões betoneira dedicados à filial</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                      <span>Acesso direto pela rodovia asfaltada</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                      <span>Atendimento gratuito pelo 0800 083 1200</span>
+                    </div>
+                  </div>
+                  <div className="pt-2 flex flex-wrap items-center gap-3">
+                    <a
+                      href={INSTITUCIONAL_CONFIG.whatsappUrlConcreto}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-2 bg-emerald-500 hover:bg-emerald-600 text-white font-bold px-4 py-2.5 rounded-xl transition-all shadow-md text-xs cursor-pointer"
+                    >
+                      <MessageCircle className="w-4 h-4" />
+                      <span>Cotar Concreto em Monteiro</span>
+                    </a>
+                    <button
+                      onClick={() =>
+                        handlePedirOrcamento('Concreto Usinado GC Mix — Filial Monteiro (PB)')
+                      }
+                      className="inline-flex items-center gap-1.5 bg-white/10 hover:bg-white/20 text-white font-bold px-4 py-2.5 rounded-xl border border-white/20 text-xs transition-all cursor-pointer"
+                    >
+                      <span>Formulário de Cotação</span>
+                      <ArrowRight className="w-3.5 h-3.5 text-amber-300" />
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* Banner explicativo de atendimento integrado */}
           <div className="mt-8 p-4 sm:p-5 rounded-2xl bg-[#0A1A3B]/80 border border-blue-400/20 flex flex-col md:flex-row items-center justify-between gap-4 text-xs">
