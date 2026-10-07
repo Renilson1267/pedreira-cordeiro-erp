@@ -273,33 +273,33 @@ export function SecaoGcMixConcreto({
 
         {/* =========================================================
             PILARES COM FOTOS REAIS:
-            - Card 1: Frota de Betoneiras no Desfile Cívico — Caicó-RN (Foto Real)
+            - Card 1: Frota de Betoneiras na Central — Filial Monteiro-PB (Foto Real)
             - Card 2: Central de Dosagem (Fachada e Silo Filial Monteiro)
             - Card 3: Agregados Próprios & Controle Tecnológico
             ========================================================= */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 lg:gap-8">
-          {/* Card 1: Frota de Caminhões Betoneira — Foto Real Desfile Cívico Caicó-RN */}
+          {/* Card 1: Frota de Caminhões Betoneira — Foto Real Central de Monteiro-PB */}
           <Card className="bg-gradient-to-br from-[#0F284E] via-[#0A1F3B] to-[#0A1933] border-blue-400/30 text-white rounded-3xl overflow-hidden shadow-2xl hover:border-blue-400/60 transition-all group flex flex-col justify-between">
             <div>
-              {/* Foto Real: Betoneira GC Mix no Desfile Cívico — Caicó-RN */}
+              {/* Foto Real: Betoneira GC Mix na Central de Concreto — Filial Monteiro-PB */}
               <div
                 className="relative h-56 sm:h-64 overflow-hidden bg-slate-950 cursor-pointer"
                 onClick={() => {
                   if (onExpandirFoto) {
                     onExpandirFoto({
-                      src: FOTOS_ESTATICAS_PEDREIRA.patosDesfileBetoneira,
-                      titulo: 'Betoneira GC Mix no Desfile Cívico — Caicó-RN',
-                      local: 'Caicó, RN',
+                      src: FOTOS_ESTATICAS_PEDREIRA.monteiroCentralBetoneira,
+                      titulo: 'Betoneira GC Mix na Central de Concreto — Filial Monteiro-PB',
+                      local: 'Monteiro, PB',
                       descricao:
-                        'VW Constellation azul GC Mix com 0800-083-1200 desfilando à noite em frente ao portal iluminado da cidade.',
-                      etiqueta: 'Foto Real • Desfile Caicó',
+                        'Caminhão betoneira VW Constellation azul GC Mix com 0800-083-1200 operando na Central de Concreto da Filial Monteiro-PB.',
+                      etiqueta: 'Foto Real • Central Monteiro',
                     })
                   }
                 }}
               >
                 <img
-                  src={FOTOS_ESTATICAS_PEDREIRA.patosDesfileBetoneira}
-                  alt="Betoneira GC Mix no Desfile Cívico em Caicó-RN com 0800-083-1200"
+                  src={FOTOS_ESTATICAS_PEDREIRA.monteiroCentralBetoneira}
+                  alt="Betoneira GC Mix carregando na Central de Concreto — Filial Monteiro-PB"
                   className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700"
                   loading="lazy"
                   onError={(e) => {
@@ -313,16 +313,16 @@ export function SecaoGcMixConcreto({
 
                 <div className="absolute top-3 left-3 flex items-center gap-1.5 flex-wrap">
                   <span className="bg-amber-400 text-slate-950 text-[10px] font-black px-2.5 py-1 rounded-md shadow-md">
-                    Foto Real Desfile
+                    Foto Real Central
                   </span>
                   <span className="bg-[#0A2540]/90 text-blue-200 text-[10px] font-bold px-2 py-0.5 rounded border border-blue-400/30">
-                    Caicó — RN
+                    Monteiro — PB
                   </span>
                 </div>
 
                 <div className="absolute bottom-3 left-3 text-[11px] font-bold text-amber-300 flex items-center gap-1 bg-black/60 backdrop-blur-xs px-2.5 py-1 rounded-md border border-white/10">
                   <MapPin className="w-3 h-3 text-amber-400" />
-                  <span>Desfile Cívico • Caicó — RN</span>
+                  <span>Central de Concreto • Monteiro — PB</span>
                 </div>
 
                 <div className="absolute bottom-3 right-3 bg-black/70 text-white p-2 rounded-full group-hover:bg-amber-400 group-hover:text-slate-950 transition-colors shadow-md">
