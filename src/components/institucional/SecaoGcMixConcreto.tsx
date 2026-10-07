@@ -20,12 +20,24 @@ import {
 } from 'lucide-react'
 import { INSTITUCIONAL_CONFIG, UNIDADES_GC } from '@/data/institucional'
 import { ASSET_LOGO_BANNER, LogoGcMixVector } from '@/components/institucional/LogoGcMix'
+import { FOTOS_ESTATICAS_PEDREIRA } from '@/lib/fotosReais'
+import { Maximize2 } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 
+interface FotoModalInfo {
+  src: string
+  fallback?: string
+  titulo: string
+  local: string
+  descricao: string
+  etiqueta?: string
+}
+
 interface SecaoGcMixConcretoProps {
   onSolicitarOrcamento?: (produtoOuDetalhe: string) => void
+  onExpandirFoto?: (foto: FotoModalInfo) => void
 }
 
 /**
@@ -59,8 +71,11 @@ const TRACos_CONCRETO = [
   },
 ]
 
-export function SecaoGcMixConcreto({ onSolicitarOrcamento }: SecaoGcMixConcretoProps) {
-  const [unidadeAtiva, setUnidadeAtiva] = useState<string>('patos')
+export function SecaoGcMixConcreto({
+  onSolicitarOrcamento,
+  onExpandirFoto,
+}: SecaoGcMixConcretoProps) {
+  const [unidadeAtiva, setUnidadeAtiva] = useState<string>('monteiro')
 
   const handlePedirOrcamento = (detalhe: string) => {
     if (onSolicitarOrcamento) {
@@ -143,63 +158,223 @@ export function SecaoGcMixConcreto({ onSolicitarOrcamento }: SecaoGcMixConcretoP
         </div>
 
         {/* =========================================================
-            3 PILARES: BETONEIRAS, CENTRAL E QUALIDADE CONTROLADA
+            DESTAQUE PRINCIPAL DA SEÇÃO: FOTO 2 REAL (BETONEIRAS CARREGANDO NA CENTRAL)
+            Mostra as betoneiras GC Mix com 0800-083-1200 em plena operação na Filial Monteiro
             ========================================================= */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 lg:gap-8">
-          {/* Card 1: Frota de Caminhões Betoneira */}
-          <Card className="bg-gradient-to-br from-[#0F284E] via-[#0A1F3B] to-[#0A1933] border-blue-400/30 text-white rounded-3xl overflow-hidden shadow-2xl hover:border-blue-400/60 transition-all group flex flex-col justify-between">
-            <CardContent className="p-7 sm:p-8 space-y-5">
-              <div className="flex items-center justify-between gap-2 flex-wrap">
-                <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-[#1D4ED8] to-[#2563EB] text-white flex items-center justify-center shadow-lg shadow-blue-900/40 group-hover:scale-105 transition-transform">
-                  <Truck className="w-7 h-7 text-amber-300" />
-                </div>
-                <div className="flex flex-col items-end gap-1.5">
-                  <Badge className="bg-blue-500/20 text-[#60A5FA] border-blue-400/40 text-[11px] font-bold uppercase tracking-wider">
-                    Logística Ágil
-                  </Badge>
-                  <a
-                    href={INSTITUCIONAL_CONFIG.rastreadorBetoneirasUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-400/40 text-[11px] font-bold transition-all shadow-xs hover:shadow-sm group/badge"
-                    title="Rastrear frota de betoneiras em tempo real (SystemsAtx Tracking)"
-                  >
-                    <Radio className="w-3 h-3 text-emerald-400 animate-pulse" />
-                    <span>Frota monitorada em tempo real</span>
-                    <ExternalLink className="w-2.5 h-2.5 text-emerald-300/80 group-hover/badge:translate-x-0.5 transition-transform" />
-                  </a>
-                </div>
-              </div>
-              <div>
-                <h3 className="text-2xl font-black text-white group-hover:text-amber-300 transition-colors">
-                  Frota de Betoneiras
-                </h3>
-                <p className="text-sm text-blue-100/90 mt-2.5 leading-relaxed">
-                  Caminhões betoneira modernos com tambores de alta capacidade e calhas articuladas
-                  para descarregamento direto no local da concretagem, mantendo a plasticidade e a
-                  homogeneidade do traço.
-                </p>
+        <div className="rounded-3xl overflow-hidden border-2 border-blue-400/40 bg-gradient-to-br from-[#0F284E] via-[#0A1F3B] to-[#0A1933] shadow-2xl relative">
+          <div className="grid grid-cols-1 lg:grid-cols-12 items-stretch">
+            {/* Imagem real com proporção comercial e botão de expandir */}
+            <div
+              className="lg:col-span-7 relative min-h-[300px] sm:min-h-[380px] lg:min-h-[460px] overflow-hidden bg-slate-950 cursor-pointer group"
+              onClick={() => {
+                if (onExpandirFoto) {
+                  onExpandirFoto({
+                    src: FOTOS_ESTATICAS_PEDREIRA.monteiroBetoneirasCarregando,
+                    titulo: 'Betoneiras Carregando na Central — Filial Monteiro (GC Mix)',
+                    local: 'Central GC Mix • Filial Monteiro — PB',
+                    descricao:
+                      'Caminhões betoneira azul GC Mix (VW Constellation e Liebherr) com 0800-083-1200 na cuba, posicionados sob a torre de carregamento automatizada na filial de Monteiro-PB.',
+                    etiqueta: 'Operação Real • Filial Monteiro',
+                  })
+                }
+              }}
+            >
+              <img
+                src={FOTOS_ESTATICAS_PEDREIRA.monteiroBetoneirasCarregando}
+                alt="Betoneiras azul GC Mix carregando na central da filial Monteiro"
+                className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700"
+                loading="lazy"
+              />
+              <div className="absolute inset-0 bg-gradient-to-t from-[#0A1F3B]/80 via-transparent to-black/30 pointer-events-none" />
+
+              {/* Badges sobre a foto */}
+              <div className="absolute top-4 left-4 flex flex-wrap items-center gap-2">
+                <span className="bg-amber-400 text-slate-950 text-xs font-black px-3 py-1 rounded-md shadow-md">
+                  Foto Real da Operação
+                </span>
+                <span className="bg-[#0A2540]/90 text-white text-xs font-bold px-2.5 py-1 rounded-md border border-white/20 backdrop-blur-xs">
+                  Filial Monteiro — PB
+                </span>
               </div>
 
-              <div className="space-y-2 pt-2 border-t border-white/10 text-xs text-blue-200">
-                <div className="flex items-center gap-2">
-                  <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
-                  <span>Entrega pontual com hora marcada na obra</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
-                  <span>Rastreamento GPS via satélite em tempo real</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
-                  <span>Agitação contínua durante todo o trajeto</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
-                  <span>Motoristas-operadores experientes na descarga</span>
+              <div className="absolute bottom-4 left-4 right-4 flex items-center justify-between text-xs text-white/90">
+                <span className="bg-black/60 backdrop-blur-md px-3 py-1.5 rounded-lg border border-white/10 font-mono text-[11px]">
+                  0800-083-1200 • Caminhões VW Constellation & Liebherr
+                </span>
+                <div className="bg-black/70 p-2 rounded-full group-hover:bg-amber-400 group-hover:text-slate-950 transition-colors shadow-md">
+                  <Maximize2 className="w-4 h-4" />
                 </div>
               </div>
-            </CardContent>
+            </div>
+
+            {/* Conteúdo descritivo comercial ao lado */}
+            <div className="lg:col-span-5 p-6 sm:p-8 lg:p-10 flex flex-col justify-between space-y-6">
+              <div className="space-y-4">
+                <div className="flex items-center justify-between gap-2 flex-wrap">
+                  <div className="inline-flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-amber-300">
+                    <Sparkles className="w-4 h-4 text-amber-400" />
+                    <span>Central de Concreto • Filial Monteiro (GC Mix)</span>
+                  </div>
+                  <Badge className="bg-emerald-500/20 text-emerald-300 border-emerald-400/40 text-[11px] font-bold uppercase tracking-wider">
+                    Operação Ativa
+                  </Badge>
+                </div>
+
+                <h3 className="text-2xl sm:text-3xl font-black text-white leading-tight">
+                  Betoneiras em Carga Contínua Direto na Torre de Dosagem
+                </h3>
+
+                <p className="text-sm text-blue-100 leading-relaxed">
+                  Registro autêntico da <strong>Filial Monteiro</strong>: caminhões betoneira azul
+                  GC Mix sob a torre de carregamento da central, operando com pesagem eletrônica
+                  computadorizada, dosagem automática de cimento e agregados selecionados da
+                  Pedreira Cordeiro.
+                </p>
+
+                <div className="space-y-2.5 pt-2 border-t border-white/10 text-xs text-blue-200">
+                  <div className="flex items-center gap-2">
+                    <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                    <span>Caminhões VW Constellation com tambores Liebherr</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                    <span>Central com torre dosadora de alta produtividade</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                    <span>Identificação comercial e suporte 0800-083-1200 na frota</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                    <span>Pátio amplo de manobra e lavagem de calhas</span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="pt-4 border-t border-white/10 flex flex-col sm:flex-row gap-3">
+                <a
+                  href={INSTITUCIONAL_CONFIG.whatsappUrlConcreto}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex-1 inline-flex items-center justify-center gap-2 bg-gradient-to-r from-emerald-500 to-emerald-600 hover:from-emerald-400 hover:to-emerald-500 text-white font-bold text-xs py-3 rounded-xl shadow-md transition-all cursor-pointer"
+                >
+                  <MessageCircle className="w-4 h-4" />
+                  <span>Programar Carga em Monteiro</span>
+                </a>
+                <button
+                  onClick={() =>
+                    handlePedirOrcamento('Concreto Usinado GC Mix — Filial Monteiro (PB)')
+                  }
+                  className="inline-flex items-center justify-center gap-1.5 bg-white/10 hover:bg-white/20 text-white font-bold text-xs py-3 px-4 rounded-xl border border-white/20 transition-all cursor-pointer"
+                >
+                  <span>Pedir Traço</span>
+                  <ArrowRight className="w-3.5 h-3.5 text-amber-300" />
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* =========================================================
+            3 PILARES COM FOTOS REAIS:
+            - Card 1: Frota de Betoneiras (Foto 1: Vista Aérea Filial Monteiro)
+            - Card 2: Central de Dosagem (Foto 3: Fachada e Silo Filial Monteiro)
+            - Card 3: Agregados Próprios & Controle Tecnológico
+            ========================================================= */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 lg:gap-8">
+          {/* Card 1: Frota de Caminhões Betoneira — Foto Aérea de Monteiro */}
+          <Card className="bg-gradient-to-br from-[#0F284E] via-[#0A1F3B] to-[#0A1933] border-blue-400/30 text-white rounded-3xl overflow-hidden shadow-2xl hover:border-blue-400/60 transition-all group flex flex-col justify-between">
+            <div>
+              {/* Foto 1 Real: Vista Aérea da Filial Monteiro com Betoneiras */}
+              <div
+                className="relative h-56 sm:h-64 overflow-hidden bg-slate-950 cursor-pointer"
+                onClick={() => {
+                  if (onExpandirFoto) {
+                    onExpandirFoto({
+                      src: FOTOS_ESTATICAS_PEDREIRA.monteiroAerea,
+                      titulo: 'Vista Aérea da Central GC Mix — Filial Monteiro',
+                      local: 'Rodovia / Filial Monteiro — PB',
+                      descricao:
+                        'Vista panorâmica de drone: silo vertical GC Mix, edifícios administrativos brancos com detalhes azuis, pátio de agregados e duas betoneiras azul GC Mix operando em primeiro plano junto à rodovia.',
+                      etiqueta: 'Visão Panorâmica Aérea',
+                    })
+                  }
+                }}
+              >
+                <img
+                  src={FOTOS_ESTATICAS_PEDREIRA.monteiroAerea}
+                  alt="Vista aérea da central de concreto GC Mix filial Monteiro com betoneiras e rodovia"
+                  className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700"
+                  loading="lazy"
+                />
+                <div className="absolute inset-0 bg-gradient-to-t from-[#0A1F3B] via-transparent to-black/30 pointer-events-none" />
+
+                <div className="absolute top-3 left-3">
+                  <span className="bg-amber-400 text-slate-950 text-[10px] font-black px-2.5 py-1 rounded-md shadow-md">
+                    Foto Real Aérea
+                  </span>
+                </div>
+
+                <div className="absolute bottom-3 left-3 text-[11px] font-bold text-amber-300 flex items-center gap-1 bg-black/60 backdrop-blur-xs px-2.5 py-1 rounded-md border border-white/10">
+                  <MapPin className="w-3 h-3 text-amber-400" />
+                  <span>Filial Monteiro • PB (Rodovia)</span>
+                </div>
+
+                <div className="absolute bottom-3 right-3 bg-black/70 text-white p-2 rounded-full group-hover:bg-amber-400 group-hover:text-slate-950 transition-colors shadow-md">
+                  <Maximize2 className="w-3.5 h-3.5" />
+                </div>
+              </div>
+
+              <CardContent className="p-6 sm:p-7 space-y-4">
+                <div className="flex items-center justify-between gap-2 flex-wrap">
+                  <div className="w-11 h-11 rounded-xl bg-gradient-to-br from-[#1D4ED8] to-[#2563EB] text-white flex items-center justify-center shadow-lg shadow-blue-900/40 group-hover:scale-105 transition-transform">
+                    <Truck className="w-5 h-5 text-amber-300" />
+                  </div>
+                  <div className="flex flex-col items-end gap-1.5">
+                    <Badge className="bg-blue-500/20 text-[#60A5FA] border-blue-400/40 text-[10px] font-bold uppercase tracking-wider">
+                      Logística Ágil
+                    </Badge>
+                    <a
+                      href={INSTITUCIONAL_CONFIG.rastreadorBetoneirasUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-400/40 text-[11px] font-bold transition-all shadow-xs hover:shadow-sm group/badge"
+                      title="Rastrear frota de betoneiras em tempo real (SystemsAtx Tracking)"
+                    >
+                      <Radio className="w-3 h-3 text-emerald-400 animate-pulse" />
+                      <span>Frota monitorada em tempo real</span>
+                      <ExternalLink className="w-2.5 h-2.5 text-emerald-300/80 group-hover/badge:translate-x-0.5 transition-transform" />
+                    </a>
+                  </div>
+                </div>
+
+                <div>
+                  <h3 className="text-xl font-black text-white group-hover:text-amber-300 transition-colors">
+                    Frota de Betoneiras
+                  </h3>
+                  <p className="text-xs text-blue-100/90 mt-2 leading-relaxed">
+                    Caminhões betoneira modernos com tambores de alta capacidade e calhas
+                    articuladas para descarregamento direto na obra, mantendo a trabalhabilidade e o
+                    traço ideal.
+                  </p>
+                </div>
+
+                <div className="space-y-1.5 pt-2 border-t border-white/10 text-xs text-blue-200">
+                  <div className="flex items-center gap-2">
+                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                    <span>Entrega pontual com hora marcada na obra</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                    <span>Rastreamento GPS via satélite em tempo real</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                    <span>Agitação contínua durante todo o trajeto</span>
+                  </div>
+                </div>
+              </CardContent>
+            </div>
 
             <div className="p-6 pt-0 space-y-2">
               <a
@@ -224,47 +399,93 @@ export function SecaoGcMixConcreto({ onSolicitarOrcamento }: SecaoGcMixConcretoP
             </div>
           </Card>
 
-          {/* Card 2: Central de Concreto Automatizada */}
+          {/* Card 2: Central de Concreto — Foto 3: Fachada e Silo Monteiro */}
           <Card className="bg-gradient-to-br from-[#0F284E] via-[#0A1F3B] to-[#0A1933] border-blue-400/30 text-white rounded-3xl overflow-hidden shadow-2xl hover:border-blue-400/60 transition-all group flex flex-col justify-between">
-            <CardContent className="p-7 sm:p-8 space-y-5">
-              <div className="flex items-center justify-between">
-                <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-[#1D4ED8] to-[#2563EB] text-white flex items-center justify-center shadow-lg shadow-blue-900/40 group-hover:scale-105 transition-transform">
-                  <Building2 className="w-7 h-7 text-amber-300" />
+            <div>
+              {/* Foto 3 Real: Fachada e Silo da Filial Monteiro */}
+              <div
+                className="relative h-56 sm:h-64 overflow-hidden bg-slate-950 cursor-pointer"
+                onClick={() => {
+                  if (onExpandirFoto) {
+                    onExpandirFoto({
+                      src: FOTOS_ESTATICAS_PEDREIRA.monteiroFachadaSilo,
+                      titulo: 'Fachada e Silo da Central GC Mix — Filial Monteiro',
+                      local: 'Entrada da Filial Monteiro — PB',
+                      descricao:
+                        'Fachada da filial Monteiro com muro e silo vertical identificados com o telefone 0800-083-1200, prédio administrativo branco com faixa azul, portão metálico e árvores no acesso.',
+                      etiqueta: 'Silo & Fachada da Filial',
+                    })
+                  }
+                }}
+              >
+                <img
+                  src={FOTOS_ESTATICAS_PEDREIRA.monteiroFachadaSilo}
+                  alt="Fachada e silo da filial Monteiro da GC Mix Concreto com 0800-083-1200"
+                  className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700"
+                  loading="lazy"
+                />
+                <div className="absolute inset-0 bg-gradient-to-t from-[#0A1F3B] via-transparent to-black/30 pointer-events-none" />
+
+                <div className="absolute top-3 left-3">
+                  <span className="bg-amber-400 text-slate-950 text-[10px] font-black px-2.5 py-1 rounded-md shadow-md">
+                    Foto Real Fachada
+                  </span>
                 </div>
-                <Badge className="bg-emerald-500/20 text-emerald-300 border-emerald-400/40 text-[11px] font-bold uppercase tracking-wider">
-                  Automação Total
-                </Badge>
+
+                <div className="absolute bottom-3 left-3 text-[11px] font-bold text-amber-300 flex items-center gap-1 bg-black/60 backdrop-blur-xs px-2.5 py-1 rounded-md border border-white/10">
+                  <Building2 className="w-3 h-3 text-amber-400" />
+                  <span>Silo GC Mix • 0800-083-1200</span>
+                </div>
+
+                <div className="absolute bottom-3 right-3 bg-black/70 text-white p-2 rounded-full group-hover:bg-amber-400 group-hover:text-slate-950 transition-colors shadow-md">
+                  <Maximize2 className="w-3.5 h-3.5" />
+                </div>
               </div>
 
-              <div>
-                <h3 className="text-2xl font-black text-white group-hover:text-amber-300 transition-colors">
-                  Central de Dosagem
-                </h3>
-                <p className="text-sm text-blue-100/90 mt-2.5 leading-relaxed">
-                  Balanças computadorizadas e dosadores automáticos de aditivos e água. Cada m³ de
-                  concreto é produzido sob parâmetros rígidos das normas ABNT NBR 7212 e NBR 8953.
-                </p>
-              </div>
+              <CardContent className="p-6 sm:p-7 space-y-4">
+                <div className="flex items-center justify-between">
+                  <div className="w-11 h-11 rounded-xl bg-gradient-to-br from-[#1D4ED8] to-[#2563EB] text-white flex items-center justify-center shadow-lg shadow-blue-900/40 group-hover:scale-105 transition-transform">
+                    <Building2 className="w-5 h-5 text-amber-300" />
+                  </div>
+                  <Badge className="bg-emerald-500/20 text-emerald-300 border-emerald-400/40 text-[10px] font-bold uppercase tracking-wider">
+                    Automação Total
+                  </Badge>
+                </div>
 
-              <div className="space-y-2 pt-2 border-t border-white/10 text-xs text-blue-200">
-                <div className="flex items-center gap-2">
-                  <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
-                  <span>Pesagem eletrônica de agregados e cimento</span>
+                <div>
+                  <h3 className="text-xl font-black text-white group-hover:text-amber-300 transition-colors">
+                    Central de Dosagem
+                  </h3>
+                  <p className="text-xs text-blue-100/90 mt-2 leading-relaxed">
+                    Silos de cimento de alta capacidade e balanças automatizadas. Cada metro cúbico
+                    de concreto usinado segue rigorosamente as normas ABNT NBR 7212 e NBR 8953.
+                  </p>
                 </div>
-                <div className="flex items-center gap-2">
-                  <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
-                  <span>Aditivos plastificantes e retardadores dosados</span>
+
+                <div className="space-y-1.5 pt-2 border-t border-white/10 text-xs text-blue-200">
+                  <div className="flex items-center gap-2">
+                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                    <span>Pesagem eletrônica de agregados e cimento</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                    <span>Aditivos plastificantes e retardadores dosados</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                    <span>Estrutura física própria em 5 polos estratégicos</span>
+                  </div>
                 </div>
-                <div className="flex items-center gap-2">
-                  <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
-                  <span>Integração direta com a britagem da Pedreira</span>
-                </div>
-              </div>
-            </CardContent>
+              </CardContent>
+            </div>
 
             <div className="p-6 pt-0">
               <button
-                onClick={() => handlePedirOrcamento('Concreto Usinado Dosado em Central GC Mix')}
+                onClick={() =>
+                  handlePedirOrcamento(
+                    'Concreto Usinado Dosado em Central GC Mix (Monteiro/Região)',
+                  )
+                }
                 className="w-full inline-flex items-center justify-center gap-2 bg-white/10 hover:bg-white/20 text-white font-bold text-xs py-3 rounded-xl border border-white/20 transition-all cursor-pointer"
               >
                 <span>Consultar Traço Específico</span>
@@ -275,41 +496,83 @@ export function SecaoGcMixConcreto({ onSolicitarOrcamento }: SecaoGcMixConcretoP
 
           {/* Card 3: Agregados Próprios & Controle Tecnológico */}
           <Card className="bg-gradient-to-br from-[#0F284E] via-[#0A1F3B] to-[#0A1933] border-blue-400/30 text-white rounded-3xl overflow-hidden shadow-2xl hover:border-blue-400/60 transition-all group flex flex-col justify-between">
-            <CardContent className="p-7 sm:p-8 space-y-5">
-              <div className="flex items-center justify-between">
-                <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-[#1D4ED8] to-[#2563EB] text-white flex items-center justify-center shadow-lg shadow-blue-900/40 group-hover:scale-105 transition-transform">
-                  <ShieldCheck className="w-7 h-7 text-amber-300" />
+            <div>
+              {/* Foto Real de Agregados da Jazida/Britagem */}
+              <div
+                className="relative h-56 sm:h-64 overflow-hidden bg-slate-950 cursor-pointer"
+                onClick={() => {
+                  if (onExpandirFoto) {
+                    onExpandirFoto({
+                      src: FOTOS_ESTATICAS_PEDREIRA.patioDeBrita,
+                      titulo: 'Agregados Próprios da Pedreira Cordeiro',
+                      local: 'Pedreira Cordeiro • Patos — PB',
+                      descricao:
+                        'Brita 12 e pó de pedra calibrados originados do maciço granítico próprio da Pedreira Cordeiro, garantindo resistência mecânica e pureza ao concreto GC Mix.',
+                      etiqueta: 'Agregados da Pedreira Cordeiro',
+                    })
+                  }
+                }}
+              >
+                <img
+                  src={FOTOS_ESTATICAS_PEDREIRA.patioDeBrita}
+                  alt="Pátio de agregados da Pedreira Cordeiro com britas para o concreto GC Mix"
+                  className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700"
+                  loading="lazy"
+                />
+                <div className="absolute inset-0 bg-gradient-to-t from-[#0A1F3B] via-transparent to-black/30 pointer-events-none" />
+
+                <div className="absolute top-3 left-3">
+                  <span className="bg-amber-400 text-slate-950 text-[10px] font-black px-2.5 py-1 rounded-md shadow-md">
+                    Agregados Próprios
+                  </span>
                 </div>
-                <Badge className="bg-amber-400/20 text-amber-300 border-amber-400/40 text-[11px] font-bold uppercase tracking-wider">
-                  Qualidade Garantida
-                </Badge>
+
+                <div className="absolute bottom-3 left-3 text-[11px] font-bold text-amber-300 flex items-center gap-1 bg-black/60 backdrop-blur-xs px-2.5 py-1 rounded-md border border-white/10">
+                  <ShieldCheck className="w-3 h-3 text-amber-400" />
+                  <span>Pedreira Cordeiro • Brita 12 e Pó</span>
+                </div>
+
+                <div className="absolute bottom-3 right-3 bg-black/70 text-white p-2 rounded-full group-hover:bg-amber-400 group-hover:text-slate-950 transition-colors shadow-md">
+                  <Maximize2 className="w-3.5 h-3.5" />
+                </div>
               </div>
 
-              <div>
-                <h3 className="text-2xl font-black text-white group-hover:text-amber-300 transition-colors">
-                  Controle Tecnológico
-                </h3>
-                <p className="text-sm text-blue-100/90 mt-2.5 leading-relaxed">
-                  Usamos Brita 12 e pó de pedra originados diretamente da nossa Pedreira Cordeiro,
-                  com granulometria estável e ensaios periódicos de resistência à compressão axial.
-                </p>
-              </div>
+              <CardContent className="p-6 sm:p-7 space-y-4">
+                <div className="flex items-center justify-between">
+                  <div className="w-11 h-11 rounded-xl bg-gradient-to-br from-[#1D4ED8] to-[#2563EB] text-white flex items-center justify-center shadow-lg shadow-blue-900/40 group-hover:scale-105 transition-transform">
+                    <ShieldCheck className="w-5 h-5 text-amber-300" />
+                  </div>
+                  <Badge className="bg-amber-400/20 text-amber-300 border-amber-400/40 text-[10px] font-bold uppercase tracking-wider">
+                    Qualidade Garantida
+                  </Badge>
+                </div>
 
-              <div className="space-y-2 pt-2 border-t border-white/10 text-xs text-blue-200">
-                <div className="flex items-center gap-2">
-                  <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
-                  <span>Rastreabilidade de cada carga enviada</span>
+                <div>
+                  <h3 className="text-xl font-black text-white group-hover:text-amber-300 transition-colors">
+                    Controle Tecnológico
+                  </h3>
+                  <p className="text-xs text-blue-100/90 mt-2 leading-relaxed">
+                    Usamos Brita 12 e pó de pedra originados diretamente da nossa Pedreira Cordeiro,
+                    com ensaios periódicos de resistência à compressão axial (FCK) e Slump Test.
+                  </p>
                 </div>
-                <div className="flex items-center gap-2">
-                  <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
-                  <span>Moldagem de corpos de prova (Slump Test)</span>
+
+                <div className="space-y-1.5 pt-2 border-t border-white/10 text-xs text-blue-200">
+                  <div className="flex items-center gap-2">
+                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                    <span>Rastreabilidade de cada carga enviada</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                    <span>Moldagem de corpos de prova (Slump Test)</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                    <span>Sem desperdício de areia, brita ou cimento na obra</span>
+                  </div>
                 </div>
-                <div className="flex items-center gap-2">
-                  <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
-                  <span>Sem desperdício de areia, brita ou cimento na obra</span>
-                </div>
-              </div>
-            </CardContent>
+              </CardContent>
+            </div>
 
             <div className="p-6 pt-0">
               <a

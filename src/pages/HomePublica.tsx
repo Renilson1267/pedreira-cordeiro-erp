@@ -121,6 +121,33 @@ const FOTOS_REAIS = {
       'Conjunto móvel sobre esteiras com peneiras vibratórias e correias levantadas, pilhas de agregados britados e equipe técnica em campo. Alta produtividade direto na frente de lavra.',
     etiqueta: 'C M Construções — Lokotrack',
   },
+  monteiroBetoneirasCarregando: {
+    src: FOTOS_ESTATICAS_PEDREIRA.monteiroBetoneirasCarregando,
+    fallback: INSTITUCIONAL_CONFIG.fotosReais.monteiroBetoneirasCarregando,
+    titulo: 'Betoneiras Carregando na Central — Filial Monteiro',
+    local: 'Central de Concreto GC Mix • Filial Monteiro — PB',
+    descricao:
+      'Caminhões betoneira azul GC Mix (VW Constellation e Liebherr) com 0800-083-1200 na cuba, posicionados sob a torre de carregamento automatizada com operador e pátio em plena atividade.',
+    etiqueta: 'GC Mix • Filial Monteiro',
+  },
+  monteiroFachadaSilo: {
+    src: FOTOS_ESTATICAS_PEDREIRA.monteiroFachadaSilo,
+    fallback: INSTITUCIONAL_CONFIG.fotosReais.monteiroFachadaSilo,
+    titulo: 'Fachada e Silo da Filial Monteiro',
+    local: 'Central de Concreto GC Mix • Filial Monteiro — PB',
+    descricao:
+      'Fachada da filial Monteiro com silo vertical GC Mix identificado com 0800-083-1200, prédio administrativo branco de dois andares com faixa azul e muro perimetral sob céu aberto.',
+    etiqueta: 'Silo & Fachada • Filial Monteiro',
+  },
+  monteiroAerea: {
+    src: FOTOS_ESTATICAS_PEDREIRA.monteiroAerea,
+    fallback: INSTITUCIONAL_CONFIG.fotosReais.monteiroAerea,
+    titulo: 'Vista Aérea da Central GC Mix em Monteiro',
+    local: 'Rodovia de Acesso • Filial Monteiro — PB',
+    descricao:
+      'Vista aérea de drone mostrando a central completa de concreto: silo vertical GC Mix, prédios operacionais, pátio de agregados e duas betoneiras azul GC Mix na frente junto à rodovia asfaltada e vegetação de caatinga.',
+    etiqueta: 'Vista Aérea • Filial Monteiro',
+  },
 }
 
 export default function HomePublica() {
@@ -797,6 +824,7 @@ export default function HomePublica() {
             ========================================================= */}
         <SecaoGcMixConcreto
           onSolicitarOrcamento={(detalhe) => rolarParaSecao('orcamento', detalhe)}
+          onExpandirFoto={(foto) => setFotoAtiva(foto)}
         />
 
         {/* SEÇÃO O QUE FAZEMOS / SERVIÇOS (Baseada em tipografia, cartões e ícones) */}
@@ -1846,17 +1874,73 @@ export default function HomePublica() {
                 Nossa Infraestrutura Real
               </Badge>
               <h2 className="text-3xl sm:text-4xl font-black text-[#0A2540] tracking-tight">
-                Operação, Jazida e Britagem em Campo
+                Operação, Jazida e Centrais de Concreto em Campo
               </h2>
               <p className="mt-3 text-base sm:text-lg text-slate-600 leading-relaxed">
-                Registros autênticos do Grupo GC do Amaral: da extração na jazida de granito aos
-                pátios de classificação, esteiras de britagem contínua e o britador móvel Lokotrack
-                operando em campo.
+                Registros autênticos do Grupo GC do Amaral: da extração e britagem na matriz em
+                Patos-PB às centrais automatizadas de concreto usinado GC Mix (incluindo a Filial
+                Monteiro) e o britador móvel Lokotrack operando em campo.
               </p>
             </div>
 
-            {/* Grid Completo com os 7 Registros Fotográficos Autênticos */}
+            {/* Grid Completo com os Registros Fotográficos Autênticos */}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+              {/* Card Destaque 1: Betoneiras Carregando na Filial Monteiro */}
+              <div
+                onClick={() => setFotoAtiva(FOTOS_REAIS.monteiroBetoneirasCarregando)}
+                className="group rounded-3xl overflow-hidden border-2 border-blue-500/80 bg-gradient-to-b from-[#0F284E] to-[#0A1A3B] text-white shadow-lg hover:shadow-2xl transition-all duration-300 cursor-pointer flex flex-col justify-between md:col-span-2 lg:col-span-3"
+              >
+                <div className="grid grid-cols-1 lg:grid-cols-12 items-center">
+                  <div className="lg:col-span-7 relative h-72 sm:h-96 overflow-hidden bg-slate-950">
+                    <img
+                      src={FOTOS_REAIS.monteiroBetoneirasCarregando.src}
+                      onError={(e) => {
+                        const target = e.currentTarget
+                        if (
+                          FOTOS_REAIS.monteiroBetoneirasCarregando.fallback &&
+                          target.src !== FOTOS_REAIS.monteiroBetoneirasCarregando.fallback
+                        ) {
+                          target.src = FOTOS_REAIS.monteiroBetoneirasCarregando.fallback
+                        }
+                      }}
+                      alt={FOTOS_REAIS.monteiroBetoneirasCarregando.titulo}
+                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700"
+                      loading="lazy"
+                    />
+                    <div className="absolute top-4 left-4 flex items-center gap-2">
+                      <span className="bg-amber-400 text-slate-950 text-xs font-black px-3 py-1 rounded-md shadow-md">
+                        {FOTOS_REAIS.monteiroBetoneirasCarregando.etiqueta}
+                      </span>
+                      <span className="bg-[#0A2540]/90 text-blue-200 text-xs font-bold px-2.5 py-1 rounded-md border border-blue-400/40">
+                        Torre de Carregamento & Betoneiras
+                      </span>
+                    </div>
+                    <div className="absolute bottom-4 right-4 bg-black/70 text-white p-2.5 rounded-full group-hover:bg-amber-400 group-hover:text-slate-950 transition-colors shadow-md">
+                      <Maximize2 className="w-4 h-4" />
+                    </div>
+                  </div>
+                  <div className="lg:col-span-5 p-6 sm:p-8 space-y-4">
+                    <div className="text-xs font-bold text-amber-300 flex items-center gap-1.5">
+                      <MapPin className="w-4 h-4 text-amber-400" />
+                      {FOTOS_REAIS.monteiroBetoneirasCarregando.local}
+                    </div>
+                    <h3 className="text-2xl font-black text-white">
+                      {FOTOS_REAIS.monteiroBetoneirasCarregando.titulo}
+                    </h3>
+                    <p className="text-sm text-blue-100 leading-relaxed">
+                      {FOTOS_REAIS.monteiroBetoneirasCarregando.descricao}
+                    </p>
+                    <div className="pt-2 flex items-center justify-between text-xs font-bold text-amber-300 border-t border-white/10">
+                      <span className="flex items-center gap-1">
+                        <Sparkles className="w-3.5 h-3.5" />
+                        Clique para ampliar em tela cheia
+                      </span>
+                      <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
+                    </div>
+                  </div>
+                </div>
+              </div>
+
               {/* Card Destaque: Britador Móvel Lokotrack em Operação Real */}
               <div
                 onClick={() => setFotoAtiva(FOTOS_REAIS.lokotrackMovel)}
@@ -2211,6 +2295,106 @@ export default function HomePublica() {
                   <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
                 </div>
               </div>
+
+              {/* Card 7: Vista Aérea da Central GC Mix em Monteiro (Nova foto real) */}
+              <div
+                onClick={() => setFotoAtiva(FOTOS_REAIS.monteiroAerea)}
+                className="group rounded-3xl overflow-hidden border border-blue-300 bg-white shadow-md hover:shadow-2xl transition-all duration-300 cursor-pointer flex flex-col justify-between"
+              >
+                <div>
+                  <div className="relative h-64 overflow-hidden bg-slate-900">
+                    <img
+                      src={FOTOS_REAIS.monteiroAerea.src}
+                      onError={(e) => {
+                        const target = e.currentTarget
+                        if (
+                          FOTOS_REAIS.monteiroAerea.fallback &&
+                          target.src !== FOTOS_REAIS.monteiroAerea.fallback
+                        ) {
+                          target.src = FOTOS_REAIS.monteiroAerea.fallback
+                        }
+                      }}
+                      alt={FOTOS_REAIS.monteiroAerea.titulo}
+                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700"
+                      loading="lazy"
+                    />
+                    <div className="absolute top-3 left-3">
+                      <span className="bg-amber-400 text-slate-950 text-[10px] font-black px-2.5 py-1 rounded-md shadow-md">
+                        {FOTOS_REAIS.monteiroAerea.etiqueta}
+                      </span>
+                    </div>
+                    <div className="absolute bottom-3 right-3 bg-black/60 text-white p-2 rounded-full group-hover:bg-[#1D4ED8] transition-colors">
+                      <Maximize2 className="w-3.5 h-3.5" />
+                    </div>
+                  </div>
+                  <div className="p-6 space-y-2">
+                    <div className="text-xs font-bold text-[#1D4ED8] flex items-center gap-1">
+                      <MapPin className="w-3.5 h-3.5" />
+                      {FOTOS_REAIS.monteiroAerea.local}
+                    </div>
+                    <h3 className="text-xl font-black text-[#0A2540]">
+                      {FOTOS_REAIS.monteiroAerea.titulo}
+                    </h3>
+                    <p className="text-xs text-slate-600 leading-relaxed">
+                      {FOTOS_REAIS.monteiroAerea.descricao}
+                    </p>
+                  </div>
+                </div>
+                <div className="p-6 pt-0 border-t border-slate-100 flex items-center justify-between text-xs font-bold text-[#1D4ED8]">
+                  <span>Clique para ampliar foto</span>
+                  <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
+                </div>
+              </div>
+
+              {/* Card 8: Fachada e Silo da Filial Monteiro (Nova foto real) */}
+              <div
+                onClick={() => setFotoAtiva(FOTOS_REAIS.monteiroFachadaSilo)}
+                className="group rounded-3xl overflow-hidden border border-blue-300 bg-white shadow-md hover:shadow-2xl transition-all duration-300 cursor-pointer flex flex-col justify-between"
+              >
+                <div>
+                  <div className="relative h-64 overflow-hidden bg-slate-950">
+                    <img
+                      src={FOTOS_REAIS.monteiroFachadaSilo.src}
+                      onError={(e) => {
+                        const target = e.currentTarget
+                        if (
+                          FOTOS_REAIS.monteiroFachadaSilo.fallback &&
+                          target.src !== FOTOS_REAIS.monteiroFachadaSilo.fallback
+                        ) {
+                          target.src = FOTOS_REAIS.monteiroFachadaSilo.fallback
+                        }
+                      }}
+                      alt={FOTOS_REAIS.monteiroFachadaSilo.titulo}
+                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700"
+                      loading="lazy"
+                    />
+                    <div className="absolute top-3 left-3">
+                      <span className="bg-amber-400 text-slate-950 text-[10px] font-black px-2.5 py-1 rounded-md shadow-md">
+                        {FOTOS_REAIS.monteiroFachadaSilo.etiqueta}
+                      </span>
+                    </div>
+                    <div className="absolute bottom-3 right-3 bg-black/60 text-white p-2 rounded-full group-hover:bg-[#1D4ED8] transition-colors">
+                      <Maximize2 className="w-3.5 h-3.5" />
+                    </div>
+                  </div>
+                  <div className="p-6 space-y-2">
+                    <div className="text-xs font-bold text-[#1D4ED8] flex items-center gap-1">
+                      <Building2 className="w-3.5 h-3.5" />
+                      {FOTOS_REAIS.monteiroFachadaSilo.local}
+                    </div>
+                    <h3 className="text-xl font-black text-[#0A2540]">
+                      {FOTOS_REAIS.monteiroFachadaSilo.titulo}
+                    </h3>
+                    <p className="text-xs text-slate-600 leading-relaxed">
+                      {FOTOS_REAIS.monteiroFachadaSilo.descricao}
+                    </p>
+                  </div>
+                </div>
+                <div className="p-6 pt-0 border-t border-slate-100 flex items-center justify-between text-xs font-bold text-[#1D4ED8]">
+                  <span>Clique para ampliar foto</span>
+                  <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
+                </div>
+              </div>
             </div>
 
             {/* Aviso informativo de transparência */}
@@ -2218,8 +2402,9 @@ export default function HomePublica() {
               <div className="flex items-center gap-2">
                 <ShieldCheck className="w-4 h-4 text-[#1D4ED8] shrink-0" />
                 <span>
-                  Fotos 100% autênticas da matriz em Patos — PB. Operação integrada de britagem e
-                  concreto usinado para obras civis em todo o Sertão.
+                  Fotos 100% autênticas das instalações do Grupo GC: matriz da Pedreira Cordeiro em
+                  Patos-PB, central de concreto GC Mix da Filial Monteiro-PB e britador Lokotrack em
+                  campo. Operação integrada para todo o Sertão.
                 </span>
               </div>
               <button

@@ -117,6 +117,9 @@ export const INSTITUCIONAL_CONFIG = {
     pedreiraBritador:
       '/api/files/pbc_3973264007/sivayu6qjcjq3f9/po_de_pedra_britador_997e5_6dgyj8eh6j.jpeg?v=1',
     lokotrackMovel: '/site-img/lokotrack-movel-cm.jpeg',
+    monteiroAerea: '/site-img/monteiro-aerea.jpeg',
+    monteiroBetoneirasCarregando: '/site-img/monteiro-betoneiras-carregando.jpeg',
+    monteiroFachadaSilo: '/site-img/monteiro-fachada-silo.jpeg',
   },
 } as const
 

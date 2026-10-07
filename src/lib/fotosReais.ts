@@ -2,12 +2,18 @@ import fotoVistaDeCima from '@/assets/vista-de-cima-1f04f.jpeg'
 import fotoPatioDeBrita from '@/assets/patio-de-brita-0a7f9.jpeg'
 import fotoPoDePedra from '@/assets/po-de-pedra-britador-e5885.jpeg'
 import fotoLokotrackMovel from '@/assets/whatsapp-image-2026-09-30-at-10.49.19-89367.jpeg'
+import fotoMonteiroAerea from '@/assets/whatsapp-image-2026-10-06-at-22.25.42-09c8c.jpeg'
+import fotoMonteiroBetoneirasCarregando from '@/assets/whatsapp-image-2026-10-06-at-22.25.41-c4e26.jpeg'
+import fotoMonteiroFachadaSilo from '@/assets/whatsapp-image-2026-10-06-at-22.25.08-1-e6cbe.jpeg'
 
 export const FOTOS_ESTATICAS_PEDREIRA = {
   vistaDeCima: fotoVistaDeCima,
   patioDeBrita: fotoPatioDeBrita,
   poDePedra: fotoPoDePedra,
   lokotrackMovel: fotoLokotrackMovel,
+  monteiroAerea: fotoMonteiroAerea,
+  monteiroBetoneirasCarregando: fotoMonteiroBetoneirasCarregando,
+  monteiroFachadaSilo: fotoMonteiroFachadaSilo,
 } as const
 
 export function getFotoRealUrl(chaveOuCaminho: string): string {
@@ -21,6 +27,12 @@ export function getFotoRealUrl(chaveOuCaminho: string): string {
     'pilha-po-de-pedra': fotoPoDePedra,
     'lokotrack-movel': fotoLokotrackMovel,
     'cm-lokotrack-operacao': fotoLokotrackMovel,
+    'monteiro-aerea': fotoMonteiroAerea,
+    'monteiro-betoneiras-carregando': fotoMonteiroBetoneirasCarregando,
+    'monteiro-fachada-silo': fotoMonteiroFachadaSilo,
+    '/site-img/monteiro-aerea.jpeg': fotoMonteiroAerea,
+    '/site-img/monteiro-betoneiras-carregando.jpeg': fotoMonteiroBetoneirasCarregando,
+    '/site-img/monteiro-fachada-silo.jpeg': fotoMonteiroFachadaSilo,
     '/site-img/vista-de-cima-25461.jpeg': fotoVistaDeCima,
     '/site-img/patio-de-brita-2aa99.jpeg': fotoPatioDeBrita,
     '/site-img/po-de-pedra-britador-997e5.jpeg': fotoPoDePedra,
