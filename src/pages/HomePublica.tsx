@@ -1,5 +1,4 @@
 import React, { useState } from 'react'
-import { Link } from 'react-router-dom'
 import {
   INSTITUCIONAL_CONFIG,
   PRODUTOS_PEDREIRA,
@@ -316,13 +315,17 @@ export default function HomePublica() {
               <ExternalLink className="w-3 h-3 text-amber-300" />
             </a>
             <span className="hidden sm:inline text-slate-700">|</span>
-            <Link
-              to="/login"
+            <a
+              href={INSTITUCIONAL_CONFIG.painelColaboradorUrl}
+              target="_blank"
+              rel="noopener noreferrer"
               className="inline-flex items-center gap-1.5 font-semibold text-[#60A5FA] hover:text-white transition-colors bg-[#1E3A8A]/50 hover:bg-[#1E3A8A] px-2.5 py-1 rounded-md border border-[#2563EB]/40"
+              title="Acesso Colaborador (Painel ERP Pedreira Cordeiro)"
             >
               <LogIn className="w-3 h-3" />
-              Sou colaborador
-            </Link>
+              <span>Sou colaborador</span>
+              <ExternalLink className="w-3 h-3 text-amber-300" />
+            </a>
           </div>
         </div>
       </div>
@@ -423,13 +426,17 @@ export default function HomePublica() {
               <ExternalLink className="w-3.5 h-3.5 text-amber-300" />
             </a>
 
-            <Link
-              to="/login"
+            <a
+              href={INSTITUCIONAL_CONFIG.painelColaboradorUrl}
+              target="_blank"
+              rel="noopener noreferrer"
               className="hidden sm:inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-2 rounded-xl text-slate-700 hover:text-[#1D4ED8] hover:bg-blue-50 transition-colors border border-transparent hover:border-blue-200"
+              title="Acesso Colaborador (Painel ERP)"
             >
               <LogIn className="w-4 h-4 text-[#1D4ED8]" />
-              Área Restrita
-            </Link>
+              <span>Área Restrita</span>
+              <ExternalLink className="w-3 h-3 text-slate-400" />
+            </a>
 
             <Button
               onClick={() => rolarParaSecao('orcamento')}
@@ -561,14 +568,18 @@ export default function HomePublica() {
               </a>
 
               <div className="flex items-center justify-between pt-1">
-                <Link
-                  to="/login"
+                <a
+                  href={INSTITUCIONAL_CONFIG.painelColaboradorUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
                   onClick={() => setMenuMobileAberto(false)}
                   className="inline-flex items-center gap-1.5 text-xs font-bold text-slate-700 hover:text-[#1D4ED8]"
+                  title="Acesso Colaborador (Painel ERP)"
                 >
                   <LogIn className="w-3.5 h-3.5 text-[#1D4ED8]" />
-                  Área Restrita (ERP)
-                </Link>
+                  <span>Área Restrita (ERP)</span>
+                  <ExternalLink className="w-3 h-3 text-slate-400" />
+                </a>
 
                 <a
                   href={INSTITUCIONAL_CONFIG.telefoneTelLink}
@@ -3179,13 +3190,17 @@ export default function HomePublica() {
                   </span>
                 </a>
 
-                <Link
-                  to="/login"
+                <a
+                  href={INSTITUCIONAL_CONFIG.painelColaboradorUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
                   className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-gradient-to-r from-[#1E3A8A] to-[#172554] hover:from-[#172554] hover:to-[#0F172A] text-white text-xs font-bold transition-all shadow-md border border-blue-400/30"
+                  title="Entrar no Painel do ERP Pedreira Cordeiro"
                 >
                   <LogIn className="w-4 h-4 text-amber-300" />
                   <span>Entrar no Sistema (ERP Pedreira Cordeiro)</span>
-                </Link>
+                  <ExternalLink className="w-3.5 h-3.5 text-amber-300 ml-auto" />
+                </a>
               </div>
 
               <div className="pt-2 flex flex-col gap-1 text-xs text-slate-400">
@@ -3233,12 +3248,16 @@ export default function HomePublica() {
                 <span>Acessar Sistema (Gestão Heavy)</span>
                 <ExternalLink className="w-3 h-3 text-amber-300" />
               </a>
-              <Link
-                to="/login"
-                className="hover:text-[#60A5FA] transition-colors text-slate-300 font-semibold"
+              <a
+                href={INSTITUCIONAL_CONFIG.painelColaboradorUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="hover:text-[#60A5FA] transition-colors text-slate-300 font-semibold inline-flex items-center gap-1"
+                title="Área do Colaborador (Painel ERP)"
               >
-                Área do Colaborador
-              </Link>
+                <span>Área do Colaborador</span>
+                <ExternalLink className="w-3 h-3 text-amber-300" />
+              </a>
             </div>
           </div>
         </div>

@@ -40,6 +40,9 @@ export const INSTITUCIONAL_CONFIG = {
   // Rastreador da Frota de Betoneiras (SystemsAtx Tracking)
   rastreadorBetoneirasUrl: 'https://tracking.systemsatx.com.br/',
 
+  // Painel do Colaborador (ERP Pedreira Cordeiro)
+  painelColaboradorUrl: 'https://pixel-implementation-clone-8c7b5--preview.goskip.app/painel',
+
   // Atendimento Comercial e Telefone / WhatsApp
   telefoneNumero: '08000831200',
   telefoneFormatado: '0800 083 1200',
