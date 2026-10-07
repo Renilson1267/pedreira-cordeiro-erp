@@ -121,6 +121,7 @@ export const INSTITUCIONAL_CONFIG = {
     monteiroBetoneirasCarregando: '/site-img/monteiro-betoneiras-carregando.jpeg',
     monteiroFachadaSilo: '/site-img/monteiro-fachada-silo.jpeg',
     saoJoseDoEgitoSiloPatio: '/site-img/sao-jose-do-egito-silo-patio.jpeg',
+    patosDesfileBetoneira: '/site-img/galeria-betoneira-5.jpg',
   },
 } as const
 

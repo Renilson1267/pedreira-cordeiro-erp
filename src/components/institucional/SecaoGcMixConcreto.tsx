@@ -130,13 +130,11 @@ export function SecaoGcMixConcreto({
           {/* CTAs rápidos no topo */}
           <div className="pt-2 flex flex-wrap items-center justify-center gap-3 sm:gap-4">
             <a
-              href={INSTITUCIONAL_CONFIG.whatsappUrlConcreto}
-              target="_blank"
-              rel="noopener noreferrer"
+              href={INSTITUCIONAL_CONFIG.telefoneTelLink}
               className="inline-flex items-center justify-center gap-2.5 bg-gradient-to-r from-emerald-500 to-emerald-600 hover:from-emerald-400 hover:to-emerald-500 text-white font-black text-sm px-6 py-3.5 rounded-xl shadow-lg shadow-emerald-950/40 transition-all hover:scale-[1.02] cursor-pointer"
             >
-              <MessageCircle className="w-5 h-5 text-white" />
-              <span>Pedir Cotação no WhatsApp</span>
+              <Phone className="w-5 h-5 text-white" />
+              <span>Ligar Grátis {INSTITUCIONAL_CONFIG.telefoneFormatado}</span>
             </a>
 
             <button
@@ -152,7 +150,7 @@ export function SecaoGcMixConcreto({
               className="inline-flex items-center justify-center gap-2 bg-white/10 hover:bg-white/15 text-blue-100 hover:text-white font-semibold text-sm px-5 py-3.5 rounded-xl border border-white/20 transition-all cursor-pointer"
             >
               <Phone className="w-4 h-4 text-amber-300" />
-              <span>0800 083 1200</span>
+              <span>{INSTITUCIONAL_CONFIG.telefoneFormatado}</span>
             </a>
           </div>
         </div>
@@ -253,13 +251,11 @@ export function SecaoGcMixConcreto({
 
               <div className="pt-4 border-t border-white/10 flex flex-col sm:flex-row gap-3">
                 <a
-                  href={INSTITUCIONAL_CONFIG.whatsappUrlConcreto}
-                  target="_blank"
-                  rel="noopener noreferrer"
+                  href={INSTITUCIONAL_CONFIG.telefoneTelLink}
                   className="flex-1 inline-flex items-center justify-center gap-2 bg-gradient-to-r from-emerald-500 to-emerald-600 hover:from-emerald-400 hover:to-emerald-500 text-white font-bold text-xs py-3 rounded-xl shadow-md transition-all cursor-pointer"
                 >
-                  <MessageCircle className="w-4 h-4" />
-                  <span>Programar Carga em Monteiro</span>
+                  <Phone className="w-4 h-4" />
+                  <span>Ligar 0800 083 1200 — Monteiro</span>
                 </a>
                 <button
                   onClick={() =>
@@ -276,48 +272,57 @@ export function SecaoGcMixConcreto({
         </div>
 
         {/* =========================================================
-            3 PILARES COM FOTOS REAIS:
-            - Card 1: Frota de Betoneiras (Foto 1: Vista Aérea Filial Monteiro)
-            - Card 2: Central de Dosagem (Foto 3: Fachada e Silo Filial Monteiro)
+            PILARES COM FOTOS REAIS:
+            - Card 1: Frota de Betoneiras no Desfile Cívico — Caicó-RN (Foto Real)
+            - Card 2: Central de Dosagem (Fachada e Silo Filial Monteiro)
             - Card 3: Agregados Próprios & Controle Tecnológico
             ========================================================= */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 lg:gap-8">
-          {/* Card 1: Frota de Caminhões Betoneira — Foto Aérea de Monteiro */}
+          {/* Card 1: Frota de Caminhões Betoneira — Foto Real Desfile Cívico Caicó-RN */}
           <Card className="bg-gradient-to-br from-[#0F284E] via-[#0A1F3B] to-[#0A1933] border-blue-400/30 text-white rounded-3xl overflow-hidden shadow-2xl hover:border-blue-400/60 transition-all group flex flex-col justify-between">
             <div>
-              {/* Foto 1 Real: Vista Aérea da Filial Monteiro com Betoneiras */}
+              {/* Foto Real: Betoneira GC Mix no Desfile Cívico — Caicó-RN */}
               <div
                 className="relative h-56 sm:h-64 overflow-hidden bg-slate-950 cursor-pointer"
                 onClick={() => {
                   if (onExpandirFoto) {
                     onExpandirFoto({
-                      src: FOTOS_ESTATICAS_PEDREIRA.monteiroAerea,
-                      titulo: 'Vista Aérea da Central GC Mix — Filial Monteiro',
-                      local: 'Rodovia / Filial Monteiro — PB',
+                      src: FOTOS_ESTATICAS_PEDREIRA.patosDesfileBetoneira,
+                      titulo: 'Betoneira GC Mix no Desfile Cívico — Caicó-RN',
+                      local: 'Caicó, RN',
                       descricao:
-                        'Vista panorâmica de drone: silo vertical GC Mix, edifícios administrativos brancos com detalhes azuis, pátio de agregados e duas betoneiras azul GC Mix operando em primeiro plano junto à rodovia.',
-                      etiqueta: 'Visão Panorâmica Aérea',
+                        'VW Constellation azul GC Mix com 0800-083-1200 desfilando à noite em frente ao portal iluminado da cidade.',
+                      etiqueta: 'Foto Real • Desfile Caicó',
                     })
                   }
                 }}
               >
                 <img
-                  src={FOTOS_ESTATICAS_PEDREIRA.monteiroAerea}
-                  alt="Vista aérea da central de concreto GC Mix filial Monteiro com betoneiras e rodovia"
+                  src={FOTOS_ESTATICAS_PEDREIRA.patosDesfileBetoneira}
+                  alt="Betoneira GC Mix no Desfile Cívico em Caicó-RN com 0800-083-1200"
                   className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700"
                   loading="lazy"
+                  onError={(e) => {
+                    const target = e.currentTarget
+                    if (target.src !== FOTOS_ESTATICAS_PEDREIRA.monteiroAerea) {
+                      target.src = FOTOS_ESTATICAS_PEDREIRA.monteiroAerea
+                    }
+                  }}
                 />
                 <div className="absolute inset-0 bg-gradient-to-t from-[#0A1F3B] via-transparent to-black/30 pointer-events-none" />
 
-                <div className="absolute top-3 left-3">
+                <div className="absolute top-3 left-3 flex items-center gap-1.5 flex-wrap">
                   <span className="bg-amber-400 text-slate-950 text-[10px] font-black px-2.5 py-1 rounded-md shadow-md">
-                    Foto Real Aérea
+                    Foto Real Desfile
+                  </span>
+                  <span className="bg-[#0A2540]/90 text-blue-200 text-[10px] font-bold px-2 py-0.5 rounded border border-blue-400/30">
+                    Caicó — RN
                   </span>
                 </div>
 
                 <div className="absolute bottom-3 left-3 text-[11px] font-bold text-amber-300 flex items-center gap-1 bg-black/60 backdrop-blur-xs px-2.5 py-1 rounded-md border border-white/10">
                   <MapPin className="w-3 h-3 text-amber-400" />
-                  <span>Filial Monteiro • PB (Rodovia)</span>
+                  <span>Desfile Cívico • Caicó — RN</span>
                 </div>
 
                 <div className="absolute bottom-3 right-3 bg-black/70 text-white p-2 rounded-full group-hover:bg-amber-400 group-hover:text-slate-950 transition-colors shadow-md">
@@ -332,7 +337,7 @@ export function SecaoGcMixConcreto({
                   </div>
                   <div className="flex flex-col items-end gap-1.5">
                     <Badge className="bg-blue-500/20 text-[#60A5FA] border-blue-400/40 text-[10px] font-bold uppercase tracking-wider">
-                      Logística Ágil
+                      Frota Ativa
                     </Badge>
                     <a
                       href={INSTITUCIONAL_CONFIG.rastreadorBetoneirasUrl}
@@ -353,9 +358,9 @@ export function SecaoGcMixConcreto({
                     Frota de Betoneiras
                   </h3>
                   <p className="text-xs text-blue-100/90 mt-2 leading-relaxed">
-                    Caminhões betoneira modernos com tambores de alta capacidade e calhas
-                    articuladas para descarregamento direto na obra, mantendo a trabalhabilidade e o
-                    traço ideal.
+                    Caminhões betoneira VW Constellation modernos azul GC Mix com identificação 0800
+                    083 1200, tambores de alta capacidade e calhas articuladas para descarregamento
+                    preciso direto na sua obra.
                   </p>
                 </div>
 
@@ -370,7 +375,9 @@ export function SecaoGcMixConcreto({
                   </div>
                   <div className="flex items-center gap-2">
                     <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
-                    <span>Agitação contínua durante todo o trajeto</span>
+                    <span>
+                      Presença ativa nas cidades: Caicó, Patos, Monteiro, Egito e Santa Luzia
+                    </span>
                   </div>
                 </div>
               </CardContent>
@@ -576,13 +583,11 @@ export function SecaoGcMixConcreto({
 
             <div className="p-6 pt-0">
               <a
-                href={INSTITUCIONAL_CONFIG.whatsappUrlConcreto}
-                target="_blank"
-                rel="noopener noreferrer"
+                href={INSTITUCIONAL_CONFIG.telefoneTelLink}
                 className="w-full inline-flex items-center justify-center gap-2 bg-gradient-to-r from-amber-400 to-amber-500 hover:from-amber-300 hover:to-amber-400 text-slate-950 font-black text-xs py-3 rounded-xl shadow-md transition-all cursor-pointer"
               >
-                <MessageCircle className="w-4 h-4" />
-                <span>Falar com Técnico de Concreto</span>
+                <Phone className="w-4 h-4 text-slate-950" />
+                <span>Falar com Técnico: 0800 083 1200</span>
               </a>
             </div>
           </Card>
@@ -813,13 +818,11 @@ export function SecaoGcMixConcreto({
                   </div>
                   <div className="pt-2 flex flex-wrap items-center gap-3">
                     <a
-                      href={INSTITUCIONAL_CONFIG.whatsappUrlConcreto}
-                      target="_blank"
-                      rel="noopener noreferrer"
+                      href={INSTITUCIONAL_CONFIG.telefoneTelLink}
                       className="inline-flex items-center gap-2 bg-emerald-500 hover:bg-emerald-600 text-white font-bold px-4 py-2.5 rounded-xl transition-all shadow-md text-xs cursor-pointer"
                     >
-                      <MessageCircle className="w-4 h-4" />
-                      <span>Cotar Concreto em São José do Egito</span>
+                      <Phone className="w-4 h-4" />
+                      <span>Ligar 0800 083 1200 (São José do Egito)</span>
                     </a>
                     <button
                       onClick={() =>
@@ -906,13 +909,11 @@ export function SecaoGcMixConcreto({
                   </div>
                   <div className="pt-2 flex flex-wrap items-center gap-3">
                     <a
-                      href={INSTITUCIONAL_CONFIG.whatsappUrlConcreto}
-                      target="_blank"
-                      rel="noopener noreferrer"
+                      href={INSTITUCIONAL_CONFIG.telefoneTelLink}
                       className="inline-flex items-center gap-2 bg-emerald-500 hover:bg-emerald-600 text-white font-bold px-4 py-2.5 rounded-xl transition-all shadow-md text-xs cursor-pointer"
                     >
-                      <MessageCircle className="w-4 h-4" />
-                      <span>Cotar Concreto em Monteiro</span>
+                      <Phone className="w-4 h-4" />
+                      <span>Ligar 0800 083 1200 (Monteiro)</span>
                     </a>
                     <button
                       onClick={() =>
@@ -943,13 +944,11 @@ export function SecaoGcMixConcreto({
             </div>
 
             <a
-              href={INSTITUCIONAL_CONFIG.whatsappUrlConcreto}
-              target="_blank"
-              rel="noopener noreferrer"
+              href={INSTITUCIONAL_CONFIG.telefoneTelLink}
               className="inline-flex items-center gap-2 bg-emerald-500 hover:bg-emerald-600 text-white font-bold px-4 py-2.5 rounded-xl shrink-0 transition-colors shadow-sm"
             >
-              <MessageCircle className="w-4 h-4" />
-              <span>Consultar Raio de Entrega</span>
+              <Phone className="w-4 h-4" />
+              <span>Consultar Raio: 0800 083 1200</span>
             </a>
           </div>
         </div>
@@ -1055,22 +1054,20 @@ export function SecaoGcMixConcreto({
 
           <div className="flex flex-col sm:flex-row lg:flex-col gap-3 w-full lg:w-auto shrink-0">
             <a
-              href={INSTITUCIONAL_CONFIG.whatsappUrlConcreto}
-              target="_blank"
-              rel="noopener noreferrer"
+              href={INSTITUCIONAL_CONFIG.telefoneTelLink}
               className="inline-flex items-center justify-center gap-2 bg-amber-400 hover:bg-amber-300 text-slate-950 font-black text-sm px-6 py-4 rounded-xl shadow-lg shadow-amber-500/20 transition-all hover:scale-105 cursor-pointer text-center"
             >
-              <MessageCircle className="w-5 h-5 text-slate-950" />
-              <span>Pedir Orçamento Agora</span>
+              <Phone className="w-5 h-5 text-slate-950" />
+              <span>Ligar 0800 083 1200</span>
             </a>
 
-            <a
-              href={INSTITUCIONAL_CONFIG.telefoneTelLink}
+            <button
+              onClick={() => handlePedirOrcamento('Concreto Usinado GC Mix')}
               className="inline-flex items-center justify-center gap-2 bg-white/10 hover:bg-white/20 text-white font-bold text-xs px-5 py-3 rounded-xl border border-white/20 transition-all text-center cursor-pointer"
             >
-              <Phone className="w-4 h-4 text-amber-300" />
-              <span>Central: {INSTITUCIONAL_CONFIG.telefoneFormatado}</span>
-            </a>
+              <span>Pedir Orçamento (Formulário)</span>
+              <ArrowRight className="w-4 h-4 text-amber-300" />
+            </button>
           </div>
         </div>
       </div>

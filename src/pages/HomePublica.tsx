@@ -286,13 +286,11 @@ export default function HomePublica() {
 
           <div className="flex items-center gap-4">
             <a
-              href={INSTITUCIONAL_CONFIG.whatsappUrlConcreto}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="hidden sm:inline-flex items-center gap-1 font-semibold text-emerald-400 hover:text-emerald-300 transition-colors"
+              href={INSTITUCIONAL_CONFIG.telefoneTelLink}
+              className="hidden sm:inline-flex items-center gap-1 font-semibold text-amber-300 hover:text-amber-200 transition-colors"
             >
-              <MessageCircle className="w-3.5 h-3.5" />
-              WhatsApp: {INSTITUCIONAL_CONFIG.whatsappNumeroFormatado}
+              <Phone className="w-3.5 h-3.5" />
+              0800: {INSTITUCIONAL_CONFIG.telefoneFormatado}
             </a>
             <span className="hidden sm:inline text-slate-700">|</span>
             <a
@@ -573,13 +571,11 @@ export default function HomePublica() {
                 </Link>
 
                 <a
-                  href={INSTITUCIONAL_CONFIG.whatsappUrlConcreto}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="inline-flex items-center gap-1.5 text-xs font-bold text-emerald-600"
+                  href={INSTITUCIONAL_CONFIG.telefoneTelLink}
+                  className="inline-flex items-center gap-1.5 text-xs font-bold text-[#1D4ED8]"
                 >
-                  <MessageCircle className="w-3.5 h-3.5" />
-                  WhatsApp Comercial
+                  <Phone className="w-3.5 h-3.5" />
+                  Ligar {INSTITUCIONAL_CONFIG.telefoneFormatado}
                 </a>
               </div>
             </div>
@@ -642,15 +638,13 @@ export default function HomePublica() {
                     Ligar: {INSTITUCIONAL_CONFIG.telefoneFormatado}
                   </a>
 
-                  <a
-                    href={INSTITUCIONAL_CONFIG.whatsappUrlConcreto}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="w-full sm:w-auto inline-flex items-center justify-center gap-2 bg-[#2563EB] hover:bg-[#1D4ED8] text-white font-bold text-base px-6 py-4 rounded-xl shadow-lg shadow-blue-600/30 transition-all hover:-translate-y-0.5 border border-blue-400/40"
+                  <button
+                    onClick={() => rolarParaSecao('orcamento')}
+                    className="w-full sm:w-auto inline-flex items-center justify-center gap-2 bg-[#2563EB] hover:bg-[#1D4ED8] text-white font-bold text-base px-6 py-4 rounded-xl shadow-lg shadow-blue-600/30 transition-all hover:-translate-y-0.5 border border-blue-400/40 cursor-pointer"
                   >
-                    <MessageCircle className="w-5 h-5 text-emerald-300" />
-                    Chamar no WhatsApp
-                  </a>
+                    <span>Pedir Orçamento</span>
+                    <ArrowRight className="w-5 h-5 text-blue-200" />
+                  </button>
 
                   <button
                     onClick={() => rolarParaSecao('produtos')}
@@ -816,12 +810,10 @@ export default function HomePublica() {
                 Conhecer o Lokotrack →
               </a>
               <a
-                href={INSTITUCIONAL_CONFIG.whatsappUrlLokotrack}
-                target="_blank"
-                rel="noopener noreferrer"
+                href={INSTITUCIONAL_CONFIG.telefoneTelLink}
                 className="w-full md:w-auto text-center px-4 py-2.5 bg-amber-400 hover:bg-amber-300 text-slate-950 font-black text-xs rounded-xl shadow-xs transition-colors shrink-0"
               >
-                Orçamento Lokotrack
+                Ligar 0800 083 1200
               </a>
             </div>
           </div>
@@ -930,21 +922,19 @@ export default function HomePublica() {
                     obra.
                   </p>
                   <div className="pt-2 text-xs text-blue-200 space-y-1">
-                    <div>✓ Atendimento pelo 0800 083 1200</div>
-                    <div>✓ WhatsApp direto com consultores</div>
-                    <div>✓ 5 unidades para entrega rápida</div>
+                    <div>✓ Atendimento gratuito pelo 0800 083 1200</div>
+                    <div>✓ Plantão comercial em 5 unidades</div>
+                    <div>✓ Frota rastreada e entrega rápida</div>
                   </div>
                 </div>
 
                 <div className="pt-6">
                   <a
-                    href={INSTITUCIONAL_CONFIG.whatsappUrlConcreto}
-                    target="_blank"
-                    rel="noopener noreferrer"
+                    href={INSTITUCIONAL_CONFIG.telefoneTelLink}
                     className="w-full inline-flex items-center justify-center gap-2 py-3 rounded-xl bg-amber-400 hover:bg-amber-300 text-slate-950 font-black text-xs shadow-md transition-colors"
                   >
-                    <MessageCircle className="w-4 h-4" />
-                    Chamar no WhatsApp agora
+                    <Phone className="w-4 h-4" />
+                    Ligar 0800 083 1200 agora
                   </a>
                 </div>
               </Card>
@@ -1081,13 +1071,11 @@ export default function HomePublica() {
                     </button>
 
                     <a
-                      href={INSTITUCIONAL_CONFIG.whatsappUrlLokotrack}
-                      target="_blank"
-                      rel="noopener noreferrer"
+                      href={INSTITUCIONAL_CONFIG.telefoneTelLink}
                       className="w-full sm:w-auto inline-flex items-center justify-center gap-2 bg-gradient-to-r from-amber-400 to-amber-500 hover:from-amber-300 hover:to-amber-400 text-slate-950 font-black text-xs px-5 py-3 rounded-xl shadow-md transition-all hover:scale-105"
                     >
-                      <MessageCircle className="w-4 h-4" />
-                      <span>Cotar Locação</span>
+                      <Phone className="w-4 h-4" />
+                      <span>Ligar 0800 083 1200</span>
                     </a>
                   </div>
                 </div>
@@ -1183,13 +1171,11 @@ export default function HomePublica() {
                   </div>
                   <div className="flex items-center gap-3 w-full sm:w-auto">
                     <a
-                      href={INSTITUCIONAL_CONFIG.whatsappUrlLokotrack}
-                      target="_blank"
-                      rel="noopener noreferrer"
+                      href={INSTITUCIONAL_CONFIG.telefoneTelLink}
                       className="w-full sm:w-auto inline-flex items-center justify-center gap-2 bg-gradient-to-r from-amber-400 to-amber-500 hover:from-amber-300 hover:to-amber-400 text-slate-950 font-black text-xs px-5 py-3 rounded-xl shadow-md transition-all hover:scale-105"
                     >
-                      <MessageCircle className="w-4 h-4" />
-                      WhatsApp Lokotrack
+                      <Phone className="w-4 h-4" />
+                      0800 083 1200 (Lokotrack)
                     </a>
                   </div>
                 </div>
@@ -1282,12 +1268,10 @@ export default function HomePublica() {
 
               <div className="flex items-center gap-3 w-full md:w-auto">
                 <a
-                  href={INSTITUCIONAL_CONFIG.whatsappUrlLokotrack}
-                  target="_blank"
-                  rel="noopener noreferrer"
+                  href={INSTITUCIONAL_CONFIG.telefoneTelLink}
                   className="w-full md:w-auto text-center px-4 py-2.5 bg-amber-400 hover:bg-amber-300 text-slate-950 font-black text-xs rounded-xl shadow-xs transition-colors shrink-0"
                 >
-                  Consultar Disponibilidade
+                  Ligar 0800 083 1200
                 </a>
               </div>
             </div>
@@ -1386,13 +1370,11 @@ export default function HomePublica() {
                       Disponível para locação em obras na PB, PE e RN.
                     </span>
                     <a
-                      href={INSTITUCIONAL_CONFIG.whatsappUrlLokotrack}
-                      target="_blank"
-                      rel="noopener noreferrer"
+                      href={INSTITUCIONAL_CONFIG.telefoneTelLink}
                       className="w-full sm:w-auto inline-flex items-center justify-center gap-2 bg-gradient-to-r from-amber-400 to-amber-500 hover:from-amber-300 hover:to-amber-400 text-slate-950 font-black text-xs px-4 py-2.5 rounded-xl shadow-md transition-all shrink-0"
                     >
-                      <MessageCircle className="w-4 h-4" />
-                      <span>Cotar Lokotrack</span>
+                      <Phone className="w-4 h-4" />
+                      <span>Ligar 0800 083 1200</span>
                     </a>
                   </div>
                 </div>
@@ -1541,13 +1523,11 @@ export default function HomePublica() {
                   </button>
 
                   <a
-                    href={INSTITUCIONAL_CONFIG.whatsappUrlConcreto}
-                    target="_blank"
-                    rel="noopener noreferrer"
+                    href={INSTITUCIONAL_CONFIG.telefoneTelLink}
                     className="w-full sm:w-auto inline-flex items-center justify-center gap-2 border border-[#1D4ED8] text-[#1D4ED8] hover:bg-blue-50 font-bold text-sm px-6 py-3.5 rounded-xl transition-colors"
                   >
-                    <MessageCircle className="w-4 h-4 text-emerald-600" />
-                    Orçamento Direto
+                    <Phone className="w-4 h-4 text-[#1D4ED8]" />
+                    Central: 0800 083 1200
                   </a>
                 </div>
               </div>
@@ -3009,21 +2989,19 @@ export default function HomePublica() {
                 </div>
               </div>
 
-              {/* WhatsApp Oficial */}
+              {/* Central Telefônica 0800 */}
               <div className="bg-[#F8FAFC] p-6 rounded-2xl border border-blue-100 space-y-3">
                 <div className="w-11 h-11 rounded-xl bg-emerald-600 text-white flex items-center justify-center shadow-md shadow-emerald-700/20">
-                  <MessageCircle className="w-5 h-5" />
+                  <Phone className="w-5 h-5" />
                 </div>
-                <h4 className="font-bold text-[#0A2540]">WhatsApp Comercial</h4>
-                <p className="text-xs text-slate-600">Cotações de concreto e do Lokotrack.</p>
+                <h4 className="font-bold text-[#0A2540]">Ligação Gratuita</h4>
+                <p className="text-xs text-slate-600">Concreto usinado, brita e Lokotrack.</p>
                 <div className="pt-1">
                   <a
-                    href={INSTITUCIONAL_CONFIG.whatsappUrlConcreto}
-                    target="_blank"
-                    rel="noopener noreferrer"
+                    href={INSTITUCIONAL_CONFIG.telefoneTelLink}
                     className="inline-flex items-center gap-1.5 text-base font-black text-emerald-700 hover:underline"
                   >
-                    {INSTITUCIONAL_CONFIG.whatsappNumeroFormatado}
+                    {INSTITUCIONAL_CONFIG.telefoneFormatado}
                   </a>
                 </div>
               </div>
@@ -3212,14 +3190,16 @@ export default function HomePublica() {
 
               <div className="pt-2 flex flex-col gap-1 text-xs text-slate-400">
                 <div>
-                  Central 0800:{' '}
-                  <strong className="text-white">{INSTITUCIONAL_CONFIG.telefoneFormatado}</strong>
+                  Central Gratuita:{' '}
+                  <a
+                    href={INSTITUCIONAL_CONFIG.telefoneTelLink}
+                    className="text-white hover:underline font-bold"
+                  >
+                    {INSTITUCIONAL_CONFIG.telefoneFormatado}
+                  </a>
                 </div>
-                <div>
-                  WhatsApp:{' '}
-                  <strong className="text-emerald-400">
-                    {INSTITUCIONAL_CONFIG.whatsappNumeroFormatado}
-                  </strong>
+                <div className="text-[11px] text-slate-400">
+                  Atendimento de segunda a sábado em todas as 5 unidades
                 </div>
               </div>
             </div>

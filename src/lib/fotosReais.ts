@@ -16,6 +16,9 @@ export const FOTOS_ESTATICAS_PEDREIRA = {
   monteiroBetoneirasCarregando: fotoMonteiroBetoneirasCarregando,
   monteiroFachadaSilo: fotoMonteiroFachadaSilo,
   saoJoseDoEgitoSiloPatio: fotoSaoJoseDoEgitoSiloPatio,
+  patosDesfileBetoneira: '/site-img/galeria-betoneira-5.jpg',
+  'galeria-betoneira-5': '/site-img/galeria-betoneira-5.jpg',
+  'galeria-betoneira-5.jpg': '/site-img/galeria-betoneira-5.jpg',
 } as const
 
 export function getFotoRealUrl(chaveOuCaminho: string): string {
@@ -45,6 +48,10 @@ export function getFotoRealUrl(chaveOuCaminho: string): string {
     '/site-img/patio-de-brita-0a7f9.jpeg': fotoPatioDeBrita,
     '/site-img/po-de-pedra-britador-e5885.jpeg': fotoPoDePedra,
     '/site-img/lokotrack-movel-cm.jpeg': fotoLokotrackMovel,
+    '/site-img/galeria-betoneira-5.jpg': '/site-img/galeria-betoneira-5.jpg',
+    patosDesfileBetoneira: '/site-img/galeria-betoneira-5.jpg',
+    'galeria-betoneira-5': '/site-img/galeria-betoneira-5.jpg',
+    'galeria-betoneira-5.jpg': '/site-img/galeria-betoneira-5.jpg',
     '/api/files/pbc_3973264007/on2lc9wt1m5d2bm/vista_de_cima_25461_342l6kmtsw.jpeg?v=1':
       fotoVistaDeCima,
     '/api/files/pbc_3973264007/y4872wsu9e6qmx7/patio_de_brita_2aa99_szpz936snj.jpeg?v=1':
