@@ -626,7 +626,7 @@ export function SecaoGcMixConcreto({
               const isSelected = unidadeAtiva === unidade.id
               const fotoUnidade =
                 unidade.id === 'caico'
-                  ? FOTOS_ESTATICAS_PEDREIRA.caicoAerea
+                  ? FOTOS_ESTATICAS_PEDREIRA.caicoPortaria
                   : unidade.id === 'sao-jose-do-egito'
                     ? FOTOS_ESTATICAS_PEDREIRA.saoJoseDoEgitoSiloPatio
                     : unidade.id === 'monteiro'
@@ -634,19 +634,19 @@ export function SecaoGcMixConcreto({
                       : null
               const fotoTitulo =
                 unidade.id === 'caico'
-                  ? 'Vista Aérea da Unidade — Filial Caicó-RN'
+                  ? 'Portaria da Unidade — Filial Caicó-RN'
                   : unidade.id === 'sao-jose-do-egito'
                     ? 'Silo e Pátio da Unidade — Filial São José do Egito-PE'
                     : 'Fachada e Silo da Central GC Mix — Filial Monteiro'
               const fotoDescricao =
                 unidade.id === 'caico'
-                  ? 'Vista aérea da unidade Caicó-RN com silo de cimento, central dosadora de concreto, duas betoneiras GC Mix identificadas com 0800-083-1200, prédio administrativo azul e branco, almoxarifado/balança e pátio operacional.'
+                  ? 'Muros com a marca GC Mix & Pedreira Cordeiro e o 0800 083 1200 na entrada, silo de cimento ao fundo.'
                   : unidade.id === 'sao-jose-do-egito'
                     ? 'Silo vertical de concreto à esquerda, pátio com caminhonete prata e dois muros com a marca GC MIX Concreto & Pedreira e 0800-083-1200.'
                     : 'Fachada da filial Monteiro com silo vertical GC Mix identificado com 0800-083-1200.'
               const fotoLocal =
                 unidade.id === 'caico'
-                  ? 'Caicó, RN'
+                  ? 'Caicó, RN • Portaria Oficial'
                   : unidade.id === 'sao-jose-do-egito'
                     ? 'São José do Egito, PE'
                     : 'Filial Monteiro — PB'
@@ -764,19 +764,19 @@ export function SecaoGcMixConcreto({
                   onClick={() => {
                     if (onExpandirFoto) {
                       onExpandirFoto({
-                        src: FOTOS_ESTATICAS_PEDREIRA.caicoAerea,
-                        titulo: 'Vista Aérea da Unidade — Filial Caicó-RN',
+                        src: FOTOS_ESTATICAS_PEDREIRA.caicoPortaria,
+                        titulo: 'Portaria da Unidade — Filial Caicó-RN',
                         local: 'Caicó, RN',
                         descricao:
-                          'Vista aérea da unidade — silo de cimento, central de concreto, frota de betoneiras GC Mix (0800-083-1200), secretaria (prédio azul e branco), almoxarifado/balança, pátio operacional e estrada de acesso.',
+                          'Muros com a marca GC Mix & Pedreira Cordeiro e o 0800 083 1200 na entrada, silo de cimento ao fundo.',
                         etiqueta: 'Foto Real • Caicó-RN',
                       })
                     }
                   }}
                 >
                   <img
-                    src={FOTOS_ESTATICAS_PEDREIRA.caicoAerea}
-                    alt="Vista aérea da central de concreto GC Mix em Caicó-RN com silo e betoneiras"
+                    src={FOTOS_ESTATICAS_PEDREIRA.caicoPortaria}
+                    alt="Portaria da unidade Caicó-RN da GC Mix com muros identificados 0800 083 1200 e silo ao fundo"
                     className="w-full h-full object-cover group-hover/card:scale-105 transition-transform duration-700"
                     loading="lazy"
                   />
@@ -802,11 +802,11 @@ export function SecaoGcMixConcreto({
                     Filial Caicó — Central GC Mix Concreto
                   </h4>
                   <p className="text-sm text-blue-100 leading-relaxed">
-                    Vista aérea da unidade — central de concreto com{' '}
-                    <strong>silo vertical de cimento</strong>, esteira de alimentação, frota de
-                    caminhões betoneira GC Mix (com 0800-083-1200 na cuba), prédio administrativo
-                    (secretaria azul e branca), almoxarifado/balança e amplo pátio de manobras para
-                    atendimento rápido de Caicó e toda a região do Seridó.
+                    Portaria da filial Caicó: muros perimetrais identificados com a marca{' '}
+                    <strong>GC MIX &amp; PEDREIRA CORDEIRO</strong> e central telefônica gratuita{' '}
+                    <strong>0800 083 1200</strong>, com <strong>silo vertical de cimento</strong> ao
+                    fundo, caminhão betoneira no pátio e prédio administrativo para atendimento ágil
+                    em Caicó e todo o Seridó.
                   </p>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs text-blue-200">
                     <div className="flex items-center gap-2">

@@ -156,14 +156,23 @@ const FOTOS_REAIS = {
       'Instalações autênticas da filial São José do Egito da Central GC Mix: silo metálico vertical de cimento à esquerda, pátio operacional com caminhonete prata, e muros perimetrais exibindo a marca oficial "GC MIX Concreto & Pedreira — Patos/S.ta Luzia-PB/S.J. do Egito-PE/Caicó-RN — 0800-083-1200" e o painel especializado "GC MIX PISO-LAJE POLIMENTO 0800-083-1200".',
     etiqueta: 'Silo & Pátio • Filial S.J. do Egito',
   },
-  caicoAerea: {
-    src: FOTOS_ESTATICAS_PEDREIRA.caicoAerea,
-    fallback: INSTITUCIONAL_CONFIG.fotosReais.caicoAerea,
-    titulo: 'Vista Aérea da Unidade — Filial Caicó-RN',
+  caicoPortaria: {
+    src: FOTOS_ESTATICAS_PEDREIRA.caicoPortaria,
+    fallback: INSTITUCIONAL_CONFIG.fotosReais.caicoPortaria,
+    titulo: 'Portaria da Unidade — Filial Caicó-RN',
     local: 'Central de Concreto GC Mix • Filial Caicó — RN',
     descricao:
-      'Vista aérea de drone da unidade Caicó-RN: silo vertical de cimento, central dosadora de concreto, duas betoneiras GC Mix (com 0800-083-1200 na cuba), secretaria (prédio azul e branco), almoxarifado/balança, pátio de manobras e estrada de acesso ao Seridó potiguar.',
-    etiqueta: 'Vista Aérea • Filial Caicó-RN',
+      'Muros com a marca GC Mix & Pedreira Cordeiro e o 0800 083 1200 na entrada, silo de cimento ao fundo.',
+    etiqueta: 'Portaria • Filial Caicó-RN',
+  },
+  caicoAerea: {
+    src: FOTOS_ESTATICAS_PEDREIRA.caicoPortaria,
+    fallback: INSTITUCIONAL_CONFIG.fotosReais.caicoPortaria,
+    titulo: 'Portaria da Unidade — Filial Caicó-RN',
+    local: 'Central de Concreto GC Mix • Filial Caicó — RN',
+    descricao:
+      'Muros com a marca GC Mix & Pedreira Cordeiro e o 0800 083 1200 na entrada, silo de cimento ao fundo.',
+    etiqueta: 'Portaria • Filial Caicó-RN',
   },
 }
 
@@ -2455,31 +2464,31 @@ export default function HomePublica() {
                 </div>
               </div>
 
-              {/* Card 10: Vista Aérea da Unidade — Filial Caicó-RN (Nova foto real) */}
+              {/* Card 10: Portaria da Unidade — Filial Caicó-RN (Foto real da portaria) */}
               <div
-                onClick={() => setFotoAtiva(FOTOS_REAIS.caicoAerea)}
+                onClick={() => setFotoAtiva(FOTOS_REAIS.caicoPortaria)}
                 className="group rounded-3xl overflow-hidden border-2 border-amber-400/80 bg-white shadow-md hover:shadow-2xl transition-all duration-300 cursor-pointer flex flex-col justify-between"
               >
                 <div>
                   <div className="relative h-64 overflow-hidden bg-slate-950">
                     <img
-                      src={FOTOS_REAIS.caicoAerea.src}
+                      src={FOTOS_REAIS.caicoPortaria.src}
                       onError={(e) => {
                         const target = e.currentTarget
                         if (
-                          FOTOS_REAIS.caicoAerea.fallback &&
-                          target.src !== FOTOS_REAIS.caicoAerea.fallback
+                          FOTOS_REAIS.caicoPortaria.fallback &&
+                          target.src !== FOTOS_REAIS.caicoPortaria.fallback
                         ) {
-                          target.src = FOTOS_REAIS.caicoAerea.fallback
+                          target.src = FOTOS_REAIS.caicoPortaria.fallback
                         }
                       }}
-                      alt={FOTOS_REAIS.caicoAerea.titulo}
+                      alt={FOTOS_REAIS.caicoPortaria.titulo}
                       className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700"
                       loading="lazy"
                     />
                     <div className="absolute top-3 left-3">
                       <span className="bg-amber-400 text-slate-950 text-[10px] font-black px-2.5 py-1 rounded-md shadow-md">
-                        {FOTOS_REAIS.caicoAerea.etiqueta}
+                        {FOTOS_REAIS.caicoPortaria.etiqueta}
                       </span>
                     </div>
                     <div className="absolute bottom-3 right-3 bg-black/60 text-white p-2 rounded-full group-hover:bg-[#1D4ED8] transition-colors">
@@ -2489,13 +2498,13 @@ export default function HomePublica() {
                   <div className="p-6 space-y-2">
                     <div className="text-xs font-bold text-[#1D4ED8] flex items-center gap-1">
                       <Building2 className="w-3.5 h-3.5" />
-                      {FOTOS_REAIS.caicoAerea.local}
+                      {FOTOS_REAIS.caicoPortaria.local}
                     </div>
                     <h3 className="text-xl font-black text-[#0A2540]">
-                      {FOTOS_REAIS.caicoAerea.titulo}
+                      {FOTOS_REAIS.caicoPortaria.titulo}
                     </h3>
                     <p className="text-xs text-slate-600 leading-relaxed">
-                      {FOTOS_REAIS.caicoAerea.descricao}
+                      {FOTOS_REAIS.caicoPortaria.descricao}
                     </p>
                   </div>
                 </div>
@@ -2552,7 +2561,7 @@ export default function HomePublica() {
               {UNIDADES_GC.map((unidade) => {
                 const fotoUnidade =
                   unidade.id === 'caico'
-                    ? FOTOS_REAIS.caicoAerea
+                    ? FOTOS_REAIS.caicoPortaria
                     : unidade.id === 'sao-jose-do-egito'
                       ? FOTOS_REAIS.saoJoseDoEgitoSiloPatio
                       : unidade.id === 'monteiro'
