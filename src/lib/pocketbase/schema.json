@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-10-13T12:47:37.610Z",
+  "generatedAt": "2026-10-13T14:09:29.718Z",
   "collections": [
     {
       "name": "users",
@@ -3873,6 +3873,178 @@
         }
       ],
       "indexes": []
+    },
+    {
+      "name": "fechamentos_mensais",
+      "type": "base",
+      "apiRules": {
+        "list": "@request.auth.id != ''",
+        "view": "@request.auth.id != ''",
+        "create": "@request.auth.id != ''",
+        "update": "@request.auth.id != ''",
+        "delete": "@request.auth.id != ''"
+      },
+      "fields": [
+        {
+          "name": "empresa_id",
+          "type": "relation",
+          "required": true,
+          "system": false,
+          "collectionRef": "empresas"
+        },
+        {
+          "name": "filial_nome",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "competencia",
+          "type": "text",
+          "required": true,
+          "system": false
+        },
+        {
+          "name": "mes",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "ano",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "faturamento",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "producao_m3",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "valor_medio_m3",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "despesas_itens",
+          "type": "json",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "total_despesas",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "consumo_cimento_kg",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "consumo_brita_kg",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "consumo_areia_m3",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "consumo_po_pedra",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "consumo_aditivo",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "consumo_combustivel_litros",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "consumo_insumos_detalhes",
+          "type": "json",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "investimento",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "investimento_descricao",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "saldo_apos_investimento",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "status",
+          "type": "select",
+          "required": false,
+          "system": false,
+          "selectValues": ["rascunho", "fechado", "entregue_diretoria"]
+        },
+        {
+          "name": "observacoes",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "responsavel_nome",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "created",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate"]
+        },
+        {
+          "name": "updated",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate", "onUpdate"]
+        }
+      ],
+      "indexes": [
+        "CREATE INDEX idx_fechamentos_empresa ON fechamentos_mensais (empresa_id)",
+        "CREATE INDEX idx_fechamentos_competencia ON fechamentos_mensais (competencia)",
+        "CREATE UNIQUE INDEX idx_fechamentos_empresa_competencia ON fechamentos_mensais (empresa_id, competencia)"
+      ]
     }
   ]
 }

@@ -25,6 +25,7 @@ const ContasPagar = lazy(() => import('@/pages/financeiro/ContasPagar'))
 const ContasReceber = lazy(() => import('@/pages/financeiro/ContasReceber'))
 const Conciliacao = lazy(() => import('@/pages/financeiro/Conciliacao'))
 const DRE = lazy(() => import('@/pages/financeiro/DRE'))
+const FechamentoMensal = lazy(() => import('@/pages/financeiro/FechamentoMensal'))
 
 const Clientes = lazy(() => import('@/pages/cadastros/Clientes'))
 const Fornecedores = lazy(() => import('@/pages/cadastros/Fornecedores'))
@@ -87,6 +88,7 @@ export default function App() {
                   <Route path="/financeiro/receber" element={<ContasReceber />} />
                   <Route path="/financeiro/conciliacao" element={<Conciliacao />} />
                   <Route path="/financeiro/dre" element={<DRE />} />
+                  <Route path="/financeiro/fechamento" element={<FechamentoMensal />} />
 
                   {/* Frotas & Pedreira */}
                   <Route path="/frotas/veiculos" element={<Veiculos />} />

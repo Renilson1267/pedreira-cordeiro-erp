@@ -54,6 +54,7 @@ import {
   User,
   Users,
   Printer,
+  FileBarChart2,
 } from 'lucide-react'
 import {
   RelatorioDespesasSetorImpressaoModal,
@@ -205,13 +206,22 @@ export default function Relatorios() {
   // Report cards definition
   const reportCards = [
     {
+      id: 'fechamento_mensal_diretoria',
+      title: 'Fechamento Mensal (Relatório Diretoria)',
+      description:
+        'Demonstrativo oficial de fechamento de caixa por filial (SJE e unidades) com resumo (faturamento, m³ e R$/m³), despesas item a item com %, consumo de insumos, investimentos e saldo final.',
+      icon: FileBarChart2,
+      color: 'bg-teal-900 text-white border-teal-800',
+      destaque: true,
+      link: '/financeiro/fechamento',
+    },
+    {
       id: 'fechamento_centro_custo',
       title: 'Fechamento Mensal por Centro de Custo',
       description:
         'Demonstrativo objetivo de Contas a Pagar por centro de custo para prestação de contas à diretoria (A4 Paisagem, % part., top fornecedores e variação).',
       icon: Layers,
       color: 'bg-teal-100 text-teal-900 border-teal-300',
-      destaque: true,
     },
     {
       id: 'fluxo_caixa',
@@ -755,7 +765,9 @@ export default function Relatorios() {
             <Card
               key={rc.id}
               onClick={() => {
-                if (rc.id === 'fechamento_centro_custo') {
+                if (rc.id === 'fechamento_mensal_diretoria') {
+                  window.location.href = '/financeiro/fechamento'
+                } else if (rc.id === 'fechamento_centro_custo') {
                   setModalFechamentoCentroCustoOpen(true)
                 } else {
                   setActiveReport(rc.id)

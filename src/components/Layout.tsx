@@ -84,6 +84,7 @@ export default function Layout() {
         { label: 'Contas a Receber', path: '/financeiro/receber', icon: ArrowUpRight },
         { label: 'Conciliação', path: '/financeiro/conciliacao', icon: Landmark },
         { label: 'DRE Gerencial', path: '/financeiro/dre', icon: LineChart },
+        { label: 'Fechamento Mensal', path: '/financeiro/fechamento', icon: FileBarChart2 },
       ],
     },
     {

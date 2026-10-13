@@ -684,6 +684,49 @@ export interface FornecedorPecas {
   updated: string
 }
 
+export type StatusFechamentoMensal = 'rascunho' | 'fechado' | 'entregue_diretoria'
+
+export interface ItemDespesaFechamento {
+  id: string
+  nome: string
+  valor: number
+  percentual?: number
+  ordem: number
+  observacao?: string
+}
+
+export interface FechamentoMensal {
+  id: string
+  empresa_id: string
+  filial_nome?: string
+  competencia: string // ex: '2026-09'
+  mes?: number
+  ano?: number
+  faturamento?: number
+  producao_m3?: number
+  valor_medio_m3?: number
+  despesas_itens?: ItemDespesaFechamento[]
+  total_despesas?: number
+  consumo_cimento_kg?: number
+  consumo_brita_kg?: number
+  consumo_areia_m3?: number
+  consumo_po_pedra?: number
+  consumo_aditivo?: number
+  consumo_combustivel_litros?: number
+  consumo_insumos_detalhes?: Record<string, any>
+  investimento?: number
+  investimento_descricao?: string
+  saldo_apos_investimento?: number
+  status?: StatusFechamentoMensal
+  observacoes?: string
+  responsavel_nome?: string
+  created: string
+  updated: string
+  expand?: {
+    empresa_id?: Empresa
+  }
+}
+
 export interface Entrega {
   id: string
   empresa_id: string
