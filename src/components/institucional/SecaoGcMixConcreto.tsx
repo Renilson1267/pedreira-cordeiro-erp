@@ -20,6 +20,7 @@ import {
 } from 'lucide-react'
 import { INSTITUCIONAL_CONFIG, UNIDADES_GC } from '@/data/institucional'
 import { ASSET_LOGO_BANNER, LogoGcMixVector } from '@/components/institucional/LogoGcMix'
+import { SmartLigacaoButton } from '@/components/institucional/SmartLigacao'
 import { FOTOS_ESTATICAS_PEDREIRA } from '@/lib/fotosReais'
 import { Maximize2 } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
@@ -129,13 +130,13 @@ export function SecaoGcMixConcreto({
 
           {/* CTAs rápidos no topo */}
           <div className="pt-2 flex flex-wrap items-center justify-center gap-3 sm:gap-4">
-            <a
-              href={INSTITUCIONAL_CONFIG.telefoneTelLink}
+            <SmartLigacaoButton
+              origem="GC Mix Concreto — CTA Principal Topo"
               className="inline-flex items-center justify-center gap-2.5 bg-gradient-to-r from-emerald-500 to-emerald-600 hover:from-emerald-400 hover:to-emerald-500 text-white font-black text-sm px-6 py-3.5 rounded-xl shadow-lg shadow-emerald-950/40 transition-all hover:scale-[1.02] cursor-pointer"
             >
               <Phone className="w-5 h-5 text-white" />
               <span>Ligar Grátis {INSTITUCIONAL_CONFIG.telefoneFormatado}</span>
-            </a>
+            </SmartLigacaoButton>
 
             <button
               onClick={() => handlePedirOrcamento('Concreto Usinado GC Mix')}
@@ -145,13 +146,13 @@ export function SecaoGcMixConcreto({
               <ArrowRight className="w-4 h-4 text-blue-200" />
             </button>
 
-            <a
-              href={INSTITUCIONAL_CONFIG.telefoneTelLink}
+            <SmartLigacaoButton
+              origem="GC Mix Concreto — 0800 Topo"
               className="inline-flex items-center justify-center gap-2 bg-white/10 hover:bg-white/15 text-blue-100 hover:text-white font-semibold text-sm px-5 py-3.5 rounded-xl border border-white/20 transition-all cursor-pointer"
             >
               <Phone className="w-4 h-4 text-amber-300" />
               <span>{INSTITUCIONAL_CONFIG.telefoneFormatado}</span>
-            </a>
+            </SmartLigacaoButton>
           </div>
         </div>
 
@@ -250,13 +251,13 @@ export function SecaoGcMixConcreto({
               </div>
 
               <div className="pt-4 border-t border-white/10 flex flex-col sm:flex-row gap-3">
-                <a
-                  href={INSTITUCIONAL_CONFIG.telefoneTelLink}
+                <SmartLigacaoButton
+                  origem="GC Mix Concreto — Filial Monteiro"
                   className="flex-1 inline-flex items-center justify-center gap-2 bg-gradient-to-r from-emerald-500 to-emerald-600 hover:from-emerald-400 hover:to-emerald-500 text-white font-bold text-xs py-3 rounded-xl shadow-md transition-all cursor-pointer"
                 >
                   <Phone className="w-4 h-4" />
                   <span>Ligar 0800 083 1200 — Monteiro</span>
-                </a>
+                </SmartLigacaoButton>
                 <button
                   onClick={() =>
                     handlePedirOrcamento('Concreto Usinado GC Mix — Filial Monteiro (PB)')
@@ -582,13 +583,13 @@ export function SecaoGcMixConcreto({
             </div>
 
             <div className="p-6 pt-0">
-              <a
-                href={INSTITUCIONAL_CONFIG.telefoneTelLink}
+              <SmartLigacaoButton
+                origem="GC Mix Concreto — Falar com Técnico"
                 className="w-full inline-flex items-center justify-center gap-2 bg-gradient-to-r from-amber-400 to-amber-500 hover:from-amber-300 hover:to-amber-400 text-slate-950 font-black text-xs py-3 rounded-xl shadow-md transition-all cursor-pointer"
               >
                 <Phone className="w-4 h-4 text-slate-950" />
                 <span>Falar com Técnico: 0800 083 1200</span>
-              </a>
+              </SmartLigacaoButton>
             </div>
           </Card>
         </div>
@@ -827,13 +828,13 @@ export function SecaoGcMixConcreto({
                     </div>
                   </div>
                   <div className="pt-2 flex flex-wrap items-center gap-3">
-                    <a
-                      href={INSTITUCIONAL_CONFIG.telefoneTelLink}
+                    <SmartLigacaoButton
+                      origem="GC Mix Concreto — Filial Caicó"
                       className="inline-flex items-center gap-2 bg-emerald-500 hover:bg-emerald-600 text-white font-bold px-4 py-2.5 rounded-xl transition-all shadow-md text-xs cursor-pointer"
                     >
                       <Phone className="w-4 h-4" />
                       <span>Ligar 0800 083 1200 (Caicó)</span>
-                    </a>
+                    </SmartLigacaoButton>
                     <button
                       onClick={() => handlePedirOrcamento('Concreto GC Mix — Filial Caicó (RN)')}
                       className="inline-flex items-center gap-1.5 bg-white/10 hover:bg-white/20 text-white font-bold px-4 py-2.5 rounded-xl border border-white/20 text-xs transition-all cursor-pointer"
@@ -916,13 +917,13 @@ export function SecaoGcMixConcreto({
                     </div>
                   </div>
                   <div className="pt-2 flex flex-wrap items-center gap-3">
-                    <a
-                      href={INSTITUCIONAL_CONFIG.telefoneTelLink}
+                    <SmartLigacaoButton
+                      origem="GC Mix Concreto — Filial São José do Egito"
                       className="inline-flex items-center gap-2 bg-emerald-500 hover:bg-emerald-600 text-white font-bold px-4 py-2.5 rounded-xl transition-all shadow-md text-xs cursor-pointer"
                     >
                       <Phone className="w-4 h-4" />
                       <span>Ligar 0800 083 1200 (São José do Egito)</span>
-                    </a>
+                    </SmartLigacaoButton>
                     <button
                       onClick={() =>
                         handlePedirOrcamento('Concreto GC Mix — Filial São José do Egito (PE)')
@@ -1007,13 +1008,13 @@ export function SecaoGcMixConcreto({
                     </div>
                   </div>
                   <div className="pt-2 flex flex-wrap items-center gap-3">
-                    <a
-                      href={INSTITUCIONAL_CONFIG.telefoneTelLink}
+                    <SmartLigacaoButton
+                      origem="GC Mix Concreto — Filial Monteiro"
                       className="inline-flex items-center gap-2 bg-emerald-500 hover:bg-emerald-600 text-white font-bold px-4 py-2.5 rounded-xl transition-all shadow-md text-xs cursor-pointer"
                     >
                       <Phone className="w-4 h-4" />
                       <span>Ligar 0800 083 1200 (Monteiro)</span>
-                    </a>
+                    </SmartLigacaoButton>
                     <button
                       onClick={() =>
                         handlePedirOrcamento('Concreto Usinado GC Mix — Filial Monteiro (PB)')
@@ -1042,13 +1043,13 @@ export function SecaoGcMixConcreto({
               </p>
             </div>
 
-            <a
-              href={INSTITUCIONAL_CONFIG.telefoneTelLink}
+            <SmartLigacaoButton
+              origem="GC Mix Concreto — Consultar Raio de Atendimento"
               className="inline-flex items-center gap-2 bg-emerald-500 hover:bg-emerald-600 text-white font-bold px-4 py-2.5 rounded-xl shrink-0 transition-colors shadow-sm"
             >
               <Phone className="w-4 h-4" />
               <span>Consultar Raio: 0800 083 1200</span>
-            </a>
+            </SmartLigacaoButton>
           </div>
         </div>
 
@@ -1152,13 +1153,13 @@ export function SecaoGcMixConcreto({
           </div>
 
           <div className="flex flex-col sm:flex-row lg:flex-col gap-3 w-full lg:w-auto shrink-0">
-            <a
-              href={INSTITUCIONAL_CONFIG.telefoneTelLink}
+            <SmartLigacaoButton
+              origem="GC Mix Concreto — Banner Final"
               className="inline-flex items-center justify-center gap-2 bg-amber-400 hover:bg-amber-300 text-slate-950 font-black text-sm px-6 py-4 rounded-xl shadow-lg shadow-amber-500/20 transition-all hover:scale-105 cursor-pointer text-center"
             >
               <Phone className="w-5 h-5 text-slate-950" />
               <span>Ligar 0800 083 1200</span>
-            </a>
+            </SmartLigacaoButton>
 
             <button
               onClick={() => handlePedirOrcamento('Concreto Usinado GC Mix')}
