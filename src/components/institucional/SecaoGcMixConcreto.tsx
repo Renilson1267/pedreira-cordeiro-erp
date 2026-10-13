@@ -625,23 +625,31 @@ export function SecaoGcMixConcreto({
             {UNIDADES_GC.map((unidade) => {
               const isSelected = unidadeAtiva === unidade.id
               const fotoUnidade =
-                unidade.id === 'sao-jose-do-egito'
-                  ? FOTOS_ESTATICAS_PEDREIRA.saoJoseDoEgitoSiloPatio
-                  : unidade.id === 'monteiro'
-                    ? FOTOS_ESTATICAS_PEDREIRA.monteiroFachadaSilo
-                    : null
+                unidade.id === 'caico'
+                  ? FOTOS_ESTATICAS_PEDREIRA.caicoAerea
+                  : unidade.id === 'sao-jose-do-egito'
+                    ? FOTOS_ESTATICAS_PEDREIRA.saoJoseDoEgitoSiloPatio
+                    : unidade.id === 'monteiro'
+                      ? FOTOS_ESTATICAS_PEDREIRA.monteiroFachadaSilo
+                      : null
               const fotoTitulo =
-                unidade.id === 'sao-jose-do-egito'
-                  ? 'Silo e Pátio da Unidade — Filial São José do Egito-PE'
-                  : 'Fachada e Silo da Central GC Mix — Filial Monteiro'
+                unidade.id === 'caico'
+                  ? 'Vista Aérea da Unidade — Filial Caicó-RN'
+                  : unidade.id === 'sao-jose-do-egito'
+                    ? 'Silo e Pátio da Unidade — Filial São José do Egito-PE'
+                    : 'Fachada e Silo da Central GC Mix — Filial Monteiro'
               const fotoDescricao =
-                unidade.id === 'sao-jose-do-egito'
-                  ? 'Silo vertical de concreto à esquerda, pátio com caminhonete prata e dois muros com a marca GC MIX Concreto & Pedreira e 0800-083-1200.'
-                  : 'Fachada da filial Monteiro com silo vertical GC Mix identificado com 0800-083-1200.'
+                unidade.id === 'caico'
+                  ? 'Vista aérea da unidade Caicó-RN com silo de cimento, central dosadora de concreto, duas betoneiras GC Mix identificadas com 0800-083-1200, prédio administrativo azul e branco, almoxarifado/balança e pátio operacional.'
+                  : unidade.id === 'sao-jose-do-egito'
+                    ? 'Silo vertical de concreto à esquerda, pátio com caminhonete prata e dois muros com a marca GC MIX Concreto & Pedreira e 0800-083-1200.'
+                    : 'Fachada da filial Monteiro com silo vertical GC Mix identificado com 0800-083-1200.'
               const fotoLocal =
-                unidade.id === 'sao-jose-do-egito'
-                  ? 'São José do Egito, PE'
-                  : 'Filial Monteiro — PB'
+                unidade.id === 'caico'
+                  ? 'Caicó, RN'
+                  : unidade.id === 'sao-jose-do-egito'
+                    ? 'São José do Egito, PE'
+                    : 'Filial Monteiro — PB'
 
               return (
                 <div
@@ -747,7 +755,98 @@ export function SecaoGcMixConcreto({
             })}
           </div>
 
-          {/* Destaque Interativo da Unidade Selecionada (São José do Egito ou Monteiro com Foto Real) */}
+          {/* Destaque Interativo da Unidade Selecionada (Caicó, São José do Egito ou Monteiro com Foto Real) */}
+          {unidadeAtiva === 'caico' && (
+            <div className="mt-8 p-6 rounded-3xl bg-gradient-to-r from-[#172554] via-[#1E3A8A] to-[#0A2540] border-2 border-amber-400/60 shadow-xl text-white">
+              <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-center">
+                <div
+                  className="lg:col-span-5 relative h-56 sm:h-64 rounded-2xl overflow-hidden bg-slate-950 cursor-pointer group/card"
+                  onClick={() => {
+                    if (onExpandirFoto) {
+                      onExpandirFoto({
+                        src: FOTOS_ESTATICAS_PEDREIRA.caicoAerea,
+                        titulo: 'Vista Aérea da Unidade — Filial Caicó-RN',
+                        local: 'Caicó, RN',
+                        descricao:
+                          'Vista aérea da unidade — silo de cimento, central de concreto, frota de betoneiras GC Mix (0800-083-1200), secretaria (prédio azul e branco), almoxarifado/balança, pátio operacional e estrada de acesso.',
+                        etiqueta: 'Foto Real • Caicó-RN',
+                      })
+                    }
+                  }}
+                >
+                  <img
+                    src={FOTOS_ESTATICAS_PEDREIRA.caicoAerea}
+                    alt="Vista aérea da central de concreto GC Mix em Caicó-RN com silo e betoneiras"
+                    className="w-full h-full object-cover group-hover/card:scale-105 transition-transform duration-700"
+                    loading="lazy"
+                  />
+                  <div className="absolute top-3 left-3 flex items-center gap-2">
+                    <span className="bg-amber-400 text-slate-950 text-xs font-black px-2.5 py-1 rounded-md shadow-md">
+                      Foto Real da Unidade
+                    </span>
+                    <span className="bg-[#0A2540]/90 text-white text-[11px] font-bold px-2 py-0.5 rounded border border-white/20">
+                      Caicó — RN
+                    </span>
+                  </div>
+                  <div className="absolute bottom-3 right-3 bg-black/70 text-white p-2 rounded-full group-hover/card:bg-amber-400 group-hover/card:text-slate-950 transition-colors shadow-md">
+                    <Maximize2 className="w-4 h-4" />
+                  </div>
+                </div>
+
+                <div className="lg:col-span-7 space-y-4">
+                  <div className="inline-flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-amber-300">
+                    <Building2 className="w-4 h-4 text-amber-400" />
+                    <span>Unidade Operacional Ativa • Seridó Potiguar</span>
+                  </div>
+                  <h4 className="text-2xl sm:text-3xl font-black text-white">
+                    Filial Caicó — Central GC Mix Concreto
+                  </h4>
+                  <p className="text-sm text-blue-100 leading-relaxed">
+                    Vista aérea da unidade — central de concreto com{' '}
+                    <strong>silo vertical de cimento</strong>, esteira de alimentação, frota de
+                    caminhões betoneira GC Mix (com 0800-083-1200 na cuba), prédio administrativo
+                    (secretaria azul e branca), almoxarifado/balança e amplo pátio de manobras para
+                    atendimento rápido de Caicó e toda a região do Seridó.
+                  </p>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs text-blue-200">
+                    <div className="flex items-center gap-2">
+                      <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                      <span>Silo vertical de cimento e esteira dosadora</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                      <span>Frota própria de betoneiras GC Mix (0800 083 1200)</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                      <span>Secretaria, balança e almoxarifado no local</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                      <span>Atendimento gratuito pelo 0800 083 1200</span>
+                    </div>
+                  </div>
+                  <div className="pt-2 flex flex-wrap items-center gap-3">
+                    <a
+                      href={INSTITUCIONAL_CONFIG.telefoneTelLink}
+                      className="inline-flex items-center gap-2 bg-emerald-500 hover:bg-emerald-600 text-white font-bold px-4 py-2.5 rounded-xl transition-all shadow-md text-xs cursor-pointer"
+                    >
+                      <Phone className="w-4 h-4" />
+                      <span>Ligar 0800 083 1200 (Caicó)</span>
+                    </a>
+                    <button
+                      onClick={() => handlePedirOrcamento('Concreto GC Mix — Filial Caicó (RN)')}
+                      className="inline-flex items-center gap-1.5 bg-white/10 hover:bg-white/20 text-white font-bold px-4 py-2.5 rounded-xl border border-white/20 text-xs transition-all cursor-pointer"
+                    >
+                      <span>Formulário de Cotação</span>
+                      <ArrowRight className="w-3.5 h-3.5 text-amber-300" />
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
           {unidadeAtiva === 'sao-jose-do-egito' && (
             <div className="mt-8 p-6 rounded-3xl bg-gradient-to-r from-[#172554] via-[#1E3A8A] to-[#0A2540] border-2 border-amber-400/60 shadow-xl text-white">
               <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-center">
