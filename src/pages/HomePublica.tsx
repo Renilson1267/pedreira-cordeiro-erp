@@ -1342,14 +1342,14 @@ export default function HomePublica() {
                   Conheça Nossa Operação
                 </h2>
                 <p className="mt-4 text-base sm:text-lg text-blue-100 leading-relaxed font-normal">
-                  Veja o britador móvel Lokotrack em plena atividade de britagem em campo e assista
-                  ao vídeo institucional que sintetiza a força de nossa estrutura, frota e equipe no
-                  Sertão.
+                  Veja o britador móvel Lokotrack em plena atividade de britagem em campo, a
+                  operação completa da concreteira GC Mix e o institucional que sintetiza a força de
+                  nossa estrutura, frota e equipe no Sertão.
                 </p>
               </div>
 
-              {/* Grid dos Dois Vídeos em 2 Colunas no Desktop / Empilhado no Mobile */}
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 items-stretch">
+              {/* Grid dos Três Vídeos em 3 Colunas no Desktop / Empilhado no Mobile */}
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8 items-stretch">
                 {/* Card 1: Vídeo Operacional Lokotrack */}
                 <div className="rounded-3xl overflow-hidden border border-amber-400/40 bg-slate-900/90 shadow-2xl backdrop-blur-md flex flex-col justify-between group hover:border-amber-400 transition-colors">
                   <div>
@@ -1483,6 +1483,80 @@ export default function HomePublica() {
                       </span>
                       <button
                         onClick={() => rolarParaSecao('orcamento', 'Concreto Usinado GC Mix')}
+                        className="w-full sm:w-auto inline-flex items-center justify-center gap-2 bg-[#1D4ED8] hover:bg-[#1E40AF] text-white font-bold text-xs px-4 py-2.5 rounded-xl shadow-md transition-all shrink-0 cursor-pointer"
+                      >
+                        <ArrowRight className="w-4 h-4" />
+                        <span>Pedir Orçamento</span>
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Card 3: Vídeo GC MIX Operação */}
+                <div className="rounded-3xl overflow-hidden border border-cyan-400/40 bg-slate-900/90 shadow-2xl backdrop-blur-md flex flex-col justify-between group hover:border-cyan-400 transition-colors">
+                  <div>
+                    {/* Player Embed Responsivo 16:9 */}
+                    <div className="relative w-full aspect-video bg-black overflow-hidden">
+                      <iframe
+                        src="https://www.youtube.com/embed/kI0a8A_2IPA"
+                        title="Vídeo Institucional — GC Mix — Nossa Operação"
+                        aria-label="Vídeo GC Mix — Nossa Operação"
+                        loading="lazy"
+                        allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                        allowFullScreen
+                        className="absolute inset-0 w-full h-full border-0"
+                      />
+                    </div>
+
+                    {/* Detalhes do Vídeo 3 */}
+                    <div className="p-6 sm:p-8 space-y-4">
+                      <div className="flex items-center justify-between flex-wrap gap-2">
+                        <span className="bg-cyan-600 text-white text-xs font-black px-3 py-1 rounded-lg shadow-md uppercase tracking-wider flex items-center gap-1.5">
+                          <Play className="w-3.5 h-3.5 fill-white" />
+                          Institucional • GC Mix (1:10)
+                        </span>
+                        <span className="bg-cyan-950/80 border border-cyan-400/30 text-cyan-200 text-xs font-semibold px-2.5 py-1 rounded-lg">
+                          GC Mix Concreto
+                        </span>
+                      </div>
+
+                      <div>
+                        <h3 className="text-xl sm:text-2xl font-black text-white">
+                          GC Mix — Nossa Operação
+                        </h3>
+                        <p className="mt-2 text-xs sm:text-sm text-blue-100 leading-relaxed font-normal">
+                          Conheça a dinâmica da usina de concreto usinado GC Mix: carregamento
+                          automatizado de betoneiras, tecnologia de pesagem dos agregados,
+                          laboratório de controle tecnológico e entrega ágil para canteiros de obra.
+                        </p>
+                      </div>
+
+                      <div className="p-3.5 rounded-xl bg-white/5 border border-white/10 space-y-1.5 text-xs text-slate-300">
+                        <div className="flex items-center justify-between">
+                          <span className="text-slate-400">Atuação:</span>
+                          <strong className="text-white">Concreto Usinado & Bombeamento</strong>
+                        </div>
+                        <div className="flex items-center justify-between">
+                          <span className="text-slate-400">Canal Oficial:</span>
+                          <strong className="text-cyan-300">Caldas & Amaral GC Mix Concreto</strong>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="p-6 pt-0 sm:p-8 sm:pt-0">
+                    <div className="pt-4 border-t border-white/10 flex flex-col sm:flex-row items-center justify-between gap-3">
+                      <a
+                        href="https://www.youtube.com/watch?v=kI0a8A_2IPA"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-xs text-amber-300 hover:text-amber-200 hover:underline font-bold inline-flex items-center gap-1"
+                      >
+                        <span>Assistir no YouTube</span>
+                        <ArrowRight className="w-3.5 h-3.5" />
+                      </a>
+                      <button
+                        onClick={() => rolarParaSecao('orcamento', 'GC Mix Concreto Usinado')}
                         className="w-full sm:w-auto inline-flex items-center justify-center gap-2 bg-[#1D4ED8] hover:bg-[#1E40AF] text-white font-bold text-xs px-4 py-2.5 rounded-xl shadow-md transition-all shrink-0 cursor-pointer"
                       >
                         <ArrowRight className="w-4 h-4" />
